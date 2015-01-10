@@ -40,7 +40,7 @@ class TestStream : public QuicDataStream {
       : QuicDataStream(id, session),
         should_process_data_(should_process_data) {}
 
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE {
+  uint32 ProcessData(const char* data, uint32 data_len) override {
     EXPECT_NE(0u, data_len);
     DVLOG(1) << "ProcessData data_len: " << data_len;
     data_ += string(data, data_len);
@@ -299,7 +299,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlBlocked) {
   EXPECT_CALL(*connection_, SendBlocked(kClientDataStreamId1));
   EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(kWindow, true)));
-  stream_->WriteOrBufferData(body, false, NULL);
+  stream_->WriteOrBufferData(body, false, nullptr);
 
   // Should have sent as much as possible, resulting in no send window left.
   EXPECT_EQ(0u,
@@ -403,9 +403,6 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlWindowUpdate) {
   // Tests that on receipt of data, the connection updates its receive window
   // offset appropriately, and sends WINDOW_UPDATE frames when its receive
   // window drops too low.
-  if (GetParam() < QUIC_VERSION_19) {
-    return;
-  }
   Initialize(kShouldProcessData);
 
   // Set a small flow control limit for streams and connection.
@@ -484,9 +481,6 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlViolation) {
   // Tests that on if the peer sends too much data (i.e. violates the flow
   // control protocol), at the connection level (rather than the stream level)
   // then we terminate the connection.
-  if (GetParam() < QUIC_VERSION_19) {
-    return;
-  }
 
   // Stream should not process data, so that data gets buffered in the
   // sequencer, triggering flow control limits.
@@ -535,7 +529,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlFinNotBlocked) {
   EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(0, fin)));
 
-  stream_->WriteOrBufferData(body, fin, NULL);
+  stream_->WriteOrBufferData(body, fin, nullptr);
 }
 
 }  // namespace

@@ -46,15 +46,15 @@ const MojoCreateDataPipeOptionsFlags
   ((MojoCreateDataPipeOptionsFlags)1 << 0)
 #endif
 
-MOJO_COMPILE_ASSERT(MOJO_ALIGNOF(int64_t) == 8, int64_t_has_weird_alignment);
+MOJO_STATIC_ASSERT(MOJO_ALIGNOF(int64_t) == 8, "int64_t has weird alignment");
 struct MOJO_ALIGNAS(8) MojoCreateDataPipeOptions {
   uint32_t struct_size;
   MojoCreateDataPipeOptionsFlags flags;
   uint32_t element_num_bytes;
   uint32_t capacity_num_bytes;
 };
-MOJO_COMPILE_ASSERT(sizeof(MojoCreateDataPipeOptions) == 16,
-                    MojoCreateDataPipeOptions_has_wrong_size);
+MOJO_STATIC_ASSERT(sizeof(MojoCreateDataPipeOptions) == 16,
+                   "MojoCreateDataPipeOptions has wrong size");
 
 // |MojoWriteDataFlags|: Used to specify different modes to |MojoWriteData()|
 // and |MojoBeginWriteData()|.
@@ -187,9 +187,10 @@ MOJO_SYSTEM_EXPORT MojoResult
 // that thread can then wait for |data_pipe_producer_handle| to become writable
 // again.
 //
-// Once the caller has finished writing data to |*buffer|, it should call
-// |MojoEndWriteData()| to specify the amount written and to complete the
-// two-phase write.
+// When |MojoBeginWriteData()| returns MOJO_RESULT_OK, and the caller has
+// finished writing data to |*buffer|, it should call |MojoEndWriteData()| to
+// specify the amount written and to complete the two-phase write.
+// |MojoEndWriteData()| need not be called for other return values.
 //
 // Note: If the data pipe has the "may discard" option flag (specified on
 // creation) and |flags| has |MOJO_WRITE_DATA_FLAG_ALL_OR_NONE| set, this may

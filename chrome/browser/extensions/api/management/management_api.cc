@@ -24,7 +24,6 @@
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/launch_util.h"
-#include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_dialogs.h"
@@ -37,7 +36,6 @@
 #include "chrome/common/extensions/chrome_utility_extensions_messages.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/utility_process_host.h"
 #include "content/public/browser/utility_process_host_client.h"
 #include "extensions/browser/event_router.h"
@@ -53,6 +51,7 @@
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/manifest_handlers/offline_enabled_info.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
+#include "extensions/common/manifest_url_handlers.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
@@ -379,7 +378,7 @@ class SafeManifestJSONParser : public UtilityProcessHostClient {
     host->Send(new ChromeUtilityMsg_ParseJSON(manifest_));
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(SafeManifestJSONParser, message)
       IPC_MESSAGE_HANDLER(ChromeUtilityHostMsg_ParseJSON_Succeeded,
@@ -425,7 +424,7 @@ class SafeManifestJSONParser : public UtilityProcessHostClient {
   }
 
  private:
-  virtual ~SafeManifestJSONParser() {}
+  ~SafeManifestJSONParser() override {}
 
   // The client who we'll report results back to.
   ManagementGetPermissionWarningsByManifestFunction* client_;
@@ -620,10 +619,10 @@ bool ManagementUninstallFunctionBase::Uninstall(
   if (auto_confirm_for_test == DO_NOT_SKIP) {
     if (show_confirm_dialog) {
       AddRef();  // Balanced in ExtensionUninstallAccepted/Canceled
-      extensions::WindowController* controller = GetExtensionWindowController();
+      content::WebContents* web_contents = GetAssociatedWebContents();
       extension_uninstall_dialog_.reset(ExtensionUninstallDialog::Create(
           GetProfile(),
-          controller ? controller->window()->GetNativeWindow() : NULL,
+          web_contents ? web_contents->GetTopLevelNativeWindow() : NULL,
           this));
       if (extension_id() != target_extension_id) {
         extension_uninstall_dialog_->ConfirmProgrammaticUninstall(

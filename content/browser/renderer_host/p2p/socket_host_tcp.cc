@@ -49,7 +49,7 @@ P2PSocketHostTcpBase::P2PSocketHostTcpBase(
     int socket_id,
     P2PSocketType type,
     net::URLRequestContextGetter* url_context)
-    : P2PSocketHost(message_sender, socket_id),
+    : P2PSocketHost(message_sender, socket_id, P2PSocketHost::TCP),
       write_pending_(false),
       connected_(false),
       type_(type),
@@ -234,11 +234,14 @@ void P2PSocketHostTcpBase::OnOpen() {
                  << kSendSocketBufferSize;
   }
 
-  DoSendSocketCreateMsg();
+  if (!DoSendSocketCreateMsg())
+    return;
+
+  DCHECK_EQ(state_, STATE_OPEN);
   DoRead();
 }
 
-void P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
+bool P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
   DCHECK(socket_.get());
 
   net::IPEndPoint local_address;
@@ -247,7 +250,7 @@ void P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
     LOG(ERROR) << "P2PSocketHostTcpBase::OnConnected: unable to get local"
                << " address: " << result;
     OnError();
-    return;
+    return false;
   }
 
   VLOG(1) << "Local address: " << local_address.ToString();
@@ -258,7 +261,7 @@ void P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
     LOG(ERROR) << "P2PSocketHostTcpBase::OnConnected: unable to get peer"
                << " address: " << result;
     OnError();
-    return;
+    return false;
   }
   VLOG(1) << "Remote address: " << remote_address.ToString();
   if (remote_address_.ip_address.address().empty()) {
@@ -272,6 +275,7 @@ void P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
   // packets sent before that by the application.
   message_sender_->Send(new P2PMsg_OnSocketCreated(
       id_, local_address, remote_address));
+  return true;
 }
 
 void P2PSocketHostTcpBase::DoRead() {
@@ -361,8 +365,11 @@ void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
 
 void P2PSocketHostTcpBase::WriteOrQueue(
     scoped_refptr<net::DrainableIOBuffer>& buffer) {
+  IncrementTotalSentPackets();
   if (write_buffer_.get()) {
     write_queue_.push(buffer);
+    IncrementDelayedPackets();
+    IncrementDelayedBytes(buffer->size());
     return;
   }
 
@@ -400,6 +407,8 @@ void P2PSocketHostTcpBase::HandleWriteResult(int result) {
       } else {
         write_buffer_ = write_queue_.front();
         write_queue_.pop();
+        // Update how many bytes are still waiting to be sent.
+        DecrementDelayedBytes(write_buffer_->size());
       }
     }
   } else if (result == net::ERR_IO_PENDING) {

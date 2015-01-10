@@ -20,6 +20,7 @@
 #include "cc/layers/layer.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/context_provider.h"
+#include "cc/surfaces/surface_id_allocator.h"
 #include "cc/trees/layer_tree_host.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor_observer.h"
@@ -68,12 +69,31 @@ namespace {}  // namespace
 
 namespace ui {
 
+class SatisfySwapPromise : public cc::SwapPromise {
+ public:
+  explicit SatisfySwapPromise(uint32_t id) : id_(id) {}
+
+ private:
+  void DidSwap(cc::CompositorFrameMetadata* metadata) override {
+    metadata->satisfies_sequences.push_back(id_);
+  }
+
+  void DidNotSwap(DidNotSwapReason reason) override {
+    // TODO(jbauman): Send to the SurfaceManager immediately.
+    DCHECK(false);
+  }
+  int64 TraceId() const override { return 0; }
+  uint32_t id_;
+};
+
 Compositor::Compositor(gfx::AcceleratedWidget widget,
                        ui::ContextFactory* context_factory,
                        scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : context_factory_(context_factory),
       root_layer_(NULL),
       widget_(widget),
+      surface_id_allocator_(context_factory->CreateSurfaceIdAllocator()),
+      surface_sequence_number_(0),
       compositor_thread_loop_(context_factory->GetCompositorMessageLoop()),
       task_runner_(task_runner),
       vsync_manager_(new CompositorVSyncManager()),
@@ -87,7 +107,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       draw_on_compositing_end_(false),
       swap_state_(SWAP_NONE),
       layer_animator_collection_(this),
-      schedule_draw_factory_(this) {
+      weak_ptr_factory_(this) {
   root_web_layer_ = cc::Layer::Create();
 
   CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -106,6 +126,9 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
 #endif
 #if defined(OS_CHROMEOS)
   settings.per_tile_painting_enabled = true;
+#endif
+#if defined(OS_WIN)
+  settings.disable_hi_res_timer_tasks_on_battery = true;
 #endif
 
   // These flags should be mirrored by renderer versions in content/renderer/.
@@ -142,6 +165,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
     host_ = cc::LayerTreeHost::CreateThreaded(
         this,
         context_factory_->GetSharedBitmapManager(),
+        context_factory_->GetGpuMemoryBufferManager(),
         settings,
         task_runner_,
         compositor_thread_loop_);
@@ -150,6 +174,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
         this,
         this,
         context_factory_->GetSharedBitmapManager(),
+        context_factory_->GetGpuMemoryBufferManager(),
         settings,
         task_runner_);
   }
@@ -175,6 +200,11 @@ Compositor::~Compositor() {
   context_factory_->RemoveCompositor(this);
 }
 
+void Compositor::SetOutputSurface(
+    scoped_ptr<cc::OutputSurface> output_surface) {
+  host_->SetOutputSurface(output_surface.Pass());
+}
+
 void Compositor::ScheduleDraw() {
   if (compositor_thread_loop_.get()) {
     host_->SetNeedsCommit();
@@ -182,7 +212,7 @@ void Compositor::ScheduleDraw() {
     defer_draw_scheduling_ = true;
     task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&Compositor::Draw, schedule_draw_factory_.GetWeakPtr()));
+        base::Bind(&Compositor::Draw, weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
@@ -341,8 +371,8 @@ void Compositor::Layout() {
 }
 
 void Compositor::RequestNewOutputSurface(bool fallback) {
-  host_->SetOutputSurface(
-      context_factory_->CreateOutputSurface(this, fallback));
+  context_factory_->CreateOutputSurface(weak_ptr_factory_.GetWeakPtr(),
+                                        fallback);
 }
 
 void Compositor::DidCommit() {
@@ -404,6 +434,16 @@ const cc::LayerTreeDebugState& Compositor::GetLayerTreeDebugState() const {
 void Compositor::SetLayerTreeDebugState(
     const cc::LayerTreeDebugState& debug_state) {
   host_->SetDebugState(debug_state);
+}
+
+cc::SurfaceSequence Compositor::InsertSurfaceSequenceForNextFrame() {
+  cc::SurfaceSequence sequence;
+  sequence.id_namespace = surface_id_allocator_->id_namespace();
+  sequence.sequence = ++surface_sequence_number_;
+  scoped_ptr<cc::SwapPromise> promise(
+      new SatisfySwapPromise(surface_sequence_number_));
+  host_->QueueSwapPromise(promise.Pass());
+  return sequence;
 }
 
 scoped_refptr<CompositorLock> Compositor::GetCompositorLock() {

@@ -18,14 +18,12 @@
 #include "base/bind.h"
 #include "gpu/command_buffer/client/buffer_tracker.h"
 #include "gpu/command_buffer/client/gpu_control.h"
-#include "gpu/command_buffer/client/gpu_memory_buffer_tracker.h"
 #include "gpu/command_buffer/client/program_info_manager.h"
 #include "gpu/command_buffer/client/query_tracker.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/client/vertex_array_object_manager.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/trace_event.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 
 #if defined(__native_client__) && !defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
 #define GLES2_SUPPORT_CLIENT_SIDE_ARRAYS
@@ -191,7 +189,6 @@ bool GLES2Implementation::Initialize(
 
   query_tracker_.reset(new QueryTracker(mapped_memory_.get()));
   buffer_tracker_.reset(new BufferTracker(mapped_memory_.get()));
-  gpu_memory_buffer_tracker_.reset(new GpuMemoryBufferTracker(gpu_control_));
 
   query_id_allocator_.reset(new IdAllocator());
 #if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
@@ -327,8 +324,7 @@ IdHandlerInterface* GLES2Implementation::GetIdHandler(int namespace_id) const {
   return share_group_->GetIdHandler(namespace_id);
 }
 
-IdAllocatorInterface* GLES2Implementation::GetIdAllocator(
-    int namespace_id) const {
+IdAllocator* GLES2Implementation::GetIdAllocator(int namespace_id) const {
   if (namespace_id == id_namespaces::kQueries)
     return query_id_allocator_.get();
   NOTREACHED();
@@ -951,86 +947,6 @@ void GLES2Implementation::SwapBuffers() {
   if (swap_buffers_tokens_.size() > kMaxSwapBuffers + 1) {
     helper_->WaitForToken(swap_buffers_tokens_.front());
     swap_buffers_tokens_.pop();
-  }
-}
-
-void GLES2Implementation::GenSharedIdsCHROMIUM(
-  GLuint namespace_id, GLuint id_offset, GLsizei n, GLuint* ids) {
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGenSharedIdsCHROMIUM("
-      << namespace_id << ", " << id_offset << ", " << n << ", " <<
-      static_cast<void*>(ids) << ")");
-  TRACE_EVENT0("gpu", "GLES2::GenSharedIdsCHROMIUM");
-  GLsizei num = n;
-  GLuint* dst = ids;
-  while (num) {
-    ScopedTransferBufferArray<GLint> id_buffer(num, helper_, transfer_buffer_);
-    if (!id_buffer.valid()) {
-      return;
-    }
-    helper_->GenSharedIdsCHROMIUM(
-        namespace_id, id_offset, id_buffer.num_elements(),
-        id_buffer.shm_id(), id_buffer.offset());
-    WaitForCmd();
-    memcpy(dst, id_buffer.address(), sizeof(*dst) * id_buffer.num_elements());
-    num -= id_buffer.num_elements();
-    dst += id_buffer.num_elements();
-  }
-  GPU_CLIENT_LOG_CODE_BLOCK({
-    for (GLsizei i = 0; i < n; ++i) {
-      GPU_CLIENT_LOG("  " << i << ": " << namespace_id << ", " << ids[i]);
-    }
-  });
-}
-
-void GLES2Implementation::DeleteSharedIdsCHROMIUM(
-    GLuint namespace_id, GLsizei n, const GLuint* ids) {
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glDeleteSharedIdsCHROMIUM("
-      << namespace_id << ", " << n << ", "
-      << static_cast<const void*>(ids) << ")");
-  GPU_CLIENT_LOG_CODE_BLOCK({
-    for (GLsizei i = 0; i < n; ++i) {
-      GPU_CLIENT_LOG("  " << i << ": " << namespace_id << ", "  << ids[i]);
-    }
-  });
-  TRACE_EVENT0("gpu", "GLES2::DeleteSharedIdsCHROMIUM");
-  while (n) {
-    ScopedTransferBufferArray<GLint> id_buffer(n, helper_, transfer_buffer_);
-    if (!id_buffer.valid()) {
-      return;
-    }
-    memcpy(id_buffer.address(), ids, sizeof(*ids) * id_buffer.num_elements());
-    helper_->DeleteSharedIdsCHROMIUM(
-        namespace_id, id_buffer.num_elements(),
-        id_buffer.shm_id(), id_buffer.offset());
-    WaitForCmd();
-    n -= id_buffer.num_elements();
-    ids += id_buffer.num_elements();
-  }
-}
-
-void GLES2Implementation::RegisterSharedIdsCHROMIUM(
-    GLuint namespace_id, GLsizei n, const GLuint* ids) {
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glRegisterSharedIdsCHROMIUM("
-     << namespace_id << ", " << n << ", "
-     << static_cast<const void*>(ids) << ")");
-  GPU_CLIENT_LOG_CODE_BLOCK({
-    for (GLsizei i = 0; i < n; ++i) {
-      GPU_CLIENT_LOG("  " << i << ": "  << namespace_id << ", " << ids[i]);
-    }
-  });
-  TRACE_EVENT0("gpu", "GLES2::RegisterSharedIdsCHROMIUM");
-  while (n) {
-    ScopedTransferBufferArray<GLint> id_buffer(n, helper_, transfer_buffer_);
-    if (!id_buffer.valid()) {
-      return;
-    }
-    memcpy(id_buffer.address(), ids, sizeof(*ids) * id_buffer.num_elements());
-    helper_->RegisterSharedIdsCHROMIUM(
-        namespace_id, id_buffer.num_elements(),
-        id_buffer.shm_id(), id_buffer.offset());
-    WaitForCmd();
-    n -= id_buffer.num_elements();
-    ids += id_buffer.num_elements();
   }
 }
 
@@ -2210,10 +2126,8 @@ const GLubyte* GLES2Implementation::GetStringHelper(GLenum name) {
             "GL_CHROMIUM_flipy "
             "GL_EXT_unpack_subimage "
             "GL_CHROMIUM_map_sub";
-        if (capabilities_.image) {
-          // The first space character is intentional.
-          str += " GL_CHROMIUM_image";
-        }
+        if (capabilities_.image)
+          str += " GL_CHROMIUM_image GL_CHROMIUM_gpu_memory_buffer_image";
         if (capabilities_.future_sync_points)
           str += " GL_CHROMIUM_future_sync_point";
         break;
@@ -2849,23 +2763,11 @@ void GLES2Implementation::GetVertexAttribiv(
 
 void GLES2Implementation::Swap() {
   SwapBuffers();
-  gpu_control_->Echo(
-      base::Bind(&GLES2Implementation::OnSwapBuffersComplete,
-                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 void GLES2Implementation::PartialSwapBuffers(const gfx::Rect& sub_buffer) {
-  PostSubBufferCHROMIUM(sub_buffer.x(),
-                        sub_buffer.y(),
-                        sub_buffer.width(),
-                        sub_buffer.height());
-  gpu_control_->Echo(base::Bind(&GLES2Implementation::OnSwapBuffersComplete,
-                                weak_ptr_factory_.GetWeakPtr()));
-}
-
-void GLES2Implementation::SetSwapBuffersCompleteCallback(
-      const base::Closure& swap_buffers_complete_callback) {
-  swap_buffers_complete_callback_ = swap_buffers_complete_callback;
+  PostSubBufferCHROMIUM(
+      sub_buffer.x(), sub_buffer.y(), sub_buffer.width(), sub_buffer.height());
 }
 
 static GLenum GetGLESOverlayTransform(gfx::OverlayTransform plane_transform) {
@@ -2908,11 +2810,6 @@ void GLES2Implementation::ScheduleOverlayPlane(
                                uv_rect.height());
 }
 
-void GLES2Implementation::OnSwapBuffersComplete() {
-  if (!swap_buffers_complete_callback_.is_null())
-    swap_buffers_complete_callback_.Run();
-}
-
 GLboolean GLES2Implementation::EnableFeatureCHROMIUM(
     const char* feature) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
@@ -2931,7 +2828,7 @@ GLboolean GLES2Implementation::EnableFeatureCHROMIUM(
   WaitForCmd();
   helper_->SetBucketSize(kResultBucketId, 0);
   GPU_CLIENT_LOG("   returned " << GLES2Util::GetStringBool(*result));
-  return *result;
+  return *result != 0;
 }
 
 void* GLES2Implementation::MapBufferSubDataCHROMIUM(
@@ -4001,7 +3898,6 @@ GLuint GLES2Implementation::InsertFutureSyncPointCHROMIUM() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glInsertFutureSyncPointCHROMIUM");
   DCHECK(capabilities_.future_sync_points);
-  helper_->CommandBufferHelper::Flush();
   return gpu_control_->InsertFutureSyncPoint();
 }
 
@@ -4014,10 +3910,34 @@ void GLES2Implementation::RetireSyncPointCHROMIUM(GLuint sync_point) {
   gpu_control_->RetireSyncPoint(sync_point);
 }
 
-GLuint GLES2Implementation::CreateImageCHROMIUMHelper(GLsizei width,
+namespace {
+
+bool ValidImageFormat(GLenum internalformat) {
+  switch (internalformat) {
+    case GL_RGB:
+    case GL_RGBA:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool ValidImageUsage(GLenum usage) {
+  switch (usage) {
+    case GL_MAP_CHROMIUM:
+    case GL_SCANOUT_CHROMIUM:
+      return true;
+    default:
+      return false;
+  }
+}
+
+}  // namespace
+
+GLuint GLES2Implementation::CreateImageCHROMIUMHelper(ClientBuffer buffer,
+                                                      GLsizei width,
                                                       GLsizei height,
-                                                      GLenum internalformat,
-                                                      GLenum usage) {
+                                                      GLenum internalformat) {
   if (width <= 0) {
     SetGLError(GL_INVALID_VALUE, "glCreateImageCHROMIUM", "width <= 0");
     return 0;
@@ -4027,48 +3947,44 @@ GLuint GLES2Implementation::CreateImageCHROMIUMHelper(GLsizei width,
     SetGLError(GL_INVALID_VALUE, "glCreateImageCHROMIUM", "height <= 0");
     return 0;
   }
+
+  if (!ValidImageFormat(internalformat)) {
+    SetGLError(GL_INVALID_VALUE, "glCreateImageCHROMIUM", "invalid format");
+    return 0;
+  }
+
   // Flush the command stream to ensure ordering in case the newly
   // returned image_id has recently been in use with a different buffer.
   helper_->CommandBufferHelper::Flush();
-
-  // Create new buffer.
-  GLuint buffer_id = gpu_memory_buffer_tracker_->CreateBuffer(
-      width, height, internalformat, usage);
-  if (buffer_id == 0) {
-    SetGLError(GL_OUT_OF_MEMORY, "glCreateImageCHROMIUM", "out of GPU memory.");
+  int32_t image_id =
+      gpu_control_->CreateImage(buffer, width, height, internalformat);
+  if (image_id < 0) {
+    SetGLError(GL_OUT_OF_MEMORY, "glCreateImageCHROMIUM", "image_id < 0");
     return 0;
   }
-  return buffer_id;
+  return image_id;
 }
 
-GLuint GLES2Implementation::CreateImageCHROMIUM(GLsizei width,
+GLuint GLES2Implementation::CreateImageCHROMIUM(ClientBuffer buffer,
+                                                GLsizei width,
                                                 GLsizei height,
-                                                GLenum internalformat,
-                                                GLenum usage) {
+                                                GLenum internalformat) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG(
-      "[" << GetLogPrefix() << "] glCreateImageCHROMIUM(" << width << ", "
-          << height << ", "
-          << GLES2Util::GetStringTextureInternalFormat(internalformat) << ", "
-          << GLES2Util::GetStringTextureInternalFormat(usage) << ")");
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCreateImageCHROMIUM(" << width
+                     << ", " << height << ", "
+                     << GLES2Util::GetStringImageInternalFormat(internalformat)
+                     << ")");
   GLuint image_id =
-      CreateImageCHROMIUMHelper(width, height, internalformat, usage);
+      CreateImageCHROMIUMHelper(buffer, width, height, internalformat);
   CheckGLError();
   return image_id;
 }
 
 void GLES2Implementation::DestroyImageCHROMIUMHelper(GLuint image_id) {
-  gfx::GpuMemoryBuffer* gpu_buffer = gpu_memory_buffer_tracker_->GetBuffer(
-      image_id);
-  if (!gpu_buffer) {
-    SetGLError(GL_INVALID_OPERATION, "glDestroyImageCHROMIUM", "invalid image");
-    return;
-  }
-
   // Flush the command stream to make sure all pending commands
   // that may refer to the image_id are executed on the service side.
   helper_->CommandBufferHelper::Flush();
-  gpu_memory_buffer_tracker_->RemoveBuffer(image_id);
+  gpu_control_->DestroyImage(image_id);
 }
 
 void GLES2Implementation::DestroyImageCHROMIUM(GLuint image_id) {
@@ -4079,91 +3995,67 @@ void GLES2Implementation::DestroyImageCHROMIUM(GLuint image_id) {
   CheckGLError();
 }
 
-void GLES2Implementation::UnmapImageCHROMIUMHelper(GLuint image_id) {
-  gfx::GpuMemoryBuffer* gpu_buffer = gpu_memory_buffer_tracker_->GetBuffer(
-      image_id);
-  if (!gpu_buffer) {
-    SetGLError(GL_INVALID_OPERATION, "glUnmapImageCHROMIUM", "invalid image");
-    return;
-  }
-
-  if (!gpu_buffer->IsMapped()) {
-    SetGLError(GL_INVALID_OPERATION, "glUnmapImageCHROMIUM", "not mapped");
-    return;
-  }
-  gpu_buffer->Unmap();
-}
-
-void GLES2Implementation::UnmapImageCHROMIUM(GLuint image_id) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glUnmapImageCHROMIUM("
-       << image_id << ")");
-
-  UnmapImageCHROMIUMHelper(image_id);
-  CheckGLError();
-}
-
-void* GLES2Implementation::MapImageCHROMIUMHelper(GLuint image_id) {
-  gfx::GpuMemoryBuffer* gpu_buffer = gpu_memory_buffer_tracker_->GetBuffer(
-      image_id);
-  if (!gpu_buffer) {
-    SetGLError(GL_INVALID_OPERATION, "glMapImageCHROMIUM", "invalid image");
-    return NULL;
-  }
-
-  if (gpu_buffer->IsMapped()) {
-    SetGLError(GL_INVALID_OPERATION, "glMapImageCHROMIUM", "already mapped");
-    return NULL;
-  }
-
-  return gpu_buffer->Map();
-}
-
-void* GLES2Implementation::MapImageCHROMIUM(GLuint image_id) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glMapImageCHROMIUM(" << image_id
-                     << ")");
-
-  void* mapped = MapImageCHROMIUMHelper(image_id);
-  CheckGLError();
-  return mapped;
-}
-
-void GLES2Implementation::GetImageParameterivCHROMIUMHelper(
-    GLuint image_id, GLenum pname, GLint* params) {
-  if (pname != GL_IMAGE_ROWBYTES_CHROMIUM) {
-    SetGLError(GL_INVALID_ENUM, "glGetImageParameterivCHROMIUM",
-               "invalid parameter");
-    return;
-  }
-
-  gfx::GpuMemoryBuffer* gpu_buffer = gpu_memory_buffer_tracker_->GetBuffer(
-      image_id);
-  if (!gpu_buffer) {
-    SetGLError(GL_INVALID_OPERATION, "glGetImageParameterivCHROMIUM",
-               "invalid image");
-    return;
-  }
-
-  if (!gpu_buffer->IsMapped()) {
+GLuint GLES2Implementation::CreateGpuMemoryBufferImageCHROMIUMHelper(
+    GLsizei width,
+    GLsizei height,
+    GLenum internalformat,
+    GLenum usage) {
+  if (width <= 0) {
     SetGLError(
-        GL_INVALID_OPERATION, "glGetImageParameterivCHROMIUM", "not mapped");
-    return;
+        GL_INVALID_VALUE, "glCreateGpuMemoryBufferImageCHROMIUM", "width <= 0");
+    return 0;
   }
 
-  *params = gpu_buffer->GetStride();
+  if (height <= 0) {
+    SetGLError(GL_INVALID_VALUE,
+               "glCreateGpuMemoryBufferImageCHROMIUM",
+               "height <= 0");
+    return 0;
+  }
+
+  if (!ValidImageFormat(internalformat)) {
+    SetGLError(GL_INVALID_VALUE,
+               "glCreateGpuMemoryBufferImageCHROMIUM",
+               "invalid format");
+    return 0;
+  }
+
+  if (!ValidImageUsage(usage)) {
+    SetGLError(GL_INVALID_VALUE,
+               "glCreateGpuMemoryBufferImageCHROMIUM",
+               "invalid usage");
+    return 0;
+  }
+
+  // Flush the command stream to ensure ordering in case the newly
+  // returned image_id has recently been in use with a different buffer.
+  helper_->CommandBufferHelper::Flush();
+  int32_t image_id = gpu_control_->CreateGpuMemoryBufferImage(
+      width, height, internalformat, usage);
+  if (image_id < 0) {
+    SetGLError(GL_OUT_OF_MEMORY,
+               "glCreateGpuMemoryBufferImageCHROMIUM",
+               "image_id < 0");
+    return 0;
+  }
+  return image_id;
 }
 
-void GLES2Implementation::GetImageParameterivCHROMIUM(
-    GLuint image_id, GLenum pname, GLint* params) {
+GLuint GLES2Implementation::CreateGpuMemoryBufferImageCHROMIUM(
+    GLsizei width,
+    GLsizei height,
+    GLenum internalformat,
+    GLenum usage) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION(GLint, params);
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glImageParameterivCHROMIUM("
-      << image_id << ", "
-      << GLES2Util::GetStringBufferParameter(pname) << ", "
-      << static_cast<const void*>(params) << ")");
-  GetImageParameterivCHROMIUMHelper(image_id, pname, params);
+  GPU_CLIENT_LOG("[" << GetLogPrefix()
+                     << "] glCreateGpuMemoryBufferImageCHROMIUM(" << width
+                     << ", " << height << ", "
+                     << GLES2Util::GetStringImageInternalFormat(internalformat)
+                     << ", " << GLES2Util::GetStringImageUsage(usage) << ")");
+  GLuint image_id = CreateGpuMemoryBufferImageCHROMIUMHelper(
+      width, height, internalformat, usage);
   CheckGLError();
+  return image_id;
 }
 
 bool GLES2Implementation::ValidateSize(const char* func, GLsizeiptr size) {

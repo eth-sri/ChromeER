@@ -38,7 +38,6 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
@@ -92,37 +91,6 @@ SyncConfigInfo::SyncConfigInfo()
 
 SyncConfigInfo::~SyncConfigInfo() {}
 
-// Note: The order of these types must match the ordering of
-// the respective types in ModelType
-const char* kDataTypeNames[] = {
-  "bookmarks",
-  "preferences",
-  "passwords",
-  "autofill",
-  "themes",
-  "typedUrls",
-  "extensions",
-  "apps",
-  "tabs"
-};
-
-COMPILE_ASSERT(32 == syncer::MODEL_TYPE_COUNT,
-               update_kDataTypeNames_to_match_UserSelectableTypes);
-
-typedef std::map<syncer::ModelType, const char*> ModelTypeNameMap;
-
-ModelTypeNameMap GetSelectableTypeNameMap() {
-  ModelTypeNameMap type_names;
-  syncer::ModelTypeSet type_set = syncer::UserSelectableTypes();
-  syncer::ModelTypeSet::Iterator it = type_set.First();
-  DCHECK_EQ(arraysize(kDataTypeNames), type_set.Size());
-  for (size_t i = 0; i < arraysize(kDataTypeNames) && it.Good();
-       ++i, it.Inc()) {
-    type_names[it.Get()] = kDataTypeNames[i];
-  }
-  return type_names;
-}
-
 bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
   scoped_ptr<base::Value> parsed_value(base::JSONReader::Read(json));
   base::DictionaryValue* result;
@@ -144,9 +112,9 @@ bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
   DCHECK(!(config->sync_everything && config->sync_nothing))
       << "syncAllDataTypes and syncNothing cannot both be true";
 
-  ModelTypeNameMap type_names = GetSelectableTypeNameMap();
+  syncer::ModelTypeNameMap type_names = syncer::GetUserSelectableTypeNameMap();
 
-  for (ModelTypeNameMap::const_iterator it = type_names.begin();
+  for (syncer::ModelTypeNameMap::const_iterator it = type_names.begin();
        it != type_names.end(); ++it) {
     std::string key_name = it->second + std::string("Synced");
     bool sync_value;
@@ -272,6 +240,7 @@ void SyncSetupHandler::GetStaticLocalizedValues(
     { "extensions", IDS_SYNC_DATATYPE_EXTENSIONS },
     { "typedURLs", IDS_SYNC_DATATYPE_TYPED_URLS },
     { "apps", IDS_SYNC_DATATYPE_APPS },
+    { "wifiCredentials", IDS_SYNC_DATATYPE_WIFI_CREDENTIALS },
     { "openTabs", IDS_SYNC_DATATYPE_TABS },
     { "serviceUnavailableError", IDS_SYNC_SETUP_ABORTED_BY_PENDING_CLEAR },
     { "confirmLabel", IDS_SYNC_CONFIRM_PASSPHRASE_LABEL },
@@ -315,7 +284,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
       GetProfile())->IsAuthenticated());
   ProfileSyncService* service = GetSyncService();
   DCHECK(service);
-  if (!service->sync_initialized()) {
+  if (!service->backend_initialized()) {
     service->UnsuppressAndStart();
 
     // See if it's even possible to bring up the sync backend - if not
@@ -337,7 +306,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   // longer need a SyncStartupTracker.
   sync_startup_tracker_.reset();
   configuring_sync_ = true;
-  DCHECK(service->sync_initialized()) <<
+  DCHECK(service->backend_initialized()) <<
       "Cannot configure sync until the sync backend is initialized";
 
   // Setup args for the sync configure screen:
@@ -358,8 +327,8 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
       service->GetRegisteredDataTypes();
   const syncer::ModelTypeSet preferred_types = service->GetPreferredDataTypes();
   const syncer::ModelTypeSet enforced_types = service->GetForcedDataTypes();
-  ModelTypeNameMap type_names = GetSelectableTypeNameMap();
-  for (ModelTypeNameMap::const_iterator it = type_names.begin();
+  syncer::ModelTypeNameMap type_names = syncer::GetUserSelectableTypeNameMap();
+  for (syncer::ModelTypeNameMap::const_iterator it = type_names.begin();
        it != type_names.end(); ++it) {
     syncer::ModelType sync_type = it->first;
     const std::string key_name = it->second;
@@ -375,7 +344,7 @@ void SyncSetupHandler::DisplayConfigureSync(bool show_advanced,
   args.SetBoolean("syncAllDataTypes", sync_prefs.HasKeepEverythingSynced());
   args.SetBoolean("syncNothing", false);  // Always false during initial setup.
   args.SetBoolean("encryptAllData", service->EncryptEverythingEnabled());
-  args.SetBoolean("isSupervised", GetProfile()->IsSupervised());
+  args.SetBoolean("encryptAllDataAllowed", service->EncryptEverythingAllowed());
 
   // We call IsPassphraseRequired() here, instead of calling
   // IsPassphraseRequiredForDecryption(), because we want to show the passphrase
@@ -620,7 +589,7 @@ void SyncSetupHandler::SyncStartupFailed() {
 
 void SyncSetupHandler::SyncStartupCompleted() {
   ProfileSyncService* service = GetSyncService();
-  DCHECK(service->sync_initialized());
+  DCHECK(service->backend_initialized());
 
   // Stop a timer to handle timeout in waiting for checking network connection.
   backend_start_timer_.reset();
@@ -664,7 +633,7 @@ void SyncSetupHandler::HandleConfigure(const base::ListValue* args) {
 
   // If the sync engine has shutdown for some reason, just close the sync
   // dialog.
-  if (!service || !service->sync_initialized()) {
+  if (!service || !service->backend_initialized()) {
     CloseUI();
     return;
   }
@@ -682,9 +651,10 @@ void SyncSetupHandler::HandleConfigure(const base::ListValue* args) {
     return;
   }
 
-  // Don't allow supervised users to enable "encrypt all". The UI is hidden,
-  // but the user may have enabled it e.g. by fiddling with the web inspector.
-  if (GetProfile()->IsSupervised())
+  // Don't allow "encrypt all" if the ProfileSyncService doesn't allow it.
+  // The UI is hidden, but the user may have enabled it e.g. by fiddling with
+  // the web inspector.
+  if (!service->EncryptEverythingAllowed())
     configuration.encrypt_all = false;
 
   // Note: Data encryption will not occur until configuration is complete

@@ -18,7 +18,7 @@ std::string GetProduct() {
   // "Chrome/XX.0.0.0" identifies that this WebView is derived from the
   // corresponding Chromium version XX.
   // TODO(torne): Use chrome/VERSION file. See http://crbug.com/297522
-  return "Chrome/38.0.0.0";
+  return "Chrome/40.0.0.0";
 }
 
 }
@@ -28,7 +28,7 @@ namespace android_webview {
 std::string GetUserAgent() {
   // "Version/4.0" had been hardcoded in the legacy WebView.
   std::string product = "Version/4.0 " + GetProduct();
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kUseMobileUserAgent)) {
     product += " Mobile";
   }

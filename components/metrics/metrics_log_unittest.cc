@@ -53,7 +53,7 @@ class TestMetricsLog : public MetricsLog {
     InitPrefs();
   }
 
-  virtual ~TestMetricsLog() {}
+  ~TestMetricsLog() override {}
 
   const ChromeUserMetricsExtension& uma_proto() const {
     return *MetricsLog::uma_proto();
@@ -69,9 +69,8 @@ class TestMetricsLog : public MetricsLog {
                       base::Int64ToString(kEnabledDate));
   }
 
-  virtual void GetFieldTrialIds(
-      std::vector<variations::ActiveGroupId>* field_trial_ids) const
-      OVERRIDE {
+  void GetFieldTrialIds(
+      std::vector<variations::ActiveGroupId>* field_trial_ids) const override {
     ASSERT_TRUE(field_trial_ids->empty());
 
     for (size_t i = 0; i < arraysize(kFieldTrialIds); ++i) {
@@ -94,8 +93,7 @@ class MetricsLogTest : public testing::Test {
     MetricsStateManager::RegisterPrefs(prefs_.registry());
   }
 
-  virtual ~MetricsLogTest() {
-  }
+  ~MetricsLogTest() override {}
 
  protected:
   // Check that the values in |system_values| correspond to the test data

@@ -368,21 +368,9 @@ virtual GLuint GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
                                            GLsizei count,
                                            GLenum type,
                                            GLuint offset) = 0;
-virtual void GenSharedIdsCHROMIUM(GLuint namespace_id,
-                                  GLuint id_offset,
-                                  GLsizei n,
-                                  GLuint* ids) = 0;
-virtual void DeleteSharedIdsCHROMIUM(GLuint namespace_id,
-                                     GLsizei n,
-                                     const GLuint* ids) = 0;
-virtual void RegisterSharedIdsCHROMIUM(GLuint namespace_id,
-                                       GLsizei n,
-                                       const GLuint* ids) = 0;
 virtual GLboolean EnableFeatureCHROMIUM(const char* feature) = 0;
 virtual void* MapBufferCHROMIUM(GLuint target, GLenum access) = 0;
 virtual GLboolean UnmapBufferCHROMIUM(GLuint target) = 0;
-virtual void* MapImageCHROMIUM(GLuint image_id) = 0;
-virtual void UnmapImageCHROMIUM(GLuint image_id) = 0;
 virtual void* MapBufferSubDataCHROMIUM(GLuint target,
                                        GLintptr offset,
                                        GLsizeiptr size,
@@ -413,14 +401,15 @@ virtual void GetProgramInfoCHROMIUM(GLuint program,
                                     GLsizei* size,
                                     void* info) = 0;
 virtual GLuint CreateStreamTextureCHROMIUM(GLuint texture) = 0;
-virtual GLuint CreateImageCHROMIUM(GLsizei width,
+virtual GLuint CreateImageCHROMIUM(ClientBuffer buffer,
+                                   GLsizei width,
                                    GLsizei height,
-                                   GLenum internalformat,
-                                   GLenum usage) = 0;
+                                   GLenum internalformat) = 0;
 virtual void DestroyImageCHROMIUM(GLuint image_id) = 0;
-virtual void GetImageParameterivCHROMIUM(GLuint image_id,
-                                         GLenum pname,
-                                         GLint* params) = 0;
+virtual GLuint CreateGpuMemoryBufferImageCHROMIUM(GLsizei width,
+                                                  GLsizei height,
+                                                  GLenum internalformat,
+                                                  GLenum usage) = 0;
 virtual void GetTranslatedShaderSourceANGLE(GLuint shader,
                                             GLsizei bufsize,
                                             GLsizei* length,
@@ -506,4 +495,5 @@ virtual void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                           GLfloat uv_height) = 0;
 virtual void MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) = 0;
 virtual void MatrixLoadIdentityCHROMIUM(GLenum matrixMode) = 0;
+virtual void BlendBarrierKHR() = 0;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_AUTOGEN_H_

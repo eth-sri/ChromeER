@@ -21,9 +21,9 @@
         'enable_it2me_host': 0,
         'enable_remoting_host': 0,
       }],
-      ['chromeos==1', {
+      ['chromeos==1 and use_x11==1', {
         'enable_me2me_host': 0,
-        'enable_it2me_host': 0,
+        'enable_it2me_host': 1,
       }],
     ],
   },
@@ -98,6 +98,7 @@
             'host/constants_mac.h',
             'host/continue_window.cc',
             'host/continue_window.h',
+            'host/continue_window_chromeos.cc',
             'host/continue_window_linux.cc',
             'host/continue_window_mac.mm',
             'host/continue_window_win.cc',
@@ -124,6 +125,7 @@
             'host/desktop_shape_tracker_mac.cc',
             'host/desktop_shape_tracker_win.cc',
             'host/desktop_shape_tracker_x11.cc',
+            'host/disconnect_window_chromeos.cc',
             'host/disconnect_window_linux.cc',
             'host/disconnect_window_mac.h',
             'host/disconnect_window_mac.mm',
@@ -227,6 +229,7 @@
             'host/pin_hash.h',
             'host/policy_hack/policy_watcher.cc',
             'host/policy_hack/policy_watcher.h',
+            'host/policy_hack/policy_watcher_chromeos.cc',
             'host/policy_hack/policy_watcher_linux.cc',
             'host/policy_hack/policy_watcher_mac.mm',
             'host/policy_hack/policy_watcher_win.cc',
@@ -310,7 +313,7 @@
                 ],
               },
             }],
-            ['OS=="linux" and chromeos==0', {
+            ['OS=="linux" and chromeos==0 and use_ozone==0', {
               'dependencies' : [
                 # Always use GTK on Linux, even for Aura builds.
                 '../build/linux/system.gyp:gtk',
@@ -318,8 +321,8 @@
             }],
             ['chromeos==1', {
               'dependencies' : [
-                '../ash/ash.gyp:ash',
                 '../cc/cc.gyp:cc',
+                '../components/components.gyp:policy_component_common',
                 '../content/content.gyp:content',
                 '../ppapi/ppapi_internal.gyp:ppapi_host',
                 '../skia/skia.gyp:skia',
@@ -330,8 +333,7 @@
                 '../third_party/skia/include/utils',
               ],
               'sources!' : [
-                'host/continue_window.cc',
-                'host/continue_window.h',
+                'host/policy_hack/policy_watcher_linux.cc',
                 'host/continue_window_linux.cc',
                 'host/disconnect_window.cc',
                 'host/disconnect_window_linux.cc',
@@ -341,6 +343,9 @@
                'sources!' : [
                  'host/chromeos/aura_desktop_capturer.cc',
                  'host/chromeos/aura_desktop_capturer.h',
+                 'host/continue_window_chromeos.cc',
+                 'host/disconnect_window_chromeos.cc',
+                 'host/policy_hack/policy_watcher_chromeos.cc',
                ],
             }],
             ['OS=="mac"', {
@@ -404,6 +409,11 @@
                 'message': 'Running message compiler on <(RULE_INPUT_PATH)',
               }],
             }],
+            ['use_ash==1', {
+              'dependencies': [
+                 '../ash/ash.gyp:ash',
+              ],
+            }],
             ['enable_webrtc==1', {
               'dependencies': [
                 '../third_party/webrtc/modules/modules.gyp:desktop_capture',
@@ -431,6 +441,8 @@
           'sources': [
             'host/native_messaging/pipe_messaging_channel.cc',
             'host/native_messaging/pipe_messaging_channel.h',
+            'host/native_messaging/native_messaging_pipe.cc',
+            'host/native_messaging/native_messaging_pipe.h',
             'host/native_messaging/native_messaging_reader.cc',
             'host/native_messaging/native_messaging_reader.h',
             'host/native_messaging/native_messaging_writer.cc',
@@ -847,7 +859,7 @@
       ], # targets
     }], # end of OS!="win" and enable_me2me_host==1
 
-    ['OS!="win" and enable_it2me_host==1', {
+    ['OS!="win" and enable_it2me_host==1 and chromeos==0', {
       'targets': [
         {
           'target_name': 'remoting_it2me_native_messaging_host',
@@ -872,7 +884,7 @@
             'host/it2me/it2me_native_messaging_host_main.h',
           ],
           'conditions': [
-            ['OS=="linux" and chromeos==0', {
+            ['OS=="linux" and chromeos==0 and use_ozone==0', {
               'dependencies': [
                 # Always use GTK on Linux, even for Aura builds.
                 '../build/linux/system.gyp:gtk',

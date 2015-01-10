@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * @param {Element} playerContainer Main container.
  * @param {Element} videoContainer Container for the video element.
@@ -111,10 +109,10 @@ FullWindowVideoControls.prototype.onPlaybackError_ = function(error) {
     if (this.casting)
       this.showErrorMessage('VIDEO_PLAYER_VIDEO_FILE_UNSUPPORTED_FOR_CAST');
     else
-      this.showErrorMessage('GALLERY_VIDEO_ERROR');
+      this.showErrorMessage('VIDEO_PLAYER_VIDEO_FILE_UNSUPPORTED');
     this.decodeErrorOccured = false;
   } else {
-    this.showErrorMessage('GALLERY_VIDEO_DECODING_ERROR');
+    this.showErrorMessage('VIDEO_PLAYER_PLAYBACK_ERROR');
     this.decodeErrorOccured = true;
   }
 
@@ -395,7 +393,8 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
           videoPlayerElement.removeAttribute('loading');
           console.error('Failed to initialize the video element.',
                         error.stack || error);
-          this.controls_.showErrorMessage('GALLERY_VIDEO_ERROR');
+          this.controls_.showErrorMessage(
+              'VIDEO_PLAYER_VIDEO_FILE_UNSUPPORTED');
           callback();
         }.bind(this));
   }.wrap(this));
@@ -417,6 +416,9 @@ VideoPlayer.prototype.playFirstVideo = function() {
 VideoPlayer.prototype.unloadVideo = function(opt_keepSession) {
   this.loadQueue_.run(function(callback) {
     chrome.power.releaseKeepAwake();
+
+    // Detaches the media from the control.
+    this.controls.detachMedia();
 
     if (this.videoElement_) {
       // If the element has dispose method, call it (CastVideoElement has it).
@@ -610,7 +612,7 @@ VideoPlayer.prototype.onCurrentCastDisappear_ = function() {
     this.currentSession_.removeUpdateListener(this.onCastSessionUpdateBound_);
     this.currentSession_ = null;
   }
-  this.controls.showErrorMessage('GALLERY_VIDEO_DECODING_ERROR');
+  this.controls.showErrorMessage('VIDEO_PLAYER_PLAYBACK_ERROR');
   this.unloadVideo();
 };
 

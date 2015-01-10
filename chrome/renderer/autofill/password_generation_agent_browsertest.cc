@@ -6,11 +6,13 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/histogram_tester.h"
 #include "chrome/test/base/chrome_render_view_test.h"
 #include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/test_password_generation_agent.h"
 #include "components/autofill/core/common/form_data.h"
+#include "components/autofill/core/common/password_generation_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -29,7 +31,7 @@ class PasswordGenerationAgentTest : public ChromeRenderViewTest {
  public:
   PasswordGenerationAgentTest() {}
 
-  virtual void TearDown() {
+  void TearDown() override {
     LoadHTML("");
     ChromeRenderViewTest::TearDown();
   }
@@ -205,9 +207,21 @@ TEST_F(PasswordGenerationAgentTest, EditingTest) {
   // textFieldDidChange posts a task, so we need to wait until it's been
   // processed.
   base::MessageLoop::current()->RunUntilIdle();
-
   EXPECT_EQ(edited_password, first_password_element.value());
   EXPECT_EQ(edited_password, second_password_element.value());
+
+  // Verify that password mirroring works correctly even when the password
+  // is deleted.
+  base::string16 empty_password;
+  first_password_element.setValue(empty_password);
+  // Cast to WebAutofillClient where textFieldDidChange() is public.
+  static_cast<blink::WebAutofillClient*>(autofill_agent_)->textFieldDidChange(
+      first_password_element);
+  // textFieldDidChange posts a task, so we need to wait until it's been
+  // processed.
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(empty_password, first_password_element.value());
+  EXPECT_EQ(empty_password, second_password_element.value());
 }
 
 TEST_F(PasswordGenerationAgentTest, BlacklistedTest) {
@@ -256,6 +270,8 @@ TEST_F(PasswordGenerationAgentTest, AccountCreationFormsDetectedTest) {
 }
 
 TEST_F(PasswordGenerationAgentTest, MaximumOfferSize) {
+  base::HistogramTester histogram_tester;
+
   LoadHTML(kAccountCreationFormHTML);
   SetNotBlacklistedMessage(kAccountCreationFormHTML);
   SetAccountCreationFormsDetectedMessage(kAccountCreationFormHTML);
@@ -328,6 +344,45 @@ TEST_F(PasswordGenerationAgentTest, MaximumOfferSize) {
   EXPECT_EQ(AutofillHostMsg_ShowPasswordGenerationPopup::ID,
             password_generation_->messages()[0]->type());
   password_generation_->clear_messages();
+
+  // Loading a different page triggers UMA stat upload. Verify that only one
+  // display event is sent even though
+  LoadHTML(kSigninFormHTML);
+
+  histogram_tester.ExpectBucketCount(
+      "PasswordGeneration.Event",
+      autofill::password_generation::GENERATION_POPUP_SHOWN,
+      1);
+}
+
+TEST_F(PasswordGenerationAgentTest, DynamicFormTest) {
+  LoadHTML(kSigninFormHTML);
+  SetNotBlacklistedMessage(kSigninFormHTML);
+  SetAccountCreationFormsDetectedMessage(kSigninFormHTML);
+
+  ExecuteJavaScript(
+      "var form = document.createElement('form');"
+      "var username = document.createElement('input');"
+      "username.type = 'text';"
+      "username.id = 'dynamic_username';"
+      "var first_password = document.createElement('input');"
+      "first_password.type = 'password';"
+      "first_password.id = 'first_password';"
+      "first_password.name = 'first_password';"
+      "var second_password = document.createElement('input');"
+      "second_password.type = 'password';"
+      "second_password.id = 'second_password';"
+      "second_password.name = 'second_password';"
+      "form.appendChild(username);"
+      "form.appendChild(first_password);"
+      "form.appendChild(second_password);"
+      "document.body.appendChild(form);");
+  ProcessPendingMessages();
+  // TODO(gcasto): I'm slighty worried about flakes in this test where
+  // didAssociateFormControls() isn't called. If this turns out to be a problem
+  // adding a call to OnDynamicFormsSeen(GetMainFrame()) will fix it, though
+  // it will weaken the test.
+  ExpectPasswordGenerationAvailable("first_password", true);
 }
 
 }  // namespace autofill

@@ -92,8 +92,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableApplicationCache))
     WebRuntimeFeatures::enableApplicationCache(false);
 
-  if (command_line.HasSwitch(switches::kDisableDesktopNotifications))
-    WebRuntimeFeatures::enableNotifications(false);
+  if (command_line.HasSwitch(switches::kDisableBlinkScheduler))
+    WebRuntimeFeatures::enableBlinkScheduler(false);
 
   if (command_line.HasSwitch(switches::kDisableLocalStorage))
     WebRuntimeFeatures::enableLocalStorage(false);
@@ -139,6 +139,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableExperimentalCanvasFeatures))
     WebRuntimeFeatures::enableExperimentalCanvasFeatures(true);
 
+  if (command_line.HasSwitch(switches::kEnableAcceleratedJpegDecoding))
+    WebRuntimeFeatures::enableDecodeToYUV(true);
+
   if (command_line.HasSwitch(switches::kDisableDisplayList2dCanvas)) {
     WebRuntimeFeatures::enableDisplayList2dCanvas(false);
   } else if (command_line.HasSwitch(switches::kEnableDisplayList2dCanvas)) {
@@ -174,6 +177,16 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       command_line.HasSwitch(
           switches::kEnableExperimentalWebPlatformFeatures)) {
     WebRuntimeFeatures::enableNetworkInformation(true);
+  }
+
+  if (command_line.HasSwitch(switches::kEnableCredentialManagerAPI))
+    WebRuntimeFeatures::enableCredentialManagerAPI(true);
+
+  if (command_line.HasSwitch(switches::kEnableViewport))
+    WebRuntimeFeatures::enableCSSViewport(true);
+
+  if (command_line.HasSwitch(switches::kDisableSVG1DOM)) {
+    WebRuntimeFeatures::enableSVG1DOM(false);
   }
 }
 

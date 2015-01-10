@@ -49,24 +49,24 @@ class AppLifetimeMonitor : public KeyedService,
   };
 
   explicit AppLifetimeMonitor(Profile* profile);
-  virtual ~AppLifetimeMonitor();
+  ~AppLifetimeMonitor() override;
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
  private:
   // content::NotificationObserver overrides:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // extensions::AppWindowRegistry::Observer overrides:
-  virtual void OnAppWindowRemoved(extensions::AppWindow* app_window) OVERRIDE;
-  virtual void OnAppWindowHidden(extensions::AppWindow* app_window) OVERRIDE;
-  virtual void OnAppWindowShown(extensions::AppWindow* app_window) OVERRIDE;
+  void OnAppWindowRemoved(extensions::AppWindow* app_window) override;
+  void OnAppWindowHidden(extensions::AppWindow* app_window) override;
+  void OnAppWindowShown(extensions::AppWindow* app_window) override;
 
   // KeyedService overrides:
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   bool HasVisibleAppWindows(extensions::AppWindow* app_window) const;
 

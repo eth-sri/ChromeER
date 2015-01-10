@@ -23,7 +23,7 @@
 #include "content/public/browser/browser_thread.h"
 
 #if defined(OS_MACOSX)
-#include "content/browser/compositor/browser_compositor_view_mac.h"
+#include "content/browser/compositor/browser_compositor_ca_layer_tree_mac.h"
 #endif
 
 #if defined(USE_OZONE)
@@ -212,7 +212,6 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
                         OnGraphicsInfoCollected)
     IPC_MESSAGE_HANDLER(GpuHostMsg_VideoMemoryUsageStats,
                         OnVideoMemoryUsageStatsReceived);
-    IPC_MESSAGE_HANDLER(GpuHostMsg_FrameDrawn, OnFrameDrawn)
 
     IPC_MESSAGE_UNHANDLED_ERROR()
   IPC_END_MESSAGE_MAP()
@@ -258,28 +257,23 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
 
   // On Mac with delegated rendering, accelerated surfaces are not necessarily
   // associated with a RenderWidgetHostViewBase.
+  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
   DCHECK(IsDelegatedRendererEnabled());
   gfx::AcceleratedWidget native_widget =
       content::GpuSurfaceTracker::Get()->AcquireNativeWidget(params.surface_id);
-  BrowserCompositorViewMac::GotAcceleratedFrame(native_widget,
-                                                params.surface_handle,
-                                                params.surface_id,
-                                                params.latency_info,
-                                                params.size,
-                                                params.scale_factor,
-                                                host_id_,
-                                                params.route_id);
+  BrowserCompositorCALayerTreeMacGotAcceleratedFrame(
+      native_widget,
+      params.surface_handle,
+      params.surface_id,
+      params.latency_info,
+      params.size,
+      params.scale_factor,
+      &ack_params.disable_throttling,
+      &ack_params.renderer_id);
+  Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id, ack_params));
 #else
   NOTREACHED();
 #endif
-}
-
-void GpuProcessHostUIShim::OnFrameDrawn(
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  if (!ui::LatencyInfo::Verify(latency_info,
-                               "GpuProcessHostUIShim::OnFrameDrawn"))
-    return;
-  RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
 }
 
 void GpuProcessHostUIShim::OnVideoMemoryUsageStatsReceived(

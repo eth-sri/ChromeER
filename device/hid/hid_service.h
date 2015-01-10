@@ -20,8 +20,14 @@ class HidConnection;
 
 class HidService {
  public:
+  typedef base::Callback<void(scoped_refptr<HidConnection> connection)>
+      ConnectCallback;
+
   static HidService* GetInstance(
+      scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
+
+  static void SetInstanceForTest(HidService* instance);
 
   // Enumerates and returns a list of device identifiers.
   virtual void GetDevices(std::vector<HidDeviceInfo>* devices);
@@ -30,8 +36,10 @@ class HidService {
   // Returns |true| if successful or |false| if |device_id| is invalid.
   bool GetDeviceInfo(const HidDeviceId& device_id, HidDeviceInfo* info) const;
 
-  virtual scoped_refptr<HidConnection> Connect(
-      const HidDeviceId& device_id) = 0;
+  // Opens a connection to a device. The callback will be run with null on
+  // failure.
+  virtual void Connect(const HidDeviceId& device_id,
+                       const ConnectCallback& callback) = 0;
 
  protected:
   friend class HidConnectionTest;
@@ -43,7 +51,8 @@ class HidService {
 
   void AddDevice(const HidDeviceInfo& info);
   void RemoveDevice(const HidDeviceId& device_id);
-  const DeviceMap& GetDevicesNoEnumerate() const;
+
+  const DeviceMap& devices() const { return devices_; }
 
   base::ThreadChecker thread_checker_;
 

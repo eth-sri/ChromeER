@@ -8,6 +8,7 @@
 #include "base/run_loop.h"
 #include "components/leveldb_proto/proto_database.h"
 #include "components/leveldb_proto/testing/fake_db.h"
+#include "components/suggestions/image_encoder.h"
 #include "components/suggestions/image_fetcher.h"
 #include "components/suggestions/image_fetcher_delegate.h"
 #include "components/suggestions/image_manager.h"
@@ -53,12 +54,12 @@ class ImageManagerTest : public testing::Test {
         num_callback_null_called_(0),
         num_callback_valid_called_(0) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     fake_db_ = new FakeDB<ImageData>(&db_model_);
     image_manager_.reset(CreateImageManager(fake_db_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     fake_db_ = NULL;
     db_model_.clear();
     image_manager_.reset();
@@ -92,7 +93,7 @@ class ImageManagerTest : public testing::Test {
     ImageData data;
     data.set_url(url);
     std::vector<unsigned char> encoded;
-    EXPECT_TRUE(ImageManager::EncodeImage(bm, &encoded));
+    EXPECT_TRUE(EncodeSkBitmapToJPEG(bm, &encoded));
     data.set_data(std::string(encoded.begin(), encoded.end()));
     return data;
   }

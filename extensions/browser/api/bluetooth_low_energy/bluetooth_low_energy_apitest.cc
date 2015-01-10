@@ -61,24 +61,24 @@ const char kTestServiceUuid1[] = "5678";
 const char kTestCharacteristicId0[] = "char_id0";
 const char kTestCharacteristicUuid0[] = "1211";
 const BluetoothGattCharacteristic::Properties kTestCharacteristicProperties0 =
-    BluetoothGattCharacteristic::kPropertyBroadcast |
-    BluetoothGattCharacteristic::kPropertyRead |
-    BluetoothGattCharacteristic::kPropertyWriteWithoutResponse |
-    BluetoothGattCharacteristic::kPropertyIndicate;
+    BluetoothGattCharacteristic::PROPERTY_BROADCAST |
+    BluetoothGattCharacteristic::PROPERTY_READ |
+    BluetoothGattCharacteristic::PROPERTY_WRITE_WITHOUT_RESPONSE |
+    BluetoothGattCharacteristic::PROPERTY_INDICATE;
 const uint8 kTestCharacteristicDefaultValue0[] = {0x01, 0x02, 0x03, 0x04, 0x05};
 
 const char kTestCharacteristicId1[] = "char_id1";
 const char kTestCharacteristicUuid1[] = "1212";
 const BluetoothGattCharacteristic::Properties kTestCharacteristicProperties1 =
-    BluetoothGattCharacteristic::kPropertyRead |
-    BluetoothGattCharacteristic::kPropertyWrite |
-    BluetoothGattCharacteristic::kPropertyNotify;
+    BluetoothGattCharacteristic::PROPERTY_READ |
+    BluetoothGattCharacteristic::PROPERTY_WRITE |
+    BluetoothGattCharacteristic::PROPERTY_NOTIFY;
 const uint8 kTestCharacteristicDefaultValue1[] = {0x06, 0x07, 0x08};
 
 const char kTestCharacteristicId2[] = "char_id2";
 const char kTestCharacteristicUuid2[] = "1213";
 const BluetoothGattCharacteristic::Properties kTestCharacteristicProperties2 =
-    BluetoothGattCharacteristic::kPropertyNone;
+    BluetoothGattCharacteristic::PROPERTY_NONE;
 
 // Test descriptor constants.
 const char kTestDescriptorId0[] = "desc_id0";
@@ -93,15 +93,15 @@ class BluetoothLowEnergyApiTest : public ExtensionApiTest {
  public:
   BluetoothLowEnergyApiTest() {}
 
-  virtual ~BluetoothLowEnergyApiTest() {}
+  ~BluetoothLowEnergyApiTest() override {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
     empty_extension_ = extensions::test_util::CreateEmptyExtension();
     SetUpMocks();
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     EXPECT_CALL(*mock_adapter_, RemoveObserver(_));
   }
 
@@ -153,7 +153,7 @@ class BluetoothLowEnergyApiTest : public ExtensionApiTest {
         BluetoothUUID(kTestCharacteristicUuid0),
         false /* is_local */,
         kTestCharacteristicProperties0,
-        BluetoothGattCharacteristic::kPermissionNone));
+        BluetoothGattCharacteristic::PERMISSION_NONE));
     default_value.assign(kTestCharacteristicDefaultValue0,
                          (kTestCharacteristicDefaultValue0 +
                           sizeof(kTestCharacteristicDefaultValue0)));
@@ -165,7 +165,7 @@ class BluetoothLowEnergyApiTest : public ExtensionApiTest {
         BluetoothUUID(kTestCharacteristicUuid1),
         false /* is_local */,
         kTestCharacteristicProperties1,
-        BluetoothGattCharacteristic::kPermissionNone));
+        BluetoothGattCharacteristic::PERMISSION_NONE));
     default_value.assign(kTestCharacteristicDefaultValue1,
                          (kTestCharacteristicDefaultValue1 +
                           sizeof(kTestCharacteristicDefaultValue1)));
@@ -177,14 +177,14 @@ class BluetoothLowEnergyApiTest : public ExtensionApiTest {
         BluetoothUUID(kTestCharacteristicUuid2),
         false /* is_local */,
         kTestCharacteristicProperties2,
-        BluetoothGattCharacteristic::kPermissionNone));
+        BluetoothGattCharacteristic::PERMISSION_NONE));
 
     desc0_.reset(new testing::NiceMock<MockBluetoothGattDescriptor>(
         chrc0_.get(),
         kTestDescriptorId0,
         BluetoothUUID(kTestDescriptorUuid0),
         false /* is_local */,
-        BluetoothGattCharacteristic::kPermissionNone));
+        BluetoothGattCharacteristic::PERMISSION_NONE));
     default_value.assign(
         kTestDescriptorDefaultValue0,
         (kTestDescriptorDefaultValue0 + sizeof(kTestDescriptorDefaultValue0)));
@@ -195,7 +195,7 @@ class BluetoothLowEnergyApiTest : public ExtensionApiTest {
         kTestDescriptorId1,
         BluetoothUUID(kTestDescriptorUuid1),
         false /* is_local */,
-        BluetoothGattCharacteristic::kPermissionNone));
+        BluetoothGattCharacteristic::PERMISSION_NONE));
     default_value.assign(
         kTestDescriptorDefaultValue1,
         (kTestDescriptorDefaultValue1 + sizeof(kTestDescriptorDefaultValue1)));
@@ -539,32 +539,32 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, CharacteristicProperties) {
       .WillRepeatedly(Return(chrc0_.get()));
   EXPECT_CALL(*chrc0_, GetProperties())
       .Times(12)
-      .WillOnce(Return(BluetoothGattCharacteristic::kPropertyNone))
-      .WillOnce(Return(BluetoothGattCharacteristic::kPropertyBroadcast))
-      .WillOnce(Return(BluetoothGattCharacteristic::kPropertyRead))
+      .WillOnce(Return(BluetoothGattCharacteristic::PROPERTY_NONE))
+      .WillOnce(Return(BluetoothGattCharacteristic::PROPERTY_BROADCAST))
+      .WillOnce(Return(BluetoothGattCharacteristic::PROPERTY_READ))
       .WillOnce(
-           Return(BluetoothGattCharacteristic::kPropertyWriteWithoutResponse))
-      .WillOnce(Return(BluetoothGattCharacteristic::kPropertyWrite))
-      .WillOnce(Return(BluetoothGattCharacteristic::kPropertyNotify))
-      .WillOnce(Return(BluetoothGattCharacteristic::kPropertyIndicate))
+           Return(BluetoothGattCharacteristic::PROPERTY_WRITE_WITHOUT_RESPONSE))
+      .WillOnce(Return(BluetoothGattCharacteristic::PROPERTY_WRITE))
+      .WillOnce(Return(BluetoothGattCharacteristic::PROPERTY_NOTIFY))
+      .WillOnce(Return(BluetoothGattCharacteristic::PROPERTY_INDICATE))
       .WillOnce(Return(
-          BluetoothGattCharacteristic::kPropertyAuthenticatedSignedWrites))
+          BluetoothGattCharacteristic::PROPERTY_AUTHENTICATED_SIGNED_WRITES))
       .WillOnce(
-           Return(BluetoothGattCharacteristic::kPropertyExtendedProperties))
-      .WillOnce(Return(BluetoothGattCharacteristic::kPropertyReliableWrite))
+           Return(BluetoothGattCharacteristic::PROPERTY_EXTENDED_PROPERTIES))
+      .WillOnce(Return(BluetoothGattCharacteristic::PROPERTY_RELIABLE_WRITE))
       .WillOnce(
-           Return(BluetoothGattCharacteristic::kPropertyWritableAuxiliaries))
+           Return(BluetoothGattCharacteristic::PROPERTY_WRITABLE_AUXILIARIES))
       .WillOnce(Return(
-          BluetoothGattCharacteristic::kPropertyBroadcast |
-          BluetoothGattCharacteristic::kPropertyRead |
-          BluetoothGattCharacteristic::kPropertyWriteWithoutResponse |
-          BluetoothGattCharacteristic::kPropertyWrite |
-          BluetoothGattCharacteristic::kPropertyNotify |
-          BluetoothGattCharacteristic::kPropertyIndicate |
-          BluetoothGattCharacteristic::kPropertyAuthenticatedSignedWrites |
-          BluetoothGattCharacteristic::kPropertyExtendedProperties |
-          BluetoothGattCharacteristic::kPropertyReliableWrite |
-          BluetoothGattCharacteristic::kPropertyWritableAuxiliaries));
+          BluetoothGattCharacteristic::PROPERTY_BROADCAST |
+          BluetoothGattCharacteristic::PROPERTY_READ |
+          BluetoothGattCharacteristic::PROPERTY_WRITE_WITHOUT_RESPONSE |
+          BluetoothGattCharacteristic::PROPERTY_WRITE |
+          BluetoothGattCharacteristic::PROPERTY_NOTIFY |
+          BluetoothGattCharacteristic::PROPERTY_INDICATE |
+          BluetoothGattCharacteristic::PROPERTY_AUTHENTICATED_SIGNED_WRITES |
+          BluetoothGattCharacteristic::PROPERTY_EXTENDED_PROPERTIES |
+          BluetoothGattCharacteristic::PROPERTY_RELIABLE_WRITE |
+          BluetoothGattCharacteristic::PROPERTY_WRITABLE_AUXILIARIES));
 
   ExtensionTestMessageListener listener("ready", true);
   listener.set_failure_message("fail");
@@ -719,7 +719,8 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, ReadCharacteristicValue) {
   std::vector<uint8> value;
   EXPECT_CALL(*chrc0_, ReadRemoteCharacteristic(_, _))
       .Times(2)
-      .WillOnce(InvokeCallbackArgument<1>())
+      .WillOnce(
+           InvokeCallbackArgument<1>(BluetoothGattService::GATT_ERROR_FAILED))
       .WillOnce(InvokeCallbackArgument<0>(value));
 
   ExtensionTestMessageListener listener("ready", true);
@@ -760,7 +761,8 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, WriteCharacteristicValue) {
   std::vector<uint8> write_value;
   EXPECT_CALL(*chrc0_, WriteRemoteCharacteristic(_, _, _))
       .Times(2)
-      .WillOnce(InvokeCallbackArgument<2>())
+      .WillOnce(
+           InvokeCallbackArgument<2>(BluetoothGattService::GATT_ERROR_FAILED))
       .WillOnce(DoAll(SaveArg<0>(&write_value), InvokeCallbackArgument<1>()));
 
   EXPECT_CALL(*chrc0_, GetValue()).Times(1).WillOnce(ReturnRef(write_value));
@@ -964,25 +966,38 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, ReadDescriptorValue) {
   event_router()->GattDescriptorAdded(mock_adapter_, desc0_.get());
 
   EXPECT_CALL(*mock_adapter_, GetDevice(_))
-      .Times(3)
+      .Times(9)
       .WillRepeatedly(Return(device0_.get()));
 
   EXPECT_CALL(*device0_, GetGattService(kTestServiceId0))
-      .Times(3)
+      .Times(9)
       .WillRepeatedly(Return(service0_.get()));
 
   EXPECT_CALL(*service0_, GetCharacteristic(kTestCharacteristicId0))
-      .Times(3)
+      .Times(9)
       .WillRepeatedly(Return(chrc0_.get()));
 
   EXPECT_CALL(*chrc0_, GetDescriptor(kTestDescriptorId0))
-      .Times(3)
+      .Times(9)
       .WillRepeatedly(Return(desc0_.get()));
 
   std::vector<uint8> value;
   EXPECT_CALL(*desc0_, ReadRemoteDescriptor(_, _))
-      .Times(2)
-      .WillOnce(InvokeCallbackArgument<1>())
+      .Times(8)
+      .WillOnce(
+           InvokeCallbackArgument<1>(BluetoothGattService::GATT_ERROR_FAILED))
+      .WillOnce(InvokeCallbackArgument<1>(
+          BluetoothGattService::GATT_ERROR_INVALID_LENGTH))
+      .WillOnce(InvokeCallbackArgument<1>(
+          BluetoothGattService::GATT_ERROR_NOT_PERMITTED))
+      .WillOnce(InvokeCallbackArgument<1>(
+          BluetoothGattService::GATT_ERROR_NOT_AUTHORIZED))
+      .WillOnce(InvokeCallbackArgument<1>(
+          BluetoothGattService::GATT_ERROR_NOT_PAIRED))
+      .WillOnce(InvokeCallbackArgument<1>(
+          BluetoothGattService::GATT_ERROR_NOT_SUPPORTED))
+      .WillOnce(InvokeCallbackArgument<1>(
+          BluetoothGattService::GATT_ERROR_IN_PROGRESS))
       .WillOnce(InvokeCallbackArgument<0>(value));
 
   ExtensionTestMessageListener listener("ready", true);
@@ -1029,7 +1044,8 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, WriteDescriptorValue) {
   std::vector<uint8> write_value;
   EXPECT_CALL(*desc0_, WriteRemoteDescriptor(_, _, _))
       .Times(2)
-      .WillOnce(InvokeCallbackArgument<2>())
+      .WillOnce(
+           InvokeCallbackArgument<2>(BluetoothGattService::GATT_ERROR_FAILED))
       .WillOnce(DoAll(SaveArg<0>(&write_value), InvokeCallbackArgument<1>()));
 
   EXPECT_CALL(*desc0_, GetValue()).Times(1).WillOnce(ReturnRef(write_value));
@@ -1134,8 +1150,15 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, GattConnection) {
   EXPECT_CALL(*mock_adapter_, GetDevice(kTestLeDeviceAddress1))
       .WillRepeatedly(Return(device1_.get()));
   EXPECT_CALL(*device0_, CreateGattConnection(_, _))
-      .Times(3)
+      .Times(9)
       .WillOnce(InvokeCallbackArgument<1>(BluetoothDevice::ERROR_FAILED))
+      .WillOnce(InvokeCallbackArgument<1>(BluetoothDevice::ERROR_INPROGRESS))
+      .WillOnce(InvokeCallbackArgument<1>(BluetoothDevice::ERROR_AUTH_FAILED))
+      .WillOnce(InvokeCallbackArgument<1>(BluetoothDevice::ERROR_AUTH_REJECTED))
+      .WillOnce(InvokeCallbackArgument<1>(BluetoothDevice::ERROR_AUTH_CANCELED))
+      .WillOnce(InvokeCallbackArgument<1>(BluetoothDevice::ERROR_AUTH_TIMEOUT))
+      .WillOnce(
+           InvokeCallbackArgument<1>(BluetoothDevice::ERROR_UNSUPPORTED_DEVICE))
       .WillOnce(InvokeCallbackWithScopedPtrArg<0, BluetoothGattConnection>(
           CreateGattConnection(kTestLeDeviceAddress0,
                                true /* expect_disconnect */)))
@@ -1260,10 +1283,10 @@ IN_PROC_BROWSER_TEST_F(BluetoothLowEnergyApiTest, StartStopNotifications) {
 
   EXPECT_CALL(*chrc0_, StartNotifySession(_, _))
       .Times(2)
-      .WillOnce(InvokeCallbackArgument<1>())
       .WillOnce(
-          InvokeCallbackWithScopedPtrArg<0, BluetoothGattNotifySession>(
-              session0));
+           InvokeCallbackArgument<1>(BluetoothGattService::GATT_ERROR_FAILED))
+      .WillOnce(InvokeCallbackWithScopedPtrArg<0, BluetoothGattNotifySession>(
+          session0));
   EXPECT_CALL(*chrc1_, StartNotifySession(_, _))
       .Times(1)
       .WillOnce(

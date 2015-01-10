@@ -32,15 +32,15 @@ class BezelController : public ui::EventHandler {
   // the left and right bezel.
   class ScrollDelegate {
    public:
-    virtual ~ScrollDelegate() {}
+    ~ScrollDelegate() {}
 
     // Beginning of a bezel scroll gesture started from the |bezel|.
     // |delta| is the difference between the x-coordinate of the current scroll
     // position and the bezel. It will be zero or negative for the right bezel.
     virtual void BezelScrollBegin(Bezel bezel, float delta) = 0;
 
-    // End of the current bezel scroll
-    virtual void BezelScrollEnd() = 0;
+    // End of the current bezel scroll with velocity |velocity|.
+    virtual void BezelScrollEnd(float velocity) = 0;
 
     // Update of the scroll position for the currently active bezel scroll.
     // |delta| has the same meaning as in ScrollBegin().
@@ -52,7 +52,7 @@ class BezelController : public ui::EventHandler {
   };
 
   explicit BezelController(aura::Window* container);
-  virtual ~BezelController() {}
+  ~BezelController() override {}
 
   // Set the delegate to handle the gestures from left and right bezels.
   // Two touch points are need to perform the bezel scroll gesture from
@@ -76,7 +76,7 @@ class BezelController : public ui::EventHandler {
   void SetState(State state, float scroll_delta);
 
   // ui::EventHandler overrides
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   aura::Window* container_;
 

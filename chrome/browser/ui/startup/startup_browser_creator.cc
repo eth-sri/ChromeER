@@ -110,11 +110,11 @@ class ProfileLaunchObserver : public content::NotificationObserver {
     registrar_.Add(this, chrome::NOTIFICATION_BROWSER_WINDOW_READY,
                    content::NotificationService::AllSources());
   }
-  virtual ~ProfileLaunchObserver() {}
+  ~ProfileLaunchObserver() override {}
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     switch (type) {
       case chrome::NOTIFICATION_PROFILE_DESTROYED: {
         Profile* profile = content::Source<Profile>(source).ptr();
@@ -362,8 +362,13 @@ SessionStartupPref StartupBrowserCreator::GetSessionStartupPref(
 #if defined(OS_CHROMEOS)
   const bool is_first_run =
       user_manager::UserManager::Get()->IsCurrentUserNew();
+  // On ChromeOS restarts force the user to login again. The expectation is that
+  // after a login the user gets clean state. For this reason we ignore
+  // StartupBrowserCreator::WasRestarted().
+  const bool did_restart = false;
 #else
   const bool is_first_run = first_run::IsChromeFirstRun();
+  const bool did_restart = StartupBrowserCreator::WasRestarted();
 #endif
 
   // The pref has an OS-dependent default value. For the first run only, this
@@ -379,8 +384,7 @@ SessionStartupPref StartupBrowserCreator::GetSessionStartupPref(
   // However, new profiles can be created from a browser process that has this
   // switch so do not set the session pref to SessionStartupPref::LAST for
   // those as there is nothing to restore.
-  if ((command_line.HasSwitch(switches::kRestoreLastSession) ||
-       StartupBrowserCreator::WasRestarted()) &&
+  if ((command_line.HasSwitch(switches::kRestoreLastSession) || did_restart) &&
       !profile->IsNewProfile()) {
     pref.type = SessionStartupPref::LAST;
   }
@@ -501,9 +505,9 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     net::SetExplicitlyAllowedPorts(allowed_ports);
   }
 
-  if (command_line.HasSwitch(switches::kInstallFromWebstore)) {
+  if (command_line.HasSwitch(switches::kInstallEphemeralAppFromWebstore)) {
     extensions::StartupHelper helper;
-    helper.InstallFromWebstore(command_line, last_used_profile);
+    helper.InstallEphemeralApp(command_line, last_used_profile);
     // Nothing more needs to be done, so return false to stop launching and
     // quit.
     return false;
@@ -525,12 +529,6 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
       message = std::string("ValidateCrx Failure: ") + error;
     printf("%s\n", message.c_str());
     return false;
-  }
-
-  if (command_line.HasSwitch(switches::kLimitedInstallFromWebstore)) {
-    extensions::StartupHelper helper;
-    helper.LimitedInstallFromWebstore(command_line, last_used_profile,
-                                      base::Bind(&base::DoNothing));
   }
 
 #if defined(OS_CHROMEOS)
@@ -634,6 +632,8 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
           last_used_profile->GetPath());
       bool signin_required = profile_index != std::string::npos &&
           profile_info.ProfileIsSigninRequiredAtIndex(profile_index);
+
+      // Guest or locked profiles cannot be re-opened on startup.
       if (signin_required || last_used_profile->IsGuestSession()) {
         UserManager::Show(base::FilePath(),
                           profiles::USER_MANAGER_NO_TUTORIAL,
@@ -647,6 +647,16 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
       return false;
     }
   } else {
+    // Guest profiles should not be reopened on startup. This can happen if
+    // the last used profile was a Guest, but other profiles were also open
+    // when Chrome was closed. In this case, pick a different open profile
+    // to be the active one, since the Guest profile is never added to the list
+    // of open profiles.
+    if (switches::IsNewAvatarMenu() && last_used_profile->IsGuestSession()) {
+      DCHECK(!last_opened_profiles[0]->IsGuestSession());
+      last_used_profile = last_opened_profiles[0];
+    }
+
     // Launch the last used profile with the full command line, and the other
     // opened profiles without the URLs to launch.
     CommandLine command_line_without_urls(command_line.GetProgram());
@@ -659,6 +669,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     // Launch the profiles in the order they became active.
     for (Profiles::const_iterator it = last_opened_profiles.begin();
          it != last_opened_profiles.end(); ++it) {
+      DCHECK(!(*it)->IsGuestSession());
       // Don't launch additional profiles which would only open a new tab
       // page. When restarting after an update, all profiles will reopen last
       // open pages.
@@ -667,11 +678,6 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
       if (*it != last_used_profile &&
           startup_pref.type == SessionStartupPref::DEFAULT &&
           !HasPendingUncleanExit(*it))
-        continue;
-
-      // Don't re-open a browser window for the guest profile.
-      if (switches::IsNewAvatarMenu() &&
-          (*it)->IsGuestSession())
         continue;
 
       if (!browser_creator->LaunchBrowser((*it == last_used_profile) ?
@@ -683,12 +689,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     }
     // This must be done after all profiles have been launched so the observer
     // knows about all profiles to wait for before activating this one.
-
-    // If the last used profile was the guest one, we didn't open it so
-    // we don't need to activate it either.
-    if (!switches::IsNewAvatarMenu() &&
-        !last_used_profile->IsGuestSession())
-      profile_launch_observer.Get().set_profile_to_activate(last_used_profile);
+    profile_launch_observer.Get().set_profile_to_activate(last_used_profile);
   }
   return true;
 }

@@ -23,12 +23,19 @@ namespace content {
 
 namespace {
 
-// Time constant for AudioPowerMonitor.  See AudioPowerMonitor ctor comments
-// for semantics.  This value was arbitrarily chosen, but seems to work well.
-const int kPowerMonitorTimeConstantMs = 10;
+// Method to check if any of the data in |audio_source| has energy.
+bool HasDataEnergy(const media::AudioBus& audio_source) {
+  for (int ch = 0; ch < audio_source.channels(); ++ch) {
+    const float* channel_ptr = audio_source.channel(ch);
+    for (int frame = 0; frame < audio_source.frames(); ++frame) {
+      if (channel_ptr[frame] != 0)
+        return true;
+    }
+  }
 
-// The time between two audio power level samples.
-const int kPowerMonitorLogIntervalSeconds = 10;
+  // All the data is zero.
+  return false;
+}
 
 }  // namespace
 
@@ -44,14 +51,16 @@ class WebRtcAudioCapturer::TrackOwner
                base::TimeDelta delay,
                double volume,
                bool key_pressed,
-               bool need_audio_processing) {
+               bool need_audio_processing,
+               bool force_report_nonzero_energy) {
     base::AutoLock lock(lock_);
     if (delegate_) {
       delegate_->Capture(audio_data,
                          delay,
                          volume,
                          key_pressed,
-                         need_audio_processing);
+                         need_audio_processing,
+                         force_report_nonzero_energy);
     }
   }
 
@@ -218,9 +227,10 @@ WebRtcAudioCapturer::WebRtcAudioCapturer(
     WebRtcAudioDeviceImpl* audio_device,
     MediaStreamAudioSource* audio_source)
     : constraints_(constraints),
-      audio_processor_(
-          new rtc::RefCountedObject<MediaStreamAudioProcessor>(
-              constraints, device_info.device.input.effects, audio_device)),
+      audio_processor_(new rtc::RefCountedObject<MediaStreamAudioProcessor>(
+          constraints,
+          device_info.device.input.effects,
+          audio_device)),
       running_(false),
       render_view_id_(render_view_id),
       device_info_(device_info),
@@ -229,10 +239,7 @@ WebRtcAudioCapturer::WebRtcAudioCapturer(
       key_pressed_(false),
       need_audio_processing_(false),
       audio_device_(audio_device),
-      audio_source_(audio_source),
-      audio_power_monitor_(
-          device_info_.device.input.sample_rate,
-          base::TimeDelta::FromMilliseconds(kPowerMonitorTimeConstantMs)) {
+      audio_source_(audio_source) {
   DVLOG(1) << "WebRtcAudioCapturer::WebRtcAudioCapturer()";
 }
 
@@ -500,19 +507,11 @@ void WebRtcAudioCapturer::Capture(const media::AudioBus* audio_source,
     (*it)->SetAudioProcessor(audio_processor_);
   }
 
-  if ((base::TimeTicks::Now() - last_audio_level_log_time_).InSeconds() >
-          kPowerMonitorLogIntervalSeconds) {
-    audio_power_monitor_.Scan(*audio_source, audio_source->frames());
-
-    last_audio_level_log_time_ = base::TimeTicks::Now();
-
-    std::pair<float, bool> result =
-        audio_power_monitor_.ReadCurrentPowerAndClip();
-    WebRtcLogMessage(base::StringPrintf(
-        "WAC::Capture: current_audio_power=%.2fdBFS.", result.first));
-
-    audio_power_monitor_.Reset();
-  }
+  // Figure out if the pre-processed data has any energy or not, the
+  // information will be passed to the track to force the calculator
+  // to report energy in case the post-processed data is zeroed by the audio
+  // processing.
+  const bool force_report_nonzero_energy = HasDataEnergy(*audio_source);
 
   // Push the data to the processor for processing.
   audio_processor_->PushCaptureData(audio_source);
@@ -527,7 +526,7 @@ void WebRtcAudioCapturer::Capture(const media::AudioBus* audio_source,
     for (TrackList::ItemList::const_iterator it = tracks.begin();
          it != tracks.end(); ++it) {
       (*it)->Capture(output, audio_delay, current_volume, key_pressed,
-                     need_audio_processing);
+                     need_audio_processing, force_report_nonzero_energy);
     }
 
     if (new_volume) {

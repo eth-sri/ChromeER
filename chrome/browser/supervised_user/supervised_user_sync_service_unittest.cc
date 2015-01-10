@@ -41,15 +41,13 @@ namespace {
 class MockChangeProcessor : public SyncChangeProcessor {
  public:
   MockChangeProcessor() {}
-  virtual ~MockChangeProcessor() {}
+  ~MockChangeProcessor() override {}
 
   // SyncChangeProcessor implementation:
-  virtual SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const SyncChangeList& change_list) OVERRIDE;
+  SyncError ProcessSyncChanges(const tracked_objects::Location& from_here,
+                               const SyncChangeList& change_list) override;
 
-  virtual SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
+  SyncDataList GetAllSyncData(syncer::ModelType type) const override {
     return SyncDataList();
   }
 
@@ -86,7 +84,7 @@ void GetSupervisedUsersCallback(const base::DictionaryValue** dict,
 class SupervisedUserSyncServiceTest : public ::testing::Test {
  public:
   SupervisedUserSyncServiceTest();
-  virtual ~SupervisedUserSyncServiceTest();
+  ~SupervisedUserSyncServiceTest() override;
 
  protected:
   scoped_ptr<SyncChangeProcessor> CreateChangeProcessor();

@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
 #include "ash/content_support/gpu_support_impl.h"
-#include "ash/magnifier/magnifier_constants.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
@@ -101,9 +100,13 @@ content::BrowserContext* ChromeShellDelegate::GetActiveBrowserContext() {
 }
 
 app_list::AppListViewDelegate* ChromeShellDelegate::GetAppListViewDelegate() {
+#if defined(USE_ATHENA)
+  return NULL;
+#else
   DCHECK(ash::Shell::HasInstance());
   return AppListServiceAsh::GetInstance()->GetViewDelegate(
       Profile::FromBrowserContext(GetActiveBrowserContext()));
+#endif
 }
 
 ash::ShelfDelegate* ChromeShellDelegate::CreateShelfDelegate(

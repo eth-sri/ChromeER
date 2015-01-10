@@ -20,7 +20,7 @@ class ChromeSigninClient : public SigninClient,
                            public content::RenderProcessHostObserver {
  public:
   explicit ChromeSigninClient(Profile* profile);
-  virtual ~ChromeSigninClient();
+  ~ChromeSigninClient() override;
 
   // Utility methods.
   static bool ProfileAllowsSigninCookies(Profile* profile);
@@ -34,40 +34,39 @@ class ChromeSigninClient : public SigninClient,
   // N.B. This is the id returned by RenderProcessHost::GetID().
   // TODO(guohui): Eliminate these APIs once the web-based signin flow is
   // replaced by a native flow. crbug.com/347247
-  virtual void SetSigninProcess(int host_id) OVERRIDE;
-  virtual void ClearSigninProcess() OVERRIDE;
-  virtual bool IsSigninProcess(int host_id) const OVERRIDE;
-  virtual bool HasSigninProcess() const OVERRIDE;
+  void SetSigninProcess(int host_id) override;
+  void ClearSigninProcess() override;
+  bool IsSigninProcess(int host_id) const override;
+  bool HasSigninProcess() const override;
 
   // content::RenderProcessHostObserver implementation.
-  virtual void RenderProcessHostDestroyed(content::RenderProcessHost* host)
-      OVERRIDE;
+  void RenderProcessHostDestroyed(content::RenderProcessHost* host) override;
 
   // SigninClient implementation.
-  virtual PrefService* GetPrefs() OVERRIDE;
-  virtual scoped_refptr<TokenWebData> GetDatabase() OVERRIDE;
-  virtual bool CanRevokeCredentials() OVERRIDE;
-  virtual std::string GetSigninScopedDeviceId() OVERRIDE;
-  virtual void ClearSigninScopedDeviceId() OVERRIDE;
-  virtual net::URLRequestContextGetter* GetURLRequestContext() OVERRIDE;
-  virtual bool ShouldMergeSigninCredentialsIntoCookieJar() OVERRIDE;
-  virtual bool IsFirstRun() const OVERRIDE;
-  virtual base::Time GetInstallDate() OVERRIDE;
+  PrefService* GetPrefs() override;
+  scoped_refptr<TokenWebData> GetDatabase() override;
+  bool CanRevokeCredentials() override;
+  std::string GetSigninScopedDeviceId() override;
+  void OnSignedOut() override;
+  net::URLRequestContextGetter* GetURLRequestContext() override;
+  bool ShouldMergeSigninCredentialsIntoCookieJar() override;
+  bool IsFirstRun() const override;
+  base::Time GetInstallDate() override;
 
   // Returns a string describing the chrome version environment. Version format:
   // <Build Info> <OS> <Version number> (<Last change>)<channel or "-devel">
   // If version information is unavailable, returns "invalid."
-  virtual std::string GetProductVersion() OVERRIDE;
-  virtual scoped_ptr<CookieChangedCallbackList::Subscription>
-      AddCookieChangedCallback(const CookieChangedCallback& callback) OVERRIDE;
-  virtual void GoogleSigninSucceeded(const std::string& account_id,
-                                     const std::string& username,
-                                     const std::string& password) OVERRIDE;
+  std::string GetProductVersion() override;
+  scoped_ptr<CookieChangedCallbackList::Subscription> AddCookieChangedCallback(
+      const CookieChangedCallback& callback) override;
+  void GoogleSigninSucceeded(const std::string& account_id,
+                             const std::string& username,
+                             const std::string& password) override;
 
   // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
  private:
   void RegisterForCookieChangedNotification();

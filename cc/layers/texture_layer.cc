@@ -45,13 +45,13 @@ TextureLayer::~TextureLayer() {
 void TextureLayer::ClearClient() {
   if (rate_limit_context_ && client_ && layer_tree_host())
     layer_tree_host()->StopRateLimiter();
-  client_ = NULL;
+  client_ = nullptr;
   ClearTexture();
   UpdateDrawsContent(HasDrawableContent());
 }
 
 void TextureLayer::ClearTexture() {
-  SetTextureMailbox(TextureMailbox(), scoped_ptr<SingleReleaseCallback>());
+  SetTextureMailbox(TextureMailbox(), nullptr);
 }
 
 scoped_ptr<LayerImpl> TextureLayer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
@@ -173,7 +173,7 @@ void TextureLayer::SetTextureMailboxWithoutReleaseCallback(
       mailbox, release.Pass(), requires_commit, allow_mailbox_reuse);
 }
 
-void TextureLayer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
+void TextureLayer::SetNeedsDisplayRect(const gfx::Rect& dirty_rect) {
   Layer::SetNeedsDisplayRect(dirty_rect);
 
   if (rate_limit_context_ && client_ && layer_tree_host() && DrawsContent())

@@ -349,6 +349,10 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     // the DelegatedRendererLayer.
     EvictDelegatedFrame();
 
+    surface_factory_.reset();
+    if (!surface_returned_resources_.empty())
+      SendReturnedDelegatedResources(last_output_surface_id_);
+
     // Drop the cc::DelegatedFrameResourceCollection so that we will not return
     // any resources from the old output surface with the new output surface id.
     if (resource_collection_.get()) {
@@ -370,16 +374,26 @@ void DelegatedFrameHost::SwapDelegatedFrame(
       if (!surface_factory_) {
         ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
         cc::SurfaceManager* manager = factory->GetSurfaceManager();
-        id_allocator_ = factory->CreateSurfaceIdAllocator();
+        id_allocator_ =
+            factory->GetContextFactory()->CreateSurfaceIdAllocator();
         surface_factory_ =
             make_scoped_ptr(new cc::SurfaceFactory(manager, this));
       }
       if (surface_id_.is_null() || frame_size != current_surface_size_ ||
           frame_size_in_dip != current_frame_size_in_dip_) {
-        // TODO(jbauman): Wait to destroy this surface until the parent has
-        // finished using it.
-        if (!surface_id_.is_null())
-          surface_factory_->Destroy(surface_id_);
+        if (!surface_id_.is_null()) {
+          if (compositor) {
+            std::set<cc::SurfaceSequence> seq;
+            seq.insert(compositor->InsertSurfaceSequenceForNextFrame());
+            // Destruction of this surface needs to wait for compositors that
+            // have drawn using it to swap frames that don't reference it.
+            // TODO(jbauman): Handle cases where the compositor has been
+            // changed since the last draw.
+            surface_factory_->DestroyOnSequence(surface_id_, seq);
+          } else {
+            surface_factory_->Destroy(surface_id_);
+          }
+        }
         surface_id_ = id_allocator_->GenerateId();
         surface_factory_->Create(surface_id_, frame_size);
         client_->GetLayer()->SetShowSurface(surface_id_, frame_size_in_dip);
@@ -513,7 +527,7 @@ void DelegatedFrameHost::ReturnResources(
 }
 
 void DelegatedFrameHost::EvictDelegatedFrame() {
-  client_->GetLayer()->SetShowPaintedContent();
+  client_->GetLayer()->SetShowSolidColorContent();
   frame_provider_ = NULL;
   if (!surface_id_.is_null()) {
     surface_factory_->Destroy(surface_id_);

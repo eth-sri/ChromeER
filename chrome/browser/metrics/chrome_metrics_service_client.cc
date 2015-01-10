@@ -106,12 +106,12 @@ class MetricsMemoryDetails : public MemoryDetails {
     SetMemoryGrowthTracker(memory_growth_tracker);
   }
 
-  virtual void OnDetailsAvailable() OVERRIDE {
+  void OnDetailsAvailable() override {
     base::MessageLoop::current()->PostTask(FROM_HERE, callback_);
   }
 
  private:
-  virtual ~MetricsMemoryDetails() {}
+  ~MetricsMemoryDetails() override {}
 
   base::Closure callback_;
 
@@ -197,11 +197,6 @@ metrics::SystemProfileProto::Channel ChromeMetricsServiceClient::GetChannel() {
 
 std::string ChromeMetricsServiceClient::GetVersionString() {
   chrome::VersionInfo version_info;
-  if (!version_info.is_valid()) {
-    NOTREACHED();
-    return std::string();
-  }
-
   std::string version = version_info.Version();
 #if defined(ARCH_CPU_64_BITS)
   version += "-64";
@@ -243,11 +238,6 @@ void ChromeMetricsServiceClient::CollectFinalMetrics(
   // then call OnHistogramSynchronizationDone to continue processing.
   DCHECK(!waiting_for_collect_final_metrics_step_);
   waiting_for_collect_final_metrics_step_ = true;
-
-#if !defined(OS_CHROMEOS) && !defined(OS_IOS)
-  // Record the signin status histogram value.
-  signin_status_metrics_provider_->RecordSigninStatusHistogram();
-#endif
 
   base::Closure callback =
       base::Bind(&ChromeMetricsServiceClient::OnMemoryDetailCollectionDone,
@@ -304,7 +294,7 @@ void ChromeMetricsServiceClient::Initialize() {
           new ExtensionsMetricsProvider(metrics_state_manager_)));
 #endif
   metrics_service_->RegisterMetricsProvider(
-      scoped_ptr<metrics::MetricsProvider>(new NetworkMetricsProvider(
+      scoped_ptr<metrics::MetricsProvider>(new metrics::NetworkMetricsProvider(
           content::BrowserThread::GetBlockingPool())));
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(new OmniboxMetricsProvider));
@@ -344,10 +334,9 @@ void ChromeMetricsServiceClient::Initialize() {
 #endif  // defined(OS_CHROMEOS)
 
 #if !defined(OS_CHROMEOS) && !defined(OS_IOS)
-  signin_status_metrics_provider_ =
-      SigninStatusMetricsProvider::CreateInstance();
   metrics_service_->RegisterMetricsProvider(
-      scoped_ptr<metrics::MetricsProvider>(signin_status_metrics_provider_));
+      scoped_ptr<metrics::MetricsProvider>(
+          SigninStatusMetricsProvider::CreateInstance()));
 #endif
 }
 

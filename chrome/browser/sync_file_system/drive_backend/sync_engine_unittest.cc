@@ -29,9 +29,9 @@ class SyncEngineTest : public testing::Test,
   typedef RemoteFileSyncService::OriginStatusMap RemoteOriginStatusMap;
 
   SyncEngineTest() {}
-  virtual ~SyncEngineTest() {}
+  ~SyncEngineTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(profile_dir_.CreateUniqueTempDir());
 
     scoped_ptr<drive::DriveServiceInterface>
@@ -69,7 +69,7 @@ class SyncEngineTest : public testing::Test,
     WaitForWorkerTaskRunner();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     sync_engine_.reset();
     WaitForWorkerTaskRunner();
     worker_pool_->Shutdown();
@@ -219,7 +219,7 @@ TEST_F(SyncEngineTest, UpdateServiceState) {
     {REMOTE_SERVICE_DISABLED, "DISABLED"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data); ++i) {
+  for (size_t i = 0; i < arraysize(test_data); ++i) {
     PostUpdateServiceState(test_data[i].state, test_data[i].description);
     EXPECT_EQ(test_data[i].state, sync_engine()->GetCurrentState())
         << "Expected state: REMOTE_SERVICE_" << test_data[i].description;

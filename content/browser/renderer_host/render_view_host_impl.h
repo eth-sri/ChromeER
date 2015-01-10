@@ -44,7 +44,6 @@ class Range;
 
 namespace ui {
 class AXTree;
-struct SelectedFileInfo;
 }
 
 namespace content {
@@ -56,6 +55,7 @@ class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
 class SessionStorageNamespaceImpl;
 class TestRenderViewHost;
+struct FileChooserFileInfo;
 struct FileChooserParams;
 
 #if defined(COMPILER_MSVC)
@@ -102,83 +102,82 @@ class CONTENT_EXPORT RenderViewHostImpl
   // spec) space. This is useful when restoring contentses, but most callers
   // should pass in NULL which will cause a new SessionStorageNamespace to be
   // created.
-  RenderViewHostImpl(
-      SiteInstance* instance,
-      RenderViewHostDelegate* delegate,
-      RenderWidgetHostDelegate* widget_delegate,
-      int routing_id,
-      int main_frame_routing_id,
-      bool swapped_out,
-      bool hidden);
-  virtual ~RenderViewHostImpl();
+  RenderViewHostImpl(SiteInstance* instance,
+                     RenderViewHostDelegate* delegate,
+                     RenderWidgetHostDelegate* widget_delegate,
+                     int routing_id,
+                     int main_frame_routing_id,
+                     bool swapped_out,
+                     bool hidden,
+                     bool has_initialized_audio_host);
+  ~RenderViewHostImpl() override;
 
   // RenderViewHost implementation.
-  virtual RenderFrameHost* GetMainFrame() OVERRIDE;
-  virtual void AllowBindings(int binding_flags) OVERRIDE;
-  virtual void ClearFocusedElement() OVERRIDE;
-  virtual bool IsFocusedElementEditable() OVERRIDE;
-  virtual void ClosePage() OVERRIDE;
-  virtual void CopyImageAt(int x, int y) OVERRIDE;
-  virtual void SaveImageAt(int x, int y) OVERRIDE;
-  virtual void DirectoryEnumerationFinished(
+  RenderFrameHost* GetMainFrame() override;
+  void AllowBindings(int binding_flags) override;
+  void ClearFocusedElement() override;
+  bool IsFocusedElementEditable() override;
+  void ClosePage() override;
+  void CopyImageAt(int x, int y) override;
+  void SaveImageAt(int x, int y) override;
+  void DirectoryEnumerationFinished(
       int request_id,
-      const std::vector<base::FilePath>& files) OVERRIDE;
-  virtual void DisableScrollbarsForThreshold(const gfx::Size& size) OVERRIDE;
-  virtual void DragSourceEndedAt(
-      int client_x, int client_y, int screen_x, int screen_y,
-      blink::WebDragOperation operation) OVERRIDE;
-  virtual void DragSourceSystemDragEnded() OVERRIDE;
-  virtual void DragTargetDragEnter(
-      const DropData& drop_data,
-      const gfx::Point& client_pt,
-      const gfx::Point& screen_pt,
-      blink::WebDragOperationsMask operations_allowed,
-      int key_modifiers) OVERRIDE;
-  virtual void DragTargetDragOver(
-      const gfx::Point& client_pt,
-      const gfx::Point& screen_pt,
-      blink::WebDragOperationsMask operations_allowed,
-      int key_modifiers) OVERRIDE;
-  virtual void DragTargetDragLeave() OVERRIDE;
-  virtual void DragTargetDrop(const gfx::Point& client_pt,
-                              const gfx::Point& screen_pt,
-                              int key_modifiers) OVERRIDE;
-  virtual void EnableAutoResize(const gfx::Size& min_size,
-                                const gfx::Size& max_size) OVERRIDE;
-  virtual void DisableAutoResize(const gfx::Size& new_size) OVERRIDE;
-  virtual void EnablePreferredSizeMode() OVERRIDE;
-  virtual void ExecuteMediaPlayerActionAtLocation(
+      const std::vector<base::FilePath>& files) override;
+  void DisableScrollbarsForThreshold(const gfx::Size& size) override;
+  void DragSourceEndedAt(int client_x,
+                         int client_y,
+                         int screen_x,
+                         int screen_y,
+                         blink::WebDragOperation operation) override;
+  void DragSourceSystemDragEnded() override;
+  void DragTargetDragEnter(const DropData& drop_data,
+                           const gfx::Point& client_pt,
+                           const gfx::Point& screen_pt,
+                           blink::WebDragOperationsMask operations_allowed,
+                           int key_modifiers) override;
+  void DragTargetDragOver(const gfx::Point& client_pt,
+                          const gfx::Point& screen_pt,
+                          blink::WebDragOperationsMask operations_allowed,
+                          int key_modifiers) override;
+  void DragTargetDragLeave() override;
+  void DragTargetDrop(const gfx::Point& client_pt,
+                      const gfx::Point& screen_pt,
+                      int key_modifiers) override;
+  void EnableAutoResize(const gfx::Size& min_size,
+                        const gfx::Size& max_size) override;
+  void DisableAutoResize(const gfx::Size& new_size) override;
+  void EnablePreferredSizeMode() override;
+  void ExecuteMediaPlayerActionAtLocation(
       const gfx::Point& location,
-      const blink::WebMediaPlayerAction& action) OVERRIDE;
-  virtual void ExecutePluginActionAtLocation(
+      const blink::WebMediaPlayerAction& action) override;
+  void ExecutePluginActionAtLocation(
       const gfx::Point& location,
-      const blink::WebPluginAction& action) OVERRIDE;
-  virtual void ExitFullscreen() OVERRIDE;
-  virtual void FilesSelectedInChooser(
-      const std::vector<ui::SelectedFileInfo>& files,
-      FileChooserParams::Mode permissions) OVERRIDE;
-  virtual RenderViewHostDelegate* GetDelegate() const OVERRIDE;
-  virtual int GetEnabledBindings() const OVERRIDE;
-  virtual SiteInstanceImpl* GetSiteInstance() const OVERRIDE;
-  virtual bool IsRenderViewLive() const OVERRIDE;
-  virtual void NotifyMoveOrResizeStarted() OVERRIDE;
-  virtual void SetWebUIProperty(const std::string& name,
-                                const std::string& value) OVERRIDE;
-  virtual void Zoom(PageZoom zoom) OVERRIDE;
-  virtual void SyncRendererPrefs() OVERRIDE;
-  virtual WebPreferences GetWebkitPreferences() OVERRIDE;
-  virtual void UpdateWebkitPreferences(
-      const WebPreferences& prefs) OVERRIDE;
-  virtual void OnWebkitPreferencesChanged() OVERRIDE;
-  virtual void GetAudioOutputControllers(
-      const GetAudioOutputControllersCallback& callback) const OVERRIDE;
-  virtual void SelectWordAroundCaret() OVERRIDE;
+      const blink::WebPluginAction& action) override;
+  void ExitFullscreen() override;
+  void FilesSelectedInChooser(
+      const std::vector<content::FileChooserFileInfo>& files,
+      FileChooserParams::Mode permissions) override;
+  RenderViewHostDelegate* GetDelegate() const override;
+  int GetEnabledBindings() const override;
+  SiteInstanceImpl* GetSiteInstance() const override;
+  bool IsRenderViewLive() const override;
+  void NotifyMoveOrResizeStarted() override;
+  void SetWebUIProperty(const std::string& name,
+                        const std::string& value) override;
+  void Zoom(PageZoom zoom) override;
+  void SyncRendererPrefs() override;
+  WebPreferences GetWebkitPreferences() override;
+  void UpdateWebkitPreferences(const WebPreferences& prefs) override;
+  void OnWebkitPreferencesChanged() override;
+  void GetAudioOutputControllers(
+      const GetAudioOutputControllersCallback& callback) const override;
+  void SelectWordAroundCaret() override;
 
 #if defined(OS_ANDROID)
   virtual void ActivateNearestFindResult(int request_id,
                                          float x,
-                                         float y) OVERRIDE;
-  virtual void RequestFindMatchRects(int current_version) OVERRIDE;
+                                         float y) override;
+  virtual void RequestFindMatchRects(int current_version) override;
 #endif
 
   void set_delegate(RenderViewHostDelegate* d) {
@@ -221,6 +220,9 @@ class CONTENT_EXPORT RenderViewHostImpl
     is_swapped_out_ = is_swapped_out;
   }
 
+  // TODO(creis): Remove as part of http://crbug.com/418265.
+  bool is_waiting_for_close_ack() const { return is_waiting_for_close_ack_; }
+
   // Tells the renderer that this RenderView will soon be swapped out, and thus
   // not to create any new modal dialogs until it happens.  This must be done
   // separately so that the PageGroupLoadDeferrers of any current dialogs are no
@@ -259,22 +261,20 @@ class CONTENT_EXPORT RenderViewHostImpl
   }
 
   // RenderWidgetHost public overrides.
-  virtual void Init() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
-  virtual void WasHidden() OVERRIDE;
-  virtual void WasShown(const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual bool IsRenderView() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void GotFocus() OVERRIDE;
-  virtual void LostCapture() OVERRIDE;
-  virtual void LostMouseLock() OVERRIDE;
-  virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void ForwardMouseEvent(
-      const blink::WebMouseEvent& mouse_event) OVERRIDE;
-  virtual void OnPointerEventActivate() OVERRIDE;
-  virtual void ForwardKeyboardEvent(
-      const NativeWebKeyboardEvent& key_event) OVERRIDE;
-  virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
+  void Init() override;
+  void Shutdown() override;
+  void WasHidden() override;
+  void WasShown(const ui::LatencyInfo& latency_info) override;
+  bool IsRenderView() const override;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void GotFocus() override;
+  void LostCapture() override;
+  void LostMouseLock() override;
+  void SetIsLoading(bool is_loading) override;
+  void ForwardMouseEvent(const blink::WebMouseEvent& mouse_event) override;
+  void OnPointerEventActivate() override;
+  void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event) override;
+  gfx::Rect GetRootWindowResizerRect() const override;
 
   // Creates a new RenderView with the given route id.
   void CreateNewWindow(
@@ -330,15 +330,15 @@ class CONTENT_EXPORT RenderViewHostImpl
 
  protected:
   // RenderWidgetHost protected overrides.
-  virtual void OnUserGesture() OVERRIDE;
-  virtual void NotifyRendererUnresponsive() OVERRIDE;
-  virtual void NotifyRendererResponsive() OVERRIDE;
-  virtual void OnRenderAutoResized(const gfx::Size& size) OVERRIDE;
-  virtual void RequestToLockMouse(bool user_gesture,
-                                  bool last_unlocked_by_target) OVERRIDE;
-  virtual bool IsFullscreen() const OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  void OnUserGesture() override;
+  void NotifyRendererUnresponsive() override;
+  void NotifyRendererResponsive() override;
+  void OnRenderAutoResized(const gfx::Size& size) override;
+  void RequestToLockMouse(bool user_gesture,
+                          bool last_unlocked_by_target) override;
+  bool IsFullscreen() const override;
+  void OnFocus() override;
+  void OnBlur() override;
 
   // IPC message handlers.
   void OnShowView(int route_id,
@@ -386,7 +386,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // TODO(creis): Move to a private namespace on RenderFrameHostImpl.
   // Delay to wait on closing the WebContents for a beforeunload/unload handler
   // to fire.
-  static const int kUnloadTimeoutMS;
+  static const int64 kUnloadTimeoutMS;
 
   bool CanAccessFilesOfPageState(const PageState& state) const;
 

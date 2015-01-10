@@ -10,6 +10,7 @@
 #include "base/run_loop.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/fileapi/mock_url_request_delegate.h"
+#include "content/browser/quota/mock_quota_manager_proxy.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_context.h"
@@ -20,6 +21,7 @@
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/common/blob/blob_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -46,12 +48,15 @@ class ServiceWorkerCacheTest : public testing::Test {
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
         callback_error_(ServiceWorkerCache::ErrorTypeOK) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ChromeBlobStorageContext* blob_storage_context =
         ChromeBlobStorageContext::GetFor(&browser_context_);
     // Wait for chrome_blob_storage_context to finish initializing.
     base::RunLoop().RunUntilIdle();
     blob_storage_context_ = blob_storage_context->context();
+
+    quota_manager_proxy_ = new MockQuotaManagerProxy(
+        nullptr, base::MessageLoopProxy::current().get());
 
     url_request_job_factory_.reset(new net::URLRequestJobFactoryImpl);
     url_request_job_factory_->SetProtocolHandler(
@@ -66,18 +71,23 @@ class ServiceWorkerCacheTest : public testing::Test {
 
     if (MemoryOnly()) {
       cache_ = ServiceWorkerCache::CreateMemoryCache(
+          GURL("http://example.com"),
           url_request_context,
+          quota_manager_proxy_,
           blob_storage_context->context()->AsWeakPtr());
     } else {
       ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
       cache_ = ServiceWorkerCache::CreatePersistentCache(
+          GURL("http://example.com"),
           temp_dir_.path(),
           url_request_context,
+          quota_manager_proxy_,
           blob_storage_context->context()->AsWeakPtr());
     }
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
+    quota_manager_proxy_->SimulateQuotaManagerDestroyed();
     base::RunLoop().RunUntilIdle();
   }
 
@@ -105,14 +115,23 @@ class ServiceWorkerCacheTest : public testing::Test {
     blob_handle_ =
         blob_storage_context->context()->AddFinishedBlob(blob_data.get());
 
-    body_response_ = ServiceWorkerResponse(GURL("http://example.com/body.html"),
-                                           200,
-                                           "OK",
-                                           headers,
-                                           blob_handle_->uuid());
+    body_response_ =
+        ServiceWorkerResponse(GURL("http://example.com/body.html"),
+                              200,
+                              "OK",
+                              blink::WebServiceWorkerResponseTypeDefault,
+                              headers,
+                              blob_handle_->uuid(),
+                              expected_blob_data_.size());
 
-    no_body_response_ = ServiceWorkerResponse(
-        GURL("http://example.com/no_body.html"), 200, "OK", headers, "");
+    no_body_response_ =
+        ServiceWorkerResponse(GURL("http://example.com/no_body.html"),
+                              200,
+                              "OK",
+                              blink::WebServiceWorkerResponseTypeDefault,
+                              headers,
+                              "",
+                              0);
   }
 
   scoped_ptr<ServiceWorkerFetchRequest> CopyFetchRequest(
@@ -126,11 +145,15 @@ class ServiceWorkerCacheTest : public testing::Test {
 
   scoped_ptr<ServiceWorkerResponse> CopyFetchResponse(
       const ServiceWorkerResponse& response) {
-    return make_scoped_ptr(new ServiceWorkerResponse(response.url,
-                                                     response.status_code,
-                                                     response.status_text,
-                                                     response.headers,
-                                                     response.blob_uuid));
+    scoped_ptr<ServiceWorkerResponse> sw_response(
+        new ServiceWorkerResponse(response.url,
+                                  response.status_code,
+                                  response.status_text,
+                                  response.response_type,
+                                  response.headers,
+                                  response.blob_uuid,
+                                  response.blob_size));
+    return sw_response.Pass();
   }
 
   bool Put(const ServiceWorkerFetchRequest& request,
@@ -209,6 +232,7 @@ class ServiceWorkerCacheTest : public testing::Test {
     callback_error_ = error;
     callback_response_ = response.Pass();
 
+    callback_response_data_.reset();
     if (error == ServiceWorkerCache::ErrorTypeOK &&
         !callback_response_->blob_uuid.empty()) {
       callback_response_data_ = body_handle.Pass();
@@ -239,12 +263,21 @@ class ServiceWorkerCacheTest : public testing::Test {
     return true;
   }
 
+  bool TestResponseType(blink::WebServiceWorkerResponseType response_type) {
+    body_response_.response_type = response_type;
+    EXPECT_TRUE(Put(body_request_, body_response_));
+    EXPECT_TRUE(Match(body_request_));
+    EXPECT_TRUE(Delete(body_request_));
+    return response_type == callback_response_->response_type;
+  }
+
   virtual bool MemoryOnly() { return false; }
 
  protected:
   TestBrowserContext browser_context_;
   TestBrowserThreadBundle browser_thread_bundle_;
   scoped_ptr<net::URLRequestJobFactoryImpl> url_request_job_factory_;
+  scoped_refptr<MockQuotaManagerProxy> quota_manager_proxy_;
   storage::BlobStorageContext* blob_storage_context_;
 
   base::ScopedTempDir temp_dir_;
@@ -265,7 +298,13 @@ class ServiceWorkerCacheTest : public testing::Test {
 
 class ServiceWorkerCacheTestP : public ServiceWorkerCacheTest,
                                 public testing::WithParamInterface<bool> {
-  virtual bool MemoryOnly() OVERRIDE { return !GetParam(); }
+  bool MemoryOnly() override { return !GetParam(); }
+};
+
+class ServiceWorkerCacheMemoryOnlyTest
+    : public ServiceWorkerCacheTest,
+      public testing::WithParamInterface<bool> {
+  bool MemoryOnly() override { return true; }
 };
 
 TEST_P(ServiceWorkerCacheTestP, PutNoBody) {
@@ -274,6 +313,8 @@ TEST_P(ServiceWorkerCacheTestP, PutNoBody) {
   EXPECT_STREQ(no_body_response_.url.spec().c_str(),
                callback_response_->url.spec().c_str());
   EXPECT_FALSE(callback_response_data_);
+  EXPECT_STREQ("", callback_response_->blob_uuid.c_str());
+  EXPECT_EQ(0u, callback_response_->blob_size);
 }
 
 TEST_P(ServiceWorkerCacheTestP, PutBody) {
@@ -282,9 +323,30 @@ TEST_P(ServiceWorkerCacheTestP, PutBody) {
   EXPECT_STREQ(body_response_.url.spec().c_str(),
                callback_response_->url.spec().c_str());
   EXPECT_TRUE(callback_response_data_);
+  EXPECT_STRNE("", callback_response_->blob_uuid.c_str());
+  EXPECT_EQ(expected_blob_data_.size(), callback_response_->blob_size);
+
   std::string response_body;
   CopyBody(callback_response_data_.get(), &response_body);
   EXPECT_STREQ(expected_blob_data_.c_str(), response_body.c_str());
+}
+
+TEST_P(ServiceWorkerCacheTestP, ResponseURLDiffersFromRequestURL) {
+  no_body_response_.url = GURL("http://example.com/foobar");
+  EXPECT_STRNE("http://example.com/foobar",
+               no_body_request_.url.spec().c_str());
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  EXPECT_TRUE(Match(no_body_request_));
+  EXPECT_STREQ("http://example.com/foobar",
+               callback_response_->url.spec().c_str());
+}
+
+TEST_P(ServiceWorkerCacheTestP, ResponseURLEmpty) {
+  no_body_response_.url = GURL();
+  EXPECT_STRNE("", no_body_request_.url.spec().c_str());
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  EXPECT_TRUE(Match(no_body_request_));
+  EXPECT_STREQ("", callback_response_->url.spec().c_str());
 }
 
 TEST_F(ServiceWorkerCacheTest, PutBodyDropBlobRef) {
@@ -302,6 +364,20 @@ TEST_F(ServiceWorkerCacheTest, PutBodyDropBlobRef) {
   EXPECT_EQ(ServiceWorkerCache::ErrorTypeOK, callback_error_);
 }
 
+TEST_P(ServiceWorkerCacheTestP, PutReplace) {
+  EXPECT_TRUE(Put(body_request_, no_body_response_));
+  EXPECT_TRUE(Match(body_request_));
+  EXPECT_FALSE(callback_response_data_);
+
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  EXPECT_TRUE(Match(body_request_));
+  EXPECT_TRUE(callback_response_data_);
+
+  EXPECT_TRUE(Put(body_request_, no_body_response_));
+  EXPECT_TRUE(Match(body_request_));
+  EXPECT_FALSE(callback_response_data_);
+}
+
 TEST_P(ServiceWorkerCacheTestP, MatchNoBody) {
   EXPECT_TRUE(Put(no_body_request_, no_body_response_));
   EXPECT_TRUE(Match(no_body_request_));
@@ -309,6 +385,8 @@ TEST_P(ServiceWorkerCacheTestP, MatchNoBody) {
   EXPECT_STREQ("OK", callback_response_->status_text.c_str());
   EXPECT_STREQ("http://example.com/no_body.html",
                callback_response_->url.spec().c_str());
+  EXPECT_STREQ("", callback_response_->blob_uuid.c_str());
+  EXPECT_EQ(0u, callback_response_->blob_size);
 }
 
 TEST_P(ServiceWorkerCacheTestP, MatchBody) {
@@ -318,6 +396,9 @@ TEST_P(ServiceWorkerCacheTestP, MatchBody) {
   EXPECT_STREQ("OK", callback_response_->status_text.c_str());
   EXPECT_STREQ("http://example.com/body.html",
                callback_response_->url.spec().c_str());
+  EXPECT_STRNE("", callback_response_->blob_uuid.c_str());
+  EXPECT_EQ(expected_blob_data_.size(), callback_response_->blob_size);
+
   std::string response_body;
   CopyBody(callback_response_data_.get(), &response_body);
   EXPECT_STREQ(expected_blob_data_.c_str(), response_body.c_str());
@@ -417,10 +498,6 @@ TEST_P(ServiceWorkerCacheTestP, TwoKeysThenOne) {
   EXPECT_TRUE(VerifyKeys(expected_key));
 }
 
-// TODO(jkarlin): Once SimpleCache is working bug-free on Windows reenable these
-// tests. In the meanwhile we know that Windows operations will be a little
-// flaky (though not crashy). See https://crbug.com/409109
-#ifndef OS_WIN
 TEST_P(ServiceWorkerCacheTestP, DeleteNoBody) {
   EXPECT_TRUE(Put(no_body_request_, no_body_response_));
   EXPECT_TRUE(Match(no_body_request_));
@@ -460,13 +537,25 @@ TEST_P(ServiceWorkerCacheTestP, QuickStressBody) {
     ASSERT_TRUE(Delete(body_request_));
   }
 }
-#endif  // OS_WIN
+
+TEST_P(ServiceWorkerCacheTestP, PutResponseType) {
+  EXPECT_TRUE(TestResponseType(blink::WebServiceWorkerResponseTypeBasic));
+  EXPECT_TRUE(TestResponseType(blink::WebServiceWorkerResponseTypeCORS));
+  EXPECT_TRUE(TestResponseType(blink::WebServiceWorkerResponseTypeDefault));
+  EXPECT_TRUE(TestResponseType(blink::WebServiceWorkerResponseTypeError));
+  EXPECT_TRUE(TestResponseType(blink::WebServiceWorkerResponseTypeOpaque));
+}
 
 TEST_F(ServiceWorkerCacheTest, CaselessServiceWorkerResponseHeaders) {
   // ServiceWorkerCache depends on ServiceWorkerResponse having caseless
   // headers so that it can quickly lookup vary headers.
-  ServiceWorkerResponse response(
-      GURL("http://www.example.com"), 200, "OK", ServiceWorkerHeaderMap(), "");
+  ServiceWorkerResponse response(GURL("http://www.example.com"),
+                                 200,
+                                 "OK",
+                                 blink::WebServiceWorkerResponseTypeDefault,
+                                 ServiceWorkerHeaderMap(),
+                                 "",
+                                 0);
   response.headers["content-type"] = "foo";
   response.headers["Content-Type"] = "bar";
   EXPECT_EQ("bar", response.headers["content-type"]);
@@ -483,6 +572,52 @@ TEST_F(ServiceWorkerCacheTest, CaselessServiceWorkerFetchRequestHeaders) {
   request.headers["content-type"] = "foo";
   request.headers["Content-Type"] = "bar";
   EXPECT_EQ("bar", request.headers["content-type"]);
+}
+
+TEST_P(ServiceWorkerCacheTestP, QuotaManagerModified) {
+  EXPECT_EQ(0, quota_manager_proxy_->notify_storage_modified_count());
+
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  EXPECT_EQ(1, quota_manager_proxy_->notify_storage_modified_count());
+  EXPECT_LT(0, quota_manager_proxy_->last_notified_delta());
+  int64 sum_delta = quota_manager_proxy_->last_notified_delta();
+
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  EXPECT_EQ(2, quota_manager_proxy_->notify_storage_modified_count());
+  EXPECT_LT(sum_delta, quota_manager_proxy_->last_notified_delta());
+  sum_delta += quota_manager_proxy_->last_notified_delta();
+
+  EXPECT_TRUE(Delete(body_request_));
+  EXPECT_EQ(3, quota_manager_proxy_->notify_storage_modified_count());
+  sum_delta += quota_manager_proxy_->last_notified_delta();
+
+  EXPECT_TRUE(Delete(no_body_request_));
+  EXPECT_EQ(4, quota_manager_proxy_->notify_storage_modified_count());
+  sum_delta += quota_manager_proxy_->last_notified_delta();
+
+  EXPECT_EQ(0, sum_delta);
+}
+
+TEST_F(ServiceWorkerCacheMemoryOnlyTest, MemoryBackedSize) {
+  EXPECT_EQ(0, cache_->MemoryBackedSize());
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  EXPECT_LT(0, cache_->MemoryBackedSize());
+  int64 no_body_size = cache_->MemoryBackedSize();
+
+  EXPECT_TRUE(Delete(no_body_request_));
+  EXPECT_EQ(0, cache_->MemoryBackedSize());
+
+  EXPECT_TRUE(Put(body_request_, body_response_));
+  EXPECT_LT(no_body_size, cache_->MemoryBackedSize());
+
+  EXPECT_TRUE(Delete(body_request_));
+  EXPECT_EQ(0, cache_->MemoryBackedSize());
+}
+
+TEST_F(ServiceWorkerCacheTest, MemoryBackedSizePersistent) {
+  EXPECT_EQ(0, cache_->MemoryBackedSize());
+  EXPECT_TRUE(Put(no_body_request_, no_body_response_));
+  EXPECT_EQ(0, cache_->MemoryBackedSize());
 }
 
 INSTANTIATE_TEST_CASE_P(ServiceWorkerCacheTest,

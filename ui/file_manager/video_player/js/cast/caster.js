@@ -2,17 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 // This hack prevents a bug on the cast extension.
 // TODO(yoshiki): Remove this once the cast extension supports Chrome apps.
 // Although localStorage in Chrome app is not supported, but it's used in the
 // cast extension. This line prevents an exception on using localStorage.
 window.__defineGetter__('localStorage', function() { return {}; });
 
-// THIS IS A TEST APP.
-// TODO(yoshiki): Fix this before launch.
-var APPLICATION_ID = '214CC863';
+var APPLICATION_ID = '4CCB98DA';
 
 util.addPageLoadHandler(function() {
   initialize();

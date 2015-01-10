@@ -89,10 +89,10 @@ extern const char kChromeUIVersionURL[];
 extern const char kChromeUIVoiceSearchURL[];
 
 #if defined(OS_ANDROID)
+extern const char kChromeUINativeScheme[];
 extern const char kChromeUINativeNewTabURL[];
 extern const char kChromeUINativeBookmarksURL[];
 extern const char kChromeUINativeRecentTabsURL[];
-extern const char kChromeUIWelcomeURL[];
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -297,6 +297,11 @@ extern const char kChromeUIWrenchMenu[];
 extern const char kEULAPathFormat[];
 extern const char kOemEulaURLPath[];
 extern const char kOnlineEulaURLPath[];
+
+extern const char kChromeOSCreditsPath[];
+
+extern const char kChromeOSAssetHost[];
+extern const char kChromeOSAssetPath[];
 #endif
 
 #if (defined(OS_LINUX) && defined(TOOLKIT_VIEWS)) || defined(USE_AURA)

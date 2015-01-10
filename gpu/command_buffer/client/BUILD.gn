@@ -81,9 +81,6 @@ gles2_implementation_source_files = [
   "gles2_trace_implementation.cc",
   "gles2_trace_implementation.h",
   "gles2_trace_implementation_impl_autogen.h",
-  "gpu_memory_buffer_factory.h",
-  "gpu_memory_buffer_tracker.cc",
-  "gpu_memory_buffer_tracker.h",
   "gpu_switches.cc",
   "gpu_switches.h",
   "program_info_manager.cc",
@@ -104,6 +101,16 @@ source_set("gles2_interface") {
   public_configs = [ "//third_party/khronos:khronos_headers" ]
   deps = [
     "//base",
+  ]
+}
+
+source_set("gpu_memory_buffer_manager") {
+  sources = [
+    "gpu_memory_buffer_manager.cc",
+    "gpu_memory_buffer_manager.h",
+  ]
+  deps = [
+    "//ui/gfx",
   ]
 }
 
@@ -164,6 +171,7 @@ component("gl_in_process_context") {
 
   deps = [
     ":gles2_implementation",
+    ":gpu_memory_buffer_manager",
     "//gpu",
     "//gpu/command_buffer/common:gles2_utils",
     "//base",

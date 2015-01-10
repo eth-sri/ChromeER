@@ -104,22 +104,20 @@ class PluginSandboxedProcessLauncherDelegate
 #endif  // OS_POSIX
   {}
 
-  virtual ~PluginSandboxedProcessLauncherDelegate() {}
+  ~PluginSandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  virtual bool ShouldSandbox() OVERRIDE {
+  virtual bool ShouldSandbox() override {
     return false;
   }
 
 #elif defined(OS_POSIX)
-  virtual int GetIpcFd() OVERRIDE {
-    return ipc_fd_;
-  }
+  base::ScopedFD TakeIpcFd() override { return ipc_fd_.Pass(); }
 #endif  // OS_WIN
 
  private:
 #if defined(OS_POSIX)
-  int ipc_fd_;
+  base::ScopedFD ipc_fd_;
 #endif  // OS_POSIX
 
   DISALLOW_COPY_AND_ASSIGN(PluginSandboxedProcessLauncherDelegate);

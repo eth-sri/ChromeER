@@ -19,11 +19,17 @@
 //
 // These classes are represented as only a 64-bit value, so they can be
 // efficiently passed by value.
+//
+// Definitions of operator<< are provided to make these types work with
+// DCHECK_EQ() and other log macros. For human-readable formatting, see
+// "base/i18n/time_formatting.h".
 
 #ifndef BASE_TIME_TIME_H_
 #define BASE_TIME_TIME_H_
 
 #include <time.h>
+
+#include <iosfwd>
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
@@ -205,6 +211,9 @@ class BASE_EXPORT TimeDelta {
 inline TimeDelta operator*(int64 a, TimeDelta td) {
   return TimeDelta(a * td.delta_);
 }
+
+// For logging use only.
+BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeDelta time_delta);
 
 // Time -----------------------------------------------------------------------
 
@@ -538,7 +547,7 @@ inline TimeDelta TimeDelta::FromSecondsD(double secs) {
   // Preserve max to prevent overflow.
   if (secs == std::numeric_limits<double>::infinity())
     return Max();
-  return TimeDelta(secs * Time::kMicrosecondsPerSecond);
+  return TimeDelta(static_cast<int64>(secs * Time::kMicrosecondsPerSecond));
 }
 
 // static
@@ -546,7 +555,7 @@ inline TimeDelta TimeDelta::FromMillisecondsD(double ms) {
   // Preserve max to prevent overflow.
   if (ms == std::numeric_limits<double>::infinity())
     return Max();
-  return TimeDelta(ms * Time::kMicrosecondsPerMillisecond);
+  return TimeDelta(static_cast<int64>(ms * Time::kMicrosecondsPerMillisecond));
 }
 
 // static
@@ -560,6 +569,9 @@ inline TimeDelta TimeDelta::FromMicroseconds(int64 us) {
 inline Time TimeDelta::operator+(Time t) const {
   return Time(t.us_ + delta_);
 }
+
+// For logging use only.
+BASE_EXPORT std::ostream& operator<<(std::ostream& os, Time time);
 
 // TimeTicks ------------------------------------------------------------------
 
@@ -722,6 +734,9 @@ class BASE_EXPORT TimeTicks {
 inline TimeTicks TimeDelta::operator+(TimeTicks t) const {
   return TimeTicks(t.ticks_ + delta_);
 }
+
+// For logging use only.
+BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeTicks time_ticks);
 
 }  // namespace base
 

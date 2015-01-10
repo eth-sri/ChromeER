@@ -417,7 +417,7 @@ TEST_F('HistoryWebUITest', 'DISABLED_basicTest', function() {
 
   // Check that there are 3 page navigation links and that only the "Older"
   // link is visible.
-  expectEquals(3, document.querySelectorAll('.link-button').length);
+  expectEquals(3, document.querySelectorAll('[is="action-link"]').length);
   expectTrue($('newest-button').hidden);
   expectTrue($('newer-button').hidden);
   expectFalse($('older-button').hidden);
@@ -442,7 +442,7 @@ TEST_F('HistoryWebUITest', 'DISABLED_basicTest', function() {
 
     // Check that the "Newest" and "Newer" links are now visible, but the
     // "Older" link is hidden.
-    expectEquals(3, document.querySelectorAll('.link-button').length);
+    expectEquals(3, document.querySelectorAll('[is="action-link"]').length);
     expectFalse($('newest-button').hidden);
     expectFalse($('newer-button').hidden);
     expectTrue($('older-button').hidden);
@@ -671,7 +671,7 @@ RangeHistoryWebUITest.prototype = {
  */
 TEST_F('RangeHistoryWebUITest', 'DISABLED_allView', function() {
   // Check that we start off in the all time view.
-  expectTrue($('timeframe-filter-all').checked);
+  expectTrue($('timeframe-controls').querySelector('input').checked);
   // See if the correct number of days is shown.
   var dayHeaders = document.querySelectorAll('.day');
   assertEquals(Math.ceil(RESULTS_PER_PAGE / 4), dayHeaders.length);
@@ -784,7 +784,8 @@ TEST_F('HistoryWebUIRealBackendTest', 'basic', function() {
 });
 
 TEST_F('HistoryWebUIRealBackendTest', 'atLeastOneFocusable', function() {
-  expectEquals(1, document.querySelectorAll('[tabindex="0"]').length);
+  var results = document.querySelectorAll('#results-display [tabindex="0"]');
+  expectEquals(1, results.length);
   testDone();
 });
 
@@ -944,7 +945,8 @@ TEST_F('HistoryWebUIDeleteProhibitedTest', 'deleteProhibited', function() {
 });
 
 TEST_F('HistoryWebUIDeleteProhibitedTest', 'atLeastOneFocusable', function() {
-  expectEquals(1, document.querySelectorAll('[tabindex="0"]').length);
+  var results = document.querySelectorAll('#results-display [tabindex="0"]');
+  expectEquals(1, results.length);
   testDone();
 });
 
@@ -1052,7 +1054,7 @@ HistoryWebUIWithSchemesTest.prototype = {
 
 TEST_F('HistoryWebUIWithSchemesTest', 'groupingWithSchemes', function() {
   // Switch to the week view.
-  $('timeframe-filter-week').click();
+  $('timeframe-controls').querySelectorAll('input')[1].click();
   waitForCallback('historyResult', function() {
     // Each URL should be organized under a different "domain".
     expectEquals(document.querySelectorAll('.entry').length, 4);

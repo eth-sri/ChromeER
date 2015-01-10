@@ -127,10 +127,10 @@ class FirefoxObserver : public ProfileWriter,
         use_keyword_in_json_(use_keyword_in_json) {}
 
   // importer::ImporterProgressObserver:
-  virtual void ImportStarted() OVERRIDE {}
-  virtual void ImportItemStarted(importer::ImportItem item) OVERRIDE {}
-  virtual void ImportItemEnded(importer::ImportItem item) OVERRIDE {}
-  virtual void ImportEnded() OVERRIDE {
+  void ImportStarted() override {}
+  void ImportItemStarted(importer::ImportItem item) override {}
+  void ImportItemEnded(importer::ImportItem item) override {}
+  void ImportEnded() override {
     base::MessageLoop::current()->Quit();
     EXPECT_EQ(arraysize(kFirefoxBookmarks), bookmark_count_);
     EXPECT_EQ(1U, history_count_);
@@ -138,16 +138,14 @@ class FirefoxObserver : public ProfileWriter,
     EXPECT_EQ(arraysize(kFirefoxKeywords), keyword_count_);
   }
 
-  virtual bool BookmarkModelIsLoaded() const OVERRIDE {
+  bool BookmarkModelIsLoaded() const override {
     // Profile is ready for writing.
     return true;
   }
 
-  virtual bool TemplateURLServiceIsLoaded() const OVERRIDE {
-    return true;
-  }
+  bool TemplateURLServiceIsLoaded() const override { return true; }
 
-  virtual void AddPasswordForm(const autofill::PasswordForm& form) OVERRIDE {
+  void AddPasswordForm(const autofill::PasswordForm& form) override {
     PasswordInfo p = kFirefoxPasswords[password_count_];
     EXPECT_EQ(p.origin, form.origin.spec());
     EXPECT_EQ(p.realm, form.signon_realm);
@@ -160,8 +158,8 @@ class FirefoxObserver : public ProfileWriter,
     ++password_count_;
   }
 
-  virtual void AddHistoryPage(const history::URLRows& page,
-                              history::VisitSource visit_source) OVERRIDE {
+  void AddHistoryPage(const history::URLRows& page,
+                      history::VisitSource visit_source) override {
     ASSERT_EQ(3U, page.size());
     EXPECT_EQ("http://www.google.com/", page[0].url().spec());
     EXPECT_EQ(base::ASCIIToUTF16("Google"), page[0].title());
@@ -174,9 +172,8 @@ class FirefoxObserver : public ProfileWriter,
     ++history_count_;
   }
 
-  virtual void AddBookmarks(
-      const std::vector<ImportedBookmarkEntry>& bookmarks,
-      const base::string16& top_level_folder_name) OVERRIDE {
+  void AddBookmarks(const std::vector<ImportedBookmarkEntry>& bookmarks,
+                    const base::string16& top_level_folder_name) override {
     ASSERT_LE(bookmark_count_ + bookmarks.size(), arraysize(kFirefoxBookmarks));
     // Importer should import the FF favorites the same as the list, in the same
     // order.
@@ -188,8 +185,8 @@ class FirefoxObserver : public ProfileWriter,
     }
   }
 
-  virtual void AddAutofillFormDataEntries(
-      const std::vector<autofill::AutofillEntry>& autofill_entries) OVERRIDE {
+  void AddAutofillFormDataEntries(
+      const std::vector<autofill::AutofillEntry>& autofill_entries) override {
     EXPECT_EQ(arraysize(kFirefoxAutofillEntries), autofill_entries.size());
     for (size_t i = 0; i < arraysize(kFirefoxAutofillEntries); ++i) {
       EXPECT_EQ(kFirefoxAutofillEntries[i].name,
@@ -199,8 +196,8 @@ class FirefoxObserver : public ProfileWriter,
     }
   }
 
-  virtual void AddKeywords(ScopedVector<TemplateURL> template_urls,
-                           bool unique_on_host_and_path) OVERRIDE {
+  void AddKeywords(ScopedVector<TemplateURL> template_urls,
+                   bool unique_on_host_and_path) override {
     for (size_t i = 0; i < template_urls.size(); ++i) {
       // The order might not be deterministic, look in the expected list for
       // that template URL.
@@ -222,12 +219,11 @@ class FirefoxObserver : public ProfileWriter,
     }
   }
 
-  virtual void AddFavicons(
-      const std::vector<ImportedFaviconUsage>& favicons) OVERRIDE {
+  void AddFavicons(const std::vector<ImportedFaviconUsage>& favicons) override {
   }
 
  private:
-  virtual ~FirefoxObserver() {}
+  ~FirefoxObserver() override {}
 
   size_t bookmark_count_;
   size_t history_count_;
@@ -248,7 +244,7 @@ class FirefoxObserver : public ProfileWriter,
 // supported platforms.
 class FirefoxProfileImporterBrowserTest : public InProcessBrowserTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Creates a new profile in a new subdirectory in the temp directory.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     base::FilePath test_path = temp_dir_.path().AppendASCII("ImporterTest");

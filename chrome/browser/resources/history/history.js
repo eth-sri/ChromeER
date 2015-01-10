@@ -183,11 +183,11 @@ Visit.prototype.getResultDOM = function(propertyBag) {
   var useMonthDate = propertyBag.useMonthDate || false;
   var focusless = propertyBag.focusless || false;
   var node = createElementWithClassName('li', 'entry');
-  var time = createElementWithClassName('label', 'time');
+  var time = createElementWithClassName('span', 'time');
   var entryBox = createElementWithClassName('div', 'entry-box');
   var domain = createElementWithClassName('div', 'domain');
 
-  this.id_ = this.model_.nextVisitId_++;
+  this.id_ = this.model_.getNextVisitId();
   var self = this;
 
   // Only create the checkbox if it can be used either to delete an entry or to
@@ -197,8 +197,13 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     checkbox.type = 'checkbox';
     checkbox.id = 'checkbox-' + this.id_;
     checkbox.time = this.date.getTime();
+    checkbox.setAttribute('aria-label', loadTimeData.getStringF(
+        'entrySummary',
+        this.dateTimeOfDay,
+        this.starred_ ? loadTimeData.getString('bookmarked') : '',
+        this.title_,
+        this.domain_));
     checkbox.addEventListener('click', checkboxClicked);
-    time.setAttribute('for', checkbox.id);
     entryBox.appendChild(checkbox);
 
     if (focusless)
@@ -489,10 +494,8 @@ Visit.prototype.showMoreFromSite_ = function() {
  */
 Visit.prototype.handleKeydown_ = function(e) {
   // Delete or Backspace should delete the entry if allowed.
-  if ((e.keyIdentifier == 'U+0008' || e.keyIdentifier == 'U+007F') &&
-      !this.model_.isDeletingVisits()) {
+  if (e.keyIdentifier == 'U+0008' || e.keyIdentifier == 'U+007F')
     this.removeEntryFromHistory_(e);
-  }
 };
 
 /**
@@ -501,8 +504,10 @@ Visit.prototype.handleKeydown_ = function(e) {
  * @private
  */
 Visit.prototype.removeEntryFromHistory_ = function(e) {
-  if (!this.model_.deletingHistoryAllowed)
+  if (!this.model_.deletingHistoryAllowed || this.model_.isDeletingVisits() ||
+      this.domNode_.classList.contains('fade-out')) {
     return;
+  }
 
   this.model_.getView().onBeforeRemove(this);
   this.removeFromHistory();
@@ -742,6 +747,14 @@ HistoryModel.prototype.removeVisit = function(visit) {
     this.visits_.splice(index, 1);
 };
 
+/**
+ * Automatically generates a new visit ID.
+ * @return {number} The next visit ID.
+ */
+HistoryModel.prototype.getNextVisitId = function() {
+  return this.nextVisitId_++;
+};
+
 // HistoryModel, Private: -----------------------------------------------------
 
 /**
@@ -933,16 +946,10 @@ function HistoryView(model) {
     self.setPage(self.pageIndex_ + 1);
   });
 
-  var handleRangeChange = function(e) {
-    // Update the results and save the last state.
+  $('timeframe-controls').onchange = function(e) {
     var value = parseInt(e.target.value, 10);
     self.setRangeInDays(/** @type {HistoryModel.Range.<number>} */(value));
   };
-
-  // Add handlers for the range options.
-  $('timeframe-filter-all').addEventListener('change', handleRangeChange);
-  $('timeframe-filter-week').addEventListener('change', handleRangeChange);
-  $('timeframe-filter-month').addEventListener('change', handleRangeChange);
 
   $('range-previous').addEventListener('click', function(e) {
     if (self.getRangeInDays() == HistoryModel.Range.ALL_TIME)
@@ -1225,8 +1232,10 @@ HistoryView.prototype.removeVisit = function(visit) {
 HistoryView.prototype.onEntryRemoved = function() {
   this.updateSelectionEditButtons();
 
-  if (this.model_.getSize() == 0)
+  if (this.model_.getSize() == 0) {
+    this.clear_();
     this.onModelReady(true);  // Shows "No entries" message.
+  }
 };
 
 /**
@@ -1313,9 +1322,7 @@ HistoryView.prototype.getGroupedVisitsDOM_ = function(
       createElementWithClassName('div', 'site-domain-arrow'));
   var siteDomain = siteDomainRow.appendChild(
       createElementWithClassName('div', 'site-domain'));
-  var siteDomainLink = siteDomain.appendChild(
-      createElementWithClassName('button', 'link-button'));
-  siteDomainLink.addEventListener('click', function(e) { e.preventDefault(); });
+  var siteDomainLink = siteDomain.appendChild(new ActionLink);
   siteDomainLink.textContent = domain;
   var numberOfVisits = createElementWithClassName('span', 'number-visits');
   var domainElement = document.createElement('span');
@@ -1596,7 +1603,7 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 };
 
 var focusGridRowSelector = [
-  '.day-results > .entry:not(.fade-out)',
+  ':-webkit-any(.day-results, .search-results) > .entry:not(.fade-out)',
   '.expand .grouped .entry:not(.fade-out)',
   '.site-domain-wrapper'
 ].join(', ');
@@ -1607,7 +1614,7 @@ var focusGridColumnSelector = [
   '.title a',
   '.drop-down',
   '.domain-checkbox',
-  '.link-button',
+  '[is="action-link"]',
 ].join(', ');
 
 /** @private */

@@ -8,6 +8,7 @@
     <output filename="grit/ui_resources_map.h" type="resource_map_header" context="default_100_percent" />
     <output filename="ui_resources_100_percent.pak" type="data_package" context="default_100_percent" />
     <output filename="ui_resources_200_percent.pak" type="data_package" context="default_200_percent" />
+    <output filename="ui_resources_300_percent.pak" type="data_package" context="default_300_percent" />
   </outputs>
   <release seq="1">
     <structures fallback_to_low_resolution="true">
@@ -167,6 +168,10 @@
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG" file="close_dialog.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG_H" file="close_dialog_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG_P" file="close_dialog_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_DISABLE" file="disable.png" />
+      <structure type="chrome_scaled_image" name="IDR_DISABLE_H" file="disable_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_DISABLE_P" file="disable_pressed.png" />
+
       <if expr="desktop_linux">
         <structure type="chrome_scaled_image" name="IDR_CLOSE_H" file="linux/linux_close_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_CLOSE_P" file="linux/linux_close_pressed.png" />
@@ -260,9 +265,15 @@
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON_32" file="common/default_favicon_32.png" />
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON_64" file="common/default_favicon_64.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_HARDLOCKED" file="common/easy_unlock_hardlocked.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_HARDLOCKED_HOVER" file="common/easy_unlock_hardlocked_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_HARDLOCKED_PRESSED" file="common/easy_unlock_hardlocked_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED" file="common/easy_unlock_locked.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_HOVER" file="common/easy_unlock_locked_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_PRESSED" file="common/easy_unlock_locked_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_SPINNER" file="common/easy_unlock_spinner.png" />
       <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED" file="common/easy_unlock_unlocked.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED_HOVER" file="common/easy_unlock_unlocked_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED_PRESSED" file="common/easy_unlock_unlocked_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_FOLDER_CLOSED" file="common/folder_closed.png" />
       <structure type="chrome_scaled_image" name="IDR_FOLDER_CLOSED_RTL" file="common/folder_closed_rtl.png" />
       <if expr="toolkit_views">

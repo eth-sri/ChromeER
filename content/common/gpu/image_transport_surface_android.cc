@@ -39,8 +39,8 @@ class ImageTransportSurfaceAndroid
                                const gfx::GLSurfaceHandle& handle);
 
   // gfx::GLSurface implementation.
-  virtual bool OnMakeCurrent(gfx::GLContext* context) OVERRIDE;
-  virtual void WakeUpGpu() OVERRIDE;
+  virtual bool OnMakeCurrent(gfx::GLContext* context) override;
+  virtual void WakeUpGpu() override;
 
  protected:
   virtual ~ImageTransportSurfaceAndroid();
@@ -59,7 +59,7 @@ class DirectSurfaceAndroid : public PassThroughImageTransportSurface {
                        gfx::GLSurface* surface);
 
   // gfx::GLSurface implementation.
-  virtual bool SwapBuffers() OVERRIDE;
+  virtual bool SwapBuffers() override;
 
  protected:
   virtual ~DirectSurfaceAndroid();
@@ -131,15 +131,20 @@ bool DirectSurfaceAndroid::SwapBuffers() {
 }  // anonymous namespace
 
 // static
+scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateTransportSurface(
+    GpuChannelManager* manager,
+    GpuCommandBufferStub* stub,
+    const gfx::GLSurfaceHandle& handle) {
+  DCHECK_EQ(gfx::NULL_TRANSPORT, handle.transport_type);
+  return scoped_refptr<gfx::GLSurface>(
+      new ImageTransportSurfaceAndroid(manager, stub, handle));
+}
+
+// static
 scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateNativeSurface(
     GpuChannelManager* manager,
     GpuCommandBufferStub* stub,
     const gfx::GLSurfaceHandle& handle) {
-  if (handle.transport_type == gfx::NULL_TRANSPORT) {
-    return scoped_refptr<gfx::GLSurface>(
-        new ImageTransportSurfaceAndroid(manager, stub, handle));
-  }
-
   DCHECK(GpuSurfaceLookup::GetInstance());
   DCHECK_EQ(handle.transport_type, gfx::NATIVE_DIRECT);
   ANativeWindow* window =

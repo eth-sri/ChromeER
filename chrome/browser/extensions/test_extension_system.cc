@@ -26,7 +26,6 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/browser/management_policy.h"
-#include "extensions/browser/process_manager.h"
 #include "extensions/browser/quota_service.h"
 #include "extensions/browser/runtime_data.h"
 #include "extensions/browser/state_store.h"
@@ -49,15 +48,6 @@ TestExtensionSystem::~TestExtensionSystem() {
 void TestExtensionSystem::Shutdown() {
   if (extension_service_)
     extension_service_->Shutdown();
-  process_manager_.reset();
-}
-
-void TestExtensionSystem::CreateProcessManager() {
-  process_manager_.reset(ProcessManager::Create(profile_));
-}
-
-void TestExtensionSystem::SetProcessManager(ProcessManager* manager) {
-  process_manager_.reset(manager);
 }
 
 ExtensionPrefs* TestExtensionSystem::CreateExtensionPrefs(
@@ -96,13 +86,12 @@ ExtensionService* TestExtensionSystem::CreateExtensionService(
   // but we keep a naked pointer to the TestingValueStore.
   scoped_ptr<TestingValueStore> value_store(new TestingValueStore());
   value_store_ = value_store.get();
-  state_store_.reset(
-      new StateStore(profile_, value_store.PassAs<ValueStore>()));
+  state_store_.reset(new StateStore(profile_, value_store.Pass()));
   blacklist_.reset(new Blacklist(ExtensionPrefs::Get(profile_)));
   management_policy_.reset(new ManagementPolicy());
-  management_policy_->RegisterProvider(
+  management_policy_->RegisterProviders(
       ExtensionManagementFactory::GetForBrowserContext(profile_)
-          ->GetProvider());
+          ->GetProviders());
   runtime_data_.reset(new RuntimeData(ExtensionRegistry::Get(profile_)));
   extension_service_.reset(new ExtensionService(profile_,
                                                 command_line,
@@ -134,10 +123,6 @@ void TestExtensionSystem::SetExtensionService(ExtensionService* service) {
 
 SharedUserScriptMaster* TestExtensionSystem::shared_user_script_master() {
   return NULL;
-}
-
-ProcessManager* TestExtensionSystem::process_manager() {
-  return process_manager_.get();
 }
 
 StateStore* TestExtensionSystem::state_store() {

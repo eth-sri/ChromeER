@@ -56,6 +56,14 @@ few months later, when we have more experience with the language.</p>
 </tr>
 
 <tr>
+<td>Aliases</td>
+<td><code>using <i>new_alias</i> = <i>typename</i></code></td>
+<td>Allow parameterized typedefs</td>
+<td><a href="http://en.cppreference.com/w/cpp/language/type_alias">Type alias (using syntax)</a></td>
+<td>Use instead of typedef, unless the header needs to be compatible with C. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/8dOAMzgR4ao">Discussion thread</a></td>
+</tr>
+
+<tr>
 <td>Angle Bracket Parsing in Templates</td>
 <td><code>&gt;&gt;</code> for <code>&gt; &gt;</code> and <br />
 <code>&lt;::</code> for <code>&lt; ::</code></td>
@@ -73,6 +81,30 @@ C++ Templates Angle Brackets Pitfall</a></td>
 <td>Use according to the <a
 href="https://google-styleguide.googlecode.com/svn/trunk/cppguide.html#auto">Google
 Style Guide on <code>auto</code></a>. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/OQyYSfH9m2M">Discussion thread</a></td>
+</tr>
+
+<tr>
+<td>Declared Type Accessor</td>
+<td><code>decltype(<i>expression</i>)</code></td>
+<td>Provides a means to determine the type of an expression at compile-time,
+useful most often in templates.</td>
+<td><a href="http://en.cppreference.com/w/cpp/language/decltype">
+decltype specifier</a></td>
+<td>Usage should be rare. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/_zoNvZd_dSo">Discussion thread</a></td>
+</tr>
+
+<tr>
+<td>Enumerated Type Classes and Enum Bases</td>
+<td><code>enum class <i>classname</i></code><br>
+    <code>enum class <i>classname</i> : <i>base-type</i></code><br>
+    <code>enum <i>enumname</i> : <i>base-type</i></code></td>
+<td>Provide enums as full classes, with no implicit
+conversion to booleans or integers. Provide an explicit underlying type for
+enum classes and regular enums.</td>
+<td><a href="http://www.stroustrup.com/C++11FAQ.html#enum">enum-class</a></td>
+<td>Enum classes are still enums and follow enum naming rules
+(which means SHOUTY_CASE in the <a href="http://www.chromium.org/developers/coding-style#Naming">current style guide</a>).
+<a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/Q5WmkAImanc">Discussion thread</a></td>
 </tr>
 
 <tr>
@@ -165,7 +197,7 @@ Are Variadic macros nonstandard?</a></td>
 
 <h3 id="blacklist_banned">C++11 Banned Features</h3>
 
-<p>This section will list C++11 features that are not allowed in the Chromium
+<p>This section lists C++11 features that are not allowed in the Chromium
 codebase.
 </p>
 
@@ -186,7 +218,7 @@ codebase.
 <td>Compile-time constant expressions</td>
 <td>TODO: documentation link</td>
 <td>Doesn't work in MSVS2013. Reevalute once it does. <a
-href="https://google-styleguide.googlecode.com/svn/trunk/cppguide.html#constexpr">Google
+href="https://google-styleguide.googlecode.com/svn/trunk/cppguide.html#Use_of_constexpr">Google
 Style Guide on <code>constexpr</code></a></td>
 </tr>
 
@@ -211,11 +243,49 @@ The __func__ Predeclared Identifier is Coming to C++</a></td>
 </tr>
 
 <tr>
+<td>Inherited Constructors</td>
+<td><code>class Derived : Base {
+<br />&nbsp;&nbsp;using Base::Base;
+<br />};</code></td>
+<td>Allow derived classes to inherit constructors from base classes</td>
+<td><a href="http://en.cppreference.com/w/cpp/language/using_declaration">Using-declaration</a></td>
+<td>Doesn't work in MSVS2013. Reevaluate once it does. <a
+href="https://groups.google.com/a/chromium.org/d/msg/chromium-dev/BULzgIKZ-Ao/PLO7_GoVNvYJ">Discussion thread</a></td>
+</tr>
+
+<tr>
+<td><code>long long</code> Type</td>
+<td><code>long long <i>var</i>= <i>value</i>;</code></td>
+<td>An integer of at least 64 bits</td>
+<td><a href="http://en.cppreference.com/w/cpp/language/types">
+Fundamental types</a></td>
+<td>Use an stdint.h type if you need a 64bit number. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/RxugZ-pIDxk">Discussion thread</a></td>
+</tr>
+
+<tr>
+<td>Raw String Literals</td>
+<td><code>string <i>var</i>=R&quot;(<i>raw_string</i>)&quot;;</code></td>
+<td>Allows a string to be encoded without any escape
+sequences, easing parsing in regex expressions, for example</td>
+<td>TODO: documentation link</td>
+<td>Causes incorrect line numbers in MSVS2014 and gcc. Reevaluate once that works. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/2kWQHbbuMHI">Discussion thread</a></td>
+</tr>
+
+<tr>
 <td>Rvalue References (and Move Semantics)</td>
 <td><code>T(T&amp;&amp; t)</code> and <code>T&amp; operator=(T&amp;&amp; t)</code></td>
 <td>Reference that only binds to a temporary object</td>
 <td>TODO: documentation link</td>
 <td>To be revisited in the future.  Allowed in exceptional cases where approved by the OWNERS of src/styleguide/c++/.</td>
+</tr>
+
+<tr>
+<td>(Uniform) Initialization Syntax</td>
+<td><code><i>type</i> <i>name</i> { [<i>value</i> ..., <i>value</i>]};</code></td>
+<td>Allows any object of primitive, aggregate or class
+type to be initialized using brace syntax</td>
+<td>TODO: documentation link</td>
+<td>Dangerous without library support, see thread. Reevaulate once we have C++11 library support. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/GF96FshwHLw">Discussion thread</a></td>
 </tr>
 
 <tr>
@@ -264,14 +334,6 @@ work in all our compilers yet.</p>
 </tr>
 
 <tr>
-<td>Aliases</td>
-<td><code>using <i>new_alias</i> = <i>typename</i></code></td>
-<td>Allow parameterized typedefs</td>
-<td><a href="http://en.cppreference.com/w/cpp/language/type_alias">Type alias (using syntax)</a></td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/8dOAMzgR4ao">Discussion thread</a></td>
-</tr>
-
-<tr>
 <td>Alignment Features</td>
 <td>
 <code>alignas</code> specifier,
@@ -291,16 +353,6 @@ specific compiler implementations may use.</td>
 <td><a href="http://www.codesynthesis.com/~boris/blog/2012/04/18/cxx11-generalized-attributes/">
 C++11 generalized attributes</a></td>
 <td></td>
-</tr>
-
-<tr>
-<td>Declared Type Accessor</td>
-<td><code>decltype(<i>expression</i>)</code></td>
-<td>Provides a means to determine the type of an expression at compile-time,
-useful most often in templates.</td>
-<td><a href="http://en.cppreference.com/w/cpp/language/decltype">
-decltype specifier</a></td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/_zoNvZd_dSo">Discussion thread</a></td>
 </tr>
 
 <tr>
@@ -334,16 +386,6 @@ Introduction to the C++11 feature: delegating constructors</a></td>
 </tr>
 
 <tr>
-<td>Enumerated Type Classes</td>
-<td><code>enum class <i>classname</i></code></td>
-<td>Provide enums as full classes, with no implicit
-conversion to booleans or integers</td>
-<td><a href="http://stackoverflow.com/questions/6936030/do-we-really-need-enum-class-in-c11">
-enum-class</a></td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/Q5WmkAImanc">Discussion thread</a></td>
-</tr>
-
-<tr>
 <td>Exception Features</td>
 <td><code>noexcept</code>, <code>exception_ptr</code>,
 <code>current_exception()</code>, <code>rethrow_exception</code>,
@@ -365,15 +407,6 @@ synthetic function such as a copy constructor</td>
 </tr>
 
 <tr>
-<td>(Uniform) Initialization Syntax</td>
-<td><code><i>type</i> <i>name</i> { [<i>value</i> ..., <i>value</i>]};</code></td>
-<td>Allows any object of primitive, aggregate or class
-type to be initialized using brace syntax</td>
-<td>TODO: documentation link</td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/GF96FshwHLw">Discussion thread</a></td>
-</tr>
-
-<tr>
 <td>Inline Namespaces</td>
 <td><code>inline</code></td>
 <td>Allows better versioning of namespaces</td>
@@ -390,15 +423,6 @@ type to be initialized using brace syntax</td>
 </tr>
 
 <tr>
-<td><code>long long</code> Type</td>
-<td><code>long long <i>var</i>= <i>value</i>;</code></td>
-<td>An integer of at least 64 bits</td>
-<td><a href="http://en.cppreference.com/w/cpp/language/types">
-Fundamental types</a></td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/RxugZ-pIDxk">Discussion thread</a></td>
-</tr>
-
-<tr>
 <td>Non-Static Class Member Initializers</td>
 <td>
 <code>
@@ -410,15 +434,6 @@ class C {<br />
 <td><a href="http://en.cppreference.com/w/cpp/language/data_members">
 Non-static data members</a></td>
 <td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/zqB-DySA4V0">Discussion thread</a></td>
-</tr>
-
-<tr>
-<td>Raw String Literals</td>
-<td><code>string <i>var</i>=R&quot;(<i>raw_string</i>)&quot;;</code></td>
-<td>Allows a string to be encoded without any escape
-sequences, easing parsing in regex expressions, for example</td>
-<td>TODO: documentation link</td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/2kWQHbbuMHI">Discussion thread</a></td>
 </tr>
 
 <tr>

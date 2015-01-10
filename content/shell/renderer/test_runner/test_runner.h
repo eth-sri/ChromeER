@@ -65,12 +65,11 @@ class TestRunner : public WebTestRunner,
   void InvokeCallback(scoped_ptr<InvokeCallbackTask> callback);
 
   // WebTestRunner implementation.
-  virtual bool ShouldGeneratePixelResults() OVERRIDE;
-  virtual bool ShouldDumpAsAudio() const OVERRIDE;
-  virtual void GetAudioData(
-      std::vector<unsigned char>* buffer_view) const OVERRIDE;
-  virtual bool ShouldDumpBackForwardList() const OVERRIDE;
-  virtual blink::WebPermissionClient* GetWebPermissions() const OVERRIDE;
+  bool ShouldGeneratePixelResults() override;
+  bool ShouldDumpAsAudio() const override;
+  void GetAudioData(std::vector<unsigned char>* buffer_view) const override;
+  bool ShouldDumpBackForwardList() const override;
+  blink::WebPermissionClient* GetWebPermissions() const override;
 
   // Methods used by WebTestProxyBase.
   bool shouldDumpSelectionRect() const;
@@ -164,7 +163,7 @@ class TestRunner : public WebTestRunner,
      public:
       WorkQueueTask(WorkQueue* object) : WebMethodTask<WorkQueue>(object) {}
 
-      virtual void RunIfValid() OVERRIDE;
+      void RunIfValid() override;
     };
 
     WebTaskList task_list_;
@@ -527,7 +526,7 @@ class TestRunner : public WebTestRunner,
   void ClearWebNotificationPermissions();
 
   // Simulates a click on a desktop notification.
-  bool SimulateWebNotificationClick(const std::string& value);
+  void SimulateWebNotificationClick(const std::string& title);
 
   // Speech recognition related functions.
   void AddMockSpeechRecognitionResult(const std::string& transcript,

@@ -5,33 +5,17 @@
 #include "chrome/browser/signin/easy_unlock_screenlock_state_handler.h"
 
 #include "base/bind.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/chromeos_utils.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
-size_t kIconSize = 27u;
-size_t kSpinnerResourceWidth = 1215u;
-size_t kSpinnerIntervalMs = 50u;
-
-const char kHardlockIconResourceURL[] =
-    "chrome://theme/IDR_EASY_UNLOCK_HARDLOCKED";
-
-const char kLockedIconResourceURL[] =
-    "chrome://theme/IDR_EASY_UNLOCK_LOCKED";
-
-const char kSpinnerIconResourceURL[] =
-    "chrome://theme/IDR_EASY_UNLOCK_SPINNER";
-
-const char kUnlockedIconResourceURL[] =
-    "chrome://theme/IDR_EASY_UNLOCK_UNLOCKED";
-
-std::string GetIconURLForState(EasyUnlockScreenlockStateHandler::State state) {
+ScreenlockBridge::UserPodCustomIcon GetIconForState(
+    EasyUnlockScreenlockStateHandler::State state) {
   switch (state) {
     case EasyUnlockScreenlockStateHandler::STATE_NO_BLUETOOTH:
     case EasyUnlockScreenlockStateHandler::STATE_NO_PHONE:
@@ -40,18 +24,14 @@ std::string GetIconURLForState(EasyUnlockScreenlockStateHandler::State state) {
     case EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_NEARBY:
     case EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE:
     case EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED:
-      return kLockedIconResourceURL;
+      return ScreenlockBridge::USER_POD_CUSTOM_ICON_LOCKED;
     case EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING:
-      return kSpinnerIconResourceURL;
+      return ScreenlockBridge::USER_POD_CUSTOM_ICON_SPINNER;
     case EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED:
-      return kUnlockedIconResourceURL;
+      return ScreenlockBridge::USER_POD_CUSTOM_ICON_UNLOCKED;
     default:
-      return "";
+      return ScreenlockBridge::USER_POD_CUSTOM_ICON_NONE;
   }
-}
-
-bool HasAnimation(EasyUnlockScreenlockStateHandler::State state) {
-  return state == EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING;
 }
 
 bool HardlockOnClick(EasyUnlockScreenlockStateHandler::State state) {
@@ -88,20 +68,23 @@ bool TooltipContainsDeviceType(EasyUnlockScreenlockStateHandler::State state) {
          state == EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED;
 }
 
+bool IsLocaleEnUS() {
+  return g_browser_process->GetApplicationLocale() == "en-US";
+}
+
 }  // namespace
 
 
 EasyUnlockScreenlockStateHandler::EasyUnlockScreenlockStateHandler(
     const std::string& user_email,
-    bool initially_hardlocked,
-    PrefService* pref_service,
+    HardlockState initial_hardlock_state,
     ScreenlockBridge* screenlock_bridge)
     : state_(STATE_INACTIVE),
       user_email_(user_email),
-      pref_service_(pref_service),
       screenlock_bridge_(screenlock_bridge),
-      hardlocked_(initially_hardlocked),
-      hardlock_ui_shown_(false) {
+      hardlock_state_(initial_hardlock_state),
+      hardlock_ui_shown_(false),
+      is_trial_run_(false) {
   DCHECK(screenlock_bridge_);
   screenlock_bridge_->AddObserver(this);
 }
@@ -110,6 +93,18 @@ EasyUnlockScreenlockStateHandler::~EasyUnlockScreenlockStateHandler() {
   screenlock_bridge_->RemoveObserver(this);
   // Make sure the screenlock state set by this gets cleared.
   ChangeState(STATE_INACTIVE);
+}
+
+bool EasyUnlockScreenlockStateHandler::IsActive() const {
+  return state_ != STATE_INACTIVE;
+}
+
+bool EasyUnlockScreenlockStateHandler::InStateValidOnRemoteAuthFailure() const {
+  // Note that NO_PHONE is not valid in this case because the phone may close
+  // the connection if the auth challenge sent to it is invalid. This case
+  // should be handled as authentication failure.
+  return state_ == EasyUnlockScreenlockStateHandler::STATE_NO_BLUETOOTH ||
+         state_ == EasyUnlockScreenlockStateHandler::STATE_PHONE_LOCKED;
 }
 
 void EasyUnlockScreenlockStateHandler::ChangeState(State new_state) {
@@ -123,77 +118,95 @@ void EasyUnlockScreenlockStateHandler::ChangeState(State new_state) {
   if (!screenlock_bridge_->IsLocked())
     return;
 
-  if (hardlocked_) {
+  // No hardlock UI for trial run.
+  if (!is_trial_run_ && hardlock_state_ != NO_HARDLOCK) {
     ShowHardlockUI();
     return;
   }
 
   UpdateScreenlockAuthType();
 
-  ScreenlockBridge::UserPodCustomIconOptions icon_options;
+  ScreenlockBridge::UserPodCustomIcon icon = GetIconForState(state_);
 
-  std::string icon_url = GetIconURLForState(state_);
-  if (icon_url.empty()) {
+  if (icon == ScreenlockBridge::USER_POD_CUSTOM_ICON_NONE) {
     screenlock_bridge_->lock_handler()->HideUserPodCustomIcon(user_email_);
     return;
   }
-  icon_options.SetIconAsResourceURL(icon_url);
 
-  bool trial_run = IsTrialRun();
-
-  UpdateTooltipOptions(trial_run, &icon_options);
-
-  icon_options.SetSize(kIconSize, kIconSize);
-
-  if (HasAnimation(state_))
-    icon_options.SetAnimation(kSpinnerResourceWidth, kSpinnerIntervalMs);
+  ScreenlockBridge::UserPodCustomIconOptions icon_options;
+  icon_options.SetIcon(icon);
 
   // Don't hardlock on trial run.
-  if (!trial_run && HardlockOnClick(state_))
+  if (!is_trial_run_ && HardlockOnClick(state_))
     icon_options.SetHardlockOnClick();
 
-  if (trial_run && state_ == STATE_AUTHENTICATED)
-    MarkTrialRunComplete();
+  UpdateTooltipOptions(is_trial_run_, &icon_options);
+
+  // For states without tooltips, we still need to set an accessibility label.
+  if (state_ == EasyUnlockScreenlockStateHandler::STATE_BLUETOOTH_CONNECTING) {
+    icon_options.SetAriaLabel(
+        l10n_util::GetStringUTF16(IDS_SMART_LOCK_SPINNER_ACCESSIBILITY_LABEL));
+  }
 
   screenlock_bridge_->lock_handler()->ShowUserPodCustomIcon(user_email_,
                                                             icon_options);
 }
 
-void EasyUnlockScreenlockStateHandler::SetHardlocked(bool value) {
-  if (hardlocked_ == value)
+void EasyUnlockScreenlockStateHandler::SetHardlockState(
+    HardlockState new_state) {
+  if (hardlock_state_ == new_state)
     return;
 
-  hardlocked_ = value;
+  if (new_state == LOGIN_FAILED && hardlock_state_ != NO_HARDLOCK)
+    return;
 
-  // If hardlocked_ was set to false, this means the screen is about to get
-  // unlocked. No need to update it in this case.
-  if (hardlocked_) {
-    State last_state = state_;
-    // This should force updating screenlock state.
-    state_ = STATE_INACTIVE;
-    ChangeState(last_state);
+  hardlock_state_ = new_state;
+
+  // If hardlock_state_ was set to NO_HARDLOCK, this means the screen is about
+  // to get unlocked. No need to update it in this case.
+  if (hardlock_state_ != NO_HARDLOCK) {
+    hardlock_ui_shown_ = false;
+
+    RefreshScreenlockState();
   }
 }
 
+void EasyUnlockScreenlockStateHandler::MaybeShowHardlockUI() {
+  if (hardlock_state_ != NO_HARDLOCK)
+    ShowHardlockUI();
+}
+
+void EasyUnlockScreenlockStateHandler::SetTrialRun() {
+  if (is_trial_run_)
+    return;
+  is_trial_run_ = true;
+  RefreshScreenlockState();
+}
+
 void EasyUnlockScreenlockStateHandler::OnScreenDidLock() {
-  State last_state = state_;
-  // This should force updating screenlock state.
-  state_ = STATE_INACTIVE;
-  ChangeState(last_state);
+  RefreshScreenlockState();
 }
 
 void EasyUnlockScreenlockStateHandler::OnScreenDidUnlock() {
+  if (hardlock_state_ == LOGIN_FAILED)
+    hardlock_state_ = NO_HARDLOCK;
   hardlock_ui_shown_ = false;
-  if (state_ != STATE_INACTIVE)
-    MarkTrialRunComplete();
+  is_trial_run_ = false;
 }
 
 void EasyUnlockScreenlockStateHandler::OnFocusedUserChanged(
     const std::string& user_id) {
 }
 
+void EasyUnlockScreenlockStateHandler::RefreshScreenlockState() {
+  State last_state = state_;
+  // This should force updating screenlock state.
+  state_ = STATE_INACTIVE;
+  ChangeState(last_state);
+}
+
 void EasyUnlockScreenlockStateHandler::ShowHardlockUI() {
-  DCHECK(hardlocked_);
+  DCHECK(hardlock_state_ != NO_HARDLOCK);
 
   if (!screenlock_bridge_->IsLocked())
     return;
@@ -206,7 +219,7 @@ void EasyUnlockScreenlockStateHandler::ShowHardlockUI() {
         base::string16());
   }
 
-  if (state_ == STATE_INACTIVE) {
+  if (hardlock_state_ == NO_PAIRING) {
     screenlock_bridge_->lock_handler()->HideUserPodCustomIcon(user_email_);
     hardlock_ui_shown_ = false;
     return;
@@ -216,12 +229,30 @@ void EasyUnlockScreenlockStateHandler::ShowHardlockUI() {
     return;
 
   ScreenlockBridge::UserPodCustomIconOptions icon_options;
-  icon_options.SetIconAsResourceURL(kHardlockIconResourceURL);
-  icon_options.SetSize(kIconSize, kIconSize);
-  icon_options.SetTooltip(
-      l10n_util::GetStringFUTF16(IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK,
-                                 GetDeviceName()),
-      false /* don't autoshow */);
+  if (hardlock_state_ == LOGIN_FAILED) {
+    icon_options.SetIcon(ScreenlockBridge::USER_POD_CUSTOM_ICON_LOCKED);
+  } else {
+    icon_options.SetIcon(ScreenlockBridge::USER_POD_CUSTOM_ICON_HARDLOCKED);
+  }
+
+  // TODO(tbarzic): Remove this condition for M-40.
+  if (IsLocaleEnUS()) {
+    base::string16 tooltip;
+    if (hardlock_state_ == USER_HARDLOCK) {
+      tooltip = l10n_util::GetStringFUTF16(
+          IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK_USER, GetDeviceName());
+    } else if (hardlock_state_ == PAIRING_CHANGED) {
+      tooltip = l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_HARDLOCK_PAIRING_CHANGED);
+    } else if (hardlock_state_ == LOGIN_FAILED) {
+      tooltip = l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_LOGIN_FAILURE);
+    } else {
+      LOG(ERROR) << "Unknown hardlock state " << hardlock_state_;
+    }
+    icon_options.SetTooltip(tooltip, true /* autoshow */);
+  }
+
   screenlock_bridge_->lock_handler()->ShowUserPodCustomIcon(user_email_,
                                                             icon_options);
   hardlock_ui_shown_ = true;
@@ -233,7 +264,11 @@ void EasyUnlockScreenlockStateHandler::UpdateTooltipOptions(
   size_t resource_id = 0;
   base::string16 device_name;
   if (trial_run && state_ == STATE_AUTHENTICATED) {
-    resource_id = IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_TUTORIAL;
+    // TODO(tbarzic): Remove this condition for M-40 branch.
+    if (IsLocaleEnUS())
+      resource_id = IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_INITIAL_AUTHENTICATED;
+    else
+      resource_id = IDS_EASY_UNLOCK_SCREENLOCK_TOOLTIP_TUTORIAL;
   } else {
     resource_id = GetTooltipResourceId(state_);
     if (TooltipContainsDeviceType(state_))
@@ -253,20 +288,7 @@ void EasyUnlockScreenlockStateHandler::UpdateTooltipOptions(
   if (tooltip.empty())
     return;
 
-  icon_options->SetTooltip(
-      tooltip,
-      state_ == STATE_AUTHENTICATED && trial_run /* autoshow tooltip */);
-}
-
-bool EasyUnlockScreenlockStateHandler::IsTrialRun() {
-  return pref_service_ &&
-         pref_service_->GetBoolean(prefs::kEasyUnlockShowTutorial);
-}
-
-void EasyUnlockScreenlockStateHandler::MarkTrialRunComplete() {
-  if (!pref_service_)
-    return;
-  pref_service_->SetBoolean(prefs::kEasyUnlockShowTutorial, false);
+  icon_options->SetTooltip(tooltip, trial_run /* autoshow tooltip */);
 }
 
 base::string16 EasyUnlockScreenlockStateHandler::GetDeviceName() {
@@ -279,15 +301,18 @@ base::string16 EasyUnlockScreenlockStateHandler::GetDeviceName() {
 }
 
 void EasyUnlockScreenlockStateHandler::UpdateScreenlockAuthType() {
-  if (hardlocked_)
+  if (!is_trial_run_ && hardlock_state_ != NO_HARDLOCK)
     return;
 
   if (state_ == STATE_AUTHENTICATED) {
-    screenlock_bridge_->lock_handler()->SetAuthType(
-        user_email_,
-        ScreenlockBridge::LockHandler::USER_CLICK,
-        l10n_util::GetStringUTF16(
-            IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE));
+    if (screenlock_bridge_->lock_handler()->GetAuthType(user_email_) !=
+            ScreenlockBridge::LockHandler::USER_CLICK) {
+      screenlock_bridge_->lock_handler()->SetAuthType(
+          user_email_,
+          ScreenlockBridge::LockHandler::USER_CLICK,
+          l10n_util::GetStringUTF16(
+              IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE));
+    }
   } else if (screenlock_bridge_->lock_handler()->GetAuthType(user_email_) !=
                  ScreenlockBridge::LockHandler::OFFLINE_PASSWORD) {
     screenlock_bridge_->lock_handler()->SetAuthType(

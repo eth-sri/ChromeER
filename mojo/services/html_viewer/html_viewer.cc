@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "mojo/application/application_runner_chromium.h"
@@ -25,6 +26,13 @@
 
 namespace mojo {
 
+// Switches for html_viewer to be used with "--args-for". For example:
+// --args-for='mojo://html_viewer --enable-mojo-media-renderer'
+
+// Enable mojo::MediaRenderer in media pipeline instead of using the internal
+// media::Renderer implementation.
+const char kEnableMojoMediaRenderer[] = "--enable-mojo-media-renderer";
+
 class HTMLViewer;
 
 class ContentHandlerImpl : public InterfaceImpl<ContentHandler> {
@@ -35,14 +43,14 @@ class ContentHandlerImpl : public InterfaceImpl<ContentHandler> {
       : shell_(shell),
         compositor_thread_(compositor_thread),
         web_media_player_factory_(web_media_player_factory) {}
-  virtual ~ContentHandlerImpl() {}
+  ~ContentHandlerImpl() override {}
 
  private:
   // Overridden from ContentHandler:
-  virtual void OnConnect(
-      const mojo::String& url,
+  void OnConnect(
+      const mojo::String& requestor_url,
       URLResponsePtr response,
-      InterfaceRequest<ServiceProvider> service_provider_request) OVERRIDE {
+      InterfaceRequest<ServiceProvider> service_provider_request) override {
     new HTMLDocumentView(response.Pass(),
                          service_provider_request.Pass(),
                          shell_,
@@ -62,38 +70,45 @@ class HTMLViewer : public ApplicationDelegate,
  public:
   HTMLViewer() : compositor_thread_("compositor thread") {}
 
-  virtual ~HTMLViewer() { blink::shutdown(); }
+  ~HTMLViewer() override { blink::shutdown(); }
 
  private:
   // Overridden from ApplicationDelegate:
-  virtual void Initialize(ApplicationImpl* app) OVERRIDE {
+  void Initialize(ApplicationImpl* app) override {
     shell_ = app->shell();
     blink_platform_impl_.reset(new BlinkPlatformImpl(app));
     blink::initialize(blink_platform_impl_.get());
 #if !defined(COMPONENT_BUILD)
-  base::i18n::InitializeICU();
+    base::i18n::InitializeICU();
 
-  ui::RegisterPathProvider();
+    ui::RegisterPathProvider();
 
-  base::FilePath ui_test_pak_path;
-  CHECK(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
-  ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
+    base::FilePath ui_test_pak_path;
+    CHECK(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+    ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
 #endif
+
+    bool enable_mojo_media_renderer = false;
+    for (const auto& arg : app->args()) {
+      if (arg == kEnableMojoMediaRenderer) {
+        enable_mojo_media_renderer = true;
+        break;
+      }
+    }
 
     compositor_thread_.Start();
     web_media_player_factory_.reset(new WebMediaPlayerFactory(
-        compositor_thread_.message_loop_proxy()));
+        compositor_thread_.message_loop_proxy(), enable_mojo_media_renderer));
   }
 
-  virtual bool ConfigureIncomingConnection(ApplicationConnection* connection)
-      OVERRIDE {
+  bool ConfigureIncomingConnection(ApplicationConnection* connection) override {
     connection->AddService(this);
     return true;
   }
 
   // Overridden from InterfaceFactory<ContentHandler>
-  virtual void Create(ApplicationConnection* connection,
-                      InterfaceRequest<ContentHandler> request) OVERRIDE {
+  void Create(ApplicationConnection* connection,
+              InterfaceRequest<ContentHandler> request) override {
     BindToRequest(
         new ContentHandlerImpl(shell_, compositor_thread_.message_loop_proxy(),
                                web_media_player_factory_.get()),

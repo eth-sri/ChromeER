@@ -41,9 +41,9 @@ class RegisterAppTaskTest : public testing::Test {
   RegisterAppTaskTest()
       : next_file_id_(1000),
         next_tracker_id_(10000) {}
-  virtual ~RegisterAppTaskTest() {}
+  ~RegisterAppTaskTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
@@ -58,20 +58,18 @@ class RegisterAppTaskTest : public testing::Test {
         fake_drive_service.get(), drive_uploader.get(),
         kSyncRootFolderTitle));
 
-    context_.reset(
-        new SyncEngineContext(
-            fake_drive_service.PassAs<drive::DriveServiceInterface>(),
-            drive_uploader.Pass(),
-            nullptr,
-            base::ThreadTaskRunnerHandle::Get(),
-            base::ThreadTaskRunnerHandle::Get()));
+    context_.reset(new SyncEngineContext(fake_drive_service.Pass(),
+                                         drive_uploader.Pass(),
+                                         nullptr,
+                                         base::ThreadTaskRunnerHandle::Get(),
+                                         base::ThreadTaskRunnerHandle::Get()));
 
     ASSERT_EQ(google_apis::HTTP_CREATED,
               fake_drive_service_helper_->AddOrphanedFolder(
                   kSyncRootFolderTitle, &sync_root_folder_id_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     context_.reset();
     base::RunLoop().RunUntilIdle();
   }

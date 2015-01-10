@@ -82,20 +82,25 @@
             'component_updater/test/request_sender_unittest.cc',
             'component_updater/test/update_checker_unittest.cc',
             'component_updater/test/update_response_unittest.cc',
+            'content_settings/core/browser/content_settings_mock_provider.cc',
+            'content_settings/core/browser/content_settings_mock_provider.h',
+            'content_settings/core/browser/content_settings_provider_unittest.cc',
             'content_settings/core/browser/content_settings_rule_unittest.cc',
+            'content_settings/core/browser/content_settings_utils_unittest.cc',
             'content_settings/core/common/content_settings_pattern_parser_unittest.cc',
             'content_settings/core/common/content_settings_pattern_unittest.cc',
             'crx_file/id_util_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_config_service_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_metrics_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_params_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_protocol_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_settings_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_statistics_prefs_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_tamper_detection_unittest.cc',
-            'data_reduction_proxy/browser/data_reduction_proxy_usage_stats_unittest.cc',
-            'data_reduction_proxy/common/data_reduction_proxy_headers_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_config_service_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_metrics_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_prefs_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_protocol_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_settings_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_tamper_detection_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats_unittest.cc',
+            'data_reduction_proxy/core/common/data_reduction_proxy_headers_unittest.cc',
+            'data_reduction_proxy/core/common/data_reduction_proxy_params_unittest.cc',
             'dom_distiller/core/article_entry_unittest.cc',
             'dom_distiller/core/distilled_content_store_unittest.cc',
             'dom_distiller/core/distilled_page_prefs_unittests.cc',
@@ -145,6 +150,7 @@
             'keyed_service/core/dependency_graph_unittest.cc',
             'language_usage_metrics/language_usage_metrics_unittest.cc',
             'leveldb_proto/proto_database_impl_unittest.cc',
+            'login/screens/screen_context_unittest.cc',
             'metrics/compression_utils_unittest.cc',
             'metrics/daily_event_unittest.cc',
             'metrics/machine_id_provider_win_unittest.cc',
@@ -166,7 +172,7 @@
             'omnibox/autocomplete_result_unittest.cc',
             'omnibox/keyword_provider_unittest.cc',
             'omnibox/omnibox_field_trial_unittest.cc',
-            'omnibox/search_suggestion_parser_unittest.cc',
+            'omnibox/suggestion_answer_unittest.cc',
             'os_crypt/ie7_password_win_unittest.cc',
             'os_crypt/keychain_password_mac_unittest.mm',
             'os_crypt/os_crypt_unittest.cc',
@@ -203,6 +209,10 @@
             'search_engines/template_url_unittest.cc',
             'search_provider_logos/logo_cache_unittest.cc',
             'search_provider_logos/logo_tracker_unittest.cc',
+            'sessions/content/content_serialized_navigation_builder_unittest.cc',
+            'sessions/content/content_serialized_navigation_driver_unittest.cc',
+            'sessions/ios/ios_serialized_navigation_builder_unittest.cc',
+            'sessions/ios/ios_serialized_navigation_driver_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
             'signin/core/browser/account_tracker_service_unittest.cc',
             'signin/core/browser/mutable_profile_oauth2_token_service_unittest.cc',
@@ -251,9 +261,9 @@
             'variations/caching_permuted_entropy_provider_unittest.cc',
             'variations/entropy_provider_unittest.cc',
             'variations/metrics_util_unittest.cc',
+            'variations/net/variations_http_header_provider_unittest.cc',
             'variations/study_filtering_unittest.cc',
             'variations/variations_associated_data_unittest.cc',
-            'variations/variations_http_header_provider_unittest.cc',
             'variations/variations_seed_processor_unittest.cc',
             'variations/variations_seed_simulator_unittest.cc',
             'visitedlink/test/visitedlink_unittest.cc',
@@ -321,8 +331,8 @@
             'components.gyp:crx_file',
 
             # Dependencies of data_reduction_proxy
-            'components.gyp:data_reduction_proxy_browser',
-            'components.gyp:data_reduction_proxy_common',
+            'components.gyp:data_reduction_proxy_core_browser',
+            'components.gyp:data_reduction_proxy_core_common',
             'components.gyp:data_reduction_proxy_test_support',
 
             # Dependencies of dom_distiller
@@ -374,6 +384,9 @@
             'components.gyp:leveldb_proto',
             'components.gyp:leveldb_proto_test_support',
 
+            # Dependencies of login
+            'components.gyp:login',
+
             # Dependencies of metrics
             'components.gyp:metrics',
             'components.gyp:metrics_gpu',
@@ -424,6 +437,10 @@
             # Dependencies of search_provider_logos
             'components.gyp:search_provider_logos',
 
+            # Dependencies of sessions
+            '../third_party/protobuf/protobuf.gyp:protobuf_lite',
+            'components.gyp:sessions_test_support',
+
             # Dependencies of signin
             'components.gyp:signin_core_browser',
             'components.gyp:signin_core_browser_test_support',
@@ -452,12 +469,19 @@
             ['toolkit_views == 1', {
               'sources': [
                 'bookmarks/browser/bookmark_node_data_unittest.cc',
+                'constrained_window/constrained_window_views_unittest.cc',
               ],
+              'dependencies': [
+                '<(DEPTH)/ui/views/views.gyp:views_test_support',
+                'components.gyp:constrained_window',
+              ]
             }],
             ['OS != "ios"', {
               'sources': [
                 'autofill/content/renderer/renderer_save_password_progress_logger_unittest.cc',
                 'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
+                'dom_distiller/content/web_contents_main_frame_observer_unittest.cc',
+                'error_page/renderer/net_error_helper_core_unittest.cc',
                 'metrics/gpu/gpu_metrics_provider_unittest.cc',
                 'password_manager/content/browser/content_credential_manager_dispatcher_unittest.cc',
                 'power/origin_power_map_unittest.cc',
@@ -470,6 +494,9 @@
 
                 # Dependencies of dom_distiller
                 'components.gyp:dom_distiller_content',
+
+                # Dependencies of error_page
+                'components.gyp:error_page_renderer',
 
                 # Dependencies of
                 # intercept_navigation_resource_throttle_unittest.cc
@@ -490,9 +517,7 @@
                 'components.gyp:power',
 
                 # Dependencies of sessions
-                '../third_party/protobuf/protobuf.gyp:protobuf_lite',
-                'components.gyp:sessions',
-                'components.gyp:sessions_test_support',
+                'components.gyp:sessions_content',
 
                 # Dependencies of storage monitor
                 'components.gyp:storage_monitor',
@@ -542,14 +567,19 @@
                 ['include', '^search/'],
                 ['include', '^search_engines/'],
                 ['include', '^search_provider_logos/'],
-                ['include', '^signin/'],
+                ['include', '^sessions/ios/'],
+                ['include', '^sessions/serialized_navigation_entry_unittest\\.cc$'],
                 ['exclude', '^signin/core/browser/mutable_profile_oauth2_token_service_unittest\\.cc$'],
+                ['include', '^suggestions/'],
                 ['include', '^sync_driver/'],
                 ['include', '^translate/'],
                 ['include', '^url_fixer/'],
                 ['include', '^variations/'],
               ],
               'dependencies': [
+                # Dependencies of sessions
+                'components.gyp:sessions_ios',
+
                 # Dependencies of signin
                 'components.gyp:signin_ios_browser',
                 '../ios/ios_tests.gyp:test_support_ios',
@@ -661,14 +691,20 @@
               'sources': [
                 'copresence/handlers/audio/audio_directive_handler_unittest.cc',
                 'copresence/handlers/audio/audio_directive_list_unittest.cc',
+                'copresence/mediums/audio/audio_manager_unittest.cc',
                 'copresence/mediums/audio/audio_player_unittest.cc',
                 'copresence/mediums/audio/audio_recorder_unittest.cc',
                 'copresence/rpc/http_post_unittest.cc',
                 'copresence/rpc/rpc_handler_unittest.cc',
                 'copresence/timed_map_unittest.cc',
+                'proximity_auth/base64url_unittest.cc',
                 'proximity_auth/bluetooth_connection_unittest.cc',
+                'proximity_auth/bluetooth_connection_finder_unittest.cc',
+                'proximity_auth/client_unittest.cc',
                 'proximity_auth/connection_unittest.cc',
+                'proximity_auth/cryptauth/cryptauth_api_call_flow_unittest.cc',
                 'proximity_auth/proximity_auth_system_unittest.cc',
+                'proximity_auth/remote_status_update_unittest.cc',
                 'proximity_auth/wire_message_unittest.cc',
               ],
               'dependencies': [
@@ -678,12 +714,14 @@
 
                 # Dependencies of proxmity_auth
                 'components.gyp:proximity_auth',
+                'components.gyp:cryptauth',
                 '../device/bluetooth/bluetooth.gyp:device_bluetooth_mocks',
               ],
             }],
             ['chromeos==1', {
               'sources': [
                 'pairing/message_buffer_unittest.cc',
+                'timers/alarm_timer_unittest.cc',
               ],
               'sources!': [
                 'storage_monitor/storage_monitor_linux_unittest.cc',

@@ -71,6 +71,7 @@ class CONTENT_EXPORT FrameTree {
 
   // Frame tree manipulation routines.
   RenderFrameHostImpl* AddFrame(FrameTreeNode* parent,
+                                int process_id,
                                 int new_routing_id,
                                 const std::string& frame_name);
   void RemoveFrame(FrameTreeNode* child);
@@ -134,6 +135,11 @@ class CONTENT_EXPORT FrameTree {
  private:
   typedef base::hash_map<int, RenderViewHostImpl*> RenderViewHostMap;
   typedef std::multimap<int, RenderViewHostImpl*> RenderViewHostMultiMap;
+
+  // A variation to the public ForEach method with a difference that the subtree
+  // starting at |skip_this_subtree| will not be recursed into.
+  void ForEach(const base::Callback<bool(FrameTreeNode*)>& on_node,
+               FrameTreeNode* skip_this_subtree) const;
 
   // These delegates are installed into all the RenderViewHosts and
   // RenderFrameHosts that we create.

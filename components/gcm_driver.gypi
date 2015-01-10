@@ -13,6 +13,7 @@
         '../base/base.gyp:base',
         '../google_apis/gcm/gcm.gyp:gcm',
         '../net/net.gyp:net',
+        '../sync/sync.gyp:sync_proto',
       ],
       'include_dirs': [
         '..',
@@ -53,7 +54,6 @@
         'gcm_driver/gcm_driver_desktop.h',
         'gcm_driver/gcm_stats_recorder_impl.cc',
         'gcm_driver/gcm_stats_recorder_impl.h',
-        'gcm_driver/proto/gcm_channel_status.proto',
         'gcm_driver/system_encryptor.cc',
         'gcm_driver/system_encryptor.h',
       ],
@@ -88,6 +88,11 @@
             'gcm_driver/gcm_stats_recorder_impl.cc',
             'gcm_driver/gcm_stats_recorder_impl.h',
             'gcm_driver/proto/gcm_channel_status.proto',
+          ],
+        }],
+        ['chromeos == 1', {
+          'dependencies': [
+            'timers',
           ],
         }],
       ],
@@ -135,6 +140,7 @@
     ['OS == "android"', {
       'targets': [
         {
+          # GN version: //components/gcm_driver/android:gcm_driver_java
           'target_name': 'gcm_driver_java',
           'type': 'none',
           'dependencies': [
@@ -149,7 +155,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
-          # GN version: //components/gcm_driver:jni_headers
+          # GN version: //components/gcm_driver/android:jni_headers
           'target_name': 'gcm_driver_jni_headers',
           'type': 'none',
           'sources': [

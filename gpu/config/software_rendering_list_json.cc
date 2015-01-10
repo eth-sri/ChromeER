@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "9.8",
+  "version": "9.11",
   "entries": [
     {
       "id": 1,
@@ -868,7 +868,11 @@ LONG_STRING_CONST(
       "description": "Samsung Galaxy NOTE is too buggy to use for video decoding",
       "cr_bugs": [308721],
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
       },
       "machine_model_name": ["GT-.*"],
       "features": [
@@ -880,7 +884,11 @@ LONG_STRING_CONST(
       "description": "Samsung Galaxy S4 is too buggy to use for video decoding",
       "cr_bugs": [329072],
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
       },
       "machine_model_name": ["SCH-.*"],
       "features": [
@@ -1055,7 +1063,7 @@ LONG_STRING_CONST(
                                  "HTC One",
                                  "C5303", "C6603", "C6903",
                                  "GT-I8262", "GT-I8552", "GT-I9195",
-                                 "GT-I9500", "GT-I9505",
+                                 "GT-I9505",
                                  "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
                                  "SM-N900", "SM-N9005", "SPH-L720",
                                  "XT907", "XT1032", "XT1033", "XT1080"]
@@ -1117,11 +1125,45 @@ LONG_STRING_CONST(
       "description": "Samsung Galaxy Tab is too buggy to use for video decoding",
       "cr_bugs": [408353],
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
       },
       "machine_model_name": ["SM-.*"],
       "features": [
         "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 102,
+      "description": "Accelerated 2D canvas and Ganesh broken on Galaxy Tab 2",
+      "cr_bugs": [416910],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "PowerVR SGX 540",
+      "features": [
+        "accelerated_2d_canvas",
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 103,
+      "description": "Intel GM965/GL960 crash often on Mac OS 10.6",
+      "cr_bugs": [421641],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "=",
+          "value": "10.6"
+        }
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0x2a02"],
+      "features": [
+        "all"
       ]
     }
   ]

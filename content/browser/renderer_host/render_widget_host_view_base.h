@@ -37,7 +37,6 @@ class SkBitmap;
 
 struct AccessibilityHostMsg_EventParams;
 struct ViewHostMsg_SelectionBounds_Params;
-struct ViewHostMsg_TextInputState_Params;
 
 namespace media {
 class VideoFrame;
@@ -67,24 +66,25 @@ typedef const base::Callback<void(bool, const SkBitmap&)>
 class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                                 public IPC::Listener {
  public:
-  virtual ~RenderWidgetHostViewBase();
+  ~RenderWidgetHostViewBase() override;
 
   // RenderWidgetHostView implementation.
-  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
-  virtual bool GetBackgroundOpaque() OVERRIDE;
-  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
-  virtual bool IsShowingContextMenu() const OVERRIDE;
-  virtual void SetShowingContextMenu(bool showing_menu) OVERRIDE;
-  virtual base::string16 GetSelectedText() const OVERRIDE;
-  virtual bool IsMouseLocked() OVERRIDE;
-  virtual gfx::Size GetVisibleViewportSize() const OVERRIDE;
-  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
-  virtual void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
-  virtual void EndFrameSubscription() OVERRIDE;
+  void SetBackgroundColor(SkColor color) override;
+  void SetBackgroundColorToDefault() final;
+  bool GetBackgroundOpaque() override;
+  ui::TextInputClient* GetTextInputClient() override;
+  bool IsShowingContextMenu() const override;
+  void SetShowingContextMenu(bool showing_menu) override;
+  base::string16 GetSelectedText() const override;
+  bool IsMouseLocked() override;
+  gfx::Size GetVisibleViewportSize() const override;
+  void SetInsets(const gfx::Insets& insets) override;
+  void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
+  void EndFrameSubscription() override;
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // Called by the host when the input flush has completed.
   void OnDidFlushInput();
@@ -221,8 +221,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void SetIsLoading(bool is_loading) = 0;
 
   // Updates the type of the input method attached to the view.
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) = 0;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    ui::TextInputMode mode,
+                                    bool can_compose_inline,
+                                    int flags) = 0;
 
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
@@ -336,7 +338,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       const NativeWebKeyboardEvent& event) = 0;
 #endif
 
-#if defined(OS_MACOSX) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA) || defined(OS_ANDROID)
   // Updates the range of the marked text in an IME composition.
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
@@ -379,8 +381,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // autofill...).
   blink::WebPopupType popup_type_;
 
-  // When false, the background of the web content is not fully opaque.
-  bool background_opaque_;
+  // The background color of the web content.
+  SkColor background_color_;
 
   // While the mouse is locked, the cursor is hidden from the user. Mouse events
   // are still generated. However, the position they report is the last known

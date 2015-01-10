@@ -36,9 +36,7 @@ class TestDevToolsClientHost : public DevToolsAgentHostClient {
         closed_(false) {
   }
 
-  virtual ~TestDevToolsClientHost() {
-    EXPECT_TRUE(closed_);
-  }
+  ~TestDevToolsClientHost() override { EXPECT_TRUE(closed_); }
 
   void Close() {
     EXPECT_FALSE(closed_);
@@ -47,13 +45,12 @@ class TestDevToolsClientHost : public DevToolsAgentHostClient {
     closed_ = true;
   }
 
-  virtual void AgentHostClosed(
-      DevToolsAgentHost* agent_host, bool replaced) OVERRIDE {
+  void AgentHostClosed(DevToolsAgentHost* agent_host, bool replaced) override {
     FAIL();
   }
 
-  virtual void DispatchProtocolMessage(
-      DevToolsAgentHost* agent_host, const std::string& message) OVERRIDE {
+  void DispatchProtocolMessage(DevToolsAgentHost* agent_host,
+                               const std::string& message) override {
     last_sent_message = &message;
   }
 
@@ -87,7 +84,7 @@ class TestWebContentsDelegate : public WebContentsDelegate {
   TestWebContentsDelegate() : renderer_unresponsive_received_(false) {}
 
   // Notification that the contents is hung.
-  virtual void RendererUnresponsive(WebContents* source) OVERRIDE {
+  void RendererUnresponsive(WebContents* source) override {
     renderer_unresponsive_received_ = true;
   }
 
@@ -103,26 +100,24 @@ class TestTarget : public DevToolsTarget {
  public:
   explicit TestTarget(scoped_refptr<DevToolsAgentHost> agent_host)
       : agent_host_(agent_host) {}
-  virtual ~TestTarget() {}
+  ~TestTarget() override {}
 
-  virtual std::string GetId() const OVERRIDE { return agent_host_->GetId(); }
-  virtual std::string GetParentId() const OVERRIDE { return std::string(); }
-  virtual std::string GetType() const OVERRIDE { return std::string(); }
-  virtual std::string GetTitle() const OVERRIDE {
-    return agent_host_->GetTitle();
-  }
-  virtual std::string GetDescription() const OVERRIDE { return std::string(); }
-  virtual GURL GetURL() const OVERRIDE { return agent_host_->GetURL(); }
-  virtual GURL GetFaviconURL() const OVERRIDE { return GURL(); }
-  virtual base::TimeTicks GetLastActivityTime() const OVERRIDE {
+  std::string GetId() const override { return agent_host_->GetId(); }
+  std::string GetParentId() const override { return std::string(); }
+  std::string GetType() const override { return std::string(); }
+  std::string GetTitle() const override { return agent_host_->GetTitle(); }
+  std::string GetDescription() const override { return std::string(); }
+  GURL GetURL() const override { return agent_host_->GetURL(); }
+  GURL GetFaviconURL() const override { return GURL(); }
+  base::TimeTicks GetLastActivityTime() const override {
     return base::TimeTicks();
   }
-  virtual bool IsAttached() const OVERRIDE { return agent_host_->IsAttached(); }
-  virtual scoped_refptr<DevToolsAgentHost> GetAgentHost() const OVERRIDE {
+  bool IsAttached() const override { return agent_host_->IsAttached(); }
+  scoped_refptr<DevToolsAgentHost> GetAgentHost() const override {
     return agent_host_;
   }
-  virtual bool Activate() const OVERRIDE { return agent_host_->Activate(); }
-  virtual bool Close() const OVERRIDE { return agent_host_->Close(); }
+  bool Activate() const override { return agent_host_->Activate(); }
+  bool Close() const override { return agent_host_->Close(); }
 
  private:
   scoped_refptr<DevToolsAgentHost> agent_host_;
@@ -130,23 +125,25 @@ class TestTarget : public DevToolsTarget {
 
 class TestDevToolsManagerDelegate : public DevToolsManagerDelegate {
  public:
-  virtual ~TestDevToolsManagerDelegate() {}
+  ~TestDevToolsManagerDelegate() override {}
 
-  virtual void Inspect(BrowserContext* browser_context,
-                       DevToolsAgentHost* agent_host) OVERRIDE {}
+  void Inspect(BrowserContext* browser_context,
+               DevToolsAgentHost* agent_host) override {}
 
-  virtual void DevToolsAgentStateChanged(DevToolsAgentHost* agent_host,
-                                         bool attached) OVERRIDE {}
+  void DevToolsAgentStateChanged(DevToolsAgentHost* agent_host,
+                                 bool attached) override {}
 
-  virtual base::DictionaryValue* HandleCommand(
+  base::DictionaryValue* HandleCommand(
       DevToolsAgentHost* agent_host,
-      base::DictionaryValue* command) OVERRIDE { return NULL; }
+      base::DictionaryValue* command) override {
+    return NULL;
+  }
 
-  virtual scoped_ptr<DevToolsTarget> CreateNewTarget(const GURL& url) OVERRIDE {
+  scoped_ptr<DevToolsTarget> CreateNewTarget(const GURL& url) override {
     return scoped_ptr<DevToolsTarget>();
   }
 
-  virtual void EnumerateTargets(TargetCallback callback) OVERRIDE {
+  void EnumerateTargets(TargetCallback callback) override {
     TargetList result;
     DevToolsAgentHost::List agents = DevToolsAgentHost::GetOrCreateAll();
     for (DevToolsAgentHost::List::iterator it = agents.begin();
@@ -159,16 +156,15 @@ class TestDevToolsManagerDelegate : public DevToolsManagerDelegate {
     callback.Run(result);
   }
 
-  virtual std::string GetPageThumbnailData(const GURL& url) OVERRIDE {
+  std::string GetPageThumbnailData(const GURL& url) override {
     return std::string();
   }
 };
 
 class ContentBrowserClientWithDevTools : public TestContentBrowserClient {
  public:
-  virtual ~ContentBrowserClientWithDevTools() {}
-  virtual content::DevToolsManagerDelegate*
-      GetDevToolsManagerDelegate() OVERRIDE {
+  ~ContentBrowserClientWithDevTools() override {}
+  content::DevToolsManagerDelegate* GetDevToolsManagerDelegate() override {
     return new TestDevToolsManagerDelegate();
   }
 };
@@ -177,14 +173,14 @@ class TestDevToolsManagerObserver : public DevToolsManager::Observer {
  public:
   TestDevToolsManagerObserver()
       : updates_count_(0) {}
-  virtual ~TestDevToolsManagerObserver() {}
+  ~TestDevToolsManagerObserver() override {}
 
   int updates_count() { return updates_count_; }
   const std::vector<scoped_refptr<DevToolsAgentHost>> hosts() {
     return hosts_;
   }
 
-  virtual void TargetListChanged(const TargetList& targets) OVERRIDE {
+  void TargetListChanged(const TargetList& targets) override {
     updates_count_++;
     hosts_.clear();
     for (TargetList::const_iterator it = targets.begin();
@@ -206,13 +202,13 @@ class DevToolsManagerTest : public RenderViewHostImplTestHarness {
       : old_browser_client_(NULL) {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     RenderViewHostImplTestHarness::SetUp();
     TestDevToolsClientHost::ResetCounters();
     old_browser_client_ = SetBrowserClientForTesting(&browser_client_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     SetBrowserClientForTesting(old_browser_client_);
     RenderViewHostImplTestHarness::TearDown();
   }
@@ -319,20 +315,18 @@ class TestExternalAgentDelegate: public DevToolsExternalAgentProxyDelegate {
     EXPECT_EQ(count, event_counter_[name]);
   }
 
-  virtual void Attach(DevToolsExternalAgentProxy* proxy) OVERRIDE {
+  void Attach(DevToolsExternalAgentProxy* proxy) override {
     recordEvent("Attach");
   };
 
-  virtual void Detach() OVERRIDE {
-    recordEvent("Detach");
-  };
+  void Detach() override { recordEvent("Detach"); };
 
-  virtual void SendMessageToBackend(const std::string& message) OVERRIDE {
+  void SendMessageToBackend(const std::string& message) override {
     recordEvent(std::string("SendMessageToBackend.") + message);
   };
 
  public :
-  virtual ~TestExternalAgentDelegate() {
+  ~TestExternalAgentDelegate() override {
     expectEvent(1, "Attach");
     expectEvent(1, "Detach");
     expectEvent(0, "SendMessageToBackend.message0");

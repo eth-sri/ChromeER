@@ -8,6 +8,7 @@
 #include "chrome/browser/ui/autofill/password_generation_popup_controller.h"
 #include "chrome/browser/ui/autofill/popup_constants.h"
 #include "grit/theme_resources.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
@@ -31,7 +32,7 @@ const int kHelpVerticalOffset = 5;
 class PasswordTextBox : public views::View {
  public:
   PasswordTextBox() {}
-  virtual ~PasswordTextBox() {}
+  ~PasswordTextBox() override {}
 
   // |suggestion_text| prompts the user to select the password,
   // |generated_password| is the generated password, and |font_list| is the font
@@ -61,7 +62,7 @@ class PasswordTextBox : public views::View {
   }
 
   // views::View:
-  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE {
+  bool CanProcessEventsWithinSubtree() const override {
     // Send events to the parent view for handling.
     return false;
   }
@@ -77,14 +78,17 @@ class PasswordTextBox : public views::View {
 class PasswordGenerationPopupViewViews::PasswordBox : public views::View {
  public:
   PasswordBox() {}
-  virtual ~PasswordBox() {}
+  ~PasswordBox() override {}
 
   // |password| is the generated password, |suggestion| is the text prompting
   // the user to select the password, and |font_list| is the font used for all
   // the text.
   void Init(const base::string16& password,
             const base::string16& suggestion,
+            const base::string16& accessible_name,
             const gfx::FontList& font_list) {
+    accessible_name_ = accessible_name;
+
     views::BoxLayout* box_layout = new views::BoxLayout(
         views::BoxLayout::kHorizontal,
         PasswordGenerationPopupController::kHorizontalPadding,
@@ -103,15 +107,24 @@ class PasswordGenerationPopupViewViews::PasswordBox : public views::View {
     PasswordTextBox* password_text_box = new PasswordTextBox();
     password_text_box->Init(suggestion, password, font_list);
     AddChildView(password_text_box);
+
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
   }
 
   // views::View:
-  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE {
+  bool CanProcessEventsWithinSubtree() const override {
     // Send events to the parent view for handling.
     return false;
   }
 
+  void GetAccessibleState(ui::AXViewState* state) override {
+    state->role = ui::AX_ROLE_ALERT;
+    state->name = accessible_name_;
+  }
+
  private:
+  base::string16 accessible_name_;
+
   DISALLOW_COPY_AND_ASSIGN(PasswordBox);
 };
 
@@ -162,6 +175,7 @@ void PasswordGenerationPopupViewViews::CreatePasswordView() {
   password_view_ = new PasswordBox();
   password_view_->Init(controller_->password(),
                        controller_->SuggestedText(),
+                       controller_->AccessibleName(),
                        font_list_);
   password_view_->SetPosition(gfx::Point(kPopupBorderThickness,
                                          kPopupBorderThickness));

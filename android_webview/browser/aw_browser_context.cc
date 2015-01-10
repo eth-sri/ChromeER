@@ -16,10 +16,11 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_config_service.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_prefs.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_config_service.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_prefs.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/user_prefs/user_prefs.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
@@ -94,6 +95,10 @@ void AwBrowserContext::SetDataReductionProxyEnabled(bool enabled) {
       context->GetDataReductionProxySettings();
   if (proxy_settings == NULL)
     return;
+
+  context->CreateDataReductionProxyStatisticsIfNecessary();
+  proxy_settings->SetDataReductionProxyStatisticsPrefs(
+      context->data_reduction_proxy_statistics_.get());
   proxy_settings->SetDataReductionProxyEnabled(data_reduction_proxy_enabled_);
 }
 
@@ -148,10 +153,10 @@ net::URLRequestContextGetter* AwBrowserContext::CreateRequestContext(
   // content::StoragePartitionImplMap::Create(). This is not fixable
   // until http://crbug.com/159193. Until then, assert that the context
   // has already been allocated and just handle setting the protocol_handlers.
-  DCHECK(url_request_context_getter_);
+  DCHECK(url_request_context_getter_.get());
   url_request_context_getter_->SetHandlersAndInterceptors(
       protocol_handlers, request_interceptors.Pass());
-  return url_request_context_getter_;
+  return url_request_context_getter_.get();
 }
 
 net::URLRequestContextGetter*
@@ -199,7 +204,6 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
   pref_registry->RegisterDoublePref(
       autofill::prefs::kAutofillNegativeUploadRate, 0.0);
   data_reduction_proxy::RegisterSimpleProfilePrefs(pref_registry);
-  data_reduction_proxy::RegisterPrefs(pref_registry);
 
   base::PrefServiceFactory pref_service_factory;
   pref_service_factory.set_user_prefs(make_scoped_refptr(new AwPrefStore()));
@@ -212,9 +216,9 @@ void AwBrowserContext::CreateUserPrefServiceIfNecessary() {
     data_reduction_proxy_settings_->InitDataReductionProxySettings(
         user_pref_service_.get(),
         GetRequestContext());
+    data_reduction_proxy_settings_->MaybeActivateDataReductionProxy(true);
 
-    data_reduction_proxy_settings_->SetDataReductionProxyEnabled(
-        data_reduction_proxy_enabled_);
+    SetDataReductionProxyEnabled(data_reduction_proxy_enabled_);
   }
 }
 
@@ -292,6 +296,21 @@ void AwBrowserContext::RebuildTable(
   // can change in the lifetime of this WebView and may not yet be set here.
   // Therefore this initialization path is not used.
   enumerator->OnComplete(true);
+}
+
+void AwBrowserContext::CreateDataReductionProxyStatisticsIfNecessary() {
+  DCHECK(user_pref_service_.get());
+
+  if (!data_reduction_proxy_statistics_.get()) {
+    // We don't care about commit_delay for now. It is just a dummy value.
+    base::TimeDelta commit_delay = base::TimeDelta::FromMinutes(60);
+    data_reduction_proxy_statistics_ =
+        scoped_ptr<data_reduction_proxy::DataReductionProxyStatisticsPrefs>(
+            new data_reduction_proxy::DataReductionProxyStatisticsPrefs(
+                user_pref_service_.get(),
+                base::MessageLoopProxy::current(),
+                commit_delay));
+  }
 }
 
 }  // namespace android_webview

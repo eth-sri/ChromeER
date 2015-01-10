@@ -47,7 +47,7 @@ class StickyKeyOverlayLabel : public views::Label {
  public:
   explicit StickyKeyOverlayLabel(const std::string& key_name);
 
-  virtual ~StickyKeyOverlayLabel();
+  ~StickyKeyOverlayLabel() override;
 
   StickyKeyState state() const { return state_; }
 
@@ -105,10 +105,10 @@ class StickyKeysOverlayView : public views::WidgetDelegateView {
  public:
   StickyKeysOverlayView();
 
-  virtual ~StickyKeysOverlayView();
+  ~StickyKeysOverlayView() override;
 
   // views::WidgetDelegateView overrides:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   void SetKeyState(ui::EventFlags modifier, StickyKeyState state);
 
@@ -148,6 +148,8 @@ StickyKeysOverlayView::StickyKeysOverlayView() {
               l10n_util::GetStringUTF8(IDS_ASH_ALT_KEY));
   AddKeyLabel(ui::EF_SHIFT_DOWN,
               l10n_util::GetStringUTF8(IDS_ASH_SHIFT_KEY));
+  AddKeyLabel(ui::EF_COMMAND_DOWN,
+              l10n_util::GetStringUTF8(IDS_ASH_SEARCH_KEY));
   AddKeyLabel(ui::EF_ALTGR_DOWN,
               l10n_util::GetStringUTF8(IDS_ASH_ALTGR_KEY));
   AddKeyLabel(ui::EF_MOD3_DOWN,

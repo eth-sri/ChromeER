@@ -341,9 +341,9 @@ class SearchBoxExtensionWrapper : public v8::Extension {
 
   // Allows v8's javascript code to call the native functions defined
   // in this class for window.chrome.
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
+  v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
       v8::Isolate*,
-      v8::Handle<v8::String> name) OVERRIDE;
+      v8::Handle<v8::String> name) override;
 
   // Helper function to find the RenderView. May return NULL.
   static content::RenderView* GetRenderView();
@@ -971,7 +971,7 @@ void SearchBoxExtensionWrapper::LogEvent(
 
   DVLOG(1) << render_view << " LogEvent";
 
-  if (args[0]->Uint32Value() < NTP_NUM_EVENT_TYPES) {
+  if (args[0]->Uint32Value() <= NTP_EVENT_TYPE_LAST) {
     NTPLoggingEventType event =
         static_cast<NTPLoggingEventType>(args[0]->Uint32Value());
     SearchBox::Get(render_view)->LogEvent(event);

@@ -13,7 +13,6 @@
 #include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 #include "chrome/browser/ui/browser.h"
@@ -26,6 +25,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/interstitial_page.h"
@@ -78,11 +78,11 @@ class ProvisionalLoadWaiter : public content::WebContentsObserver {
     content::RunMessageLoop();
   }
 
-  virtual void DidFailProvisionalLoad(
+  void DidFailProvisionalLoad(
       content::RenderFrameHost* render_frame_host,
       const GURL& validated_url,
       int error_code,
-      const base::string16& error_description) OVERRIDE {
+      const base::string16& error_description) override {
     seen_ = true;
     if (waiting_)
       base::MessageLoopForUI::current()->Quit();
@@ -187,7 +187,7 @@ class SSLUITest : public InProcessBrowserTest {
                             SSLOptions(SSLOptions::CERT_EXPIRED),
                             net::GetWebSocketTestDataDirectory()) {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     // Browser will both run and display insecure content.
     command_line->AppendSwitch(switches::kAllowRunningInsecureContent);
     // Use process-per-site so that navigating to a same-site page in a
@@ -365,7 +365,7 @@ class SSLUITestBlock : public SSLUITest {
   SSLUITestBlock() : SSLUITest() {}
 
   // Browser will neither run nor display insecure content.
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kNoDisplayingInsecureContent);
   }
 };
@@ -374,7 +374,7 @@ class SSLUITestIgnoreCertErrors : public SSLUITest {
  public:
   SSLUITestIgnoreCertErrors() : SSLUITest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     // Browser will ignore certificate errors.
     command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
   }
@@ -560,9 +560,11 @@ IN_PROC_BROWSER_TEST_F(SSLUITest,
 
   // Wait until we hear the load failure, and make sure we haven't swapped out
   // the previous page.  Prevents regression of http://crbug.com/82667.
+  // TODO(creis/nick): Move the swapped-out part of this test into content
+  // and remove IsRenderViewHostSwappedOut from the public API.
   load_failed_observer.Wait();
-  EXPECT_FALSE(content::RenderViewHostTester::IsRenderViewHostSwappedOut(
-      tab->GetRenderViewHost()));
+  EXPECT_FALSE(content::RenderFrameHostTester::IsRenderFrameHostSwappedOut(
+      tab->GetMainFrame()));
 
   // We should be back at the original good page.
   EXPECT_FALSE(browser()->tab_strip_model()->GetActiveWebContents()->
@@ -736,7 +738,7 @@ class SSLUITestWithClientCert : public SSLUITest {
   public:
    SSLUITestWithClientCert() : cert_db_(NULL) {}
 
-   virtual void SetUpOnMainThread() OVERRIDE {
+   void SetUpOnMainThread() override {
      SSLUITest::SetUpOnMainThread();
 
      base::RunLoop loop;

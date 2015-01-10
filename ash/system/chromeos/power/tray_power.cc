@@ -59,7 +59,7 @@ class PowerTrayView : public views::ImageView {
   }
 
   // Overriden from views::View.
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE {
+  virtual void GetAccessibleState(ui::AXViewState* state) override {
     state->name = accessible_name_;
     state->role = ui::AX_ROLE_BUTTON;
   }
@@ -236,7 +236,7 @@ void TrayPower::OnPowerStatusChanged() {
     notification_view_->UpdateStatus();
 
   // Factory testing may place the battery into unusual states.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           ash::switches::kAshHideNotificationsForFactory))
     return;
 

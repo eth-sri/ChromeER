@@ -9,10 +9,14 @@
         'depends': [
           'image_loader.js',
           'cache.js',
-          'worker.js',
+          'scheduler.js',
           'request.js',
         ],
-        'externs': ['<(CLOSURE_DIR)/externs/chrome_send_externs.js'],
+        'externs': [
+          '<(CLOSURE_DIR)/externs/chrome_send_externs.js',
+          '<(CLOSURE_DIR)/externs/chrome_extensions.js',
+          '<(CLOSURE_DIR)/externs/file_manager_private.js',
+        ],
       },
       'includes': [
         '../../../third_party/closure_compiler/compile_js.gypi'

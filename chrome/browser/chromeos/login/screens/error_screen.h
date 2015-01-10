@@ -9,18 +9,18 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/login/auth/login_performer.h"
+#include "chrome/browser/chromeos/login/screens/base_screen.h"
 #include "chrome/browser/chromeos/login/screens/error_screen_actor_delegate.h"
-#include "chrome/browser/chromeos/login/screens/wizard_screen.h"
 #include "chrome/browser/chromeos/login/ui/oobe_display.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "chromeos/login/auth/login_performer.h"
 
 namespace chromeos {
 
-class ScreenObserver;
+class BaseScreenDelegate;
 
 // Controller for the error screen.
-class ErrorScreen : public WizardScreen,
+class ErrorScreen : public BaseScreen,
                     public ErrorScreenActorDelegate,
                     public LoginPerformer::Delegate {
  public:
@@ -47,29 +47,31 @@ class ErrorScreen : public WizardScreen,
     ERROR_STATE_KIOSK_ONLINE,
   };
 
-  ErrorScreen(ScreenObserver* screen_observer, ErrorScreenActor* actor);
+  ErrorScreen(BaseScreenDelegate* base_screen_delegate,
+              ErrorScreenActor* actor);
   virtual ~ErrorScreen();
 
-  // WizardScreen implementation.
-  virtual void PrepareToShow() OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual std::string GetName() const OVERRIDE;
+  // BaseScreen implementation.
+  virtual void PrepareToShow() override;
+  virtual void Show() override;
+  virtual void Hide() override;
+  virtual std::string GetName() const override;
 
   // ErrorScreenActorDelegate implementation:
-  virtual void OnErrorShow() OVERRIDE;
-  virtual void OnErrorHide() OVERRIDE;
-  virtual void OnLaunchOobeGuestSession() OVERRIDE;
+  virtual void OnErrorShow() override;
+  virtual void OnErrorHide() override;
+  virtual void OnLaunchOobeGuestSession() override;
+  virtual void OnActorDestroyed() override;
 
   // LoginPerformer::Delegate implementation:
-  virtual void OnAuthFailure(const AuthFailure& error) OVERRIDE;
-  virtual void OnAuthSuccess(const UserContext& user_context) OVERRIDE;
-  virtual void OnOffTheRecordAuthSuccess() OVERRIDE;
-  virtual void OnPasswordChangeDetected() OVERRIDE;
-  virtual void WhiteListCheckFailed(const std::string& email) OVERRIDE;
-  virtual void PolicyLoadFailed() OVERRIDE;
+  virtual void OnAuthFailure(const AuthFailure& error) override;
+  virtual void OnAuthSuccess(const UserContext& user_context) override;
+  virtual void OnOffTheRecordAuthSuccess() override;
+  virtual void OnPasswordChangeDetected() override;
+  virtual void WhiteListCheckFailed(const std::string& email) override;
+  virtual void PolicyLoadFailed() override;
   virtual void OnOnlineChecked(const std::string& username,
-                               bool success) OVERRIDE;
+                               bool success) override;
 
   // Initializes captive portal dialog and shows that if needed.
   void FixCaptivePortal();
@@ -108,9 +110,7 @@ class ErrorScreen : public WizardScreen,
   void StartGuestSessionAfterOwnershipCheck(
       DeviceSettingsService::OwnershipStatus ownership_status);
 
-  void* volatile canary_1_;  // For debugging of https://crbug.com/396557.
   ErrorScreenActor* actor_;
-  void* volatile canary_2_;
 
   OobeDisplay::Screen parent_screen_;
 

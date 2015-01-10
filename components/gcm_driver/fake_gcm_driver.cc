@@ -25,6 +25,9 @@ void FakeGCMDriver::RemoveAppHandler(const std::string& app_id) {
 void FakeGCMDriver::OnSignedIn() {
 }
 
+void FakeGCMDriver::OnSignedOut() {
+}
+
 void FakeGCMDriver::Purge() {
 }
 
@@ -85,6 +88,13 @@ void FakeGCMDriver::UpdateAccountMapping(
 }
 
 void FakeGCMDriver::RemoveAccountMapping(const std::string& account_id) {
+}
+
+base::Time FakeGCMDriver::GetLastTokenFetchTime() {
+  return base::Time();
+}
+
+void FakeGCMDriver::SetLastTokenFetchTime(const base::Time& time) {
 }
 
 }  // namespace gcm

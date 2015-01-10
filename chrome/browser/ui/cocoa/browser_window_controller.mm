@@ -45,7 +45,6 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/browser_window_layout.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
-#import "chrome/browser/ui/cocoa/constrained_window/constrained_window_sheet_controller.h"
 #import "chrome/browser/ui/cocoa/dev_tools_controller.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
@@ -561,8 +560,11 @@ using content::WebContents;
 }
 
 - (void)updateDevToolsForContents:(WebContents*)contents {
-  [devToolsController_ updateDevToolsForWebContents:contents
-                                        withProfile:browser_->profile()];
+  BOOL layout_changed =
+      [devToolsController_ updateDevToolsForWebContents:contents
+                                            withProfile:browser_->profile()];
+  if (layout_changed && [findBarCocoaController_ isFindBarVisible])
+    [self layoutSubviews];
 }
 
 // Called when the user wants to close a window or from the shutdown process.
@@ -946,10 +948,11 @@ using content::WebContents;
   // Disable subview resizing while resizing the window, or else we will get
   // unwanted renderer resizes.  The calling code must call layoutSubviews to
   // make things right again.
-  NSView* contentView = [window contentView];
-  [contentView setAutoresizesSubviews:NO];
+  NSView* chromeContentView = [self chromeContentView];
+  BOOL autoresizesSubviews = [chromeContentView autoresizesSubviews];
+  [chromeContentView setAutoresizesSubviews:NO];
   [window setFrame:windowFrame display:NO];
-  [contentView setAutoresizesSubviews:YES];
+  [chromeContentView setAutoresizesSubviews:autoresizesSubviews];
   return YES;
 }
 
@@ -1573,7 +1576,7 @@ using content::WebContents;
   if (!downloadShelfController_.get()) {
     downloadShelfController_.reset([[DownloadShelfController alloc]
         initWithBrowser:browser_.get() resizeDelegate:self]);
-    [[[self window] contentView] addSubview:[downloadShelfController_ view]];
+    [self.chromeContentView addSubview:[downloadShelfController_ view]];
   }
 }
 
@@ -1974,9 +1977,6 @@ using content::WebContents;
   [toolbarController_ setDividerOpacity:[self toolbarDividerOpacity]];
   [self adjustToolbarAndBookmarkBarForCompression:
           [controller getDesiredToolbarHeightCompression]];
-
-  [[ConstrainedWindowSheetController controllerForParentWindow:[self window]]
-      updateSheetPosition];
 }
 
 // (Needed for |BookmarkBarControllerDelegate| protocol.)
@@ -2099,6 +2099,8 @@ willAnimateFromState:(BookmarkBar::State)oldState
 
 - (void)enterPresentationMode {
   if (!chrome::mac::SupportsSystemFullscreen()) {
+    if ([self isInImmersiveFullscreen])
+      return;
     [self enterImmersiveFullscreen];
     return;
   }

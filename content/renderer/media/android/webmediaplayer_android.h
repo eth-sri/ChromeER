@@ -115,7 +115,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual blink::WebTimeRanges seekable() const;
 
   // Poster image, as defined in the <video> element.
-  virtual void setPoster(const blink::WebURL& poster) OVERRIDE;
+  virtual void setPoster(const blink::WebURL& poster) override;
 
   // Methods for painting.
   // FIXME: This path "only works" on Android. It is a workaround for the
@@ -126,10 +126,6 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
                      const blink::WebRect& rect,
                      unsigned char alpha,
                      SkXfermode::Mode mode);
-  // TODO(dshwang): remove it because above method replaces. crbug.com/401027
-  virtual void paint(blink::WebCanvas* canvas,
-                     const blink::WebRect& rect,
-                     unsigned char alpha);
 
   virtual bool copyVideoTextureToPlatformTexture(
       blink::WebGraphicsContext3D* web_graphics_context,
@@ -143,6 +139,8 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // True if the loaded media has a playable video/audio track.
   virtual bool hasVideo() const;
   virtual bool hasAudio() const;
+
+  virtual bool isRemote() const;
 
   // Dimensions of the video.
   virtual blink::WebSize naturalSize() const;
@@ -174,10 +172,10 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // cc::VideoFrameProvider implementation. These methods are running on the
   // compositor thread.
   virtual void SetVideoFrameProviderClient(
-      cc::VideoFrameProvider::Client* client) OVERRIDE;
-  virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() OVERRIDE;
+      cc::VideoFrameProvider::Client* client) override;
+  virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() override;
   virtual void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame)
-      OVERRIDE;
+      override;
 
   // Media player callback handlers.
   void OnMediaMetadataChanged(const base::TimeDelta& duration, int width,
@@ -205,7 +203,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   void OnRemoteRouteAvailabilityChanged(bool routes_available);
 
   // StreamTextureFactoryContextObserver implementation.
-  virtual void ResetStreamTextureProxy() OVERRIDE;
+  virtual void ResetStreamTextureProxy() override;
 
   // Called when the player is released.
   virtual void OnPlayerReleased();
@@ -216,7 +214,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual void ReleaseMediaResources();
 
   // RenderFrameObserver implementation.
-  virtual void OnDestruct() OVERRIDE;
+  virtual void OnDestruct() override;
 
 #if defined(VIDEO_HOLE)
   // Calculate the boundary rectangle of the media player (i.e. location and

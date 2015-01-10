@@ -5,8 +5,10 @@
 #include "chrome/browser/guest_view/mime_handler_view/chrome_mime_handler_view_guest_delegate.h"
 
 #include "chrome/browser/chrome_page_zoom.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "chrome/browser/ui/pdf/chrome_pdf_web_contents_helper_client.h"
 #include "components/pdf/browser/pdf_web_contents_helper.h"
+#include "components/renderer_context_menu/context_menu_delegate.h"
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_guest.h"
 
 #if defined(ENABLE_PRINTING)
@@ -18,9 +20,11 @@
 #endif  // defined(ENABLE_FULL_PRINTING)
 #endif  // defined(ENABLE_PRINTING)
 
+namespace extensions {
+
 ChromeMimeHandlerViewGuestDelegate::ChromeMimeHandlerViewGuestDelegate(
-    extensions::MimeHandlerViewGuest* guest)
-    : extensions::MimeHandlerViewGuestDelegate(guest), guest_(guest) {
+    MimeHandlerViewGuest* guest)
+    : MimeHandlerViewGuestDelegate(guest), guest_(guest) {
 }
 
 ChromeMimeHandlerViewGuestDelegate::~ChromeMimeHandlerViewGuestDelegate() {
@@ -50,3 +54,18 @@ void ChromeMimeHandlerViewGuestDelegate::ChangeZoom(bool zoom_in) {
       guest_->embedder_web_contents(),
       zoom_in ? content::PAGE_ZOOM_IN : content::PAGE_ZOOM_OUT);
 }
+
+bool ChromeMimeHandlerViewGuestDelegate::HandleContextMenu(
+    content::WebContents* web_contents,
+    const content::ContextMenuParams& params) {
+  ContextMenuDelegate* menu_delegate =
+      ContextMenuDelegate::FromWebContents(web_contents);
+  DCHECK(menu_delegate);
+
+  scoped_ptr<RenderViewContextMenuBase> menu =
+      menu_delegate->BuildMenu(web_contents, params);
+  menu_delegate->ShowMenu(menu.Pass());
+  return true;
+}
+
+}  // namespace extensions

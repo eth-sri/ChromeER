@@ -118,7 +118,7 @@ public interface TabObserver {
      */
     void onToggleFullscreenMode(Tab tab, boolean enable);
 
-    // WebContentsObserverAndroid methods ---------------------------------------------------------
+    // WebContentsObserver methods ---------------------------------------------------------
 
     /**
      * Called when an error occurs while loading a page and/or the page fails to load.
@@ -147,6 +147,35 @@ public interface TabObserver {
     public void onDidStartProvisionalLoadForFrame(
             Tab tab, long frameId, long parentFrameId, boolean isMainFrame, String validatedUrl,
             boolean isErrorPage, boolean isIframeSrcdoc);
+
+    /**
+     * Notifies that the provisional load was successfully committed. The RenderViewHost is now
+     * the current RenderViewHost of the WebContents.
+     *
+     * @param tab            The notifying {@link Tab}.
+     * @param frameId        A positive, non-zero integer identifying the navigating frame.
+     * @param isMainFrame    Whether the load is happening for the main frame.
+     * @param url            The committed URL being navigated to.
+     * @param transitionType The transition type as defined in
+     *                       {@link org.chromium.ui.base.PageTransitionTypes} for the load.
+     */
+    public void onDidCommitProvisionalLoadForFrame(
+            Tab tab, long frameId, boolean isMainFrame, String url, int transitionType);
+
+    /**
+     * Called when the main frame of the page has committed.
+     *
+     * @param tab                         The notifying {@link Tab}.
+     * @param url                         The validated url for the page.
+     * @param baseUrl                     The validated base url for the page.
+     * @param isNavigationToDifferentPage Whether the main frame navigated to a different page.
+     * @param isFragmentNavigation        Whether the main frame navigation did not cause changes
+     *                                    to the document (for example scrolling to a named anchor
+     *                                    or PopState).
+     * @param statusCode                  The HTTP status code of the navigation.
+     */
+    public void onDidNavigateMainFrame(Tab tab, String url, String baseUrl,
+            boolean isNavigationToDifferentPage, boolean isFragmentNavigation, int statusCode);
 
     /**
      * Called when the theme color is changed

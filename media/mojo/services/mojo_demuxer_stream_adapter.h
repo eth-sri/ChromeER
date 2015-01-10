@@ -29,21 +29,20 @@ class MojoDemuxerStreamAdapter : public media::DemuxerStream,
   // NOTE: Illegal to call any methods until |stream_ready_cb| is invoked.
   MojoDemuxerStreamAdapter(mojo::DemuxerStreamPtr demuxer_stream,
                            const base::Closure& stream_ready_cb);
-  virtual ~MojoDemuxerStreamAdapter();
+  ~MojoDemuxerStreamAdapter() override;
 
   // media::DemuxerStream implementation.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual Type type() OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
-  virtual VideoRotation video_rotation() OVERRIDE;
+  void Read(const ReadCB& read_cb) override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  Type type() override;
+  void EnableBitstreamConverter() override;
+  bool SupportsConfigChanges() override;
+  VideoRotation video_rotation() override;
 
   // mojo::DemuxerStreamClient implementation.
-  virtual void OnStreamReady(mojo::ScopedDataPipeConsumerHandle pipe) OVERRIDE;
-  virtual void OnAudioDecoderConfigChanged(
-      mojo::AudioDecoderConfigPtr config) OVERRIDE;
+  void OnStreamReady(mojo::ScopedDataPipeConsumerHandle pipe) override;
+  void OnAudioDecoderConfigChanged(mojo::AudioDecoderConfigPtr config) override;
 
  private:
   // The callback from |demuxer_stream_| that a read operation has completed.

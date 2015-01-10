@@ -31,6 +31,7 @@
 #include "content/public/common/stop_find_action.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/api/extensions_api_client.h"
+#include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/api/web_view/web_view_internal_api.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/guest_view/guest_view_manager.h"
@@ -130,6 +131,19 @@ void ParsePartitionParam(const base::DictionaryValue& create_params,
     *storage_partition_id = partition_str;
     *persist_storage = false;
   }
+}
+
+void RemoveWebViewEventListenersOnIOThread(
+    void* profile,
+    const std::string& extension_id,
+    int embedder_process_id,
+    int view_instance_id) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  ExtensionWebRequestEventRouter::GetInstance()->RemoveWebViewEventListeners(
+      profile,
+      extension_id,
+      embedder_process_id,
+      view_instance_id);
 }
 
 }  // namespace
@@ -273,7 +287,7 @@ void WebViewGuest::DidAttachToEmbedder() {
 
   std::string src;
   if (attach_params()->GetString(webview::kAttributeSrc, &src) && !src.empty())
-    NavigateGuest(src);
+    NavigateGuest(src, false /* force_navigation */);
 
   if (GetOpener()) {
     // We need to do a navigation here if the target URL has changed between
@@ -285,7 +299,7 @@ void WebViewGuest::DidAttachToEmbedder() {
     if (it != GetOpener()->pending_new_windows_.end()) {
       const NewWindowInfo& new_window_info = it->second;
       if (new_window_info.changed || !web_contents()->HasOpener())
-        NavigateGuest(new_window_info.url.spec());
+        NavigateGuest(new_window_info.url.spec(), false /* force_navigation */);
     } else {
       NOTREACHED();
     }
@@ -335,9 +349,19 @@ void WebViewGuest::DidStopLoading() {
       new GuestViewBase::Event(webview::kEventLoadStop, args.Pass()));
 }
 
-void WebViewGuest::EmbedderDestroyed() {
+void WebViewGuest::EmbedderWillBeDestroyed() {
   if (web_view_guest_delegate_)
-    web_view_guest_delegate_->OnEmbedderDestroyed();
+    web_view_guest_delegate_->OnEmbedderWillBeDestroyed();
+
+  content::BrowserThread::PostTask(
+      content::BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(
+          &RemoveWebViewEventListenersOnIOThread,
+          browser_context(),
+          embedder_extension_id(),
+          embedder_render_process_id(),
+          view_instance_id()));
 }
 
 void WebViewGuest::GuestDestroyed() {
@@ -356,8 +380,17 @@ void WebViewGuest::GuestReady() {
   // WebContents::GetRenderWidgetHostView will return the RWHV of an
   // interstitial page if one is showing at this time. We only want opacity
   // to apply to web pages.
-  web_contents()->GetRenderViewHost()->GetView()->
-      SetBackgroundOpaque(guest_opaque_);
+  if (guest_opaque_) {
+    web_contents()
+        ->GetRenderViewHost()
+        ->GetView()
+        ->SetBackgroundColorToDefault();
+  } else {
+    web_contents()->GetRenderViewHost()->GetView()->SetBackgroundColor(
+        SK_ColorTRANSPARENT);
+  }
+  if (web_view_guest_delegate_)
+    web_view_guest_delegate_->OnGuestReady();
 }
 
 void WebViewGuest::GuestSizeChangedDueToAutoSize(const gfx::Size& old_size,
@@ -383,10 +416,6 @@ void WebViewGuest::WillDestroy() {
   if (!attached() && GetOpener())
     GetOpener()->pending_new_windows_.erase(this);
   DestroyUnattachedWindows();
-
-  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
-  DispatchEventToEmbedder(
-      new GuestViewBase::Event(webview::kEventPluginDestroyed, args.Pass()));
 }
 
 bool WebViewGuest::AddMessageToConsole(WebContents* source,
@@ -499,7 +528,7 @@ void WebViewGuest::CreateNewGuestWebViewWindow(
                              embedder_web_contents(),
                              create_params,
                              base::Bind(&WebViewGuest::NewGuestWebViewCallback,
-                                        base::Unretained(this),
+                                        weak_ptr_factory_.GetWeakPtr(),
                                         params));
 }
 
@@ -571,7 +600,7 @@ double WebViewGuest::GetZoom() {
   return web_view_guest_delegate_->GetZoom();
 }
 
-void WebViewGuest::Find(
+void WebViewGuest::StartFinding(
     const base::string16& search_text,
     const blink::WebFindOptions& options,
     scoped_refptr<WebViewInternalFindFunction> find_function) {
@@ -583,8 +612,13 @@ void WebViewGuest::StopFinding(content::StopFindAction action) {
   web_contents()->StopFinding(action);
 }
 
-void WebViewGuest::Go(int relative_index) {
-  web_contents()->GetController().GoToOffset(relative_index);
+bool WebViewGuest::Go(int relative_index) {
+  content::NavigationController& controller = web_contents()->GetController();
+  if (!controller.CanGoToOffset(relative_index))
+    return false;
+
+  controller.GoToOffset(relative_index);
+  return true;
 }
 
 void WebViewGuest::Reload() {
@@ -646,7 +680,8 @@ WebViewGuest::WebViewGuest(content::BrowserContext* browser_context,
       find_helper_(this),
       is_overriding_user_agent_(false),
       guest_opaque_(true),
-      javascript_dialog_helper_(this) {
+      javascript_dialog_helper_(this),
+      weak_ptr_factory_(this) {
   web_view_guest_delegate_.reset(
       ExtensionsAPIClient::Get()->CreateWebViewGuestDelegate(this));
 }
@@ -658,6 +693,8 @@ void WebViewGuest::DidCommitProvisionalLoadForFrame(
     content::RenderFrameHost* render_frame_host,
     const GURL& url,
     ui::PageTransition transition_type) {
+  if (!render_frame_host->GetParent())
+    src_ = url;
   scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
   args->SetString(guestview::kUrl, url.spec());
   args->SetBoolean(guestview::kIsTopLevel, !render_frame_host->GetParent());
@@ -814,7 +851,7 @@ content::WebContents* WebViewGuest::CreateNewGuestWindow(
   return guest_manager->CreateGuestWithWebContentsParams(
       WebViewGuest::Type,
       embedder_extension_id(),
-      embedder_web_contents()->GetRenderProcessHost()->GetID(),
+      embedder_web_contents(),
       create_params);
 }
 
@@ -877,7 +914,14 @@ content::ColorChooser* WebViewGuest::OpenColorChooser(
       web_contents, color, suggestions);
 }
 
-void WebViewGuest::NavigateGuest(const std::string& src) {
+void WebViewGuest::NavigateGuest(const std::string& src,
+                                 bool force_navigation) {
+  if (!attached())
+    return;
+
+  if (src.empty())
+    return;
+
   GURL url = ResolveURL(src);
 
   // Do not allow navigating a guest to schemes other than known safe schemes.
@@ -893,6 +937,8 @@ void WebViewGuest::NavigateGuest(const std::string& src) {
               net::ErrorToShortString(net::ERR_ABORTED));
     return;
   }
+  if (!force_navigation && (src_ == url))
+    return;
 
   GURL validated_url(url);
   web_contents()->GetRenderProcessHost()->FilterURL(false, &validated_url);
@@ -996,7 +1042,15 @@ void WebViewGuest::SetAllowTransparency(bool allow) {
   if (!web_contents()->GetRenderViewHost()->GetView())
     return;
 
-  web_contents()->GetRenderViewHost()->GetView()->SetBackgroundOpaque(!allow);
+  if (guest_opaque_) {
+    web_contents()
+        ->GetRenderViewHost()
+        ->GetView()
+        ->SetBackgroundColorToDefault();
+  } else {
+    web_contents()->GetRenderViewHost()->GetView()->SetBackgroundColor(
+        SK_ColorTRANSPARENT);
+  }
 }
 
 bool WebViewGuest::LoadDataWithBaseURL(const std::string& data_url,
@@ -1151,7 +1205,7 @@ void WebViewGuest::RequestNewWindowPermission(
       RequestPermission(WEB_VIEW_PERMISSION_TYPE_NEW_WINDOW,
                         request_info,
                         base::Bind(&WebViewGuest::OnWebViewNewWindowResponse,
-                                   base::Unretained(this),
+                                   weak_ptr_factory_.GetWeakPtr(),
                                    guest->guest_instance_id()),
                                    false /* allowed_by_default */);
 }

@@ -11,6 +11,7 @@
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_switches.h"
+#include "ui/app_list/folder_image_source.h"
 #include "ui/app_list/views/app_list_folder_view.h"
 #include "ui/app_list/views/app_list_item_view.h"
 #include "ui/app_list/views/app_list_main_view.h"
@@ -194,7 +195,7 @@ void AppsContainerView::SetShowState(ShowState show_state,
   Layout();
 }
 
-Rects AppsContainerView::GetTopItemIconBoundsInActiveFolder() {
+std::vector<gfx::Rect> AppsContainerView::GetTopItemIconBoundsInActiveFolder() {
   // Get the active folder's icon bounds relative to AppsContainerView.
   AppListItemView* folder_item_view =
       apps_grid_view_->activated_folder_item_view();
@@ -202,7 +203,7 @@ Rects AppsContainerView::GetTopItemIconBoundsInActiveFolder() {
       folder_item_view->GetIconBounds());
   gfx::Rect to_container = apps_grid_view_->ConvertRectToParent(to_grid_view);
 
-  return AppListFolderItem::GetTopIconsBounds(to_container);
+  return FolderImageSource::GetTopIconsBounds(to_container);
 }
 
 void AppsContainerView::CreateViewsForFolderTopItemsAnimation(

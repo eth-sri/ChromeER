@@ -55,7 +55,7 @@ class AppWindowRegistry : public KeyedService {
   typedef std::set<std::string> InspectedWindowSet;
 
   explicit AppWindowRegistry(content::BrowserContext* context);
-  virtual ~AppWindowRegistry();
+  ~AppWindowRegistry() override;
 
   // Returns the instance for the given browser context, or NULL if none. This
   // is a convenience wrapper around
@@ -112,15 +112,15 @@ class AppWindowRegistry : public KeyedService {
     friend struct DefaultSingletonTraits<Factory>;
 
     Factory();
-    virtual ~Factory();
+    ~Factory() override;
 
     // BrowserContextKeyedServiceFactory
-    virtual KeyedService* BuildServiceInstanceFor(
-        content::BrowserContext* context) const OVERRIDE;
-    virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
-    virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
-    virtual content::BrowserContext* GetBrowserContextToUse(
-        content::BrowserContext* context) const OVERRIDE;
+    KeyedService* BuildServiceInstanceFor(
+        content::BrowserContext* context) const override;
+    bool ServiceIsCreatedWithBrowserContext() const override;
+    bool ServiceIsNULLWhileTesting() const override;
+    content::BrowserContext* GetBrowserContextToUse(
+        content::BrowserContext* context) const override;
   };
 
  protected:

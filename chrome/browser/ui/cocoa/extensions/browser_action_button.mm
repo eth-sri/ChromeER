@@ -49,12 +49,10 @@ class ExtensionActionIconFactoryBridge
         icon_factory_(profile, extension, browser_action_, this) {
   }
 
-  virtual ~ExtensionActionIconFactoryBridge() {}
+  ~ExtensionActionIconFactoryBridge() override {}
 
   // ExtensionActionIconFactory::Observer implementation.
-  virtual void OnIconUpdated() OVERRIDE {
-    [owner_ updateState];
-  }
+  void OnIconUpdated() override { [owner_ updateState]; }
 
   gfx::Image GetIcon(int tabId) {
     return icon_factory_.GetIcon(tabId);
@@ -109,7 +107,7 @@ class ExtensionActionIconFactoryBridge
     [cell setTabId:tabId];
     ExtensionAction* browser_action =
         extensions::ExtensionActionManager::Get(browser->profile())->
-        GetBrowserAction(*extension);
+        GetExtensionAction(*extension);
     CHECK(browser_action)
         << "Don't create a BrowserActionButton if there is no browser action.";
     [cell setExtensionAction:browser_action];

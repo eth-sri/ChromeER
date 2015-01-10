@@ -62,7 +62,7 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
 
   // Stops the local audio track. Called on the main render thread and
   // should be called only once when audio track going away.
-  virtual void Stop() OVERRIDE;
+  void Stop() override;
 
   // Method called by the capturer to deliver the capture data.
   // Called on the capture audio thread.
@@ -70,7 +70,8 @@ class CONTENT_EXPORT WebRtcLocalAudioTrack
                base::TimeDelta delay,
                int volume,
                bool key_pressed,
-               bool need_audio_processing);
+               bool need_audio_processing,
+               bool force_report_nonzero_energy);
 
   // Method called by the capturer to set the audio parameters used by source
   // of the capture data..

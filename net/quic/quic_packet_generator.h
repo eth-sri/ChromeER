@@ -122,7 +122,7 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // attaches a QuicAckNotifier to any created stream frames, which
   // will be called once the frame is ACKed by the peer. The
   // QuicAckNotifier is owned by the QuicConnection. |notifier| may
-  // be NULL.
+  // be nullptr.
   QuicConsumedData ConsumeData(QuicStreamId id,
                                const IOVector& data,
                                QuicStreamOffset offset,
@@ -166,6 +166,9 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   void UpdateSequenceNumberLength(
       QuicPacketSequenceNumber least_packet_awaited_by_peer,
       QuicByteCount congestion_window);
+
+  // Set the minimum number of bytes for the connection id length;
+  void SetConnectionIdLength(uint32 length);
 
   // Sets the encryption level that will be applied to new packets.
   void set_encryption_level(EncryptionLevel level);

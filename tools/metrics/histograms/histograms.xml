@@ -418,6 +418,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Apps.AppInfoDialog.Launches" enum="AppInfoDialogLaunchOrigin">
+  <owner>sashab@chromium.org</owner>
+  <summary>
+    The number of times the app info dialog is launched. This is gathered each
+    time the app info dialog is opened, from each of the places the dialog can
+    be opened from.
+  </summary>
+</histogram>
+
 <histogram name="Apps.AppInfoDialog.OpenedForLocation" enum="AppLocation">
   <owner>sashab@chromium.org</owner>
   <summary>
@@ -2247,6 +2256,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Cast.Sender.DeviceType" enum="RemotePlaybackDeviceType">
+  <owner>avayvod@google.com</owner>
+  <summary>
+    Records the type of the remote playback device selected by the user. This
+    will be recorded when the user has chosen the device from the media route
+    chooser dialog.
+  </summary>
+</histogram>
+
 <histogram name="Cast.Sender.VideoEncodeAcceleratorInitializeSuccess"
     enum="BooleanSuccess">
   <owner>posciak@chromium.org</owner>
@@ -2628,6 +2646,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="ChromeOS.PlatformVerification.Available"
+    enum="BooleanAvailable">
+  <owner>dkrahn@chromium.org</owner>
+  <summary>
+    Whether platform verification subsystem features are available at the time a
+    platform verification request is made for content protection on Chrome OS.
+  </summary>
+</histogram>
+
+<histogram name="ChromeOS.PlatformVerification.Result"
+    enum="ChromeOSPlatformVerificationResult">
+  <owner>dkrahn@chromium.org</owner>
+  <summary>
+    The result of a platform verification attempt for content protection on
+    Chrome OS.
+  </summary>
+</histogram>
+
 <histogram name="ChromeOS.SAML.APIUsed" enum="BooleanUsage">
   <owner>bartfab@chromium.org</owner>
   <summary>
@@ -2650,6 +2686,53 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Whether one of the scraped passwords was successfully verified as the user's
     password. This is set only when the principals API is not used.
+  </summary>
+</histogram>
+
+<histogram name="ChromiumAndroidLinker.BrowserStates"
+    enum="ChromiumAndroidLinkerBrowserState">
+  <owner>simonb@chromium.org</owner>
+  <summary>
+    Whether relro sharing was attempted for the browser process, and if
+    attempted, whether it succeeded.
+  </summary>
+</histogram>
+
+<histogram name="ChromiumAndroidLinker.IsLowMemoryDevice" enum="Boolean">
+  <obsolete>
+    Deprecated 10/2014 in Issue 419010, and replaced by
+    ChromiumAndroidLinker.BrowserStates.
+  </obsolete>
+  <owner>simonb@chromium.org</owner>
+  <summary>Is low memory device.</summary>
+</histogram>
+
+<histogram name="ChromiumAndroidLinker.LibraryLoadFromApkStatus"
+    enum="LibraryLoadFromApkStatus">
+  <owner>petrcermak@chromium.org</owner>
+  <summary>
+    Whether the device supports loading a library directly from the APK file.
+    The functionality is checked and reported during every Chromium browser
+    process start up.
+  </summary>
+</histogram>
+
+<histogram name="ChromiumAndroidLinker.LoadedAtFixedAddressFailed"
+    enum="Boolean">
+  <obsolete>
+    Deprecated 10/2014 in Issue 419010, and replaced by
+    ChromiumAndroidLinker.RendererStates.
+  </obsolete>
+  <owner>simonb@chromium.org</owner>
+  <summary>Load at fixed address failed.</summary>
+</histogram>
+
+<histogram name="ChromiumAndroidLinker.RendererStates"
+    enum="ChromiumAndroidLinkerRendererState">
+  <owner>simonb@chromium.org</owner>
+  <summary>
+    Whether relro sharing was attempted for a renderer process, and if
+    attempted, whether it succeeded.
   </summary>
 </histogram>
 
@@ -3037,6 +3120,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="ContentSettings.MixedScript"
+    enum="ContentSettingMixedScriptAction">
+  <owner>lgarron@chromium.org</owner>
+  <summary>
+    Tracks whether the mixed content shield was shown, and how the user
+    interacted with it.
+  </summary>
+</histogram>
+
 <histogram name="ContentSettings.PermissionActions" enum="PermissionAction">
   <owner>miguelg@chromium.org</owner>
   <summary>
@@ -3045,9 +3137,43 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="ContentSettings.PermissionActionsInsecureOrigin"
+    enum="PermissionAction">
+  <owner>miguelg@chromium.org</owner>
+  <summary>
+    Tracks whether a permission was granted, rejected, etc on an insecure
+    origin. The suffix of the histogram indicates which particular permission.
+  </summary>
+</histogram>
+
+<histogram name="ContentSettings.PermissionActionsSecureOrigin"
+    enum="PermissionAction">
+  <owner>miguelg@chromium.org</owner>
+  <summary>
+    Tracks whether a permission was granted, rejected, etc on a secure origin.
+    The suffix of the histogram indicates which particular permission.
+  </summary>
+</histogram>
+
 <histogram name="ContentSettings.PermissionRequested" enum="PermissionType">
   <owner>miguelg@chromium.org</owner>
   <summary>Number of times a given permission was requested.</summary>
+</histogram>
+
+<histogram name="ContentSettings.PermissionRequested_InsecureOrigin"
+    enum="PermissionType">
+  <owner>miguelg@chromium.org</owner>
+  <summary>
+    Number of times a given permission was requested from an insecure origin.
+  </summary>
+</histogram>
+
+<histogram name="ContentSettings.PermissionRequested_SecureOrigin"
+    enum="PermissionType">
+  <owner>miguelg@chromium.org</owner>
+  <summary>
+    Number of times a given permission was requested from a secure origin.
+  </summary>
 </histogram>
 
 <histogram name="Cookie.BackingStoreUpdateResults" enum="BackingStoreResults">
@@ -4954,6 +5080,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Result of DNS probes sent by the probe service.</summary>
 </histogram>
 
+<histogram name="DocumentActivity.Enabled" enum="RunningMode">
+  <owner>mariakhomenko@chromium.org</owner>
+  <summary>
+    Recorded only for Android. Records on every metrics upload whether document
+    mode is enabled.
+  </summary>
+</histogram>
+
 <histogram name="DomainBoundCerts.DBLoadedCount">
   <owner>mattm@chromium.org</owner>
   <summary>Number of certs loaded from domain bound cert database.</summary>
@@ -5764,7 +5898,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Drive.CacheDBOpenStatus" enum="DriveCacheDBOpenStatus">
   <obsolete>
-    Deperecated 8/2013.
+    Deprecated 8/2013.
   </obsolete>
   <owner>joshwoodward@google.com</owner>
   <summary>Status of drive cache metadata database open.</summary>
@@ -5775,6 +5909,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Time spent to load the list of files in a single directory from Google Drive
     server.
+  </summary>
+</histogram>
+
+<histogram name="Drive.DownloadFromDriveFileSize" units="KB">
+  <owner>mtomasz@chromium.org</owner>
+  <summary>
+    Sizes of files being downloaded from Drive. Temporary histogram for
+    gathering data for http://crbug.com/229650.
   </summary>
 </histogram>
 
@@ -5924,6 +6066,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Drive.TransferBlockedOnJobs" units="jobs">
+  <owner>mtomasz@chromium.org</owner>
+  <summary>
+    Number of jobs which have to be completed before a newly added download or
+    download from or to Drive is requested. Temporary histogram for gathering
+    data for http://crbug.com/229650.
+  </summary>
+</histogram>
+
+<histogram name="Drive.UploadToDriveFileSize" units="KB">
+  <owner>mtomasz@chromium.org</owner>
+  <summary>
+    Sizes of files being uploaded to Drive. Temporary histogram for gathering
+    data for http://crbug.com/229650.
+  </summary>
+</histogram>
+
 <histogram name="DriveOffline.CrosAutoEnableOutcome"
     enum="CrosEnableDriveOfflineOutcome">
   <owner>joshwoodward@google.com</owner>
@@ -5981,6 +6140,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>tbarzic@chromium.org</owner>
   <summary>
     The state of EasyUnlock setup when the app window was closed by user.
+  </summary>
+</histogram>
+
+<histogram name="EasyUnlock.SignIn.LoginEvent" enum="EasyUnlockLoginEvent">
+  <owner>xiaowenx@google.com</owner>
+  <owner>xiyuan@google.com</owner>
+  <summary>
+    Measures the use of Easy sign-in: records whether an Easy sign-in login
+    succeeded or  failed; or if a password fallback was used, the reason why.
+    Recorded upon a login attempt for users who have the Easy sign-in feature
+    enabled.
   </summary>
 </histogram>
 
@@ -6115,12 +6285,40 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Enterprise.EnrollmentForced" enum="EnterpriseEnrollmentType">
+  <owner>tnagel@chromium.org</owner>
+  <summary>
+    Events related to forced re-enrollment (FRE) of Chrome OS devices.
+  </summary>
+</histogram>
+
 <histogram name="Enterprise.EnrollmentRecovery" enum="EnterpriseEnrollmentType">
   <owner>tnagel@chromium.org</owner>
   <summary>
     Events related to Chrome OS enterprise enrollment recovery.  Note that this
     only covers cases in which prior to recovery, the &quot;private owner&quot;
     of the device had UMA stats enabled.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.EnrollmentTime.Cancel" units="milliseconds">
+  <owner>tnagel@chromium.org</owner>
+  <summary>
+    Elapsed time from *after* GAIA login until enrollment was cancelled.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.EnrollmentTime.Failure" units="milliseconds">
+  <owner>tnagel@chromium.org</owner>
+  <summary>
+    Elapsed time from *after* GAIA login until enrollment failed.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.EnrollmentTime.Success" units="milliseconds">
+  <owner>tnagel@chromium.org</owner>
+  <summary>
+    Elapsed time from *after* GAIA login until enrollment succeeded.
   </summary>
 </histogram>
 
@@ -7448,6 +7646,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Extensions.CorruptExtensionDisabledReason"
+    enum="CorruptExtensionDisabledReason">
+  <owner>rockot@chromium.org</owner>
+  <summary>
+    The reason why an extension was detected to be corrupted. Recorded each time
+    an extension is disabled due to corruption detection.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.CorruptExtensionTotalDisables">
   <owner>asargent@chromium.org</owner>
   <summary>
@@ -7718,12 +7925,38 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Extensions.HostedAppUnlimitedStoragePersistentStorageUsage"
+    units="KB">
+  <owner>rdevlin.cronin@chromium.org</owner>
+  <summary>
+    The usage (in kilobytes) of persistent storage in a hosted app with the
+    unlimitedStorage permission. This is logged each time the storage is used*,
+    so this also serves as a cap of the number of calls that would fail if the
+    app did not have the unlimited storage permission. *Capped at once per 30
+    seconds so as to not impact performance.
+  </summary>
+</histogram>
+
+<histogram name="Extensions.HostedAppUnlimitedStorageTemporaryStorageUsage"
+    units="percent">
+  <owner>rdevlin.cronin@chromium.org</owner>
+  <summary>
+    The percentage of &quot;normal&quot; (that is, not unlimited) quota that a
+    hosted app with unlimited storage is currently using. This is logged each
+    time the storage is used*, so the number of times the app would use greater
+    than 100% of the default storage can serve as a cap for the number of calls
+    that would fail if the app did not have the unlimitedStorage permission.
+    *Capped at once per 30 seconds so as to not impact performance.
+  </summary>
+</histogram>
+
 <histogram name="Extensions.HostedAppUnlimitedStorageUsage" units="KB">
   <owner>rdevlin.cronin@chromium.org</owner>
   <summary>
     The usage (in kilobytes) of a hosted app with the unlimitedStorage api
     permission, recorded once per run per app the first time we load storage for
-    the hosted app.
+    the hosted app. This is separate from the other metrics on hosted app
+    unlimited storage usage because it is logged once per extension per run.
   </summary>
 </histogram>
 
@@ -9102,6 +9335,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="GCM.HeartbeatMissedDelta" units="milliseconds">
+  <owner>zea@chromium.org</owner>
+  <summary>
+    If a heartbeat was missed, the time delta by which it was missed (in system
+    time, not ticks).
+  </summary>
+</histogram>
+
 <histogram name="GCM.LoadSucceeded" enum="BooleanSuccess">
   <owner>zea@chromium.org</owner>
   <summary>
@@ -9422,6 +9663,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>kmadhusu@chromium.org</owner>
   <summary>
     Counts number of Google searches from various access points in the browser.
+    WARNING: Do not use this histogram as it currently fails to classify a large
+    percentage of Omnibox searches correctly - http://crbug.com/421631.
   </summary>
 </histogram>
 
@@ -9433,6 +9676,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="GoogleUpdate.ErrorHresult">
+  <owner>grt@chromium.org</owner>
+  <summary>The HRESULT for a failed on-demand update check.</summary>
+</histogram>
+
+<histogram name="GoogleUpdate.UpdateErrorCode" enum="GoogleUpdateErrorCode">
+  <owner>grt@chromium.org</owner>
+  <summary>The error code for a failed on-demand update check.</summary>
+</histogram>
+
 <histogram name="GoogleUpdate.UpdatePolicyIsOverridden" enum="Boolean">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>
@@ -9440,6 +9693,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     an app-specific override; false if it is the default for all apps. Recorded
     once per startup (following a 45 seconds delay).
   </summary>
+</histogram>
+
+<histogram name="GoogleUpdate.UpgradeResult" enum="GoogleUpdateUpgradeResult">
+  <owner>grt@chromium.org</owner>
+  <summary>The result of an on-demand update check.</summary>
 </histogram>
 
 <histogram name="GPU.AcceleratedSurfaceRefreshRate" units="hz">
@@ -9472,6 +9730,22 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     The time that the GPU process spends in initializing the GL surface, and
     collecting graphics information.
+  </summary>
+</histogram>
+
+<histogram name="Hardware.Display.Count.OnChange">
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    The number of displays present right after the user has attached or detached
+    a new display. Excludes mirrored displays, but includes sleeping displays.
+  </summary>
+</histogram>
+
+<histogram name="Hardware.Display.Count.OnStartup">
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    The number of displays present at start up. Excludes mirrored displays, but
+    includes sleeping displays.
   </summary>
 </histogram>
 
@@ -9798,6 +10072,50 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Hotword.HotwordMediaStreamResult"
+    enum="HotwordMediaStreamResult">
+  <owner>amistry@chromium.org</owner>
+  <owner>rlp@chromium.org</owner>
+  <owner>somast@chromium.org</owner>
+  <summary>
+    Success or error when attempting to open a MediaStream for the microphone.
+    At most one success or error will be logged for an attempt to open a stream.
+  </summary>
+</histogram>
+
+<histogram name="Hotword.HotwordNaClMessageTimeout"
+    enum="HotwordNaClMessageTimeout">
+  <owner>amistry@chromium.org</owner>
+  <owner>rlp@chromium.org</owner>
+  <owner>somast@chromium.org</owner>
+  <summary>
+    Timeout occured while waiting for a message from the NaCl hotword detector
+    plugin. This value is the message that was expected to be received from the
+    plugin.
+  </summary>
+</histogram>
+
+<histogram name="Hotword.HotwordNaClPluginLoadResult"
+    enum="HotwordNaClPluginLoadResult">
+  <owner>amistry@chromium.org</owner>
+  <owner>rlp@chromium.org</owner>
+  <owner>somast@chromium.org</owner>
+  <summary>
+    Success or error when attempting to load the NaCl hotword detector plugin.
+  </summary>
+</histogram>
+
+<histogram name="HttpCache.AsyncValidationDuration" units="milliseconds">
+  <owner>ricea@chromium.org</owner>
+  <summary>
+    The time spent performing an asynchronous revalidation that was triggered by
+    a Cache-Control: stale-while-revalidate directive. This is recorded when the
+    asynchronous revalidation completes, either after the response was
+    completely read or an error occurred. One entry is recorded for each
+    asynchronous revalidation that is performed.
+  </summary>
+</histogram>
+
 <histogram name="HttpCache.EntryLockWait" units="milliseconds">
   <owner>jkarlin@chromium.org</owner>
   <summary>
@@ -9889,6 +10207,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     The amount of time from install time to time that user opens import dialog
     from NTP floating BookmarkBarView.
+  </summary>
+</histogram>
+
+<histogram name="ImportantFile.TempFileFailures" enum="TempFileFailure">
+  <owner>rvargas@chromium.org</owner>
+  <summary>
+    Count of various failures in ImportantFileWrite when manipulating a temp
+    file to write to before moving it into place (replacing another file).
   </summary>
 </histogram>
 
@@ -11290,6 +11616,59 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="ManagedUsers.SafeSitesDelay" units="milliseconds">
+  <owner>treib@chromium.org</owner>
+  <owner>pam@chromium.org</owner>
+  <summary>
+    The extra page load delays introduced by network requests due to the
+    supervised user SafeSites feature, measured once per page load.
+  </summary>
+</histogram>
+
+<histogram name="ManagedUsers.SafetyFilter"
+    enum="SupervisedUserSafetyFilterResult">
+  <owner>treib@chromium.org</owner>
+  <owner>pam@chromium.org</owner>
+  <summary>
+    The counts of results from the supervised user safety filter. Each entry
+    includes the outcome of the filter (i.e. allowed, blocked, or unknown) and
+    the page transition type (how the user got there, e.g. typed URL, clicked
+    link). This only includes URL requests that were not handled by a manual
+    exception.
+  </summary>
+</histogram>
+
+<histogram name="Manifest.FetchResult" enum="ManifestFetchResultType">
+  <owner>mlamouri@chromium.org</owner>
+  <summary>
+    Tracks whether the Manifest fetch succeed and why it failed if it failed.
+  </summary>
+</histogram>
+
+<histogram name="Manifest.HasProperty" enum="Boolean">
+  <owner>mlamouri@chromium.org</owner>
+  <summary>
+    Tracks which properties of a Manifest were present when it was parsed. If a
+    property can't be parsed, it will be recorded as not present. These
+    histograms will only be used if the Manifest was correctly fetched and
+    parsed and the parsed manifest is not empty.
+  </summary>
+</histogram>
+
+<histogram name="Manifest.IsEmpty" enum="Boolean">
+  <owner>mlamouri@chromium.org</owner>
+  <summary>Tracks whether the parsed Manifest is the empty Manifest.</summary>
+</histogram>
+
+<histogram name="Manifest.ParseSuccess" enum="Boolean">
+  <owner>mlamouri@chromium.org</owner>
+  <summary>
+    Tracks the Manifest parsing result. A failure will be recorded if the
+    Manifest was incorrectly structured. This doesn't take into account parse
+    failures for each individual properties.
+  </summary>
+</histogram>
+
 <histogram name="Media.AcceleratedCompositingActive" enum="BooleanSuccess">
   <obsolete>
     Deprecated as of July 21, 2014.
@@ -11321,6 +11700,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Media.AudioCodec" enum="AudioCodec">
   <owner>dalecurtis@chromium.org</owner>
   <summary>Audio codec used in HTML5 media.</summary>
+</histogram>
+
+<histogram name="Media.AudioInputCbErrorMac" units="OSStatus">
+  <owner>xians@chromium.org</owner>
+  <summary>
+    Error codes that AudioUnitRender() returns in AUAudioInputStream on Mac.
+  </summary>
 </histogram>
 
 <histogram name="Media.AudioInputController" units="ms">
@@ -11563,6 +11949,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>KeyError event count using the Clear Key key system.</summary>
 </histogram>
 
+<histogram name="Media.EME.ClearKey.LoadSession" enum="CdmPromiseResult">
+  <owner>sandersd@chromium.org</owner>
+  <summary>
+    Result of Clear Key loadSession promises handled by Chromium code.
+  </summary>
+</histogram>
+
 <histogram name="Media.EME.NeedKey">
   <owner>xhwang@chromium.org</owner>
   <summary>EME NeedKey event count.</summary>
@@ -11614,6 +12007,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>KeyError event count using an unknown key system.</summary>
 </histogram>
 
+<histogram name="Media.EME.Unknown.LoadSession" enum="CdmPromiseResult">
+  <owner>sandersd@chromium.org</owner>
+  <summary>
+    Result of loadSession promises for unknown key systems promises that were
+    handled by Chromium code.
+  </summary>
+</histogram>
+
 <histogram name="Media.EME.Unknown.SystemCode" units="system code">
   <owner>xhwang@chromium.org</owner>
   <summary>System code count using an unknown key system.</summary>
@@ -11655,6 +12056,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Media.EME.Widevine.KeyError" enum="MediaKeyError">
   <owner>xhwang@chromium.org</owner>
   <summary>KeyError event count using the Widevine key system.</summary>
+</histogram>
+
+<histogram name="Media.EME.Widevine.LoadSession" enum="CdmPromiseResult">
+  <owner>sandersd@chromium.org</owner>
+  <summary>
+    Result of Widevine loadSession promises handled by Chromium code.
+  </summary>
 </histogram>
 
 <histogram name="Media.EME.Widevine.SystemCode" units="system code">
@@ -11809,6 +12217,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     State of the WebRtc local renderer, sampled once during the lifetime of a
     local renderer.
+  </summary>
+</histogram>
+
+<histogram name="Media.MicrophoneMuted" enum="MicrophoneMuteResult">
+  <owner>henrika@chromium.org</owner>
+  <summary>
+    Heuristically detects if the user has muted the microphone or not. Measured
+    approximately four times per minute.
   </summary>
 </histogram>
 
@@ -12032,6 +12448,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Media.VideoCapture.BlacklistedDevice"
+    enum="BlacklistedVideoCaptureDeviceNames">
+  <owner>mcasas@chromium.org</owner>
+  <summary>
+    Counts appearances of Blacklisted Video Capture devices during enumeration.
+    This collection happens during first enumeration in the appropriate
+    platforms' VideoCaptureDeviceFactory.
+  </summary>
+</histogram>
+
 <histogram name="Media.VideoCapture.FrameRate" units="fps">
   <owner>mcasas@chromium.org</owner>
   <summary>
@@ -12059,6 +12485,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Media.VideoCapture.PixelFormat" enum="CapturePixelFormat">
+  <obsolete>
+    Deprecated 10/2014 in Issue 660493002.
+  </obsolete>
   <owner>mcasas@chromium.org</owner>
   <summary>
     Pixel format provided by a Video Capture Device. The collection is made in
@@ -13721,6 +14150,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>The scheme of the URL for each main-frame navigation.</summary>
 </histogram>
 
+<histogram name="Navigation.OnBeforeUnloadOverheadTime" units="milliseconds">
+  <owner>carlosk@chromium.org</owner>
+  <summary>
+    Overhead time spent handling the OnBeforeUnload event from the browser
+    standpoint. More precisely, it is the total time between dispatch and
+    acknowledgment of the BeforeUnload event on the browser side, minus the
+    actual time spent executing the BeforeUnload handlers on the renderer side.
+  </summary>
+</histogram>
+
 <histogram name="Navigation.RedirectChainSize" units="characters">
   <owner>haitaol@chromium.org</owner>
   <owner>donnd@chromium.org</owner>
@@ -13733,7 +14172,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Navigation.TimeToCommit" units="milliseconds">
   <owner>carlosk@chromium.org</owner>
   <summary>
-    Time between the start of a navigation request in the browser and its
+    Time between the start of a browser-started navigation request in and its
     commit.
   </summary>
 </histogram>
@@ -13741,7 +14180,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Navigation.TimeToURLJobStart" units="milliseconds">
   <owner>carlosk@chromium.org</owner>
   <summary>
-    Time between the start of a navigation request in the browser and the
+    Time between the start of a browser-started navigation request and the
     reception of a corresponding ResourceRequest in the network stack.
   </summary>
 </histogram>
@@ -14403,6 +14842,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Net.AlternateProtocolUsage.1000Truncated"
     enum="AlternateProtocolUsage">
+  <obsolete>
+    Deprecated 10/2014.
+  </obsolete>
   <owner>rch@chromium.org</owner>
   <summary>
     Breakdown of how requests which could potentially make use of an alternate
@@ -14413,6 +14855,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Net.AlternateProtocolUsage.200Truncated"
     enum="AlternateProtocolUsage">
+  <obsolete>
+    Deprecated 10/2014.
+  </obsolete>
   <owner>rch@chromium.org</owner>
   <summary>
     Breakdown of how requests which could potentially make use of an alternate
@@ -14987,7 +15432,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.CRLRequestFailedTimeMs" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rsleevi@chromium.org</owner>
   <summary>
     When validating an HTTPS certificate we may have to block to fetch one or
     more revocation lists. This measures the amount of time that failures to get
@@ -14996,7 +15441,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.CRLRequestSuccess" enum="BooleanSuccess">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rsleevi@chromium.org</owner>
   <summary>
     When validating an HTTPS certificate we may have to block to fetch one or
     more revocation lists. This records the fraction of successful requests.
@@ -15004,7 +15449,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.CRLRequestTimeMs" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rsleevi@chromium.org</owner>
   <summary>
     When validating an HTTPS certificate we may have to block to fetch one or
     more revocation lists. This measures the amount of time that each fetch
@@ -16211,7 +16656,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.OCSPRequestFailedTimeMs" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rsleevi@chromium.org</owner>
   <summary>
     When validating an HTTPS certificate we may have to make one or more HTTP
     fetches to OCSP responders in order to get revocation information. This
@@ -16220,7 +16665,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.OCSPRequestSuccess" enum="BooleanSuccess">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rsleevi@chromium.org</owner>
   <summary>
     When validating an HTTPS certificate we may have to make one or more HTTP
     fetches to OCSP responders in order to get revocation information. This
@@ -16229,7 +16674,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.OCSPRequestTimeMs" units="milliseconds">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rsleevi@chromium.org</owner>
   <summary>
     When validating an HTTPS certificate we may have to make one or more HTTP
     fetches to OCSP responders in order to get revocation information. This
@@ -16238,7 +16683,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.OCSPResponseStapled" enum="BooleanSuccess">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>rsleevi@chromium.org</owner>
   <summary>
     When connecting over HTTPS, a server may include an OCSP response as part of
     the TLS handshake so that clients do not have to fetch it, provided the
@@ -16818,6 +17263,34 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicDiskCache.APICall" enum="QuicDiskCacheAPICall">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    Tracks number of times data read/parse/write API calls of QuicServerInfo to
+    and from disk cache is called.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicDiskCache.EntryState" enum="QuicDiskCacheEntryState">
+  <owner>rtenneti@chromium.org</owner>
+  <obsolete>
+    Deprecated as of 10/2014.
+  </obsolete>
+  <summary>
+    Tracks the opening and closing of disk cache entries. Recorded each time a
+    disk cache entry is either opened or closed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicDiskCache.FailureReason"
+    enum="QuicDiskCacheFailureReason">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    Tracks failure reasons to read/load/write of QuicServerInfo to and from disk
+    cache.
+  </summary>
+</histogram>
+
 <histogram name="Net.QuicEphemeralPortsSuggested">
   <owner>rch@chromium.org</owner>
   <summary>The number of ports suggested per server.</summary>
@@ -16875,9 +17348,25 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Net.QuicServerInfo.DiskCacheLoadTime" units="milliseconds">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>Time spent to load QUIC server information from disk cache.</summary>
+</histogram>
+
 <histogram name="Net.QuicServerInfo.DiskCacheReadTime" units="milliseconds">
+  <obsolete>
+    Deprecated as of 10/2014. Replaced by DiskCacheWaitForDataReadyTime.
+  </obsolete>
   <owner>rch@chromium.org</owner>
   <summary>Time spent to load QUIC server information from disk cache.</summary>
+</histogram>
+
+<histogram name="Net.QuicServerInfo.DiskCacheWaitForDataReadyTime"
+    units="milliseconds">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    Time spent waiting to load QUIC server information from disk cache.
+  </summary>
 </histogram>
 
 <histogram name="Net.QuicSession.21CumulativePacketsReceived"
@@ -16908,6 +17397,22 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     number corresponds to the reception of the oldest packet.  A bit in the
     bucket-number being 1 indicates the packet was received, and a 0 means the
     packet was never received (by the client).
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.BlockedFrames.Received">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    The number of BLOCKED frames recevied by a QuicSession when the session is
+    closed.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.BlockedFrames.Sent">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    The number of BLOCKED frames sent by a QuicSession when the session is
+    closed.
   </summary>
 </histogram>
 
@@ -17011,6 +17516,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     The QUIC error code which resulted in the connection being closed by the
     server.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.ConnectionFlowControlBlocked"
+    enum="BooleanBlocked">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    Whether QUIC session's connection is flow control blocked when a PING
+    message is sent to server.
   </summary>
 </histogram>
 
@@ -17243,6 +17757,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     The number of request for secure resources over QUIC sessions. True if the
     session is secure, false if it is not.
+  </summary>
+</histogram>
+
+<histogram name="Net.QuicSession.StreamFlowControlBlocked"
+    enum="BooleanBlocked">
+  <owner>rtenneti@chromium.org</owner>
+  <summary>
+    Whether any of QUIC session's streams are flow control blocked when a PING
+    message is sent to server.
   </summary>
 </histogram>
 
@@ -17576,6 +18099,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.SpdyConnectionLatency" units="milliseconds">
+  <obsolete>
+    Replaced by Net.SpdyConnectionLatency_2 on 2014-10-21.
+  </obsolete>
+  <owner>rch@chromium.org</owner>
+  <summary>Time from when the Connect() starts until it completes.</summary>
+</histogram>
+
+<histogram name="Net.SpdyConnectionLatency_2" units="milliseconds">
   <owner>rch@chromium.org</owner>
   <summary>Time from when the Connect() starts until it completes.</summary>
 </histogram>
@@ -17887,6 +18418,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.SSL_Connection_Latency" units="milliseconds">
+  <obsolete>
+    Replaced by Net.SSL_Connection_Latency_2 on 2014-10-21.
+  </obsolete>
+  <owner>agl@chromium.org</owner>
+  <summary>Time from when the Connect() starts until it completes.</summary>
+</histogram>
+
+<histogram name="Net.SSL_Connection_Latency_2" units="milliseconds">
   <owner>agl@chromium.org</owner>
   <summary>Time from when the Connect() starts until it completes.</summary>
 </histogram>
@@ -17905,6 +18444,17 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.SSL_Connection_Latency_Google" units="milliseconds">
+  <obsolete>
+    Replaced by Net.SSL_Connection_Latency_Google2 on 2014-10-21.
+  </obsolete>
+  <owner>agl@chromium.org</owner>
+  <summary>
+    Time from when the Connect() starts until it completes for google.com and
+    any subdomain of it.
+  </summary>
+</histogram>
+
+<histogram name="Net.SSL_Connection_Latency_Google2" units="milliseconds">
   <owner>agl@chromium.org</owner>
   <summary>
     Time from when the Connect() starts until it completes for google.com and
@@ -17929,6 +18479,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Time from when the Connect() starts until it completes for google.com and
     any subdomain of it. This only includes users not in a 50% field trail that
     disables revocation for certificate pinned sites.
+  </summary>
+</histogram>
+
+<histogram name="Net.SSL_EVCertificateInWhitelist" enum="Boolean">
+  <owner>eranm@chromium.org</owner>
+  <owner>rsleevi@chromium.org</owner>
+  <summary>
+    Whether an EV certificate is present in the Certificate Transparency
+    whitelist. Emitted once for every EV certificate encountered (during SSL
+    connection establishment), but only if the client has a valid whitelist.
   </summary>
 </histogram>
 
@@ -17968,6 +18528,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Net.SSLHostInfoVerificationTimeMs" units="milliseconds">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <summary>Time to complete a speculative certificate verification.</summary>
+</histogram>
+
+<histogram name="Net.SSLProtocolNegotiation" enum="SSLProtocolNegotiation">
+  <owner>bnc@chromium.org</owner>
+  <summary>
+    TLS extension used to negotiate protocol (ALPN or NPN); in case of NPN,
+    whether the protocol is indeed supported by both the client and the server
+    or is a fallback because of no overlap; and the negotiated protocol itself.
+  </summary>
 </histogram>
 
 <histogram name="Net.SSLv3FallbackToRenegoPatchedServer"
@@ -18043,7 +18612,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="Net.TcpFastOpenSocketConnection" enum="TcpSocketStatus">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>jri@chromium.org</owner>
   <summary>
     For sockets for which a TCP Fast Open protocol might be used, the result of
     trying to use it.
@@ -19961,6 +20530,29 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Network.Shill.WiFi.RememberedSystemNetworkCount">
+  <owner>quiche@chromium.org</owner>
+  <summary>
+    Chrome OS network metric sampling the number of 802.11 wireless networks
+    configured from the system configuration profile. This metric is sampled
+    each time a user configuration profile is loaded, such as when a user logs
+    in.
+
+    It might be surprising to have a system configuration profile metric sampled
+    when a user configuration profile is loaded. But this ensures that we have
+    equal numbers of samples for system and user configuration profiles.
+  </summary>
+</histogram>
+
+<histogram name="Network.Shill.WiFi.RememberedUserNetworkCount">
+  <owner>quiche@chromium.org</owner>
+  <summary>
+    Chrome OS network metric sampling the number of 802.11 wireless networks
+    configured from a user configuration profile. This metric is sampled each
+    time a user configuration profile is loaded, such as when a user logs in.
+  </summary>
+</histogram>
+
 <histogram name="Network.Shill.WiFi.ScanResult" enum="WiFiScanResult">
   <owner>quiche@chromium.org</owner>
   <summary>
@@ -20390,6 +20982,30 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Chrome OS network performance metric sampling the time to determine that an
     802.11 wireless network is in a captive portal after configuring Layer 3
     state.
+  </summary>
+</histogram>
+
+<histogram name="Networks.RememberedShared">
+  <owner>stevenjb@chromium.org</owner>
+  <summary>
+    Number of shared remembered (preferred) networks on Chrome OS. Updated any
+    time the network list changes.
+  </summary>
+</histogram>
+
+<histogram name="Networks.RememberedUnshared">
+  <owner>stevenjb@chromium.org</owner>
+  <summary>
+    Number of private remembered (preferred) networks on Chrome OS. Updated any
+    time the network list changes.
+  </summary>
+</histogram>
+
+<histogram name="Networks.Visible">
+  <owner>stevenjb@chromium.org</owner>
+  <summary>
+    Number of visible (in-range) networks on Chrome OS. Updated any time the
+    network list changes.
   </summary>
 </histogram>
 
@@ -21323,6 +21939,59 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Events seen by the OSX NSException swizzle.</summary>
 </histogram>
 
+<histogram name="OSX.Fullscreen.Enter" enum="OSXFullscreenParameters">
+  <obsolete>
+    Deprecated as of Chrome 40. See OSX.Fullscreen.Enter.Style,
+    OSX.Fullscreen.Enter.WindowLocation and
+    OSX.Settings.ScreensHaveSeparateSpaces.
+  </obsolete>
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    This event is recorded each time a user triggers fullscreen for a browser
+    window. The value's bits reflect different parameters. Bit 0: Fullscreen
+    entry mechanism (AppKit vs Immersive). Bit 1: Whether the window was on the
+    primary screen (Primary vs. Secondary). Bit 2: Whether displays have
+    separate spaces options is enabled (Seperate vs Shared). Bit 3: Whether
+    there are multiple screens.
+  </summary>
+</histogram>
+
+<histogram name="OSX.Fullscreen.Enter.Style" enum="OSXFullscreenStyle">
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    This event is recorded each time a user triggers fullscreen for a browser
+    window. It indicates the mechanism (immersive vs. AppKit) and the type of
+    AppKit Fullscreen (Presentation Mode vs. Canonical Fullscreen).
+  </summary>
+</histogram>
+
+<histogram name="OSX.Fullscreen.Enter.WindowLocation"
+    enum="OSXFullscreenWindowLocation">
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    This event is recorded each time a user triggers fullscreen for a browser
+    window. It indicates the screen in which the window was fullscreened, and
+    the number of screens available.
+  </summary>
+</histogram>
+
+<histogram name="OSX.Handoff.Origin" enum="OSXHandoffOrigin">
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    This event is recorded each time a Handoff is received by Chrome on OSX. The
+    enumeration indicates the source of the Handoff.
+  </summary>
+</histogram>
+
+<histogram name="OSX.Settings.ScreensHaveSeparateSpaces"
+    enum="OSXScreensHaveSeparateSpaces">
+  <owner>erikchen@chromium.org</owner>
+  <summary>
+    The configuration of the setting &quot;Screens Have Separate Spaces&quot;
+    available in OSX 10.9+.
+  </summary>
+</histogram>
+
 <histogram name="OSX.SystemHotkeyMap.LoadSuccess" enum="BooleanSuccess">
   <owner>erikchen@chromium.org</owner>
   <summary>
@@ -21542,7 +22211,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="PasswordGeneration.SubmissionEvent"
     enum="PasswordGenerationSubmissionEvent">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
+  <owner>gcasto@chromium.org</owner>
   <summary>
     Measures the frequency of submission events for generated passwords. This is
     similar to PasswordManager.ActionsTakenWithPsl but only tracks events which
@@ -21562,7 +22231,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="PasswordManager.AccountsPerSite">
-  <owner>dubroy@chromium.org</owner>
+  <owner>gcasto@chromium.org</owner>
   <owner>vabr@chromium.org</owner>
   <summary>
     The number of accounts stored per site in the password manager (one event
@@ -21609,7 +22278,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="PasswordManager.BlacklistedSites">
-  <owner>dubroy@chromium.org</owner>
+  <owner>gcasto@chromium.org</owner>
   <owner>vabr@chromium.org</owner>
   <summary>
     The total number of sites that the user has blacklisted. Recorded by
@@ -21752,7 +22421,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="PasswordManager.TimesGeneratedPasswordUsed">
-  <owner>dubroy@chromium.org</owner>
+  <owner>gcasto@chromium.org</owner>
   <owner>vabr@chromium.org</owner>
   <summary>
     The number of times each generated password has been used to log in.
@@ -21762,7 +22431,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="PasswordManager.TimesPasswordUsed">
-  <owner>dubroy@chromium.org</owner>
+  <owner>gcasto@chromium.org</owner>
   <owner>vabr@chromium.org</owner>
   <summary>
     The number of times each saved password has been used to log in. Does not
@@ -21772,7 +22441,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="PasswordManager.TotalAccounts">
-  <owner>dubroy@chromium.org</owner>
+  <owner>gcasto@chromium.org</owner>
   <owner>vabr@chromium.org</owner>
   <summary>
     The number of accounts stored in the password manager (across all sites)
@@ -24305,6 +24974,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Record usage of PPB_Flash.Navigate() Pepper API.</summary>
 </histogram>
 
+<histogram name="Plugin.FlashUsage" enum="FlashUsage">
+  <owner>yzshen@chromium.org</owner>
+  <owner>thestig@chromium.org</owner>
+  <summary>Collects Flash usage data.</summary>
+</histogram>
+
 <histogram name="Plugin.PpapiBrokerLoadErrorCode" units="code">
   <owner>xhwang@chromium.org</owner>
   <summary>The error code of a PPAPI broker load failure.</summary>
@@ -26381,6 +27056,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="PushMessaging.RegistrationStatus"
+    enum="PushRegistrationStatus">
+  <owner>johnme@google.com</owner>
+  <owner>mvanouwerkerk@google.com</owner>
+  <summary>
+    When a webpage registers for push messaging, this records whether the
+    request is successful, or otherwise the type of error encountered.
+  </summary>
+</histogram>
+
 <histogram name="Quickoffice.csvFormattedCellCount">
   <owner>dskelton@google.com</owner>
   <summary>
@@ -27425,6 +28110,564 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Records the number of times the factory reset dialog was shown. Grouped by
     the viewtype.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.DbStringTooLong">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    A boolean that used to indicate a corner case when certain resources are not
+    written to the Predictor database becuase their URLs are too long. We
+    monitor this number to ensure that we do not discard too many resources.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.HavePredictionsForUrl">
+  <obsolete>
+    Deprecated 08/2012. Replaced with ResourcePrefetchPredictorNavigationEvent.
+  </obsolete>
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    A boolean that indicates if the speculative resource prefetch predictor has
+    predictions for a Navigation. This is updated on each navigations and helps
+    us determine the coverage of the predictor.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.HavePrefetchResults">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    A boolean that used to indicate a corner case when we may not have prefetch
+    results even though prefetching is enabled and predictions are present,
+    because another navigation in the same tab canceled the prefetching of the
+    previous load.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.HistoryVisitCountForUrl">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The visit count of a URL in the history database, measured when the onload
+    fires for the URL. Helpful in figuring out what visit count should be used
+    to start learning about a URL.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PredictedPrefetchCount">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Assuming a fixed number (25 or 50) of URLs could be prefetched max, how many
+    would be available for prefetch (after we apply our heuristics for picking
+    subresources to prefetch for a navigation).
+
+    This stat is recorded when the predictor uses the host of the main frame url
+    as the key for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromCache">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page and served
+    from the cache restricted to some max predictions (25 or 50).
+
+    This stat is recorded when the predictor uses the host of the main frame url
+    as the key for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromNetwork">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page and served
+    from the network restricted to some max predictions (25 or 50).
+
+    This stat is recorded when the predictor uses the host of the main frame url
+    as the key for prediction.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromNetworkPercentOfTotalFromNetwork"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Similar to ResourcePrefetchPredictor.Host.PredictedPrefetchFromNetwork but
+    as a percent of the total number of resources the page actually fetched from
+    the network. This depcits the major gains that we can get.
+
+    This stat is recorded when the predictor uses the host of the main frame url
+    as the key for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PredictedPrefetchMisses">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page not used
+    by the page, restricted to some max predictions (25 or 50).
+
+    This stat is recorded when the predictor uses the host of the main frame url
+    as the key for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PrefetchCancelled"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    prefetches cancelled as a percentage of the total number of resources that
+    the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PrefetchFailed"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    prefetches failed as a percentage of the total number of resources that the
+    predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PrefetchFromCacheNotUsed"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    successful prefetches that came from cache while prefetching but were not
+    requested by the page, as a percentage of the total number of resources that
+    the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PrefetchFromCacheUsedFromCache"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    successful prefetches that came from cache while prefetching and also came
+    from the cache when the page requested it, as a percentage of the total
+    number of resources that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Host.PrefetchFromCacheUsedFromNetwork"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    successful prefetches that came from cache while prefetching but came from
+    the network when the page requested it, as a percentage of the total number
+    of resources that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PrefetchFromNetworkNotUsed"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    successful prefetches that came from network while prefetching but were not
+    requested by the page, as a percentage of the total number of resources that
+    the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Host.PrefetchFromNetworkUsedFromCache"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    successful prefetches that came from network while prefetching but came from
+    the cache when the page requested it, as a percentage of the total number of
+    resources that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Host.PrefetchFromNetworkUsedFromNetwork"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of
+    successful prefetches that came from cache while prefetching and also came
+    from the network when the page requested it, as a percentage of the total
+    number of resources that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Host.PrefetchNotStarted"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of resources
+    that were prefetchable but were not prefetched as a percentage of
+    prefetchable resources.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.HostTableHostCount">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The count of number of unique hosts in the HostTable, i.e. the number of
+    hosts that the database has prediction data for. This data is useful for
+    determining the recall/precision as a function of the number of hosts that
+    need to be tracked by the database. Measured at startup.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.HostTableRowCount">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The count of number of rows in the HostTable. This is effecively the number
+    of (host, resource URL) pairs in the database. This is measured at startup
+    and used to get an estimate of the data size.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.MainFrameRequestStats"
+    enum="ResourcePrefetchPredictorMainFrameRequestStats">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Records stats about main frame navigations. Records the total number of
+    requests/responses/redirects for main frame urls along with the numbers for
+    how often the predictor can process such events. This is useful to figure
+    out what percentange of requests are handled by the predictor and also for
+    sanity checking the other stats.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.NavigationEvent"
+    enum="ResourcePrefetchPredictorNavigationEvent">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Records stats about various interesting events such as - request start,
+    response start, redirect, onload, etc during the load of a main frame.
+    Essential for understanding the complete life of a navigation request start
+    to the onload fire and the events that occur in between.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.NavigationStatus"
+    enum="ResourcePrefetchPredictorNavigationStatus">
+  <obsolete>
+    Deprecated 08/2012. Replaced with ResourcePrefetchPredictorNavigationEvent.
+  </obsolete>
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The status of various navigations from the view point of the 'onload' event.
+    Since we measure the prediction accuracy and learn navigation subresources
+    on the onload event, it is useful to know how many of the navigations are
+    abandoned before 'onload' fires.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.PredictedPrefetchCount">
+  <obsolete>
+    Deprecated 01/2013. Replaced with specific ones for Url and Host.
+  </obsolete>
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Assuming a fixed number of URLs could be prefetched max, how many would be
+    available for prefetch (after we apply our heuristics for picking
+    subresources to prefetch for a navigation).
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.PredictedPrefetchFromCache">
+  <obsolete>
+    Deprecated 01/2013. Replaced with specific ones for Url and Host.
+  </obsolete>
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page and served
+    from the cache restricted to some max predictions.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.PredictedPrefetchFromNetwork">
+  <obsolete>
+    Deprecated 01/2013. Replaced with specific ones for Url and Host.
+  </obsolete>
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page and served
+    from the network restricted to some max predictions.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.PredictedPrefetchFromNetworkPercentOfTotalFromNetwork">
+  <obsolete>
+    Deprecated 01/2013. Replaced with specific ones for Url and Host.
+  </obsolete>
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Similar to ResourcePrefetchPredictor.Predicted.PrefetchFromNetwork but as a
+    percent of the total number of resources the page actually fetched from the
+    network. This depcits the major gains that we can get.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.PredictedPrefetchMisses">
+  <obsolete>
+    Deprecated 01/2013. Replaced with specific ones for Url and Host.
+  </obsolete>
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page not used
+    by the page, restricted to some max predictions.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.ReportingEvent"
+    enum="ResourcePrefetchPredictorReportingEvent">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Records stats about various interesting events such as - when partial or all
+    of history is cleared. It will include events which do not necessarily
+    happen during a navigation (which are reported in
+    ResourcePrefetchPredictor.NavigationEvent).
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.RequestStats"
+    enum="ResourcePrefetchPredictorRequestStats">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Records stats about requests, redirects, and responses observed by the
+    ResourcePrefetchPredictorObserver. These stats are useful as a baseline for
+    other stats.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.ResourceStatus"
+    enum="ResourcePrefetchPredictorResourceStatus">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The distribution of the reasons for which subresources are ignored during
+    prefetching. This helps us prioritze reasons we should further investigate
+    to increase coverage. This is reported as a bit map and every status will be
+    a bitwise or of the underlying reasons.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PredictedPrefetchCount">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Assuming a fixed number of URLs could be prefetched max (25 or 50), how many
+    would be available for prefetch (after we apply our heuristics for picking
+    subresources to prefetch for a navigation).
+
+    This stat is recorded when the predictor uses the main frame url as the key
+    for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromCache">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page and served
+    from the cache restricted to some max predictions (25 or 50).
+
+    This stat is recorded when the predictor uses the main frame url as the key
+    for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromNetwork">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page and served
+    from the network restricted to some max predictions (25 or 50).
+
+    This stat is recorded when the predictor uses the main frame url as the key
+    for prediction.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromNetworkPercentOfTotalFromNetwork"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Similar to ResourcePrefetchPredictor.Url.PredictedPrefetchFromNetwork but as
+    a percent of the total number of resources the page actually fetched from
+    the network. This depcits the major gains that we can get.
+
+    This stat is recorded when the predictor uses the main frame url as the key
+    for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PredictedPrefetchMisses">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    When we have predictions for a navigation, we measure the accuracy of the
+    predictions against the actual resources downloaded. This histogram gives
+    the distribution of the predictions that were fetched by the page not used
+    by the page, restricted to some max predictions (25 or 50).
+
+    This stat is recorded when the predictor uses the main frame url as the key
+    for prediction.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PrefetchCancelled"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of prefetches
+    cancelled as a percentage of the total number of resources that the
+    predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PrefetchFailed"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of prefetches
+    failed as a percentage of the total number of resources that the predictor
+    tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PrefetchFromCacheNotUsed"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of successful
+    prefetches that came from cache while prefetching but were not requested by
+    the page, as a percentage of the total number of resources that the
+    predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PrefetchFromCacheUsedFromCache"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of successful
+    prefetches that came from cache while prefetching and also came from the
+    cache when the page requested it, as a percentage of the total number of
+    resources that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Url.PrefetchFromCacheUsedFromNetwork"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of successful
+    prefetches that came from cache while prefetching but came from the network
+    when the page requested it, as a percentage of the total number of resources
+    that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PrefetchFromNetworkNotUsed"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of successful
+    prefetches that came from network while prefetching but were not requested
+    by the page, as a percentage of the total number of resources that the
+    predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Url.PrefetchFromNetworkUsedFromCache"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of successful
+    prefetches that came from network while prefetching but came from the cache
+    when the page requested it, as a percentage of the total number of resources
+    that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.Url.PrefetchFromNetworkUsedFromNetwork"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on the main frame URL, the percentage of successful
+    prefetches that came from cache while prefetching and also came from the
+    network when the page requested it, as a percentage of the total number of
+    resources that the predictor tried to prefetch.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.Url.PrefetchNotStarted"
+    units="percentage">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    For prefetching based on host of main frame URL, the percentage of resources
+    that were prefetchable but were not prefetched as a percentage of
+    prefetchable resources.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.UrlTableMainFrameUrlCount">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The count of number of unique main frame urls in the UrlTable, i.e. the
+    number of webpages that the database has prediction data for. This data is
+    useful for determining the recall/precision as a function of the number of
+    webpages that need to be tracked by the database. Measured at startup.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.UrlTableMainFrameUrlsDeletedNotInHistory">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The count of number of unique main frame urls that are deleted from the URL
+    table at startup because they are no longer in history. Essential to figure
+    out how much data we are loosing out.
+  </summary>
+</histogram>
+
+<histogram
+    name="ResourcePrefetchPredictor.UrlTableMainFrameUrlsDeletedNotInHistoryPercent">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    Same as ResourcePrefetchPredictor.UrlTableMainFrameUrlsDeletedNotInHistory
+    but recording percentage of URLs in the table rather than absolute numbers.
+  </summary>
+</histogram>
+
+<histogram name="ResourcePrefetchPredictor.UrlTableRowCount">
+  <owner>zhenw@chromium.org</owner>
+  <summary>
+    The count of number of rows in the UrlTable. This is effecively the number
+    of (main frame URL, resource URL) pairs in the database. This is measured at
+    startup and used to get an estimate of the data size.
   </summary>
 </histogram>
 
@@ -29520,6 +30763,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Execution time of ServiceWorkerGlobalScope.oninstall.</summary>
 </histogram>
 
+<histogram name="ServiceWorker.MessageEventExecutionTime" units="millisecond">
+  <owner>shimazu@chromium.org</owner>
+  <summary>Execution time of ServiceWorkerGlobalScope.onmessage.</summary>
+</histogram>
+
 <histogram name="ServiceWorker.ScriptSize" units="bytes">
   <owner>ksakamoto@chromium.org</owner>
   <summary>
@@ -29531,6 +30779,145 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="SessionCrashed.Bubble" enum="SessionCrashedBubbleUserAction">
   <owner>yiyaoliu@chromium.org</owner>
   <summary>How did the user interact with the SessionCrashed Bubble?</summary>
+</histogram>
+
+<histogram name="SessionRestore.AllTabsLoaded" units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    The time from SessionRestore start until all tabs have finished loading.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.command_size" units="bytes">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    The size of the commands written to disk. See SessionBackend for details.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.FirstTabPainted" units="milliseconds">
+  <obsolete>
+    Deprecated 2014-10 in favor of SessionRestore.ForegroundTabFirstPaint.
+  </obsolete>
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>TBD</summary>
+</histogram>
+
+<histogram name="SessionRestore.ForegroundTabFirstLoaded" units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    The time from SessionRestore start until a visible tab has finished loading.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.ForegroundTabFirstPaint" units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    The time from SessionRestore start until a visible tab's first paint.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.last_session_file_size" units="KB">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>The size, in k, of the last session file on disk.</summary>
+</histogram>
+
+<histogram name="SessionRestore.NavEntryCommittedLongPeriod">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Like NavEntryCommittedPeriod, but specifically to provide a clearer
+    breakdown of samples in the 10 minutes - 8 hours range.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.NavEntryCommittedPeriod" units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Milliseconds between subsequent Save() operations due to a nav entry being
+    committed (new tab created + nav initiated).
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.NavigationListPrunedLongPeriod">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Like NavListPrunedPeriod, but specifically to provide a clearer breakdown of
+    samples in the 10 minutes - 8 hours range.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.NavigationListPrunedPeriod"
+    units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Milliseconds between subsequent Save() operations due to the navigation list
+    being pruned (typically a change in back/forward stacks).
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.ParallelTabLoads">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    The number of tabs that were loaded simultaneously when restoring a session.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.read_session_file_time" units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Amount of time to read and assemble the commands from the last session.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.SaveLongPeriod">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Like SavePeriod, but specifically to provide a clearer breakdown of samples
+    in the 10 minutes - 8 hours range.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.SavePeriod" units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Amount of time between subsequent SessionService Save() operations (aka
+    updates to session data).
+  </summary>
+  <details>
+    Periods longer than 10 minutes are grouped together; see SaveLongPeriod for
+    resolution.
+  </details>
+</histogram>
+
+<histogram name="SessionRestore.TabClosedLongPeriod">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    TabClosedPeriod, but specifically to provide a clearer breakdown of samples
+    in the 10 minutes - 8 hours range.
+  </summary>
+</histogram>
+
+<histogram name="SessionRestore.TabClosedPeriod" units="milliseconds">
+  <owner>jeremy@chromium.org</owner>
+  <owner>sky@chromium.org</owner>
+  <summary>
+    Milliseconds between subsequent Save() operations due to a tab being closed.
+  </summary>
 </histogram>
 
 <histogram name="SessionStorageDatabase.Open" enum="SessionStorageDatabaseOpen">
@@ -29827,6 +31214,15 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Settings.TrackedPreferenceNullInitialized"
+    enum="TrackedPreference">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    The id of a tracked preference which was initialized despite the absence of
+    a MAC as its value was NULL.
+  </summary>
+</histogram>
+
 <histogram name="Settings.TrackedPreferenceReset" enum="TrackedPreference">
   <owner>gab@chromium.org</owner>
   <summary>The id of a tracked preference which was reset by Chrome.</summary>
@@ -29874,6 +31270,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="Settings.TrackedPreferencesNoEnforcementOnDomain"
     enum="BooleanEnabled">
+  <obsolete>
+    Deprecated 2014-10.
+  </obsolete>
   <owner>gab@chromium.org</owner>
   <summary>
     Whether settings enforcement was cancelled for a machine joined to a domain.
@@ -29886,8 +31285,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>gab@chromium.org</owner>
   <summary>
     The id of a tracked preference which was initialized despite the absence of
-    a MAC as either (1) the current MACs are trusted, infering that this is a
-    newly tracked pref, or (2) its value is NULL.
+    a MAC as the current MACs are trusted, infering that this is a newly tracked
+    pref.
   </summary>
 </histogram>
 
@@ -29913,6 +31312,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     The number of items that had changed in a dictionary pref when
     Settings.TrackedPreferenceChanged is reported for that pref.
+  </summary>
+</histogram>
+
+<histogram name="Settings.ZoomLevelPreferencesMigrated" enum="BooleanMigrated">
+  <owner>wjmaclean@chromium.org</owner>
+  <summary>
+    Tracks migration to per-partition zoom-level preferences during profile
+    initialization.
   </summary>
 </histogram>
 
@@ -32884,6 +34291,29 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="SoftwareReporter.Cleaner.ExitCode">
+  <owner>mad@chromium.org</owner>
+  <summary>The exit code of the software reporter cleaner tool.</summary>
+</histogram>
+
+<histogram name="SoftwareReporter.Cleaner.HasCompleted" enum="BooleanCompleted">
+  <owner>mad@chromium.org</owner>
+  <summary>
+    Whether the software reporter cleaner tool has finished execution, otherwise
+    assume it has crashed.
+  </summary>
+</histogram>
+
+<histogram name="SoftwareReporter.Cleaner.RunningTime" units="ms">
+  <owner>mad@chromium.org</owner>
+  <summary>How long it took to run the software reporter cleaner tool.</summary>
+</histogram>
+
+<histogram name="SoftwareReporter.Cleaner.Version">
+  <owner>mad@chromium.org</owner>
+  <summary>The build version of the software reporter cleaner tool.</summary>
+</histogram>
+
 <histogram name="SoftwareReporter.MajorVersion">
   <owner>mad@chromium.org</owner>
   <summary>
@@ -33088,11 +34518,19 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Error codes returned by sqlite the web db.</summary>
 </histogram>
 
+<histogram name="SSL.InsecureContent" enum="InsecureContentType">
+  <owner>lgarron@chromium.org</owner>
+  <summary>
+    Keeps track of various insecure content events, such as loading an HTTP
+    script from an HTTPS page.
+  </summary>
+</histogram>
+
 <histogram name="Stars.Goog_Related" units="percent">
   <owner>yefim@chromium.org</owner>
   <summary>
     Percentage of clips with Google related urls (points to internal Google
-    resources). Logs every time user goes to chrome://boomarks.
+    resources). Logs every time user goes to chrome://bookmarks.
   </summary>
 </histogram>
 
@@ -33100,7 +34538,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>yefim@chromium.org</owner>
   <summary>
     Percentage of clips with Google related urls within first 20 (points to
-    internal Google resources). Logs every time user goes to chrome://boomarks.
+    internal Google resources). Logs every time user goes to chrome://bookmarks.
   </summary>
 </histogram>
 
@@ -33108,7 +34546,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>yefim@chromium.org</owner>
   <summary>
     Percentage of clips with images. Logs every time user goes to
-    chrome://boomarks.
+    chrome://bookmarks.
   </summary>
 </histogram>
 
@@ -33116,7 +34554,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>yefim@chromium.org</owner>
   <summary>
     Percentage of clips with images within first 20. Logs every time user goes
-    to chrome://boomarks.
+    to chrome://bookmarks.
   </summary>
 </histogram>
 
@@ -33124,7 +34562,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>yefim@chromium.org</owner>
   <summary>
     Percentage of clips without images or snippets. Logs every time user goes to
-    chrome://boomarks.
+    chrome://bookmarks.
   </summary>
 </histogram>
 
@@ -33132,7 +34570,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>yefim@chromium.org</owner>
   <summary>
     Percentage of clips without images or snippets within first 20. Logs every
-    time user goes to chrome://boomarks.
+    time user goes to chrome://bookmarks.
   </summary>
 </histogram>
 
@@ -33440,6 +34878,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 
 <histogram name="StartupTimeBomb.Alarm" units="milliseconds">
   <owner>rtenneti@chromium.org</owner>
+  <obsolete>
+    Deprecated as of 10/2014.
+  </obsolete>
   <summary>
     Time duration measured from the time the startup timebomb was started and
     when it went off.
@@ -34109,6 +35550,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for apps. Used as estimate of datatype commit frequency.
+    Logged when a sync cycle is performed for apps.
   </summary>
 </histogram>
 
@@ -34116,7 +35558,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for autofill entries. Used as estimate of datatype
-    commit frequency.
+    commit frequency. Logged when a sync cycle is performed for autofill
+    entries.
   </summary>
 </histogram>
 
@@ -34124,7 +35567,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for autofill profiles. Used as estimate of datatype
-    commit frequency.
+    commit frequency. Logged when a sync cycle is performed for autofill
+    profiles.
   </summary>
 </histogram>
 
@@ -34132,7 +35576,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for bookmarks. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for boomarks.
   </summary>
 </histogram>
 
@@ -34140,7 +35584,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for dictionary. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for dictionary.
   </summary>
 </histogram>
 
@@ -34148,7 +35592,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for extensions. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for extensions.
   </summary>
 </histogram>
 
@@ -34156,7 +35600,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for favicon images. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for favicon images.
   </summary>
 </histogram>
 
@@ -34164,7 +35608,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for favicon tracking. Used as estimate of datatype
-    commit frequency.
+    commit frequency. Logged when a sync cycle is performed for favicon
+    tracking.
   </summary>
 </histogram>
 
@@ -34172,7 +35617,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for nigori. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for nigori.
   </summary>
 </histogram>
 
@@ -34180,7 +35625,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for passwords. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for passwords.
   </summary>
 </histogram>
 
@@ -34188,7 +35633,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for preferences. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for preferences.
   </summary>
 </histogram>
 
@@ -34196,7 +35641,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for search engines. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for search engines.
   </summary>
 </histogram>
 
@@ -34204,7 +35649,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for sessions. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for sessions.
   </summary>
 </histogram>
 
@@ -34212,7 +35657,8 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for synced notifications. Used as estimate of datatype
-    commit frequency.
+    commit frequency. Logged when a sync cycle is performed for synced
+    notifications.
   </summary>
 </histogram>
 
@@ -34220,7 +35666,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for themes. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for themes.
   </summary>
 </histogram>
 
@@ -34228,7 +35674,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <owner>zea@chromium.org</owner>
   <summary>
     Time between nudges for typed urls. Used as estimate of datatype commit
-    frequency.
+    frequency. Logged when a sync cycle is performed for typed urls.
+  </summary>
+</histogram>
+
+<histogram name="Sync.FreqWifiCredentials" units="milliseconds">
+  <owner>zea@chromium.org</owner>
+  <summary>
+    Time between nudges for WiFi credentials. Used as estimate of datatype
+    commit frequency. Logged when a sync cycle is performed for WiFi
+    credentials.
   </summary>
 </histogram>
 
@@ -34686,6 +36141,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <histogram name="Sync.UserPerceivedBookmarkAssociation">
   <owner>zea@chromium.org</owner>
   <summary>Time taken during bookmark association.</summary>
+</histogram>
+
+<histogram name="Sync.WifiCredentialsAssociationTime" units="milliseconds">
+  <owner>zea@chromium.org</owner>
+  <summary>Time taken during WiFi credentials association.</summary>
+</histogram>
+
+<histogram name="Sync.WifiCredentialsStartFailure" enum="SyncStartResult">
+  <owner>zea@chromium.org</owner>
+  <summary>
+    Enumeration of types of WiFi credentials association failures.
+  </summary>
 </histogram>
 
 <histogram name="SyncedNotifications.Actions"
@@ -35457,6 +36924,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>Whether the scroll is executed on main thread.</summary>
 </histogram>
 
+<histogram name="UMA.ActualLogUploadInterval" units="minutes">
+  <owner>asvitkine@chromium.org</owner>
+  <summary>
+    The actual interval between log upload start and previous log upload
+    finished within the same process.
+  </summary>
+</histogram>
+
 <histogram name="UMA.CleanExitBeaconConsistency" enum="UmaCleanExitConsistency">
   <owner>erikwright@chromium.org</owner>
   <summary>
@@ -35509,6 +36984,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="UMA.FieldTrialsEnabledBenchmarking" enum="BooleanUsage">
+  <obsolete>
+    Deprecated 2012. No longer tracked.
+  </obsolete>
   <owner>asvitkine@chromium.org</owner>
   <summary>
     Log whether the --enable-benchmarking flag was set, which causes field
@@ -35709,6 +37187,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="UMA.UploadResponseStatus.XML" enum="UmaUploadResponseStatus">
+  <obsolete>
+    Deprecated 2013. No longer tracked.
+  </obsolete>
   <owner>asvitkine@chromium.org</owner>
   <summary>
     For each upload to the XML (v1) UMA server, log whether the upload was
@@ -35725,6 +37206,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="UMA.XMLNodeDumpTime" units="milliseconds">
+  <obsolete>
+    Deprecated 2013. No longer tracked.
+  </obsolete>
   <owner>asvitkine@chromium.org</owner>
   <summary>
     The time spent in converting the XML tree into a character buffer when
@@ -35733,6 +37217,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 </histogram>
 
 <histogram name="UMA.XMLWriterDestructionTime" units="milliseconds">
+  <obsolete>
+    Deprecated 2013. No longer tracked.
+  </obsolete>
   <owner>asvitkine@chromium.org</owner>
   <summary>
     The time spent in freeing the XML writer and tree when closing a metrics log
@@ -36818,6 +38305,46 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="Variations.SeedDateSkew.BuildTimeAheadBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    build time is ahead of or within 24 hours of the kVariationsSeedDate. Used
+    as an experiment to see whether the build time could be used to discard very
+    old seeds.
+  </summary>
+</histogram>
+
+<histogram name="Variations.SeedDateSkew.BuildTimeBehindBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    build time is behind the kVariationsSeedDate by a day or more. Used as an
+    experiment to see whether the build time could be used to discard very old
+    seeds.
+  </summary>
+</histogram>
+
+<histogram name="Variations.SeedDateSkew.SystemClockAheadBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    system clock is ahead of or within 24 hours of the kVariationsSeedDate. Used
+    as an experiment to see whether the system clock could be used to discard
+    very old seeds.
+  </summary>
+</histogram>
+
+<histogram name="Variations.SeedDateSkew.SystemClockBehindBy" units="days">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    Logged on startup when creating field trials from the variations seed if the
+    system clock is behind the kVariationsSeedDate by a day or more. Used as an
+    experiment to see whether the system clock could be used to discard very old
+    seeds.
+  </summary>
+</histogram>
+
 <histogram name="Variations.SeedEmpty" enum="VariationsSeedEmpty">
   <owner>asvitkine@chromium.org</owner>
   <summary>
@@ -36826,7 +38353,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
-<histogram name="Variations.SeedFetchResponseCode">
+<histogram name="Variations.SeedFetchResponseCode" enum="HttpResponseCode">
   <owner>asvitkine@chromium.org</owner>
   <summary>
     The counts of HTTP response codes encountered by VariationsService when
@@ -36934,6 +38461,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Tracks whether the UMA-Uniformity-Trial-1-Percent field trial was not active
     and which factors contributed to it.
+  </summary>
+</histogram>
+
+<histogram name="Variations.UserChannel" enum="UserChannels">
+  <owner>asvitkine@chromium.org</owner>
+  <summary>
+    Log the user channel assigned at browser startup used for evaluating the
+    variations seeds.
   </summary>
 </histogram>
 
@@ -37974,6 +39509,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="WebRTC.ApplicationMaxConsecutiveBytesDiscard">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The maximum consecutive discarded bytes caused by not enough buffer
+    available in WebRTC's socket implementation.  This happens when WebRTC
+    IpcPacketSocket's throttling mechanism kicks in.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.ApplicationPercentPacketsDiscarded" units="%">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The percentage of packets discarded by WebRTC's socket layer due to
+    EWOULDBLOCKs when WebRTC IpcPacketSocket's throttling mechanism kicks in.
+  </summary>
+</histogram>
+
 <histogram name="WebRTC.AudioCaptureTime" units="milliseconds">
   <obsolete>
     Removed from code 2014/2/25.
@@ -38202,6 +39754,23 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     Durations of video tracks sent over a PeerConnection. The stopwatch starts
     when the track first becomes connected, and ends when it is disconnected or
     very soon thereafter.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.SystemMaxConsecutiveBytesDelayed">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The maximum of consecutive delayed bytes caused by EWOULDBLOCKs from system.
+    This happens when system can't send any packet synchronously at that moment.
+  </summary>
+</histogram>
+
+<histogram name="WebRTC.SystemPercentPacketsDelayed" units="%">
+  <owner>guoweis@chromium.org</owner>
+  <summary>
+    The percentage of packets delayed due to ERR_IO_PENDING from system in a
+    WebRTC socket. This happens when system can't send any packet synchronously
+    at that moment.
   </summary>
 </histogram>
 
@@ -38551,6 +40120,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="6" label="Network Error"/>
   <int value="7" label="Server Error"/>
   <int value="8" label="Cancelled"/>
+  <int value="9" label="Security Error"/>
+</enum>
+
+<enum name="AppInfoDialogLaunchOrigin" type="int">
+  <int value="0" label="App List context menu"/>
+  <int value="1" label="Extensions page"/>
 </enum>
 
 <enum name="AppLaunch" type="int">
@@ -39064,6 +40639,12 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="2" label="1+"/>
 </enum>
 
+<enum name="BlacklistedVideoCaptureDeviceNames" type="int">
+  <int value="0" label="Google GTalk Camera Adapter"/>
+  <int value="1" label="IP Camera"/>
+  <int value="2" label="Cyberlink YouCam Webcam Splitter"/>
+</enum>
+
 <enum name="BlacklistSetup" type="int">
   <int value="0" label="Blacklist enabled"/>
   <int value="1" label="Blacklist ran successfully."/>
@@ -39132,6 +40713,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="Available"/>
 </enum>
 
+<enum name="BooleanBlocked" type="int">
+  <int value="0" label="Not Blocked"/>
+  <int value="1" label="Blocked"/>
+</enum>
+
 <enum name="BooleanCloseTimeout" type="int">
   <int value="0" label="Closed normally"/>
   <int value="1" label="Timed out"/>
@@ -39140,6 +40726,11 @@ Therefore, the affected-histogram name has to have at least one dot in it.
 <enum name="BooleanCommonNameMatch" type="int">
   <int value="0" label="subjectAltName used"/>
   <int value="1" label="Common Name used"/>
+</enum>
+
+<enum name="BooleanCompleted" type="int">
+  <int value="0" label="Not Completed"/>
+  <int value="1" label="Completed"/>
 </enum>
 
 <enum name="BooleanCorrupt" type="int">
@@ -39413,6 +41004,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="6" label="MJPEG"/>
   <int value="7" label="NV21"/>
   <int value="8" label="YV12"/>
+  <int value="9" label="TEXTURE"/>
 </enum>
 
 <enum name="CaptureStartupResult" type="int">
@@ -39538,6 +41130,19 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="3" label="Reading"/>
 </enum>
 
+<enum name="ChromeOSPlatformVerificationResult" type="int">
+  <summary>
+    Possible results of a platform verification attempt. See
+    chrome/browser/chromeos/attestation/platform_verification.h.
+  </summary>
+  <int value="0" label="Success"/>
+  <int value="1" label="Internal Error"/>
+  <int value="2" label="Platform Not Verified"/>
+  <int value="3" label="Rejected by User"/>
+  <int value="4" label="Rejected by Policy"/>
+  <int value="5" label="Timeout"/>
+</enum>
+
 <enum name="ChromeOSUserImageId" type="int">
   <summary>
     Indices of the default images as defined in
@@ -39567,6 +41172,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="20" label="Downloaded file"/>
   <int value="21" label="Old image"/>
   <int value="22" label="Profile image"/>
+</enum>
+
+<enum name="ChromiumAndroidLinkerBrowserState" type="int">
+  <int value="0" label="Normal, Random Address Load"/>
+  <int value="1" label="Low memory, Fixed Address Load Success"/>
+  <int value="2" label="Low memory, Fixed Address Load Failure"/>
+</enum>
+
+<enum name="ChromiumAndroidLinkerRendererState" type="int">
+  <int value="0" label="Fixed Address Load Success"/>
+  <int value="1" label="Fixed Address Load Failure"/>
+  <int value="2" label="Fixed Address Load Not Attempted"/>
 </enum>
 
 <enum name="ClipboardAction" type="int">
@@ -39743,6 +41360,13 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="4" label="SESSION_ONLY"/>
 </enum>
 
+<enum name="ContentSettingMixedScriptAction" type="int">
+  <int value="0" label="Displayed shield"/>
+  <int value="1" label="Displayed bubble"/>
+  <int value="2" label="Clicked 'Load unsafe scripts'"/>
+  <int value="3" label="Clicked 'Learn more'"/>
+</enum>
+
 <enum name="CookieDeletionCause" type="int">
   <summary>Reason why a cookie was removed from the cookie store</summary>
   <int value="0" label="explicit">
@@ -39785,6 +41409,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     The cookie deletion occurred because the server overwrote it with an already
     expired cookie (this is a common idiom for server deletions of cookies).
   </int>
+</enum>
+
+<enum name="CorruptExtensionDisabledReason" type="int">
+  <summary>
+    The reason why content verification flagged an extension as corrupted. See
+    ContentVerifyJob::FailureReason in
+    src/extensions/browser/content_verify_job.h.
+  </summary>
+  <int value="0" label="Unknown Reason"/>
+  <int value="1" label="Missing All Hashes"/>
+  <int value="2" label="Missing File Hash"/>
+  <int value="3" label="Hash Mismatch"/>
 </enum>
 
 <enum name="CrosDisksArchiveType" type="int">
@@ -40582,6 +42218,24 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="5" label="Disable"/>
 </enum>
 
+<enum name="EasyUnlockLoginEvent" type="int">
+  <int value="0" label="Easy sign-in success"/>
+  <int value="1" label="Easy sign-in failure"/>
+  <int value="2" label="Password sign-in: No pairing"/>
+  <int value="3" label="Password sign-in: Pairing changed"/>
+  <int value="4" label="Password sign-in: User hardlock"/>
+  <int value="5" label="Password sign-in: Service not active"/>
+  <int value="6" label="Password sign-in: No Bluetooth"/>
+  <int value="7" label="Password sign-in: Bluetooth connecting"/>
+  <int value="8" label="Password sign-in: No phone"/>
+  <int value="9" label="Password sign-in: Phone not authenticated"/>
+  <int value="10" label="Password sign-in: Phone locked"/>
+  <int value="11" label="Password sign-in: Phone not lockable"/>
+  <int value="12" label="Password sign-in: Phone not nearby"/>
+  <int value="13" label="Password sign-in: Phone not supported"/>
+  <int value="14" label="Password sign-in: Phone authenticated"/>
+</enum>
+
 <enum name="EasyUnlockNotificationEvent" type="int">
   <int value="0" label="Set up notification shown"/>
   <int value="1" label="Set up notification clicked"/>
@@ -40715,38 +42369,40 @@ Therefore, the affected-histogram name has to have at least one dot in it.
     components/policy/core/common/cloud/enterprise_metrics.h.
   </summary>
   <int value="0" label="Cancelled">
-    The enrollment screen was closed without completing the enrollment process.
+    User pressed 'Cancel' during the enrollment process.
   </int>
-  <int value="1" label="Started">
-    The user submitted credentials and started the enrollment process.
+  <int value="1" label="Started with valid credentials">
+    The user submitted valid GAIA credentials to start the enrollment process.
   </int>
-  <int value="2" label="Network Failed">
-    Enrollment failed due to a network error.
+  <int value="2" label="OAuth fetch: network failed">
+    OAuth token fetch failed: network error.
   </int>
   <int value="3" label="Login Failed">
-    Enrollment failed because logging in to Gaia failed.
+    OAuth token fetch failed: login error.
   </int>
   <int value="4" label="Not Supported">
-    Enrollment failed because it is not supported for the account used.
+    Registration / policy fetch failed: DM server reports management not
+    supported.
   </int>
-  <int value="5" label="Policy Failed">
-    Enrollment failed because it failed to apply device policy.
+  <int value="5" label="Policy Failed (deprecated)">
+    DEPRECATED: Enrollment failed because it failed to apply device policy.
   </int>
-  <int value="6" label="Other Failed">
-    Enrollment failed due to an unexpected error. This currently happens when
-    the Gaia auth token is not issued for the DM service, the device cloud
-    policy subsystem isn't initialized, or when fetching Gaia tokens fails for
-    an unknown reason.
+  <int value="6" label="Other Failed (deprecated)">
+    DEPRECATED: Enrollment failed due to an unexpected error. This currently
+    happens when the GAIA auth token is not issued for the DM service, the
+    device cloud policy subsystem isn't initialized, or when fetching GAIA
+    tokens fails for an unknown reason.
   </int>
   <int value="7" label="OK">Enrollment was successful.</int>
-  <int value="8" label="Invalid Serial">
-    Serial number doesn't belong to account domain.
+  <int value="8" label="Registration/fetch: invalid Serial">
+    Registration / policy fetch failed: DM server reports that the serial number
+    we try to register is not assigned to the domain used.
   </int>
   <int value="9" label="Auto-enrollment Started">
     Auto-enrollment started automatically after sign-in.
   </int>
   <int value="10" label="Auto-enrollment Failed">Auto-enrollment failed.</int>
-  <int value="11" label="Auto-enrollment Retried">
+  <int value="11" label="Auto-enrollment Restarted">
     Auto-enrollment started again after a failure.
   </int>
   <int value="12" label="Auto-enrollment Cancelled">
@@ -40754,56 +42410,104 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </int>
   <int value="13" label="Auto-enrollment OK">Auto-enrollment OK.</int>
   <int value="14" label="Invalid enrollment mode">
-    The enrollment mode has not been sent down or is unknown to the client.
+    Registration failed: DM server returns unknown/disallowed enrollment mode.
   </int>
   <int value="15" label="Auto-enrollment not supported">
-    The enrollment mode can not be set through auto-enrollment.
+    Auto-enrollment is not supported for the mode supplied by the server.  This
+    presently means trying to auto-enroll in kiosk mode.
   </int>
   <int value="16" label="Install attributes timeout">
-    Install attributes failed to initialize in time.
+    Enrollment failed: lockbox initialization took too long to complete.
   </int>
-  <int value="17" label="Wrong user name">
-    Re-enrollment attempted with an account from a different domain.
+  <int value="17" label="Re-enrollment: lock domain mismatch">
+    Re-enrollment device lock failed: domain does not match install attributes.
   </int>
-  <int value="18" label="Missing licenses">
-    No licenses left for that domain.
+  <int value="18" label="Registration/fetch: missing licenses">
+    Registration / policy fetch failed: DM server reports licenses expired or
+    exhausted.
   </int>
   <int value="19" label="Robot auth code fetch failed">
-    Enrollment failed due to an error fetching the device robot authorization
-    code from the DM Server.
+    Failed to fetch device robot authorization code from DM Server.
   </int>
   <int value="20" label="Robot refresh token fetch failed">
-    Enrollment failed due to an error fetching the device robot refresh token
-    from Gaia.
+    Failed to fetch device robot refresh token from GAIA.
   </int>
   <int value="21" label="Robot refresh token store failed">
-    Enrollment failed due to an error persisting the device robot refresh token
-    on the device.
+    Failed to persist robot account refresh token on device.
   </int>
-  <int value="22" label="Deprovisioned device">
-    Enrollment failed because the administrator has deprovisioned the device.
+  <int value="22" label="Registration/fetch: deprovisioned device">
+    Registration / policy fetch failed: DM server reports administrator
+    deprovisioned the device.
   </int>
-  <int value="23" label="Domain mismatch">
-    Enrollment failed because the device belongs to a different domain.
+  <int value="23" label="Registration/fetch: domain mismatch">
+    Registration / policy fetch failed: DM server reports domain mismatch.
   </int>
   <int value="24" label="Triggered">
-    Enrollment has been triggered, the credential screen has been shown.
+    Enrollment has been triggered, the webui login screen has been shown.
   </int>
-  <int value="25" label="Retried">The user retried to submit credentials.</int>
+  <int value="25" label="Restarted with valid credentials">
+    The user submitted valid GAIA credentials to start the enrollment process
+    for the second (or further) time.
+  </int>
   <int value="26" label="Store token and ID failed">
-    Enrollment failed because DM token and device ID couldn't be stored.
+    Failed to store DM token and device ID.
   </int>
   <int value="27" label="Error getting FRE state keys">
-    Enrollment failed because FRE state keys couldn't be obtained.
+    Failed to obtain FRE state keys.
   </int>
   <int value="28" label="Error validating policy">
-    Enrollment failed because policy couldn't be validated.
+    Failed to validate policy.
   </int>
   <int value="29" label="Error in CloudPolicyStore">
-    Enrollment failed because of error in CloudPolicyStore.
+    Failed due to error in CloudPolicyStore.
   </int>
-  <int value="30" label="Error locking device">
-    Enrollment failed because device couldn't be locked.
+  <int value="30" label="Error locking device">Failed to lock device.</int>
+  <int value="31" label="Registration/fetch: request payload invalid">
+    Registration / policy fetch failed: DM server reports invalid request
+    payload.
+  </int>
+  <int value="32" label="Registration/fetch: device not found">
+    Registration / policy fetch failed: DM server reports device not found.
+  </int>
+  <int value="33" label="Registration/fetch: DM token invalid">
+    Registration / policy fetch failed: DM server reports DM token invalid.
+  </int>
+  <int value="34" label="Registration/fetch: activation pending">
+    Registration / policy fetch failed: DM server reports activation pending.
+  </int>
+  <int value="35" label="Registration/fetch: device ID conflict">
+    Registration / policy fetch failed: DM server reports device ID conflict.
+  </int>
+  <int value="36" label="Registration/fetch: policy not found">
+    Registration / policy fetch failed: DM server can't find policy.
+  </int>
+  <int value="37" label="Registration/fetch: HTTP request failed">
+    Registration / policy fetch failed: HTTP request failed.
+  </int>
+  <int value="38" label="Registration/fetch: temporary unavailable">
+    Registration / policy fetch failed: DM server reports temporary problem.
+  </int>
+  <int value="39" label="Registration/fetch: HTTP error response">
+    Registration / policy fetch failed: DM server returns non-success HTTP
+    status code.
+  </int>
+  <int value="40" label="Registration/fetch: invalid response">
+    Registration / policy fetch failed: can't decode DM server response.
+  </int>
+  <int value="41" label="OAuth fetch: account not signed up">
+    OAuth token fetch failed: account not signed up.
+  </int>
+  <int value="42" label="OAuth fetch: account deleted">
+    OAuth token fetch failed: account deleted.
+  </int>
+  <int value="43" label="OAuth fetch: account disabled">
+    OAuth token fetch failed: account disabled.
+  </int>
+  <int value="44" label="Re-enrollment: pre-check domain mismatch">
+    Re-enrollment pre-check failed: domain does not match install attributes.
+  </int>
+  <int value="45" label="Re-enrollment: lock domain mismatch">
+    Re-enrollment device lock failed: domain does not match install attributes.
   </int>
 </enum>
 
@@ -41161,6 +42865,9 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="276" label="Enable add person in the user manager"/>
   <int value="277"
       label="Import autofill form data from default browser on first run"/>
+  <int value="278" label="Extension Settings"/>
+  <int value="279" label="SSL minimum version"/>
+  <int value="280" label="SSL fallback minimum version"/>
 </enum>
 
 <enum name="EnterprisePolicyInvalidations" type="int">
@@ -42353,6 +44060,18 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="897" label="HOTWORDPRIVATE_GETLAUNCHSTATE"/>
   <int value="898" label="HOTWORDPRIVATE_SETHOTWORDALWAYSONSEARCHENABLED"/>
   <int value="899" label="WEBVIEWINTERNAL_LOADDATAWITHBASEURL"/>
+  <int value="900" label="GUESTVIEWINTERNAL_DESTROYGUEST"/>
+  <int value="901" label="COPRESENCESOCKET_CREATEPEER"/>
+  <int value="902" label="COPRESENCESOCKET_DESTROYPEER"/>
+  <int value="903" label="COPRESENCESOCKET_SEND"/>
+  <int value="904" label="COPRESENCESOCKET_DISCONNECT"/>
+  <int value="905" label="BOOKMARKMANAGERPRIVATE_SETVERSION"/>
+  <int value="906" label="FILESYSTEMPROVIDER_NOTIFY"/>
+  <int value="907" label="USB_GETUSERSELECTEDDEVICES"/>
+  <int value="908" label="INPUTMETHODPRIVATE_GETINPUTMETHODCONFIG"/>
+  <int value="909" label="WALLPAPERPRIVATE_GETSYNCSETTING"/>
+  <int value="910" label="COPRESENCE_SETAUTHTOKEN"/>
+  <int value="911" label="CAST_CHANNEL_SETAUTHORITYKEYS"/>
 </enum>
 
 <enum name="ExtensionInstallCause" type="int">
@@ -43194,6 +44913,49 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="533" label="NotificationCreated"/>
   <int value="534" label="NotificationClosed"/>
   <int value="535" label="NotificationPermissionRequested"/>
+  <int value="536" label="MediaStreamLabel"/>
+  <int value="537" label="MediaStreamStop"/>
+  <int value="538" label="ConsoleTimeline"/>
+  <int value="539" label="ConsoleTimelineEnd"/>
+  <int value="540" label="SRIElementWithMatchingIntegrityAttribute"/>
+  <int value="541" label="SRIElementWithNonMatchingIntegrityAttribute"/>
+  <int value="542" label="SRIElementWithUnparsableIntegrityAttribute"/>
+  <int value="543" label="SRIElementWithIntegrityAttributeAndInsecureOrigin"/>
+  <int value="544" label="SRIElementWithIntegrityAttributeAndInsecureResource"/>
+  <int value="545" label="AnimationPlayerGetStartTime"/>
+  <int value="546" label="AnimationPlayerSetStartTime"/>
+  <int value="547" label="AnimationPlayerGetCurrentTime"/>
+  <int value="548" label="AnimationPlayerSetCurrentTime"/>
+  <int value="549" label="AnimationPlayerGetPlaybackRate"/>
+  <int value="550" label="AnimationPlayerSetPlaybackRate"/>
+  <int value="551" label="AnimationPlayerGetPlayState"/>
+  <int value="552" label="AnimationPlayerFinish"/>
+  <int value="553" label="AnimationPlayerPlay"/>
+  <int value="554" label="AnimationPlayerPause"/>
+  <int value="555" label="AnimationPlayerReverse"/>
+  <int value="556" label="BreakIterator"/>
+  <int value="557" label="ScreenOrientationAngle"/>
+  <int value="558" label="ScreenOrientationType"/>
+  <int value="559" label="ScreenOrientationLock"/>
+  <int value="560" label="ScreenOrientationUnlock"/>
+  <int value="561" label="GeolocationSecureOrigin"/>
+  <int value="562" label="GeolocationInsecureOrigin"/>
+  <int value="563" label="NotificationSecureOrigin"/>
+  <int value="564" label="NotificationInsecureOrigin"/>
+  <int value="565" label="NotificationShowEvent"/>
+  <int value="566" label="CSSXGetComputedStyleQueries"/>
+  <int value="567" label="SVG1DOM"/>
+  <int value="568" label="SVGPathSegDOM"/>
+  <int value="569" label="SVGTransformListConsolidate"/>
+  <int value="570" label="SVGAnimatedTransformListBaseVal"/>
+  <int value="571" label="QuotedAnimationName"/>
+  <int value="572" label="QuotedKeyframesRule"/>
+  <int value="573" label="SrcsetDroppedCandidate"/>
+  <int value="574" label="WindowPostMessage"/>
+  <int value="575" label="WindowPostMessageWithLegacyTargetOriginArgument"/>
+  <int value="576" label="RenderRuby"/>
+  <int value="577" label="CanvasRenderingContext2DCompositeOperationDarker"/>
+  <int value="578" label="ScriptElementWithInvalidTypeHasSrc"/>
 </enum>
 
 <enum name="FFmpegCodecs" type="int">
@@ -43644,6 +45406,20 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="15" label="The total number of navigate requests."/>
 </enum>
 
+<enum name="FlashUsage" type="int">
+  <int value="0" label="Started NPAPI Flash at least once">
+    Number of browser processes that have started at least one NPAPI Flash
+    process during their lifetime.
+  </int>
+  <int value="1" label="Started PPAPI Flash at least once">
+    Number of browser processes that have started at least one PPAPI Flash
+    process during their lifetime.
+  </int>
+  <int value="2" label="Started browser process">
+    Total number of browser processes.
+  </int>
+</enum>
+
 <enum name="FtpDataConnectionError" type="int">
   <int value="0">Data connection successful</int>
   <int value="1">Local firewall blocked the connection</int>
@@ -43946,6 +45722,29 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="10" label="HOSTED_NOT_ALLOWED"/>
   <int value="11" label="UNEXPECTED_SERVICE_RESPONSE"/>
   <int value="12" label="SERVICE_ERROR"/>
+  <int value="13" label="WEB_LOGIN_REQUIRED"/>
+</enum>
+
+<enum name="GoogleUpdateErrorCode" type="int">
+  <int value="0" label="GOOGLE_UPDATE_NO_ERROR"/>
+  <int value="1" label="CANNOT_UPGRADE_CHROME_IN_THIS_DIRECTORY"/>
+  <int value="2" label="GOOGLE_UPDATE_JOB_SERVER_CREATION_FAILED"/>
+  <int value="3" label="GOOGLE_UPDATE_ONDEMAND_CLASS_NOT_FOUND"/>
+  <int value="4" label="GOOGLE_UPDATE_ONDEMAND_CLASS_REPORTED_ERROR"/>
+  <int value="5" label="GOOGLE_UPDATE_GET_RESULT_CALL_FAILED"/>
+  <int value="6" label="GOOGLE_UPDATE_GET_VERSION_INFO_FAILED"/>
+  <int value="7" label="GOOGLE_UPDATE_ERROR_UPDATING"/>
+  <int value="8" label="GOOGLE_UPDATE_DISABLED_BY_POLICY"/>
+  <int value="9" label="GOOGLE_UPDATE_DISABLED_BY_POLICY_AUTO_ONLY"/>
+</enum>
+
+<enum name="GoogleUpdateUpgradeResult" type="int">
+  <int value="0" label="UPGRADE_STARTED"/>
+  <int value="1" label="UPGRADE_CHECK_STARTED"/>
+  <int value="2" label="UPGRADE_IS_AVAILABLE"/>
+  <int value="3" label="UPGRADE_SUCCESSFUL"/>
+  <int value="4" label="UPGRADE_ALREADY_UP_TO_DATE"/>
+  <int value="5" label="UPGRADE_ERROR"/>
 </enum>
 
 <enum name="HIDContinueScenarioType" type="int">
@@ -44093,6 +45892,38 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="1" label="Generic error"/>
   <int value="2" label="NaCl error"/>
   <int value="3" label="Microphone error"/>
+</enum>
+
+<enum name="HotwordMediaStreamResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Unknown error"/>
+  <int value="2" label="NotSupportedError"/>
+  <int value="3" label="PermissionDeniedError"/>
+  <int value="4" label="ConstraintNotSatisfiedError"/>
+  <int value="5" label="OverconstrainedError"/>
+  <int value="6" label="NotFoundError"/>
+  <int value="7" label="AbortError"/>
+  <int value="8" label="SourceUnavailableError"/>
+  <int value="9" label="PermissionDismissedError"/>
+  <int value="10" label="InvalidStateError"/>
+  <int value="11" label="DevicesNotFoundError"/>
+  <int value="12" label="InvalidSecurityOriginError"/>
+</enum>
+
+<enum name="HotwordNaClMessageTimeout" type="int">
+  <int value="0" label="REQUEST_MODEL"/>
+  <int value="1" label="MODEL_LOADED"/>
+  <int value="2" label="READY_FOR_AUDIO"/>
+  <int value="3" label="STOPPED"/>
+  <int value="4" label="HOTWORD_DETECTED"/>
+  <int value="5" label="MS_CONFIGURED"/>
+</enum>
+
+<enum name="HotwordNaClPluginLoadResult" type="int">
+  <int value="0" label="Success"/>
+  <int value="1" label="Unknown error"/>
+  <int value="2" label="Module crash"/>
+  <int value="3" label="Module not found"/>
 </enum>
 
 <enum name="HotwordPrefState" type="int">
@@ -44565,6 +46396,45 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="611601" label="te-t-i0-und">Transliteration Telugu</int>
   <int value="611602" label="ti-t-i0-und">Transliteration Tigrinya</int>
   <int value="611700" label="ur-t-i0-und">Transliteration Urdu</int>
+</enum>
+
+<enum name="InsecureContentType" type="int">
+  <int value="0" label="Displayed"/>
+  <int value="1" label="Displayed by *.google.com"/>
+  <int value="2" label="Displayed by www.google.com"/>
+  <int value="3" label="Displayed due to an iframe"/>
+  <int value="4" label="Ran"/>
+  <int value="5" label="Ran by *.google.com"/>
+  <int value="6" label="Ran by www.google.com"/>
+  <int value="7" label="Ran from www.youtube.com"/>
+  <int value="8" label="Ran due to script"/>
+  <int value="9" label="Ran due to CSS"/>
+  <int value="10" label="Ran due to a plug-in"/>
+  <int value="11" label="Displayed by www.youtube.com"/>
+  <int value="12" label="Ran by www.youtube.com"/>
+  <int value="13" label="Ran by *.googleusercontent.com"/>
+  <int value="14" label="Displayed by mail.google.com"/>
+  <int value="15" label="Ran by mail.google.com"/>
+  <int value="16" label="Displayed by plus.google.com"/>
+  <int value="17" label="Ran by plus.google.com"/>
+  <int value="18" label="Displayed by docs.google.com"/>
+  <int value="19" label="Ran by docs.google.com"/>
+  <int value="20" label="Displayed by sites.google.com"/>
+  <int value="21" label="Ran by sites.google.com"/>
+  <int value="22" label="Displayed by picasaweb.google.com"/>
+  <int value="23" label="Ran by picasaweb.google.com"/>
+  <int value="24" label="Displayed by google.com/reader/"/>
+  <int value="25" label="Ran by google.com/reader/"/>
+  <int value="26" label="Displayed by code.google.com"/>
+  <int value="27" label="Ran by code.google.com"/>
+  <int value="28" label="Displayed by groups.google.com"/>
+  <int value="29" label="Ran by groups.google.com"/>
+  <int value="30" label="Displayed by maps.google.com"/>
+  <int value="31" label="Ran by maps.google.com"/>
+  <int value="32" label="Displayed by google.com/support/"/>
+  <int value="33" label="Ran by google.com/support/"/>
+  <int value="34" label="Displayed by google.com/intl/"/>
+  <int value="35" label="Ran by google.com/intl/"/>
 </enum>
 
 <enum name="InstantControllerEvent" type="int">
@@ -45338,6 +47208,14 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="256" label="FILE_NOT_SPECIFIED"/>
 </enum>
 
+<enum name="LibraryLoadFromApkStatus" type="int">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Not supported"/>
+  <int value="2" label="Supported"/>
+  <int value="3" label="Successful"/>
+  <int value="4" label="Not aligned"/>
+</enum>
+
 <enum name="LinkMonitorFailureType" type="int">
   <int value="0" label="Local MAC Address Not Found"/>
   <int value="1" label="Client Startup Failure"/>
@@ -45387,6 +47265,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="18" label="Ratpoison"/>
   <int value="19" label="StumpWM"/>
   <int value="20" label="wmii"/>
+  <int value="21" label="Fluxbox"/>
 </enum>
 
 <enum name="LoadType" type="int">
@@ -45431,7 +47310,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="-2098610409" label="disable-lcd-text"/>
   <int value="-2097515669" label="disable-cast"/>
   <int value="-2077268643" label="disable-device-enumeration"/>
-  <int value="-2052416224" label="enable-zero-suggest-ether-noserp"/>
+  <int value="-2075725205" label="disable-new-zip-unpacker"/>
   <int value="-2047822258" label="enable-avfoundation"/>
   <int value="-2025367104" label="enable-material-design-ntp"/>
   <int value="-2020024440" label="scroll-end-effect"/>
@@ -45441,14 +47320,18 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="-1985025593" label="file-manager-enable-new-gallery"/>
   <int value="-1972383451" label="disable-pinch"/>
   <int value="-1940806558" label="enable-syncfs-directory-operation"/>
+  <int value="-1938263248" label="enable-extension-info-dialog"/>
   <int value="-1930720286" label="nacl-debug-mask"/>
   <int value="-1928198763" label="enable-async-dns"/>
   <int value="-1925117279" label="disable-quic-https"/>
   <int value="-1911153473" label="enable-easy-signin"/>
   <int value="-1888273969" label="tab-capture-upscale-quality"/>
+  <int value="-1887053262"
+      label="enable-zero-suggest-most-visited-without-serp"/>
   <int value="-1876881908"
       label="disable-infobar-for-protected-media-identifier"/>
   <int value="-1874908826" label="enable-instant-search-clicks"/>
+  <int value="-1872989945" label="enable-webview-based-signin"/>
   <int value="-1870961970" label="enable-filemanager-mtp"/>
   <int value="-1847835522" label="disable-touch-adjustment"/>
   <int value="-1838482444" label="disable-settings-window"/>
@@ -45465,6 +47348,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="-1703308540" label="disable-webaudio"/>
   <int value="-1696366449" label="disable-permissions-bubbles"/>
   <int value="-1662447331" label="wake-on-packets"/>
+  <int value="-1654344175" label="disable-extension-info-dialog"/>
   <int value="-1619757314" label="touch-scrolling-mode"/>
   <int value="-1605567628" label="disable-overlay-scrollbar"/>
   <int value="-1596559650" label="max-tiles-for-interest-area"/>
@@ -45490,13 +47374,13 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="-1334327410" label="ash-enable-touch-view-testing"/>
   <int value="-1319688939" label="ignore-gpu-blacklist"/>
   <int value="-1285021473" label="save-page-as-mhtml"/>
-  <int value="-1245459041" label="enable-zero-suggest-personalized"/>
   <int value="-1241747717" label="enable-android-password-link"/>
   <int value="-1218608640" label="disable-offline-load-stale-cache"/>
   <int value="-1212273428" label="enable-experimental-app-list"/>
   <int value="-1201183153" label="enable-centered-app-list"/>
   <int value="-1172204005" label="enable-offline-auto-reload-visible-only"/>
   <int value="-1159563774" label="enable-accessibility-script-injection"/>
+  <int value="-1136627751" label="ignore-autocomplete-off-autofill"/>
   <int value="-1136509631" label="ssl-interstitial-v1"/>
   <int value="-1125133283" label="disable-threaded-scrolling"/>
   <int value="-1102212525" label="enable-tcp-fastopen"/>
@@ -45546,6 +47430,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="-430360431" label="disable-password-generation"/>
   <int value="-418868128" label="enable-experimental-web-platform-features"/>
   <int value="-385337473" label="enable-fast-unload"/>
+  <int value="-384589459" label="disable-supervised-user-safesites"/>
   <int value="-349057743" label="extensions-on-chrome-urls"/>
   <int value="-340255045" label="allow-nacl-socket-api"/>
   <int value="-328361990" label="enable-experimental-extension-apis"/>
@@ -45559,6 +47444,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="-206393363" label="enable-scroll-prediction"/>
   <int value="-165756594" label="enable-touch-feedback"/>
   <int value="-158549277" label="enable-embeddedsearch-api"/>
+  <int value="-158197254" label="enable-credential-manager-api"/>
   <int value="-147283486" label="enable-network-portal-notification"/>
   <int value="-102537270" label="extension-content-verification"/>
   <int value="-86788587" label="allow-autofill-sync-credential"/>
@@ -45580,9 +47466,9 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="103932290" label="show-autofill-type-predictions"/>
   <int value="118991027" label="enable-accelerated-fixed-root-background"/>
   <int value="120429808" label="disable-new-profile-management"/>
+  <int value="121858954" label="enable-supervised-user-safesites"/>
   <int value="147373243" label="enable-deferred-image-decoding"/>
   <int value="203776499" label="enable-virtual-keyboard-overscroll"/>
-  <int value="242267133" label="enable-zero-suggest-ether-serp"/>
   <int value="270267831" label="enable-scripts-require-action"/>
   <int value="278756320" label="disable-app-list-app-info"/>
   <int value="346711293" label="enable-save-password-bubble"/>
@@ -45592,6 +47478,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="370486304" label="enable-origin-chip-on-srp"/>
   <int value="401983950" label="enable-spdy4"/>
   <int value="402143634" label="enable-search-button-in-omnibox-always"/>
+  <int value="415154056" label="enable-physical-keyboard-autocorrect"/>
   <int value="423615350" label="enable-tab-audio-muting"/>
   <int value="446316019" label="enable-threaded-compositing"/>
   <int value="451196246" label="disable-impl-side-painting"/>
@@ -45599,6 +47486,8 @@ To add a new entry, add it with any value and run test to compute valid value.
       label="disable-gesture-requirement-for-media-playback"/>
   <int value="458410433" label="disable-views-rect-based-targeting"/>
   <int value="494733611" label="disable-drop-sync-credential"/>
+  <int value="535976218" label="enable-plugin-power-saver"/>
+  <int value="546710806" label="disable-easy-signin"/>
   <int value="550378029" label="reset-app-list-install-state"/>
   <int value="567368307" label="enable-experimental-canvas-features"/>
   <int value="593707592" label="disable-network-portal-notification"/>
@@ -45622,6 +47511,8 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="880510010" label="enable-permissions-bubbles"/>
   <int value="887011602" label="enable-spelling-auto-correct"/>
   <int value="909439558" label="disable-device-discovery"/>
+  <int value="952558794" label="enable-remote-assistance"/>
+  <int value="980396200" label="enable-new-korean-ime"/>
   <int value="1022992701" label="enable-origin-chip-always"/>
   <int value="1033597574" label="disable-layer-squashing"/>
   <int value="1050321458" label="new-profile-management"/>
@@ -45638,9 +47529,11 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="1129888794" label="ash-touch-hud"/>
   <int value="1133635187" label="force-gpu-rasterization"/>
   <int value="1139226452" label="enable-nacl-debug"/>
+  <int value="1139363314" label="disable-supervised-user-blacklist"/>
   <int value="1142515376" label="enable-nacl"/>
   <int value="1150622273" label="enable-apps-file-associations"/>
   <int value="1163255347" label="ash-enable-touch-view-touch-feedback"/>
+  <int value="1181056275" label="enable-cloud-backup"/>
   <int value="1196644408" label="performance-monitor-gathering"/>
   <int value="1205849612" label="enable-sync-synced-notifications"/>
   <int value="1210343926" label="enable-drop-sync-credential"/>
@@ -45683,6 +47576,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="1723601083" label="enable-app-window-controls"/>
   <int value="1730236697" label="force-device-scale-factor"/>
   <int value="1747279677" label="disable-delegated-renderer"/>
+  <int value="1752168018" label="enable-stale-while-revalidate"/>
   <int value="1775475563" label="malware-interstitial-v3"/>
   <int value="1776475705" label="show-composited-layer-borders"/>
   <int value="1783293530" label="disallow-autofill-sync-credential"/>
@@ -45710,6 +47604,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="2093235103" label="default-tile-width"/>
   <int value="2101151142" label="disable-direct-write"/>
   <int value="2119964154" label="enable-download-resumption"/>
+  <int value="2121776031" label="auto-virtual-keyboard"/>
   <int value="2122876605" label="enable-bleeding-edge-rendering-fast-paths"/>
   <int value="2137347307" label="enable-drive-apps-in-app-list"/>
 </enum>
@@ -45830,6 +47725,12 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="9" label="FAILED_STORE_DATA">
     Could not store new password data for supervised user.
   </int>
+</enum>
+
+<enum name="ManifestFetchResultType" type="int">
+  <int value="0" label="Fetch succeeded"/>
+  <int value="1" label="Fetch failed because of empty URL"/>
+  <int value="2" label="Fetch failed (unspecified reason)"/>
 </enum>
 
 <enum name="MappedCSSProperties" type="int">
@@ -46571,6 +48472,11 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="2" label="Enabled successfully"/>
 </enum>
 
+<enum name="MicrophoneMuteResult" type="int">
+  <int value="0" label="Muted"/>
+  <int value="1" label="Not muted"/>
+</enum>
+
 <enum name="MigrationNssToPemNetworkTypes" type="int">
   <int value="0" label="EAP"/>
   <int value="1" label="OpenVPN"/>
@@ -47001,6 +48907,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="162" label="SOCKET_RECEIVE_BUFFER_SIZE_UNCHANGEABLE"/>
   <int value="163" label="SOCKET_SEND_BUFFER_SIZE_UNCHANGEABLE"/>
   <int value="164" label="SSL_CLIENT_AUTH_CERT_BAD_FORMAT"/>
+  <int value="165" label="SSL_FALLBACK_BEYOND_MINIMUM_VERSION"/>
   <int value="200" label="CERT_COMMON_NAME_INVALID"/>
   <int value="201" label="CERT_DATE_INVALID"/>
   <int value="202" label="CERT_AUTHORITY_INVALID"/>
@@ -47891,6 +49798,96 @@ To add a new entry, add it with any value and run test to compute valid value.
   </int>
 </enum>
 
+<enum name="OSXFullscreenParameters" type="int">
+  <int value="0" label="IMMERSIVE_SECONDARY_SHARED_SINGLE">INVALID</int>
+  <int value="1" label="APPKIT_SECONDARY_SHARED_SINGLE">INVALID</int>
+  <int value="2" label="IMMERSIVE_PRIMARY_SHARED_SINGLE">
+    Immersive Mechanism + Primary Screen + Shared Spaces + Single Screen
+  </int>
+  <int value="3" label="APPKIT_PRIMARY_SHARED_SINGLE">
+    AppKit Mechanism + Primary Screen + Shared Spaces + Single Screen
+  </int>
+  <int value="4" label="IMMERSIVE_SECONDARY_SEPARATE_SINGLE">INVALID</int>
+  <int value="5" label="APPKIT_SECONDARY_SEPARATE_SINGLE">INVALID</int>
+  <int value="6" label="IMMERSIVE_PRIMARY_SEPARATE_SINGLE">
+    Immersive Mechanism + Primary Screen + Separate Spaces + Single Screen
+  </int>
+  <int value="7" label="APPKIT_PRIMARY_SEPARATE_SINGLE">
+    AppKit Mechanism + Primary Screen + Separate Spaces + Single Screen
+  </int>
+  <int value="8" label="IMMERSIVE_SECONDARY_SHARED_MULTIPLE">
+    Immersive Mechanism + Secondary Screen + Shared Spaces + Multiple Screens
+  </int>
+  <int value="9" label="APPKIT_SECONDARY_SHARED_MULTIPLE">
+    AppKit Mechanism + Secondary Screen + Shared Spaces + Multiple Screens
+  </int>
+  <int value="10" label="IMMERSIVE_PRIMARY_SHARED_MULTIPLE">
+    Immersive Mechanism + Primary Screen + Shared Spaces + Multiple Screens
+  </int>
+  <int value="11" label="APPKIT_PRIMARY_SHARED_MULTIPLE">
+    AppKit Mechanism + Primary Screen + Shared Spaces + Multiple Screens
+  </int>
+  <int value="12" label="IMMERSIVE_SECONDARY_SEPARATE_MULTIPLE">
+    Immersive Mechanism + Secondary Screen + Separate Spaces + Multiple Screens
+  </int>
+  <int value="13" label="APPKIT_SECONDARY_SEPARATE_MULTIPLE">
+    AppKit Mechanism + Secondary Screen + Separate Spaces + Multiple Screens
+  </int>
+  <int value="14" label="IMMERSIVE_PRIMARY_SEPARATE_MULTIPLE">
+    Immersive Mechanism + Primary Screen + Separate Spaces + Multiple Screens
+  </int>
+  <int value="15" label="APPKIT_PRIMARY_SEPARATE_MULTIPLE">
+    AppKit Mechanism + Primary Screen + Separate Spaces + Multiple Screens
+  </int>
+</enum>
+
+<enum name="OSXFullscreenStyle" type="int">
+  <int value="0" label="IMMERSIVE">
+    The window was fullscreened using the immersive mechanism.
+  </int>
+  <int value="1" label="PRESENTATION_MODE">
+    The window was fullscreened using the AppKit mechanism, in Presentation
+    Mode.
+  </int>
+  <int value="2" label="CANONICAL_FULLSCREEN">
+    The window was fullscreened using the AppKit mechanism, in Canonical
+    Fullscreen.
+  </int>
+</enum>
+
+<enum name="OSXFullscreenWindowLocation" type="int">
+  <int value="0" label="PRIMARY_SINGLE_SCREEN">
+    The window was located on the primary screen, and there is only a single
+    screen available.
+  </int>
+  <int value="1" label="PRIMARY_MULTIPLE_SCREEN">
+    The window was located on the primary screen, and there are multiple screens
+    available.
+  </int>
+  <int value="2" label="SECONDARY_MULTIPLE_SCREEN">
+    The window was located on a secondary screen, and there are multiple screens
+    available.
+  </int>
+</enum>
+
+<enum name="OSXHandoffOrigin" type="int">
+  <int value="0" label="Unknown Origin"/>
+  <int value="1" label="Chrome on iOS"/>
+  <int value="2" label="Chrome on Mac"/>
+</enum>
+
+<enum name="OSXScreensHaveSeparateSpaces" type="int">
+  <int value="0" label="CANNOT_HAVE_SEPARATE_SPACES">
+    The &quot;Screens Have Separate Spaces&quot; option is unavailable.
+  </int>
+  <int value="1" label="SEPARATE_SPACES">
+    The &quot;Screens Have Separate Spaces&quot; option is on.
+  </int>
+  <int value="2" label="SHARED_SPACES">
+    The &quot;Screens Have Separate Spaces&quot; option is off.
+  </int>
+</enum>
+
 <enum name="OtherPossibleUsernamesUsage" type="int">
   <int value="0" label="Nothing to Autofill"/>
   <int value="1" label="No other possible usernames"/>
@@ -48068,11 +50065,13 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="2" label="DEPRECATED: Icon shown"/>
   <int value="3" label="DEPRECATED: Bubble shown"/>
   <int value="4" label="Generation available"/>
-  <int value="5" label="Generation popup shown"/>
+  <int value="5" label="DEPRECATED: Generation popup shown"/>
   <int value="6" label="Generated password accepted"/>
-  <int value="7" label="Editing popup shown"/>
+  <int value="7" label="DEPRECATED: Editing popup shown"/>
   <int value="8" label="Generated password edited"/>
   <int value="9" label="Generated password deleted"/>
+  <int value="10" label="Generated popup shown (limit once per page)"/>
+  <int value="11" label="Editing popup shown (limit once per page)"/>
 </enum>
 
 <enum name="PasswordGenerationSubmissionEvent" type="int">
@@ -49514,6 +51513,9 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="5" label="Open User Manager in Menu">
     User opened the user menu, and opened the User Manager.
   </int>
+  <int value="6" label="Go Incognito from Menu">
+    User opened the user menu, and selected Go Incognito.
+  </int>
 </enum>
 
 <enum name="ProfileErrorType" type="int">
@@ -49725,6 +51727,15 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="22" label="DOMAIN_NUM_EVENTS"/>
 </enum>
 
+<enum name="PushRegistrationStatus" type="int">
+  <int value="0" label="Successful"/>
+  <int value="1" label="Page has no active Service Worker"/>
+  <int value="2" label="Push service not available"/>
+  <int value="3" label="Registration limit reached"/>
+  <int value="4" label="Permission denied"/>
+  <int value="5" label="Push service error"/>
+</enum>
+
 <enum name="QuicAddressMismatch" type="int">
   <int value="0" label="Address mismatch: IPv4 IPv4"/>
   <int value="1" label="Address mismatch: IPv6 IPv6"/>
@@ -49734,6 +51745,33 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="5" label="Port mismatch: IPv6 IPv6"/>
   <int value="6" label="Address and port match: IPv4 IPv4"/>
   <int value="7" label="Address and port match: IPv6 IPv6"/>
+</enum>
+
+<enum name="QuicDiskCacheAPICall" type="int">
+  <int value="0" label="Start"/>
+  <int value="1" label="WaitForDataReady"/>
+  <int value="2" label="Parse"/>
+  <int value="3" label="WaitForDataReadyCancel"/>
+  <int value="4" label="ReadyToPersist"/>
+  <int value="5" label="Persist"/>
+</enum>
+
+<enum name="QuicDiskCacheEntryState" type="int">
+  <int value="0" label="Opened"/>
+  <int value="1" label="Closed"/>
+</enum>
+
+<enum name="QuicDiskCacheFailureReason" type="int">
+  <int value="0" label="WAIT_FOR_DATA_READY_INVALID_ARGUMENT_FAILURE"/>
+  <int value="1" label="GET_BACKEND_FAILURE"/>
+  <int value="2" label="OPEN_FAILURE"/>
+  <int value="3" label="CREATE_OR_OPEN_FAILURE"/>
+  <int value="4" label="PARSE_NO_DATA_FAILURE"/>
+  <int value="5" label="PARSE_FAILURE"/>
+  <int value="6" label="READ_FAILURE"/>
+  <int value="7" label="READY_TO_PERSIST_FAILURE"/>
+  <int value="8" label="PERSIST_NO_BACKEND_FAILURE"/>
+  <int value="9" label="WRITE_FAILURE"/>
 </enum>
 
 <enum name="QuicErrorCodes" type="int">
@@ -49800,6 +51838,11 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="60" label="INVALID_STOP_WAITING_DATA"/>
   <int value="61" label="UNENCRYPTED_STREAM_DATA"/>
   <int value="62" label="CONNECTION_IP_POOLED"/>
+  <int value="63" label="FLOW_CONTROL_SENT_TOO_MUCH_DATA"/>
+  <int value="64" label="FLOW_CONTROL_INVALID_WINDOW"/>
+  <int value="65" label="CRYPTO_UPDATE_BEFORE_HANDSHAKE_COMPLETE"/>
+  <int value="66" label="TOO_MANY_UNFINISHED_STREAMS"/>
+  <int value="67" label="CONNECTION_OVERALL_TIMED_OUT"/>
 </enum>
 
 <enum name="QuicHandshakeFailureReason" type="int">
@@ -49948,6 +51991,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="4" label="CONNECTION_ERROR"/>
   <int value="5" label="PEER_GOING_AWAY"/>
   <int value="6" label="CANCELLED"/>
+  <int value="7" label="RST_FLOW_CONTROL_ACCOUNTING"/>
 </enum>
 
 <enum name="QuicServerConfigState" type="int">
@@ -49984,6 +52028,12 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="1" label="Other Device Tab"/>
   <int value="2" label="Restore Window"/>
   <int value="3" label="Show More"/>
+</enum>
+
+<enum name="RemotePlaybackDeviceType" type="int">
+  <int value="0" label="Cast Generic Media Player"/>
+  <int value="1" label="Cast YouTube Player"/>
+  <int value="2" label="Non-Cast YouTube Player"/>
 </enum>
 
 <enum name="RenderViewContextMenuItem" type="int">
@@ -50106,6 +52156,61 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="1" label="Has client"/>
 </enum>
 
+<enum name="ResourcePrefetchPredictorMainFrameRequestStats" type="int">
+  <int value="0" label="MAIN_FRAME_REQUEST_STATS_TOTAL_REQUESTS"/>
+  <int value="1" label="MAIN_FRAME_REQUEST_STATS_PROCESSED_REQUESTS"/>
+  <int value="2" label="MAIN_FRAME_REQUEST_STATS_TOTAL_REDIRECTS"/>
+  <int value="3" label="MAIN_FRAME_REQUEST_STATS_PROCESSED_REDIRECTS"/>
+  <int value="4" label="MAIN_FRAME_REQUEST_STATS_TOTAL_RESPONSES"/>
+  <int value="5" label="MAIN_FRAME_REQUEST_STATS_PROCESSED_RESPONSES"/>
+</enum>
+
+<enum name="ResourcePrefetchPredictorNavigationEvent" type="int">
+  <int value="0" label="NAVIGATION_EVENT_REQUEST_STARTED"/>
+  <int value="1" label="NAVIGATION_EVENT_REQUEST_REDIRECTED"/>
+  <int value="2" label="NAVIGATION_EVENT_REQUEST_REDIRECTED_EMPTY_URL"/>
+  <int value="3" label="NAVIGATION_EVENT_REQUEST_EXPIRED"/>
+  <int value="4" label="NAVIGATION_EVENT_RESPONSE_STARTED"/>
+  <int value="5" label="NAVIGATION_EVENT_ONLOAD"/>
+  <int value="6" label="NAVIGATION_EVENT_ONLOAD_EMPTY_URL"/>
+  <int value="7" label="NAVIGATION_EVENT_ONLOAD_UNTRACKED_URL"/>
+  <int value="8" label="NAVIGATION_EVENT_ONLOAD_TRACKED_URL"/>
+  <int value="9" label="NAVIGATION_EVENT_SHOULD_TRACK_URL"/>
+  <int value="10" label="NAVIGATION_EVENT_SHOULD_NOT_TRACK_URL"/>
+  <int value="11" label="NAVIGATION_EVENT_URL_TABLE_FULL"/>
+  <int value="12" label="NAVIGATION_EVENT_HAVE_PREDICTIONS_FOR_URL"/>
+  <int value="13" label="NAVIGATION_EVENT_NO_PREDICTIONS_FOR_URL"/>
+</enum>
+
+<enum name="ResourcePrefetchPredictorNavigationStatus" type="int">
+  <int value="0" label="NAVIGATION_STATUS_COMPLETE"/>
+  <int value="1" label="NAVIGATION_STATUS_COMPLETE_ABANDONED"/>
+  <int value="2" label="NAVIGATION_STATUS_ABANDONED"/>
+</enum>
+
+<enum name="ResourcePrefetchPredictorReportingEvent" type="int">
+  <int value="0" label="REPORTING_EVENT_ALL_HISTORY_CLEARED"/>
+  <int value="1" label="REPORTING_EVENT_PARTIAL_HISTORY_CLEARED"/>
+</enum>
+
+<enum name="ResourcePrefetchPredictorRequestStats" type="int">
+  <int value="0" label="REQUEST_STATS_TOTAL_RESPONSES"/>
+  <int value="1" label="REQUEST_STATS_TOTAL_PROCESSED_RESPONSES"/>
+  <int value="2" label="REQUEST_STATS_NO_RESOURCE_REQUEST_INFO"/>
+  <int value="3" label="REQUEST_STATS_NO_RENDER_VIEW_ID_FROM_REQUEST_INFO"/>
+</enum>
+
+<enum name="ResourcePrefetchPredictorResourceStatus" type="int">
+  <int value="0" label="RESOURCE_STATUS_HANDLED"/>
+  <int value="1" label="RESOURCE_STATUS_NOT_HTTP_PAGE"/>
+  <int value="2" label="RESOURCE_STATUS_NOT_HTTP_RESOURCE"/>
+  <int value="4" label="RESOURCE_STATUS_UNSUPPORTED_MIME_TYPE"/>
+  <int value="8" label="RESOURCE_STATUS_NOT_GET"/>
+  <int value="16" label="RESOURCE_STATUS_URL_TOO_LONG"/>
+  <int value="32" label="RESOURCE_STATUS_NOT_CACHEABLE"/>
+  <int value="64" label="RESOURCE_STATUS_HEADERS_MISSING"/>
+</enum>
+
 <enum name="ResourceType" type="int">
   <int value="0" label="Main resource"/>
   <int value="1" label="Image"/>
@@ -50120,6 +52225,11 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="10" label="Text track"/>
   <int value="11" label="Shader"/>
   <int value="12" label="Import resource"/>
+</enum>
+
+<enum name="RunningMode" type="int">
+  <int value="0" label="Document Mode"/>
+  <int value="1" label="Tabbed Mode"/>
 </enum>
 
 <enum name="SavePasswordPromptResponseType" type="int">
@@ -51833,6 +53943,27 @@ To add a new entry, add it with any value and run test to compute valid value.
   </int>
 </enum>
 
+<enum name="SSLProtocolNegotiation" type="int">
+  <int value="1" label="ALPN, HTTP/1.1"/>
+  <int value="100" label="ALPN, SPDY 2.0"/>
+  <int value="101" label="ALPN, SPDY 3.0"/>
+  <int value="102" label="ALPN, SPDY 3.1"/>
+  <int value="103" label="ALPN, HTTP/2 draft-14"/>
+  <int value="200" label="ALPN, QUIC/1 + SPDY/3"/>
+  <int value="501" label="NPN, HTTP/1.1"/>
+  <int value="600" label="NPN, SPDY 2.0"/>
+  <int value="601" label="NPN, SPDY 3.0"/>
+  <int value="602" label="NPN, SPDY 3.1"/>
+  <int value="603" label="NPN, HTTP/2 draft-14"/>
+  <int value="700" label="NPN, QUIC/1 + SPDY/3"/>
+  <int value="1001" label="NPN, fallback to HTTP/1.1"/>
+  <int value="1100" label="NPN, fallback to SPDY 2.0"/>
+  <int value="1101" label="NPN, fallback to SPDY 3.0"/>
+  <int value="1102" label="NPN, fallback to SPDY 3.1"/>
+  <int value="1103" label="NPN, fallback to HTTP/2 draft-14"/>
+  <int value="1200" label="NPN, fallback to QUIC/1 + SPDY/3"/>
+</enum>
+
 <enum name="SSLResponseTypesV2" type="int">
   <int value="0" label="SHOW_ALL"/>
   <int value="1" label="SHOW_OVERRIDABLE"/>
@@ -51907,6 +54038,144 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="0" label="Empty response received from the server."/>
   <int value="1" label="Invalid response received from the server."/>
   <int value="2" label="Valid response received from the server."/>
+</enum>
+
+<enum name="SupervisedUserSafetyFilterResult" type="int">
+  <int value="100" label="LINK_ALLOWED">Link; Allowed as safe</int>
+  <int value="101" label="TYPED_ALLOWED">Typed URL; Allowed as safe</int>
+  <int value="102" label="AUTO_BOOKMARK_ALLOWED">Bookmark; Allowed as safe</int>
+  <int value="103" label="AUTO_SUBFRAME_ALLOWED">
+    Subframe navigation; Allowed as safe
+  </int>
+  <int value="104" label="MANUAL_SUBFRAME_ALLOWED">
+    Manual subframe navigation; Allowed as safe
+  </int>
+  <int value="105" label="GENERATED_ALLOWED">
+    Generated from Omnibox; Allowed as safe
+  </int>
+  <int value="106" label="AUTO_TOPLEVEL_ALLOWED">
+    Automatic toplevel navigation; Allowed as safe
+  </int>
+  <int value="107" label="FORM_SUBMIT_ALLOWED">
+    Form submission; Allowed as safe
+  </int>
+  <int value="108" label="RELOAD_ALLOWED">Reload; Allowed as safe</int>
+  <int value="109" label="KEYWORD_ALLOWED">
+    Omnibox keyword; Allowed as safe
+  </int>
+  <int value="110" label="KEYWORD_GENERATED_ALLOWED">
+    URL generated from Omnibox keyword; Allowed as safe
+  </int>
+  <int value="199" label="OTHER_ALLOWED">Other navigation; Allowed as safe</int>
+  <int value="200" label="LINK_ALLOWED_UNKNOWN">
+    Link; Allowed by default (safety state unknown)
+  </int>
+  <int value="201" label="TYPED_ALLOWED_UNKNOWN">
+    Typed URL; Allowed by default (safety state unknown)
+  </int>
+  <int value="202" label="AUTO_BOOKMARK_ALLOWED_UNKNOWN">
+    Bookmark; Allowed by default (safety state unknown)
+  </int>
+  <int value="203" label="AUTO_SUBFRAME_ALLOWED_UNKNOWN">
+    Subframe navigation; Allowed by default (safety state unknown)
+  </int>
+  <int value="204" label="MANUAL_SUBFRAME_ALLOWED_UNKNOWN">
+    Manual subframe navigation; Allowed by default (safety state unknown)
+  </int>
+  <int value="205" label="GENERATED_ALLOWED_UNKNOWN">
+    Generated from Omnibox; Allowed by default (safety state unknown)
+  </int>
+  <int value="206" label="AUTO_TOPLEVEL_ALLOWED_UNKNOWN">
+    Automatic toplevel navigation; Allowed by default (safety state unknown)
+  </int>
+  <int value="207" label="FORM_SUBMIT_ALLOWED_UNKNOWN">
+    Form submission; Allowed by default (safety state unknown)
+  </int>
+  <int value="208" label="RELOAD_ALLOWED_UNKNOWN">
+    Reload; Allowed by default (safety state unknown)
+  </int>
+  <int value="209" label="KEYWORD_ALLOWED_UNKNOWN">
+    Omnibox keyword; Allowed by default (safety state unknown)
+  </int>
+  <int value="210" label="KEYWORD_GENERATED_ALLOWED_UNKNOWN">
+    URL generated from Omnibox keyword; Allowed by default (safety state
+    unknown)
+  </int>
+  <int value="299" label="OTHER_ALLOWED_UNKNOWN">
+    Other navigation; Allowed by default (safety state unknown)
+  </int>
+  <int value="300" label="LINK_BLOCKED_BLACKLIST">
+    Link; Blocked by static blacklist
+  </int>
+  <int value="301" label="TYPED_BLOCKED_BLACKLIST">
+    Typed URL; Blocked by static blacklist
+  </int>
+  <int value="302" label="AUTO_BOOKMARK_BLOCKED_BLACKLIST">
+    Bookmark; Blocked by static blacklist
+  </int>
+  <int value="303" label="AUTO_SUBFRAME_BLOCKED_BLACKLIST">
+    Subframe navigation; Blocked by static blacklist
+  </int>
+  <int value="304" label="MANUAL_SUBFRAME_BLOCKED_BLACKLIST">
+    Manual subframe navigation; Blocked by static blacklist
+  </int>
+  <int value="305" label="GENERATED_BLOCKED_BLACKLIST">
+    Generated from Omnibox; Blocked by static blacklist
+  </int>
+  <int value="306" label="AUTO_TOPLEVEL_BLOCKED_BLACKLIST">
+    Automatic toplevel navigation; Blocked by static blacklist
+  </int>
+  <int value="307" label="FORM_SUBMIT_BLOCKED_BLACKLIST">
+    Form submission; Blocked by static blacklist
+  </int>
+  <int value="308" label="RELOAD_BLOCKED_BLACKLIST">
+    Reload; Blocked by static blacklist
+  </int>
+  <int value="309" label="KEYWORD_BLOCKED_BLACKLIST">
+    Omnibox keyword; Blocked by static blacklist
+  </int>
+  <int value="310" label="KEYWORD_GENERATED_BLOCKED_BLACKLIST">
+    URL generated from Omnibox keyword; Blocked by static blacklist
+  </int>
+  <int value="399" label="OTHER_BLOCKED_BLACKLIST">
+    Other navigation; Blocked by static blacklist
+  </int>
+  <int value="400" label="LINK_BLOCKED_SAFESITES">
+    Link; Blocked by SafeSites
+  </int>
+  <int value="401" label="TYPED_BLOCKED_SAFESITES">
+    Typed URL; Blocked by SafeSites
+  </int>
+  <int value="402" label="AUTO_BOOKMARK_BLOCKED_SAFESITES">
+    Bookmark; Blocked by SafeSites
+  </int>
+  <int value="403" label="AUTO_SUBFRAME_BLOCKED_SAFESITES">
+    Subframe navigation; Blocked by SafeSites
+  </int>
+  <int value="404" label="MANUAL_SUBFRAME_BLOCKED_SAFESITES">
+    Manual subframe navigation; Blocked by SafeSites
+  </int>
+  <int value="405" label="GENERATED_BLOCKED_SAFESITES">
+    Generated from Omnibox; Blocked by SafeSites
+  </int>
+  <int value="406" label="AUTO_TOPLEVEL_BLOCKED_SAFESITES">
+    Automatic toplevel navigation; Blocked by SafeSites
+  </int>
+  <int value="407" label="FORM_SUBMIT_BLOCKED_SAFESITES">
+    Form submission; Blocked by SafeSites
+  </int>
+  <int value="408" label="RELOAD_BLOCKED_SAFESITES">
+    Reload; Blocked by SafeSites
+  </int>
+  <int value="409" label="KEYWORD_BLOCKED_SAFESITES">
+    Omnibox keyword; Blocked by SafeSites
+  </int>
+  <int value="410" label="KEYWORD_GENERATED_BLOCKED_SAFESITES">
+    URL generated from Omnibox keyword; Blocked by SafeSites
+  </int>
+  <int value="499" label="OTHER_BLOCKED_SAFESITES">
+    Other navigation; Blocked by SafeSites
+  </int>
 </enum>
 
 <enum name="SuspendAttempt" type="int">
@@ -52193,10 +54462,22 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="3" label="Connection Error"/>
   <int value="4" label="Syn Data Acknowledged"/>
   <int value="5" label="Syn Data Nacked"/>
-  <int value="6" label="Syn Data Probe Failed"/>
-  <int value="7" label="No syn data + ack (can't happen)"/>
-  <int value="8" label="No syn data + nack"/>
-  <int value="9" label="No syn data + probe failed"/>
+  <int value="6" label="Syn Data Getsockopt Failed"/>
+  <int value="7" label="No Syn Data + Ack (can't happen)"/>
+  <int value="8" label="No Syn Data + Nack"/>
+  <int value="9" label="No Syn Data + Getsockopt Failed"/>
+  <int value="10" label="Fast Connect + Read Failed"/>
+  <int value="11" label="Slow Connect + Read Failed"/>
+  <int value="12" label="Previously Failed"/>
+</enum>
+
+<enum name="TempFileFailure" type="int">
+  <int value="0" label="Creating"/>
+  <int value="1" label="Opening"/>
+  <int value="2" label="Closing"/>
+  <int value="3" label="Writing"/>
+  <int value="4" label="Renaming"/>
+  <int value="5" label="Flushing"/>
 </enum>
 
 <enum name="TileMemoryBudget" type="int">
@@ -52585,6 +54866,14 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="10" label="kFileSystemScheme"/>
 </enum>
 
+<enum name="UserChannels" type="int">
+  <int value="-1" label="Unknown"/>
+  <int value="0" label="Canary"/>
+  <int value="1" label="Dev"/>
+  <int value="2" label="Beta"/>
+  <int value="3" label="Stable"/>
+</enum>
+
 <enum name="UserInitiatedEvent" type="int">
   <int value="0" label="WiFi Scan"/>
 </enum>
@@ -52668,6 +54957,8 @@ To add a new entry, add it with any value and run test to compute valid value.
   <int value="0" label="Starting video capture"/>
   <int value="1" label="Stopping video capture normally"/>
   <int value="2" label="Stopping video capture due to error"/>
+  <int value="3" label="Video capture device stopped. No frames produced."/>
+  <int value="4" label="Desktop/Tab capture stopped. No frames produced."/>
 </enum>
 
 <enum name="VideoCodec" type="int">
@@ -54078,6 +56369,13 @@ To add a new entry, add it with any value and run test to compute valid value.
   <affected-histogram name="Net.TCP_Connection_Latency_Interval"/>
 </histogram_suffixes>
 
+<histogram_suffixes name="IPProtocolType" separator="_">
+  <suffix name="UDP"/>
+  <suffix name="TCP"/>
+  <affected-histogram name="WebRTC.SystemMaxConsecutiveBytesDelayed"/>
+  <affected-histogram name="WebRTC.SystemPercentPacketsDelayed"/>
+</histogram_suffixes>
+
 <histogram_suffixes name="IPv6_Probe">
   <suffix name="IPv6_probe_skipped"
       label="with IPv6 not probed, and default OS settings used"/>
@@ -54167,6 +56465,17 @@ To add a new entry, add it with any value and run test to compute valid value.
   <affected-histogram name="LocalStorage.RendererTimeToPrimeLocalStorage"/>
 </histogram_suffixes>
 
+<histogram_suffixes name="ManifestProperties" separator=".">
+  <suffix name="name"/>
+  <suffix name="short_name"/>
+  <suffix name="start_url"/>
+  <suffix name="display"/>
+  <suffix name="orientation"/>
+  <suffix name="icons"/>
+  <suffix name="gcm_sender_id"/>
+  <affected-histogram name="Manifest.HasProperty"/>
+</histogram_suffixes>
+
 <histogram_suffixes name="MediaAudioInputControllerTime" separator=".">
   <suffix name="CloseTime" label="Measures the time taken for DoClose()."/>
   <suffix name="CreateTime" label="Measures the time taken for DoCreate()."/>
@@ -54195,13 +56504,39 @@ To add a new entry, add it with any value and run test to compute valid value.
 </histogram_suffixes>
 
 <histogram_suffixes name="MediaVideoCaptureManagerTime" separator=".">
-  <suffix name="OnEnumerateDevicesTime"
-      label="Measures the time taken for OnEnumerateDevices()."/>
-  <suffix name="OnOpenTime" label="Measures the time taken for OnOpen()."/>
-  <suffix name="OnCloseTime" label="Measures the time taken for OnClose()."/>
-  <suffix name="OnStartTime" label="Measures the time taken for OnStart()."/>
-  <suffix name="OnStopTime" label="Measures the time taken for OnStop()."/>
+  <suffix name="StartDeviceTime"
+      label="Measures the time taken for DoStartDeviceOnDeviceThread()."/>
+  <suffix name="StopDeviceTime"
+      label="Measures the time taken for DoStopDeviceOnDeviceThread()."/>
+  <suffix name="GetAvailableDevicesInfoOnDeviceThreadTime"
+      label="Measures the time taken to enumerate devices and their
+             capabilities, between EnumerateDevices() and
+             OnDevicesInfoEnumerated()."/>
   <affected-histogram name="Media.VideoCaptureManager"/>
+</histogram_suffixes>
+
+<histogram_suffixes name="NavigationCharacteristic">
+  <suffix name="ExistingRenderer_BeforeUnloadDiscounted"
+      label="Navigation reused an existing renderer process. Time spent in
+             beforeunload subtracted."/>
+  <suffix name="NewRenderer_BeforeUnloadDiscounted"
+      label="Navigation spawned a new renderer process. Time spent in
+             beforeunload subtracted."/>
+  <suffix name="SessionRestored_BeforeUnloadDiscounted"
+      label="Navigation caused by restoring a tab from a previous session
+             (whether from a crash or a continued session) either spawning or
+             reusing a renderer. Time spent in beforeunload subtracted."/>
+  <suffix name="SessionRestored"
+      label="Navigation caused by restoring a tab from a previous session
+             (whether from a crash or a continued session) either spawning or
+             reusing a renderer. Time spent in beforeunload subtracted.">
+    <obsolete>
+      Replaced by the likely named entry. It had a misleading name as it also
+      has the before-unload time discounted.
+    </obsolete>
+  </suffix>
+  <affected-histogram name="Navigation.TimeToCommit"/>
+  <affected-histogram name="Navigation.TimeToURLJobStart"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="Net.QuicClientHelloRejectReasons.QuicIsSecureOrNot"
@@ -55606,6 +57941,16 @@ To add a new entry, add it with any value and run test to compute valid value.
   <affected-histogram name="Renderer4.BeginToFinishDoc"/>
 </histogram_suffixes>
 
+<histogram_suffixes name="PasswordCustomPassphrase" separator=".">
+  <suffix name="WithCustomPassphrase"/>
+  <suffix name="WithoutCustomPassphrase"/>
+  <affected-histogram name="PasswordManager.AccountsPerSite"/>
+  <affected-histogram name="PasswordManager.BlacklistedSites"/>
+  <affected-histogram name="PasswordManager.TimesGeneratedPasswordUsed"/>
+  <affected-histogram name="PasswordManager.TimesPasswordUsed"/>
+  <affected-histogram name="PasswordManager.TotalAccounts"/>
+</histogram_suffixes>
+
 <histogram_suffixes name="PasswordManagerMonitor">
   <suffix name="group_1" label="group 1"/>
   <suffix name="group_2" label="group 2"/>
@@ -55652,6 +57997,8 @@ To add a new entry, add it with any value and run test to compute valid value.
   <suffix name="Notifications" label="Notification permission actions"/>
   <suffix name="Geolocation" label="Geolocation permission actions"/>
   <affected-histogram name="ContentSettings.PermissionActions"/>
+  <affected-histogram name="ContentSettings.PermissionActionsInsecureOrigin"/>
+  <affected-histogram name="ContentSettings.PermissionActionsSecureOrigin"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="PpapiPluginName">
@@ -56257,6 +58604,66 @@ To add a new entry, add it with any value and run test to compute valid value.
   <affected-histogram name="Event.Latency.Renderer2"/>
 </histogram_suffixes>
 
+<histogram_suffixes name="ResourcePrefetchPredictorPredictedStatsVariedMax">
+  <suffix name="25"
+      label="Covers statistics when the maximum subresources that can be
+             prefetched is set to 25."/>
+  <suffix name="50"
+      label="Covers statistics when the maximum subresources that can be
+             prefetched is set to 50."/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchCount"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromCache_Count"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromCache_PercentOfTotalPrefetched"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromNetwork_Count"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromNetwork_PercentOfTotalPrefetched"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromNetworkPercentOfTotalFromNetwork"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchMisses_Count"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchMisses_PercentOfTotalPrefetched"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchCount"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromCache_Count"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromCache_PercentOfTotalPrefetched"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromNetwork_Count"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromNetwork_PercentOfTotalPrefetched"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromNetworkPercentOfTotalFromNetwork"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchMisses_Count"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchMisses_PercentOfTotalPrefetched"/>
+</histogram_suffixes>
+
+<histogram_suffixes name="ResourcePrefetchPredictorPredictedStatTypes">
+  <suffix name="Count" label="Predicted accuracy stats as the raw numbers."/>
+  <suffix name="PercentOfTotalPrefetched"
+      label="Predicted accuracy stats as percent of total resources
+             prefetched."/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromCache"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchFromNetwork"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Host.PredictedPrefetchMisses"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromCache"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchFromNetwork"/>
+  <affected-histogram
+      name="ResourcePrefetchPredictor.Url.PredictedPrefetchMisses"/>
+</histogram_suffixes>
+
 <histogram_suffixes name="SBInterstitial">
   <obsolete>
     deprecated November 10 2012 crrev.com/167056
@@ -56270,6 +58677,42 @@ To add a new entry, add it with any value and run test to compute valid value.
   <affected-histogram name="SB2.MalwareInterstitialTimePrivacyPolicy"/>
   <affected-histogram name="SB2.MalwareInterstitialTimeProceed"/>
   <affected-histogram name="SB2.MalwareInterstitialTimeTakeMeBack"/>
+</histogram_suffixes>
+
+<histogram_suffixes name="SessionRestoreTabCounts">
+  <suffix name="1" label="1 tab present"/>
+  <suffix name="2" label="2 tabs present"/>
+  <suffix name="3" label="3 tabs present"/>
+  <suffix name="4" label="4 tabs present"/>
+  <suffix name="5" label="5 tabs present"/>
+  <suffix name="6" label="6 tabs present"/>
+  <suffix name="7" label="7 tabs present"/>
+  <suffix name="8" label="8 tabs present"/>
+  <suffix name="9" label="9 tabs present"/>
+  <suffix name="10" label="10 tabs present"/>
+  <suffix name="11" label="11 tab present"/>
+  <suffix name="12" label="12 tabs present"/>
+  <suffix name="13" label="13 tabs present"/>
+  <suffix name="14" label="14 tabs present"/>
+  <suffix name="15" label="15 tabs present"/>
+  <suffix name="16" label="16 tabs present"/>
+  <suffix name="17" label="17 tabs present"/>
+  <suffix name="18" label="18 tabs present"/>
+  <suffix name="19" label="19 tabs present"/>
+  <suffix name="20" label="20 tabs present"/>
+  <affected-histogram name="SessionRestore.AllTabsLoaded"/>
+  <affected-histogram name="SessionRestore.FirstTabPainted"/>
+  <affected-histogram name="SessionRestore.ForegroundTabFirstLoaded"/>
+  <affected-histogram name="SessionRestore.ForegroundTabFirstPaint"/>
+</histogram_suffixes>
+
+<histogram_suffixes name="ShillWiFiRememberedNetworkSecurityMode" separator=".">
+  <suffix name="802_1x" label="Network is secured with 802.1x"/>
+  <suffix name="none" label="Network is not secured"/>
+  <suffix name="psk" label="Network is security with WPA or WPA-2 (aka RSN)"/>
+  <suffix name="wep" label="Network employs WEP (Wired Equivalent Privacy)"/>
+  <affected-histogram name="Network.Shill.WiFi.RememberedSystemNetworkCount"/>
+  <affected-histogram name="Network.Shill.WiFi.RememberedUserNetworkCount"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="ShowAppListWarmStartFast" separator="">
@@ -56416,6 +58859,7 @@ To add a new entry, add it with any value and run test to compute valid value.
   <suffix name="FalseStart_enabled"/>
   <suffix name="FalseStart_disabled"/>
   <affected-histogram name="Net.SSL_Connection_Latency"/>
+  <affected-histogram name="Net.SSL_Connection_Latency_2"/>
   <affected-histogram name="PLT.BeginToFinish_LinkLoadNormal"/>
   <affected-histogram name="PLT.BeginToFinish_NormalLoad"/>
 </histogram_suffixes>
@@ -56424,10 +58868,15 @@ To add a new entry, add it with any value and run test to compute valid value.
   <suffix name="Resume_Handshake" label="Session Resumption"/>
   <suffix name="Full_Handshake" label="Full"/>
   <affected-histogram name="Net.SSL_Connection_Latency"/>
+  <affected-histogram name="Net.SSL_Connection_Latency_2"/>
   <affected-histogram name="Net.SSL_Connection_Latency_Google"/>
+  <affected-histogram name="Net.SSL_Connection_Latency_Google2"/>
 </histogram_suffixes>
 
 <histogram_suffixes name="StartupTimeBombAlarm" separator=".">
+  <obsolete>
+    Deprecated as of 10/2014.
+  </obsolete>
   <suffix name="ThreadNowDuration" label="Duration is in thread CPU time."/>
   <suffix name="TimeDuration" label="Duration is in clock time."/>
   <suffix name="TimeTicksDuration" label="Duration is in TimeTicks time."/>

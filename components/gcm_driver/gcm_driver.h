@@ -11,6 +11,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "components/gcm_driver/default_gcm_app_handler.h"
 #include "components/gcm_driver/gcm_client.h"
@@ -72,9 +73,9 @@ class GCMDriver {
   // been called, no other GCMDriver methods may be used.
   virtual void Shutdown();
 
-  // Call this method when the user signs in to a GAIA account.
-  // TODO(jianli): To be removed when sign-in enforcement is dropped.
+  // Called when the user signs in to or out of a GAIA account.
   virtual void OnSignedIn() = 0;
+  virtual void OnSignedOut() = 0;
 
   // Removes all the cached and persisted GCM data. If the GCM service is
   // restarted after the purge, a new Android ID will be obtained.
@@ -133,6 +134,10 @@ class GCMDriver {
   // persistent store.
   virtual void RemoveAccountMapping(const std::string& account_id) = 0;
 
+  // Getter and setter of last token fetch time.
+  virtual base::Time GetLastTokenFetchTime() = 0;
+  virtual void SetLastTokenFetchTime(const base::Time& time) = 0;
+
  protected:
   // Ensures that the GCM service starts (if necessary conditions are met).
   virtual GCMClient::Result EnsureStarted() = 0;
@@ -168,9 +173,13 @@ class GCMDriver {
   void ClearCallbacks();
 
  private:
-  // Should be called when an app with |app_id| is trying to un/register.
-  // Checks whether another un/registration is in progress.
-  bool IsAsyncOperationPending(const std::string& app_id) const;
+  // Called after unregistration completes in order to trigger the pending
+  // registration.
+  void RegisterAfterUnregister(
+      const std::string& app_id,
+      const std::vector<std::string>& normalized_sender_ids,
+      const UnregisterCallback& unregister_callback,
+      GCMClient::Result result);
 
   // Callback map (from app_id to callback) for Register.
   std::map<std::string, RegisterCallback> register_callbacks_;
@@ -187,6 +196,8 @@ class GCMDriver {
 
   // The default handler when no app handler can be found in the map.
   DefaultGCMAppHandler default_app_handler_;
+
+  base::WeakPtrFactory<GCMDriver> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GCMDriver);
 };

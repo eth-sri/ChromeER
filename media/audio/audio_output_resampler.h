@@ -44,18 +44,17 @@ class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
                        const base::TimeDelta& close_delay);
 
   // AudioOutputDispatcher interface.
-  virtual bool OpenStream() OVERRIDE;
-  virtual bool StartStream(AudioOutputStream::AudioSourceCallback* callback,
-                           AudioOutputProxy* stream_proxy) OVERRIDE;
-  virtual void StopStream(AudioOutputProxy* stream_proxy) OVERRIDE;
-  virtual void StreamVolumeSet(AudioOutputProxy* stream_proxy,
-                               double volume) OVERRIDE;
-  virtual void CloseStream(AudioOutputProxy* stream_proxy) OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  bool OpenStream() override;
+  bool StartStream(AudioOutputStream::AudioSourceCallback* callback,
+                   AudioOutputProxy* stream_proxy) override;
+  void StopStream(AudioOutputProxy* stream_proxy) override;
+  void StreamVolumeSet(AudioOutputProxy* stream_proxy, double volume) override;
+  void CloseStream(AudioOutputProxy* stream_proxy) override;
+  void Shutdown() override;
 
  private:
   friend class base::RefCountedThreadSafe<AudioOutputResampler>;
-  virtual ~AudioOutputResampler();
+  ~AudioOutputResampler() override;
 
   // Converts low latency based output parameters into high latency
   // appropriate output parameters in error situations.

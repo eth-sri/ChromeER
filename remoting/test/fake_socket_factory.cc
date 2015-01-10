@@ -39,7 +39,7 @@ class FakeUdpSocket : public rtc::AsyncPacketSocket {
   FakeUdpSocket(FakePacketSocketFactory* factory,
                 scoped_refptr<FakeNetworkDispatcher> dispatcher,
                 const rtc::SocketAddress& local_address);
-  virtual ~FakeUdpSocket();
+  ~FakeUdpSocket() override;
 
   void ReceivePacket(const rtc::SocketAddress& from,
                      const rtc::SocketAddress& to,
@@ -47,19 +47,21 @@ class FakeUdpSocket : public rtc::AsyncPacketSocket {
                      int data_size);
 
   // rtc::AsyncPacketSocket interface.
-  virtual rtc::SocketAddress GetLocalAddress() const OVERRIDE;
-  virtual rtc::SocketAddress GetRemoteAddress() const OVERRIDE;
-  virtual int Send(const void* data, size_t data_size,
-                   const rtc::PacketOptions& options) OVERRIDE;
-  virtual int SendTo(const void* data, size_t data_size,
-                     const rtc::SocketAddress& address,
-                     const rtc::PacketOptions& options) OVERRIDE;
-  virtual int Close() OVERRIDE;
-  virtual State GetState() const OVERRIDE;
-  virtual int GetOption(rtc::Socket::Option option, int* value) OVERRIDE;
-  virtual int SetOption(rtc::Socket::Option option, int value) OVERRIDE;
-  virtual int GetError() const OVERRIDE;
-  virtual void SetError(int error) OVERRIDE;
+  rtc::SocketAddress GetLocalAddress() const override;
+  rtc::SocketAddress GetRemoteAddress() const override;
+  int Send(const void* data,
+           size_t data_size,
+           const rtc::PacketOptions& options) override;
+  int SendTo(const void* data,
+             size_t data_size,
+             const rtc::SocketAddress& address,
+             const rtc::PacketOptions& options) override;
+  int Close() override;
+  State GetState() const override;
+  int GetOption(rtc::Socket::Option option, int* value) override;
+  int SetOption(rtc::Socket::Option option, int value) override;
+  int GetError() const override;
+  void SetError(int error) override;
 
  private:
   FakePacketSocketFactory* factory_;

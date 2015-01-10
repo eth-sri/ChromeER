@@ -67,8 +67,8 @@ BezelController::BezelController(aura::Window* container)
     : container_(container),
       state_(NONE),
       scroll_bezel_(BEZEL_NONE),
-      scroll_target_(NULL),
-      left_right_delegate_(NULL) {
+      scroll_target_(nullptr),
+      left_right_delegate_(nullptr) {
 }
 
 void BezelController::SetState(BezelController::State state) {
@@ -88,7 +88,7 @@ void BezelController::SetState(BezelController::State state,
 
   if (state == NONE) {
     scroll_bezel_ = BEZEL_NONE;
-    scroll_target_ = NULL;
+    scroll_target_ = nullptr;
   }
 
   if (state == BEZEL_SCROLLING_TWO_FINGERS) {
@@ -96,7 +96,7 @@ void BezelController::SetState(BezelController::State state,
   } else if (old_state == BEZEL_SCROLLING_TWO_FINGERS) {
     // If BezelScrollEnd() hides |scroll_target_|, ET_GESTURE_END is dispatched
     // and we get a reentrant call to SetState().
-    left_right_delegate_->BezelScrollEnd();
+    left_right_delegate_->BezelScrollEnd(0.0f);
   }
 }
 

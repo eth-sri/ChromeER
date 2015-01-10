@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_JAVASCRIPT_APP_MODAL_DIALOG_VIEWS_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
+#include "components/app_modal_dialogs/native_app_modal_dialog.h"
 #include "ui/views/window/dialog_delegate.h"
 
 class JavaScriptAppModalDialog;
@@ -23,34 +23,33 @@ class JavaScriptAppModalDialogViews : public NativeAppModalDialog,
                                       public views::DialogDelegate {
  public:
   explicit JavaScriptAppModalDialogViews(JavaScriptAppModalDialog* parent);
-  virtual ~JavaScriptAppModalDialogViews();
+  ~JavaScriptAppModalDialogViews() override;
 
   // Overridden from NativeAppModalDialog:
-  virtual int GetAppModalDialogButtons() const OVERRIDE;
-  virtual void ShowAppModalDialog() OVERRIDE;
-  virtual void ActivateAppModalDialog() OVERRIDE;
-  virtual void CloseAppModalDialog() OVERRIDE;
-  virtual void AcceptAppModalDialog() OVERRIDE;
-  virtual void CancelAppModalDialog() OVERRIDE;
+  int GetAppModalDialogButtons() const override;
+  void ShowAppModalDialog() override;
+  void ActivateAppModalDialog() override;
+  void CloseAppModalDialog() override;
+  void AcceptAppModalDialog() override;
+  void CancelAppModalDialog() override;
 
   // Overridden from views::DialogDelegate:
-  virtual int GetDefaultDialogButton() const OVERRIDE;
-  virtual int GetDialogButtons() const OVERRIDE;
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual void WindowClosing() OVERRIDE;
-  virtual void DeleteDelegate() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual base::string16 GetDialogButtonLabel(
-      ui::DialogButton button) const OVERRIDE;
+  int GetDefaultDialogButton() const override;
+  int GetDialogButtons() const override;
+  base::string16 GetWindowTitle() const override;
+  void WindowClosing() override;
+  void DeleteDelegate() override;
+  bool Cancel() override;
+  bool Accept() override;
+  base::string16 GetDialogButtonLabel(ui::DialogButton button) const override;
 
   // Overridden from views::WidgetDelegate:
-  virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
-  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual void OnClosed() OVERRIDE;
-  virtual views::Widget* GetWidget() OVERRIDE;
-  virtual const views::Widget* GetWidget() const OVERRIDE;
+  ui::ModalType GetModalType() const override;
+  views::View* GetContentsView() override;
+  views::View* GetInitiallyFocusedView() override;
+  void OnClosed() override;
+  views::Widget* GetWidget() override;
+  const views::Widget* GetWidget() const override;
 
  private:
   // A pointer to the AppModalDialog that owns us.

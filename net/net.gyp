@@ -220,6 +220,7 @@
               'cert/nss_cert_database_chromeos.h',
               'cert/nss_profile_filter_chromeos.cc',
               'cert/nss_profile_filter_chromeos.h',
+              'cert/sha256_legacy_support_nss_win.cc',
               'cert/scoped_nss_types.h',
               'cert/test_root_certs_nss.cc',
               'cert/x509_certificate_nss.cc',
@@ -258,6 +259,7 @@
               'cert/ct_log_verifier_openssl.cc',
               'cert/ct_objects_extractor_openssl.cc',
               'cert/jwk_serializer_openssl.cc',
+              'cert/sha256_legacy_support_openssl_win.cc',
               'cert/x509_util_openssl.cc',
               'cert/x509_util_openssl.h',
               'crypto/scoped_openssl_types.h',
@@ -789,6 +791,11 @@
             ],
           },
         ],
+        ['v8_use_external_startup_data==1', {
+          'dependencies': [
+            '../gin/gin.gyp:gin',
+          ]
+        }],
       ],
       'target_conditions': [
         # These source files are excluded by default platform rules, but they
@@ -1651,6 +1658,23 @@
           ],
           'variables': {
             'test_suite_name': 'net_unittests',
+            'conditions': [
+              ['v8_use_external_startup_data==1', {
+                'additional_input_paths': [
+                  '<(PRODUCT_DIR)/natives_blob.bin',
+                  '<(PRODUCT_DIR)/snapshot_blob.bin',
+                ],
+                'copies': [
+                  {
+                  'destination': '<(PRODUCT_DIR)/net_unittests_apk/assets',
+                    'files': [
+                      '<(PRODUCT_DIR)/natives_blob.bin',
+                      '<(PRODUCT_DIR)/snapshot_blob.bin',
+                    ],
+                  },
+                ],
+              }],
+            ],
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
@@ -1681,7 +1705,6 @@
           ],
           'includes': [
             '../build/isolate.gypi',
-            'net_unittests.isolate',
           ],
           'sources': [
             'net_unittests.isolate',

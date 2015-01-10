@@ -22,14 +22,12 @@ namespace storage {
 class BlobData;
 class BlobDataHandle;
 class BlobStorageContext;
+class QuotaManagerProxy;
 }
 
 namespace content {
 class ChromeBlobStorageContext;
-class ServiceWorkerRequestResponseHeaders;
-
-// TODO(jkarlin): Unload cache backend from memory once the cache object is no
-// longer referenced in javascript.
+class ServiceWorkerCacheMetadata;
 
 // Represents a ServiceWorker Cache as seen in
 // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html.
@@ -54,11 +52,15 @@ class CONTENT_EXPORT ServiceWorkerCache
       RequestsCallback;
 
   static scoped_refptr<ServiceWorkerCache> CreateMemoryCache(
+      const GURL& origin,
       net::URLRequestContext* request_context,
+      const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
       base::WeakPtr<storage::BlobStorageContext> blob_context);
   static scoped_refptr<ServiceWorkerCache> CreatePersistentCache(
+      const GURL& origin,
       const base::FilePath& path,
       net::URLRequestContext* request_context,
+      const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
       base::WeakPtr<storage::BlobStorageContext> blob_context);
 
   // Returns ErrorTypeNotFound if not found. The callback will always be called.
@@ -85,6 +87,10 @@ class CONTENT_EXPORT ServiceWorkerCache
   // Prevent further operations on this object and delete the backend.
   void Close();
 
+  // The size of the cache contents in memory. Returns 0 if the cache backend is
+  // not a memory cache backend.
+  int64 MemoryBackedSize() const;
+
   void set_backend(scoped_ptr<disk_cache::Backend> backend) {
     backend_ = backend.Pass();
   }
@@ -94,31 +100,44 @@ class CONTENT_EXPORT ServiceWorkerCache
  private:
   friend class base::RefCounted<ServiceWorkerCache>;
 
+  class BlobReader;
   struct KeysContext;
+  struct PutContext;
   typedef std::vector<disk_cache::Entry*> Entries;
 
-  ServiceWorkerCache(const base::FilePath& path,
-                     net::URLRequestContext* request_context,
-                     base::WeakPtr<storage::BlobStorageContext> blob_context);
+  ServiceWorkerCache(
+      const GURL& origin,
+      const base::FilePath& path,
+      net::URLRequestContext* request_context,
+      const scoped_refptr<storage::QuotaManagerProxy>& quota_manager_proxy,
+      base::WeakPtr<storage::BlobStorageContext> blob_context);
 
   // Operations in progress will complete after the cache is deleted but pending
   // operations (those operations waiting for init to finish) won't.
   virtual ~ServiceWorkerCache();
 
-  void PutImpl(scoped_ptr<ServiceWorkerFetchRequest> request,
-               scoped_ptr<ServiceWorkerResponse> response,
-               scoped_ptr<storage::BlobDataHandle> blob_data_handle,
-               const ResponseCallback& callback);
+  // Put callbacks.
+  static void PutImpl(scoped_ptr<PutContext> put_context);
+  static void PutDidDelete(scoped_ptr<PutContext> put_context,
+                           ErrorType delete_error);
+  static void PutDidCreateEntry(scoped_ptr<PutContext> put_context, int rv);
+  static void PutDidWriteHeaders(scoped_ptr<PutContext> put_context,
+                                 int expected_bytes,
+                                 int rv);
+  static void PutDidWriteBlobToCache(scoped_ptr<PutContext> put_context,
+                                     scoped_ptr<BlobReader> blob_reader,
+                                     disk_cache::ScopedEntryPtr entry,
+                                     bool success);
 
   // Static callbacks for the Keys function.
   static void KeysDidOpenNextEntry(scoped_ptr<KeysContext> keys_context,
                                    int rv);
   static void KeysProcessNextEntry(scoped_ptr<KeysContext> keys_context,
                                    const Entries::iterator& iter);
-  static void KeysDidReadHeaders(
+  static void KeysDidReadMetadata(
       scoped_ptr<KeysContext> keys_context,
       const Entries::iterator& iter,
-      scoped_ptr<ServiceWorkerRequestResponseHeaders> headers);
+      scoped_ptr<ServiceWorkerCacheMetadata> metadata);
 
   // Loads the backend and calls the callback with the result (true for
   // success). The callback will always be called.
@@ -130,11 +149,16 @@ class CONTENT_EXPORT ServiceWorkerCache
   // The backend can be deleted via the Close function at any time so always
   // check for its existence before use.
   scoped_ptr<disk_cache::Backend> backend_;
+  GURL origin_;
   base::FilePath path_;
   net::URLRequestContext* request_context_;
+  scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy_;
   base::WeakPtr<storage::BlobStorageContext> blob_storage_context_;
   bool initialized_;
   std::vector<base::Closure> init_callbacks_;
+
+  // Whether or not to store data in disk or memory.
+  bool memory_only_;
 
   base::WeakPtrFactory<ServiceWorkerCache> weak_ptr_factory_;
 

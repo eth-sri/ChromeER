@@ -78,7 +78,7 @@ bool IsAudioProcessingConstraint(const std::string& key) {
 // TODO(xians): Remove this method after the APM in WebRtc is deprecated.
 void MediaAudioConstraints::ApplyFixedAudioConstraints(
     RTCMediaConstraints* constraints) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     bool already_set_value;
     if (!webrtc::FindConstraint(constraints, kDefaultAudioConstraints[i].key,
                                 &already_set_value, NULL)) {
@@ -119,7 +119,7 @@ bool MediaAudioConstraints::NeedsAudioProcessing() {
   if (GetEchoCancellationProperty())
     return true;
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     // |kEchoCancellation| and |kGoogEchoCancellation| have been convered by
     // GetEchoCancellationProperty().
     if (kDefaultAudioConstraints[i].key != kEchoCancellation &&
@@ -169,7 +169,7 @@ bool MediaAudioConstraints::IsValid() {
     }
 
     bool valid = false;
-    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++j) {
+    for (size_t j = 0; j < arraysize(kDefaultAudioConstraints); ++j) {
       if (key == kDefaultAudioConstraints[j].key) {
         bool value = false;
         valid = GetMandatoryConstraintValueAsBoolean(constraints_, key, &value);
@@ -195,7 +195,7 @@ bool MediaAudioConstraints::GetDefaultValueForConstraint(
       IsAudioProcessingConstraint(key))
     return false;
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     if (kDefaultAudioConstraints[i].key == key)
       return kDefaultAudioConstraints[i].value;
   }
@@ -251,15 +251,10 @@ void EnableTypingDetection(AudioProcessing* audio_processing,
 void StartEchoCancellationDump(AudioProcessing* audio_processing,
                                base::File aec_dump_file) {
   DCHECK(aec_dump_file.IsValid());
-
-  FILE* stream = base::FileToFILE(aec_dump_file.Pass(), "w");
-  if (!stream) {
-    LOG(ERROR) << "Failed to open AEC dump file";
-    return;
-  }
-
-  if (audio_processing->StartDebugRecording(stream))
+  if (audio_processing->StartDebugRecordingForPlatformFile(
+      aec_dump_file.TakePlatformFile())) {
     DLOG(ERROR) << "Fail to start AEC debug recording";
+  }
 }
 
 void StopEchoCancellationDump(AudioProcessing* audio_processing) {

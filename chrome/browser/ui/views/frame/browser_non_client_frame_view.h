@@ -18,10 +18,11 @@ class NewAvatarButton;
 
 // A specialization of the NonClientFrameView object that provides additional
 // Browser-specific methods.
-class BrowserNonClientFrameView : public views::NonClientFrameView {
+class BrowserNonClientFrameView : public views::NonClientFrameView,
+                                  public ProfileInfoCacheObserver {
  public:
   BrowserNonClientFrameView(BrowserFrame* frame, BrowserView* browser_view);
-  virtual ~BrowserNonClientFrameView();
+  ~BrowserNonClientFrameView() override;
 
   AvatarMenuButton* avatar_button() const { return avatar_button_; }
 
@@ -32,7 +33,7 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
     return supervised_user_avatar_label_;
   }
 
-  virtual void OnThemeChanged() OVERRIDE;
+  void OnThemeChanged() override;
 #endif
 
   // Retrieves the bounds, in non-client view coordinates within which the
@@ -52,8 +53,7 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
   virtual void UpdateThrobber(bool running) = 0;
 
   // Overriden from views::View.
-  virtual void VisibilityChanged(views::View* starting_from,
-                                 bool is_visible) OVERRIDE;
+  void VisibilityChanged(views::View* starting_from, bool is_visible) override;
 
  protected:
   BrowserView* browser_view() const { return browser_view_; }
@@ -69,6 +69,14 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
                                 const NewAvatarButton::AvatarButtonStyle style);
 
  private:
+  // Draws a taskbar icon if avatar are enabled, erases it otherwise.  If
+  // |taskbar_badge_avatar| is NULL, then |avatar| is used.
+  void DrawTaskbarDecoration(const gfx::Image& avatar,
+                             const gfx::Image& taskbar_badge_avatar);
+
+  // Overriden from ProfileInfoCacheObserver.
+  void OnProfileAvatarChanged(const base::FilePath& profile_path) override;
+
   // The frame that hosts this view.
   BrowserFrame* frame_;
 

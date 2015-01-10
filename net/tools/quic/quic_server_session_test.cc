@@ -68,7 +68,6 @@ class QuicServerSessionTest : public ::testing::TestWithParam<QuicVersion> {
   QuicServerSessionTest()
       : crypto_config_(QuicCryptoServerConfig::TESTING,
                        QuicRandom::GetInstance()) {
-    config_.SetDefaults();
     config_.SetMaxStreamsPerConnection(kMaxStreamsForTest,
                                        kMaxStreamsForTest);
     config_.SetInitialFlowControlWindowToSend(
@@ -265,7 +264,7 @@ TEST_P(QuicServerSessionTest, MaxOpenStreamsImplicit) {
 TEST_P(QuicServerSessionTest, GetEvenIncomingError) {
   // Incoming streams on the server session must be odd.
   EXPECT_CALL(*connection_, SendConnectionClose(QUIC_INVALID_STREAM_ID));
-  EXPECT_EQ(NULL,
+  EXPECT_EQ(nullptr,
             QuicServerSessionPeer::GetIncomingDataStream(session_.get(), 4));
 }
 
@@ -297,6 +296,7 @@ class MockQuicCryptoServerStream : public QuicCryptoServerStream {
 
   MOCK_METHOD1(SendServerConfigUpdate,
                void(const CachedNetworkParameters* cached_network_parameters));
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MockQuicCryptoServerStream);
 };
@@ -356,7 +356,7 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
   expected_network_params.set_min_rtt_ms(session_->connection()
                                              ->sent_packet_manager()
                                              .GetRttStats()
-                                             ->min_rtt()
+                                             ->MinRtt()
                                              .ToMilliseconds());
   expected_network_params.set_previous_connection_state(
       CachedNetworkParameters::CONGESTION_AVOIDANCE);

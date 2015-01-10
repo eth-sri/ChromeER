@@ -5,6 +5,7 @@
 #include "cc/animation/layer_animation_controller.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_delegate.h"
@@ -15,7 +16,7 @@
 #include "cc/animation/scroll_offset_animation_curve.h"
 #include "cc/base/scoped_ptr_algorithm.h"
 #include "cc/output/filter_operations.h"
-#include "ui/gfx/box_f.h"
+#include "ui/gfx/geometry/box_f.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -24,8 +25,8 @@ LayerAnimationController::LayerAnimationController(int id)
     : registrar_(0),
       id_(id),
       is_active_(false),
-      value_provider_(NULL),
-      layer_animation_delegate_(NULL),
+      value_provider_(nullptr),
+      layer_animation_delegate_(nullptr),
       needs_to_start_animations_(false) {
 }
 
@@ -286,6 +287,7 @@ bool LayerAnimationController::IsAnimatingProperty(
     Animation::TargetProperty target_property) const {
   for (size_t i = 0; i < animations_.size(); ++i) {
     if (!animations_[i]->is_finished() &&
+        animations_[i]->InEffect(last_tick_time_) &&
         animations_[i]->target_property() == target_property)
       return true;
   }
@@ -313,8 +315,8 @@ void LayerAnimationController::NotifyAnimationStarted(
     FOR_EACH_OBSERVER(LayerAnimationEventObserver, event_observers_,
                       OnAnimationStarted(event));
     if (layer_animation_delegate_)
-      layer_animation_delegate_->NotifyAnimationStarted(event.monotonic_time,
-                                                        event.target_property);
+      layer_animation_delegate_->NotifyAnimationStarted(
+          event.monotonic_time, event.target_property, event.group_id);
     return;
   }
 
@@ -330,7 +332,7 @@ void LayerAnimationController::NotifyAnimationStarted(
                         OnAnimationStarted(event));
       if (layer_animation_delegate_)
         layer_animation_delegate_->NotifyAnimationStarted(
-            event.monotonic_time, event.target_property);
+            event.monotonic_time, event.target_property, event.group_id);
 
       return;
     }
@@ -341,8 +343,8 @@ void LayerAnimationController::NotifyAnimationFinished(
     const AnimationEvent& event) {
   if (event.is_impl_only) {
     if (layer_animation_delegate_)
-      layer_animation_delegate_->NotifyAnimationFinished(event.monotonic_time,
-                                                         event.target_property);
+      layer_animation_delegate_->NotifyAnimationFinished(
+          event.monotonic_time, event.target_property, event.group_id);
     return;
   }
 
@@ -352,7 +354,7 @@ void LayerAnimationController::NotifyAnimationFinished(
       animations_[i]->set_received_finished_event(true);
       if (layer_animation_delegate_)
         layer_animation_delegate_->NotifyAnimationFinished(
-            event.monotonic_time, event.target_property);
+            event.monotonic_time, event.target_property, event.group_id);
 
       return;
     }
@@ -494,17 +496,30 @@ bool LayerAnimationController::HasOnlyTranslationTransforms() const {
   return true;
 }
 
-bool LayerAnimationController::MaximumScale(float* max_scale) const {
+bool LayerAnimationController::MaximumTargetScale(float* max_scale) const {
   *max_scale = 0.f;
   for (size_t i = 0; i < animations_.size(); ++i) {
     if (animations_[i]->is_finished() ||
         animations_[i]->target_property() != Animation::Transform)
       continue;
 
+    bool forward_direction = true;
+    switch (animations_[i]->direction()) {
+      case Animation::Normal:
+      case Animation::Alternate:
+        forward_direction = animations_[i]->playback_rate() >= 0.0;
+        break;
+      case Animation::Reverse:
+      case Animation::AlternateReverse:
+        forward_direction = animations_[i]->playback_rate() < 0.0;
+        break;
+    }
+
     const TransformAnimationCurve* transform_animation_curve =
         animations_[i]->curve()->ToTransformAnimationCurve();
     float animation_scale = 0.f;
-    if (!transform_animation_curve->MaximumScale(&animation_scale))
+    if (!transform_animation_curve->MaximumTargetScale(forward_direction,
+                                                       &animation_scale))
       return false;
     *max_scale = std::max(*max_scale, animation_scale);
   }
@@ -534,7 +549,7 @@ void LayerAnimationController::PushNewAnimationsToImplThread(
 
     // Scroll animations always start at the current scroll offset.
     if (animations_[i]->target_property() == Animation::ScrollOffset) {
-      gfx::Vector2dF current_scroll_offset;
+      gfx::ScrollOffset current_scroll_offset;
       if (controller_impl->value_provider_) {
         current_scroll_offset =
             controller_impl->value_provider_->ScrollOffsetForAnimation();
@@ -889,7 +904,7 @@ void LayerAnimationController::TickAnimations(base::TimeTicks monotonic_time) {
         case Animation::ScrollOffset: {
           const ScrollOffsetAnimationCurve* scroll_offset_animation_curve =
               animations_[i]->curve()->ToScrollOffsetAnimationCurve();
-          const gfx::Vector2dF scroll_offset =
+          const gfx::ScrollOffset scroll_offset =
               scroll_offset_animation_curve->GetValue(trimmed);
           NotifyObserversScrollOffsetAnimated(
               scroll_offset,
@@ -933,7 +948,7 @@ void LayerAnimationController::NotifyObserversOpacityAnimated(
     ObserverListBase<LayerAnimationValueObserver>::Iterator it(
         value_observers_);
     LayerAnimationValueObserver* obs;
-    while ((obs = it.GetNext()) != NULL) {
+    while ((obs = it.GetNext()) != nullptr) {
       if ((notify_active_observers && notify_pending_observers) ||
           (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
@@ -950,7 +965,7 @@ void LayerAnimationController::NotifyObserversTransformAnimated(
     ObserverListBase<LayerAnimationValueObserver>::Iterator it(
         value_observers_);
     LayerAnimationValueObserver* obs;
-    while ((obs = it.GetNext()) != NULL) {
+    while ((obs = it.GetNext()) != nullptr) {
       if ((notify_active_observers && notify_pending_observers) ||
           (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
@@ -967,7 +982,7 @@ void LayerAnimationController::NotifyObserversFilterAnimated(
     ObserverListBase<LayerAnimationValueObserver>::Iterator it(
         value_observers_);
     LayerAnimationValueObserver* obs;
-    while ((obs = it.GetNext()) != NULL) {
+    while ((obs = it.GetNext()) != nullptr) {
       if ((notify_active_observers && notify_pending_observers) ||
           (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
@@ -977,14 +992,14 @@ void LayerAnimationController::NotifyObserversFilterAnimated(
 }
 
 void LayerAnimationController::NotifyObserversScrollOffsetAnimated(
-    const gfx::Vector2dF& scroll_offset,
+    const gfx::ScrollOffset& scroll_offset,
     bool notify_active_observers,
     bool notify_pending_observers) {
   if (value_observers_.might_have_observers()) {
     ObserverListBase<LayerAnimationValueObserver>::Iterator it(
         value_observers_);
     LayerAnimationValueObserver* obs;
-    while ((obs = it.GetNext()) != NULL) {
+    while ((obs = it.GetNext()) != nullptr) {
       if ((notify_active_observers && notify_pending_observers) ||
           (notify_active_observers && obs->IsActive()) ||
           (notify_pending_observers && !obs->IsActive()))
@@ -1003,7 +1018,7 @@ bool LayerAnimationController::HasValueObserver() {
   if (value_observers_.might_have_observers()) {
     ObserverListBase<LayerAnimationValueObserver>::Iterator it(
         value_observers_);
-    return it.GetNext() != NULL;
+    return it.GetNext() != nullptr;
   }
   return false;
 }
@@ -1013,7 +1028,7 @@ bool LayerAnimationController::HasActiveValueObserver() {
     ObserverListBase<LayerAnimationValueObserver>::Iterator it(
         value_observers_);
     LayerAnimationValueObserver* obs;
-    while ((obs = it.GetNext()) != NULL)
+    while ((obs = it.GetNext()) != nullptr)
       if (obs->IsActive())
         return true;
   }

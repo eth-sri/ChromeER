@@ -108,12 +108,12 @@ class SafeBrowsingURLRequestContextGetter
       SafeBrowsingService* sb_service_);
 
   // Implementation for net::UrlRequestContextGetter.
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
-  virtual scoped_refptr<base::SingleThreadTaskRunner>
-      GetNetworkTaskRunner() const OVERRIDE;
+  net::URLRequestContext* GetURLRequestContext() override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
+      const override;
 
  protected:
-  virtual ~SafeBrowsingURLRequestContextGetter();
+  ~SafeBrowsingURLRequestContextGetter() override;
 
  private:
   SafeBrowsingService* const sb_service_;  // Owned by BrowserProcess.
@@ -151,7 +151,7 @@ SafeBrowsingServiceFactory* SafeBrowsingService::factory_ = NULL;
 // don't leak it.
 class SafeBrowsingServiceFactoryImpl : public SafeBrowsingServiceFactory {
  public:
-  virtual SafeBrowsingService* CreateSafeBrowsingService() OVERRIDE {
+  SafeBrowsingService* CreateSafeBrowsingService() override {
     return new SafeBrowsingService();
   }
 
@@ -360,8 +360,12 @@ SafeBrowsingDatabaseManager* SafeBrowsingService::CreateDatabaseManager() {
 }
 
 void SafeBrowsingService::RegisterAllDelayedAnalysis() {
+#if defined(FULL_SAFE_BROWSING)
   safe_browsing::RegisterBinaryIntegrityAnalysis();
   safe_browsing::RegisterBlacklistLoadAnalysis();
+#else
+  NOTREACHED();
+#endif
 }
 
 void SafeBrowsingService::InitURLRequestContextOnIOThread(

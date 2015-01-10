@@ -86,13 +86,13 @@ class VideoCaptureFactory {
     @CalledByNative
     static VideoCapture createVideoCapture(
             Context context, int id, long nativeVideoCaptureDeviceAndroid) {
-      if (ChromiumCameraInfo.isSpecialCamera(id)) {
-          return new VideoCaptureTango(context, ChromiumCameraInfo.toSpecialCameraId(id),
-                  nativeVideoCaptureDeviceAndroid);
-      } else {
-          return new VideoCaptureAndroid(context, id,
-                  nativeVideoCaptureDeviceAndroid);
-      }
+        if (ChromiumCameraInfo.isSpecialCamera(id)) {
+            return new VideoCaptureTango(context, ChromiumCameraInfo.toSpecialCameraId(id),
+                    nativeVideoCaptureDeviceAndroid);
+        } else {
+            return new VideoCaptureAndroid(context, id,
+                    nativeVideoCaptureDeviceAndroid);
+        }
     }
 
     @CalledByNative
@@ -105,11 +105,6 @@ class VideoCaptureFactory {
         return (ChromiumCameraInfo.isSpecialCamera(id)) ?
                 VideoCaptureTango.getName(ChromiumCameraInfo.toSpecialCameraId(id)) :
                 VideoCaptureAndroid.getName(id);
-    }
-
-    @CalledByNative
-    static String getDeviceId(int id) {
-        return Integer.toString(id);
     }
 
     @CalledByNative

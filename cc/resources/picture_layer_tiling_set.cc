@@ -19,12 +19,8 @@ class LargestToSmallestScaleFunctor {
 
 }  // namespace
 
-
-PictureLayerTilingSet::PictureLayerTilingSet(
-    PictureLayerTilingClient* client,
-    const gfx::Size& layer_bounds)
-    : client_(client),
-      layer_bounds_(layer_bounds) {
+PictureLayerTilingSet::PictureLayerTilingSet(PictureLayerTilingClient* client)
+    : client_(client) {
 }
 
 PictureLayerTilingSet::~PictureLayerTilingSet() {
@@ -47,7 +43,6 @@ bool PictureLayerTilingSet::SyncTilings(const PictureLayerTilingSet& other,
                                         float minimum_contents_scale) {
   if (new_layer_bounds.IsEmpty()) {
     RemoveAllTilings();
-    layer_bounds_ = new_layer_bounds;
     return false;
   }
 
@@ -99,17 +94,17 @@ bool PictureLayerTilingSet::SyncTilings(const PictureLayerTilingSet& other,
   }
   tilings_.sort(LargestToSmallestScaleFunctor());
 
-  layer_bounds_ = new_layer_bounds;
   return have_high_res_tiling;
 }
 
-PictureLayerTiling* PictureLayerTilingSet::AddTiling(float contents_scale) {
+PictureLayerTiling* PictureLayerTilingSet::AddTiling(
+    float contents_scale,
+    const gfx::Size& layer_bounds) {
   for (size_t i = 0; i < tilings_.size(); ++i)
     DCHECK_NE(tilings_[i]->contents_scale(), contents_scale);
 
-  tilings_.push_back(PictureLayerTiling::Create(contents_scale,
-                                                layer_bounds_,
-                                                client_));
+  tilings_.push_back(
+      PictureLayerTiling::Create(contents_scale, layer_bounds, client_));
   PictureLayerTiling* appended = tilings_.back();
 
   tilings_.sort(LargestToSmallestScaleFunctor());
@@ -218,7 +213,14 @@ Tile* PictureLayerTilingSet::CoverageIterator::operator*() const {
   return *tiling_iter_;
 }
 
-PictureLayerTiling* PictureLayerTilingSet::CoverageIterator::CurrentTiling() {
+TileResolution PictureLayerTilingSet::CoverageIterator::resolution() const {
+  const PictureLayerTiling* tiling = CurrentTiling();
+  DCHECK(tiling);
+  return tiling->resolution();
+}
+
+PictureLayerTiling* PictureLayerTilingSet::CoverageIterator::CurrentTiling()
+    const {
   if (current_tiling_ < 0)
     return NULL;
   if (static_cast<size_t>(current_tiling_) >= set_->tilings_.size())
@@ -305,16 +307,6 @@ PictureLayerTilingSet::CoverageIterator::operator++() {
 PictureLayerTilingSet::CoverageIterator::operator bool() const {
   return current_tiling_ < static_cast<int>(set_->tilings_.size()) ||
       region_iter_.has_rect();
-}
-
-void PictureLayerTilingSet::DidBecomeActive() {
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    tilings_[i]->DidBecomeActive();
-}
-
-void PictureLayerTilingSet::DidBecomeRecycled() {
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    tilings_[i]->DidBecomeRecycled();
 }
 
 void PictureLayerTilingSet::AsValueInto(base::debug::TracedValue* state) const {

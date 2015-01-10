@@ -121,7 +121,7 @@ void EnterpriseInstallAttributes::ReadAttributesIfReady(
         !cryptohome_util::InstallAttributesIsFirstInstall()) {
       device_locked_ = true;
 
-      static const char* kEnterpriseAttributes[] = {
+      static const char* const kEnterpriseAttributes[] = {
         kAttrEnterpriseDeviceId,
         kAttrEnterpriseDomain,
         kAttrEnterpriseMode,
@@ -202,7 +202,7 @@ void EnterpriseInstallAttributes::LockDeviceIfAttributesIsReady(
   }
 
   if (!cryptohome_util::InstallAttributesIsFirstInstall()) {
-    callback.Run(LOCK_WRONG_USER);
+    callback.Run(LOCK_BACKEND_ERROR);
     return;
   }
 

@@ -22,8 +22,10 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/sad_plugin.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -70,6 +72,7 @@ BrowserPlugin::BrowserPlugin(RenderViewImpl* render_view,
       plugin_focused_(false),
       visible_(true),
       mouse_locked_(false),
+      ready_(false),
       browser_plugin_manager_(render_view->GetBrowserPluginManager()),
       browser_plugin_instance_id_(browser_plugin::kInstanceIDNone),
       contents_opaque_(true),
@@ -83,13 +86,6 @@ BrowserPlugin::BrowserPlugin(RenderViewImpl* render_view,
 
 BrowserPlugin::~BrowserPlugin() {
   browser_plugin_manager()->RemoveBrowserPlugin(browser_plugin_instance_id_);
-
-  if (!ready())
-    return;
-
-  browser_plugin_manager()->Send(
-      new BrowserPluginHostMsg_PluginDestroyed(render_view_routing_id_,
-                                               browser_plugin_instance_id_));
 }
 
 bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
@@ -105,6 +101,7 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetContentsOpaque, OnSetContentsOpaque)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetMouseLock, OnSetMouseLock)
+    IPC_MESSAGE_HANDLER(BrowserPluginMsg_SetTooltipText, OnSetTooltipText)
     IPC_MESSAGE_HANDLER(BrowserPluginMsg_ShouldAcceptTouchEvents,
                         OnShouldAcceptTouchEvents)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -113,15 +110,14 @@ bool BrowserPlugin::OnMessageReceived(const IPC::Message& message) {
 }
 
 void BrowserPlugin::UpdateDOMAttribute(const std::string& attribute_name,
-                                       const std::string& attribute_value) {
+                                       const base::string16& attribute_value) {
   if (!container())
     return;
 
   blink::WebElement element = container()->element();
   blink::WebString web_attribute_name =
       blink::WebString::fromUTF8(attribute_name);
-  element.setAttribute(web_attribute_name,
-      blink::WebString::fromUTF8(attribute_value));
+  element.setAttribute(web_attribute_name, attribute_value);
 }
 
 void BrowserPlugin::Attach() {
@@ -140,6 +136,12 @@ void BrowserPlugin::Attach() {
   attach_params.focused = ShouldGuestBeFocused();
   attach_params.visible = visible_;
   attach_params.origin = plugin_rect().origin();
+  attach_params.is_full_page_plugin = false;
+  if (container()) {
+    blink::WebLocalFrame* frame = container()->element().document().frame();
+    attach_params.is_full_page_plugin =
+        frame->view()->mainFrame()->document().isPluginDocument();
+  }
   gfx::Size view_size(width(), height());
   if (!view_size.IsEmpty()) {
     PopulateResizeGuestParameters(view_size,
@@ -174,7 +176,6 @@ void BrowserPlugin::OnCompositorFrameSwapped(const IPC::Message& message) {
   BrowserPluginMsg_CompositorFrameSwapped::Param param;
   if (!BrowserPluginMsg_CompositorFrameSwapped::Read(&message, &param))
     return;
-
   // Note that there is no need to send ACK for this message.
   // If the guest has updated pixels then it is no longer crashed.
   guest_crashed_ = false;
@@ -253,6 +254,12 @@ void BrowserPlugin::OnSetMouseLock(int browser_plugin_instance_id,
   }
 }
 
+void BrowserPlugin::OnSetTooltipText(int instance_id,
+                                     const base::string16& tooltip_text) {
+  // Show tooltip text by setting the BrowserPlugin's |title| attribute.
+  UpdateDOMAttribute("title", tooltip_text);
+}
+
 void BrowserPlugin::OnShouldAcceptTouchEvents(int browser_plugin_instance_id,
                                               bool accept) {
   if (container()) {
@@ -317,14 +324,16 @@ bool BrowserPlugin::initialize(WebPluginContainer* container) {
 
   g_plugin_container_map.Get().insert(std::make_pair(container_, this));
 
+  browser_plugin_manager()->AddBrowserPlugin(browser_plugin_instance_id_, this);
+
   // This is a way to notify observers of our attributes that this plugin is
   // available in render tree.
   // TODO(lazyboy): This should be done through the delegate instead. Perhaps
   // by firing an event from there.
-  UpdateDOMAttribute("internalinstanceid",
-                     base::IntToString(browser_plugin_instance_id_));
+  UpdateDOMAttribute(
+      "internalinstanceid",
+      base::UTF8ToUTF16(base::IntToString(browser_plugin_instance_id_)));
 
-  browser_plugin_manager()->AddBrowserPlugin(browser_plugin_instance_id_, this);
   return true;
 }
 
@@ -424,6 +433,7 @@ bool BrowserPlugin::ShouldForwardToBrowserPlugin(
     case BrowserPluginMsg_SetContentsOpaque::ID:
     case BrowserPluginMsg_SetCursor::ID:
     case BrowserPluginMsg_SetMouseLock::ID:
+    case BrowserPluginMsg_SetTooltipText::ID:
     case BrowserPluginMsg_ShouldAcceptTouchEvents::ID:
       return true;
     default:
@@ -440,6 +450,11 @@ void BrowserPlugin::updateGeometry(
   int old_width = width();
   int old_height = height();
   plugin_rect_ = window_rect;
+  if (!ready_) {
+    if (delegate_)
+      delegate_->Ready();
+    ready_ = true;
+  }
   if (!attached())
     return;
 

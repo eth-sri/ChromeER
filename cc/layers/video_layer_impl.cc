@@ -14,7 +14,7 @@
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "cc/trees/occlusion_tracker.h"
+#include "cc/trees/occlusion.h"
 #include "cc/trees/proxy.h"
 #include "media/base/video_frame.h"
 
@@ -41,7 +41,9 @@ scoped_ptr<VideoLayerImpl> VideoLayerImpl::Create(
 VideoLayerImpl::VideoLayerImpl(LayerTreeImpl* tree_impl,
                                int id,
                                media::VideoRotation video_rotation)
-    : LayerImpl(tree_impl, id), frame_(NULL), video_rotation_(video_rotation) {
+    : LayerImpl(tree_impl, id),
+      frame_(nullptr),
+      video_rotation_(video_rotation) {
 }
 
 VideoLayerImpl::~VideoLayerImpl() {
@@ -129,10 +131,9 @@ bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
   return true;
 }
 
-void VideoLayerImpl::AppendQuads(
-    RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
-    AppendQuadsData* append_quads_data) {
+void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
+                                 const Occlusion& occlusion_in_content_space,
+                                 AppendQuadsData* append_quads_data) {
   DCHECK(frame_.get());
 
   gfx::Transform transform = draw_transform();
@@ -175,9 +176,10 @@ void VideoLayerImpl::AppendQuads(
   gfx::Rect visible_rect = frame_->visible_rect();
   gfx::Size coded_size = frame_->coded_size();
 
+  Occlusion occlusion_in_video_space =
+      occlusion_in_content_space.GetOcclusionWithGivenDrawTransform(transform);
   gfx::Rect visible_quad_rect =
-      occlusion_tracker.GetCurrentOcclusionForLayer(transform)
-          .GetUnoccludedContentRect(quad_rect);
+      occlusion_in_video_space.GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
@@ -351,7 +353,7 @@ void VideoLayerImpl::DidDraw(ResourceProvider* resource_provider) {
   }
 
   provider_client_impl_->PutCurrentFrame(frame_);
-  frame_ = NULL;
+  frame_ = nullptr;
 
   provider_client_impl_->ReleaseLock();
 }
@@ -361,7 +363,7 @@ void VideoLayerImpl::ReleaseResources() {
 }
 
 void VideoLayerImpl::SetNeedsRedraw() {
-  SetUpdateRect(gfx::UnionRects(update_rect(), gfx::RectF(bounds())));
+  SetUpdateRect(gfx::UnionRects(update_rect(), gfx::Rect(bounds())));
   layer_tree_impl()->SetNeedsRedraw();
 }
 

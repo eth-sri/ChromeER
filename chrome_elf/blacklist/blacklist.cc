@@ -48,7 +48,10 @@ const wchar_t* g_troublesome_dlls[kTroublesomeDllsMaxCount] = {
   L"libwinhook.dll",                    // V-Bates.
   L"lmrn.dll",                          // Unknown.
   L"minisp.dll",                        // Unknown (suspected malware).
+  L"safetynut.dll",                     // Unknown (suspected adware).
   L"systemk.dll",                       // Unknown (suspected adware).
+  L"wajam_goblin_64.dll",               // Wajam Internet Technologies.
+  L"wajam_goblin.dll",                  // Wajam Internet Technologies.
   L"windowsapihookdll32.dll",           // Lenovo One Key Theater.
                                         // See crbug.com/379218.
   L"windowsapihookdll64.dll",           // Lenovo One Key Theater.
@@ -157,7 +160,7 @@ bool LeaveSetupBeacon() {
                              reinterpret_cast<LPBYTE>(&blacklist_state),
                              &blacklist_state_size);
 
-  if (blacklist_state == BLACKLIST_DISABLED || result != ERROR_SUCCESS ||
+  if (result != ERROR_SUCCESS || blacklist_state == BLACKLIST_DISABLED ||
       type != REG_DWORD) {
     ::RegCloseKey(key);
     return false;
@@ -226,7 +229,7 @@ bool IsBlacklistInitialized() {
 }
 
 int GetBlacklistIndex(const wchar_t* dll_name) {
-  for (int i = 0; i < kTroublesomeDllsMaxCount, g_troublesome_dlls[i]; ++i) {
+  for (int i = 0; i < kTroublesomeDllsMaxCount && g_troublesome_dlls[i]; ++i) {
     if (_wcsicmp(dll_name, g_troublesome_dlls[i]) == 0)
       return i;
   }

@@ -13,13 +13,15 @@ include_rules = [
   "+content/shell/browser/shell_browser_context.h",
   "+content/shell/browser/shell_devtools_delegate.h",
   "+content/shell/browser/shell_net_log.h",
+  "+content/shell/browser/shell_url_request_context_getter.h",
 
   # For device backend support.
   "+device/core",
   "+device/hid",
   "+device/usb",
 
-  # Only used in API tests that should be moved to extensions/browser/api/...
+  "+google_apis/gaia",
+
   "+net",
 
   "+ppapi",

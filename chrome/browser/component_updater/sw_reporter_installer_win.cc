@@ -82,7 +82,11 @@ const base::FilePath::CharType kSwReporterExeName[] =
 // Where to fetch the reporter exit code in the registry.
 const wchar_t kSoftwareRemovalToolRegistryKey[] =
     L"Software\\Google\\Software Removal Tool";
+const wchar_t kCleanerSuffixRegistryKey[] = L"Cleaner";
 const wchar_t kExitCodeRegistryValueName[] = L"ExitCode";
+const wchar_t kVersionRegistryValueName[] = L"Version";
+const wchar_t kStartTimeRegistryValueName[] = L"StartTime";
+const wchar_t kEndTimeRegistryValueName[] = L"EndTime";
 
 // Field trial strings.
 const char kSRTPromptTrialName[] = "SRTPromptFieldTrial";
@@ -207,7 +211,6 @@ void LaunchAndWaitForExit(const base::FilePath& exe_path,
   int exit_code = -1;
   bool success = base::WaitForExitCode(scan_reporter_process, &exit_code);
   DCHECK(success);
-  base::CloseProcessHandle(scan_reporter_process);
   scan_reporter_process = base::kNullProcessHandle;
   // It's OK if this doesn't complete, the work will continue on next startup.
   BrowserThread::PostTask(
@@ -222,7 +225,8 @@ class SwReporterInstallerTraits : public ComponentInstallerTraits {
 
   virtual ~SwReporterInstallerTraits() {}
 
-  virtual bool VerifyInstallation(const base::FilePath& dir) const {
+  virtual bool VerifyInstallation(const base::DictionaryValue& manifest,
+                                  const base::FilePath& dir) const {
     return base::PathExists(dir.Append(kSwReporterExeName));
   }
 
@@ -327,6 +331,47 @@ void RegisterSwReporterComponent(ComponentUpdateService* cus,
       base::FieldTrialList::FindFullName(kSRTPromptTrialName) !=
           kSRTPromptOnGroup) {
     return;
+  }
+
+  // Check if we have information from Cleaner and record UMA statistics.
+  base::string16 cleaner_key_name(kSoftwareRemovalToolRegistryKey);
+  cleaner_key_name.append(1, L'\\').append(kCleanerSuffixRegistryKey);
+  base::win::RegKey cleaner_key(
+      HKEY_CURRENT_USER, cleaner_key_name.c_str(), KEY_ALL_ACCESS);
+  // Cleaner is assumed to have run if we have a start time.
+  if (cleaner_key.Valid() &&
+      cleaner_key.HasValue(kStartTimeRegistryValueName)) {
+    // Get version number.
+    if (cleaner_key.HasValue(kVersionRegistryValueName)) {
+      DWORD version;
+      cleaner_key.ReadValueDW(kVersionRegistryValueName, &version);
+      UMA_HISTOGRAM_SPARSE_SLOWLY("SoftwareReporter.Cleaner.Version", version);
+      cleaner_key.DeleteValue(kVersionRegistryValueName);
+    }
+    // Get start & end time. If we don't have an end time, we can assume the
+    // cleaner has crashed.
+    bool completed = cleaner_key.HasValue(kEndTimeRegistryValueName);
+    UMA_HISTOGRAM_BOOLEAN("SoftwareReporter.Cleaner.HasCompleted", completed);
+    if (completed) {
+      int64 start_time_value;
+      cleaner_key.ReadInt64(kStartTimeRegistryValueName, &start_time_value);
+      int64 end_time_value;
+      cleaner_key.ReadInt64(kEndTimeRegistryValueName, &end_time_value);
+      cleaner_key.DeleteValue(kEndTimeRegistryValueName);
+      base::TimeDelta run_time(base::Time::FromInternalValue(end_time_value) -
+          base::Time::FromInternalValue(start_time_value));
+      UMA_HISTOGRAM_LONG_TIMES("SoftwareReporter.Cleaner.RunningTime",
+          run_time);
+    }
+    // Get exit code.
+    if (cleaner_key.HasValue(kExitCodeRegistryValueName)) {
+      DWORD exit_code;
+      cleaner_key.ReadValueDW(kExitCodeRegistryValueName, &exit_code);
+      UMA_HISTOGRAM_SPARSE_SLOWLY("SoftwareReporter.Cleaner.ExitCode",
+          exit_code);
+      cleaner_key.DeleteValue(kExitCodeRegistryValueName);
+    }
+    cleaner_key.DeleteValue(kStartTimeRegistryValueName);
   }
 
   // Install the component.

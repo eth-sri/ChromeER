@@ -44,7 +44,7 @@ class CONTENT_EXPORT TouchSelectionController : public TouchHandleClient {
   TouchSelectionController(TouchSelectionControllerClient* client,
                            base::TimeDelta tap_timeout,
                            float tap_slop);
-  virtual ~TouchSelectionController();
+  ~TouchSelectionController() override;
 
   // To be called when the selection bounds have changed.
   // Note that such updates will trigger handle updates only if preceded
@@ -86,15 +86,15 @@ class CONTENT_EXPORT TouchSelectionController : public TouchHandleClient {
   enum InputEventType { TAP, LONG_PRESS, INPUT_EVENT_TYPE_NONE };
 
   // TouchHandleClient implementation.
-  virtual void OnHandleDragBegin(const TouchHandle& handle) OVERRIDE;
-  virtual void OnHandleDragUpdate(const TouchHandle& handle,
-                                  const gfx::PointF& new_position) OVERRIDE;
-  virtual void OnHandleDragEnd(const TouchHandle& handle) OVERRIDE;
-  virtual void OnHandleTapped(const TouchHandle& handle) OVERRIDE;
-  virtual void SetNeedsAnimate() OVERRIDE;
-  virtual scoped_ptr<TouchHandleDrawable> CreateDrawable() OVERRIDE;
-  virtual base::TimeDelta GetTapTimeout() const OVERRIDE;
-  virtual float GetTapSlop() const OVERRIDE;
+  void OnHandleDragBegin(const TouchHandle& handle) override;
+  void OnHandleDragUpdate(const TouchHandle& handle,
+                          const gfx::PointF& new_position) override;
+  void OnHandleDragEnd(const TouchHandle& handle) override;
+  void OnHandleTapped(const TouchHandle& handle) override;
+  void SetNeedsAnimate() override;
+  scoped_ptr<TouchHandleDrawable> CreateDrawable() override;
+  base::TimeDelta GetTapTimeout() const override;
+  float GetTapSlop() const override;
 
   void ShowInsertionHandleAutomatically();
   void ShowSelectionHandlesAutomatically();

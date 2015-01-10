@@ -75,9 +75,9 @@ class DriveBackendSyncTest : public testing::Test,
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
         pending_remote_changes_(0),
         pending_local_changes_(0) {}
-  virtual ~DriveBackendSyncTest() {}
+  ~DriveBackendSyncTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(base_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
@@ -129,15 +129,14 @@ class DriveBackendSyncTest : public testing::Test,
                        in_memory_env_.get()));
     remote_sync_service_->AddServiceObserver(this);
     remote_sync_service_->InitializeForTesting(
-        drive_service.PassAs<drive::DriveServiceInterface>(),
-        uploader.Pass(), nullptr /* sync_worker */);
+        drive_service.Pass(), uploader.Pass(), nullptr /* sync_worker */);
     remote_sync_service_->SetSyncEnabled(true);
 
     local_sync_service_->SetLocalChangeProcessor(remote_sync_service_.get());
     remote_sync_service_->SetRemoteChangeProcessor(local_sync_service_.get());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     typedef std::map<std::string, CannedSyncableFileSystem*>::iterator iterator;
     for (iterator itr = file_systems_.begin();
          itr != file_systems_.end(); ++itr) {
@@ -156,11 +155,11 @@ class DriveBackendSyncTest : public testing::Test,
     RevokeSyncableFileSystem();
   }
 
-  virtual void OnRemoteChangeQueueUpdated(int64 pending_changes_hint) OVERRIDE {
+  void OnRemoteChangeQueueUpdated(int64 pending_changes_hint) override {
     pending_remote_changes_ = pending_changes_hint;
   }
 
-  virtual void OnLocalChangeAvailable(int64 pending_changes_hint) OVERRIDE {
+  void OnLocalChangeAvailable(int64 pending_changes_hint) override {
     pending_local_changes_ = pending_changes_hint;
   }
 

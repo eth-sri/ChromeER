@@ -48,8 +48,6 @@ QuicServer::QuicServer()
       use_recvmmsg_(false),
       crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()),
       supported_versions_(QuicSupportedVersions()) {
-  // Use hardcoded crypto parameters for now.
-  config_.SetDefaults();
   Initialize();
 }
 
@@ -193,7 +191,7 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
     while (read) {
         read = ReadAndDispatchSinglePacket(
             fd_, port_, dispatcher_.get(),
-            overflow_supported_ ? &packets_dropped_ : NULL);
+            overflow_supported_ ? &packets_dropped_ : nullptr);
     }
   }
   if (event->in_events & EPOLLOUT) {

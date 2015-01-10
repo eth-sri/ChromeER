@@ -96,6 +96,10 @@ const char kDisableApplicationCache[]       = "disable-application-cache";
 // users with many windows/tabs and lots of memory.
 const char kDisableBackingStoreLimit[]      = "disable-backing-store-limit";
 
+// Disable the Blink Scheduler. Ensures there's no reordering of blink tasks.
+// This switch is intended only for performance tests.
+const char kDisableBlinkScheduler[]         = "disable-blink-scheduler";
+
 // Disable the creation of compositing layers when it would prevent LCD text.
 const char kDisablePreferCompositingToLCDText[] =
     "disable-prefer-compositing-to-lcd-text";
@@ -109,9 +113,6 @@ const char kDisableDatabases[]              = "disable-databases";
 
 // Disables delegated renderer.
 const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
-
-// Disables desktop notifications (default enabled on windows).
-const char kDisableDesktopNotifications[]   = "disable-desktop-notifications";
 
 // Handles URL requests by NPAPI plugins through the renderer.
 const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
@@ -247,6 +248,9 @@ const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 // Disables the use of a 3D software rasterizer.
 const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 
+// Disables SVG 1.1 DOM.
+const char kDisableSVG1DOM[]                = "disable-svg1dom";
+
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
 
@@ -277,14 +281,20 @@ const char kDisableZeroCopy[]               = "disable-zero-copy";
 // based tests.
 const char kDomAutomationController[]       = "dom-automation";
 
+// Enable antialiasing on 2d canvas clips (as opposed to draw operations)
+const char kEnable2dCanvasClipAntialiasing[] = "enable-2d-canvas-clip-aa";
+
+// Enable partially decoding jpeg images using the GPU.
+// At least YUV decoding will be accelerated when using this flag.
+// Has no effect unless GPU rasterization is enabled.
+const char kEnableAcceleratedJpegDecoding[] =
+    "enable-accelerated-jpeg-decoding";
+
 // Enable bleeding-edge code to make Chrome draw content faster. The changes
 // behind this path are very likely to break lots of content.
 // ** DO NOT use this flag unless you know what you are doing. **
 const char kEnableBleedingEdgeRenderingFastPaths[] =
     "enable-bleeding-edge-rendering-fast-paths";
-
-// Disable deferred image filters.
-const char kDisableDeferredFilters[]         = "disable-deferred-filters";
 
 // Enables LCD text.
 const char kEnableLCDText[]                 = "enable-lcd-text";
@@ -300,6 +310,9 @@ const char kEnableLayerSquashing[] =
 
 // Enable experimental container node culling.
 const char kEnableContainerCulling[]        = "enable-container-culling";
+
+// Enable the experimental Credential Manager JavaScript API.
+const char kEnableCredentialManagerAPI[]    = "enable-credential-manager-api";
 
 // Use a BeginFrame signal from browser to renderer to schedule rendering.
 const char kEnableBeginFrameScheduling[]    = "enable-begin-frame-scheduling";
@@ -415,6 +428,9 @@ const char kEnableSeccompFilterSandbox[] =
 // Enables the Skia benchmarking extension
 const char kEnableSkiaBenchmarking[]        = "enable-skia-benchmarking";
 
+// Enables slimming paint: http://www.chromium.org/blink/slimming-paint
+const char kEnableSlimmingPaint[]           = "enable-slimming-paint";
+
 // On platforms that support it, enables smooth scroll animation.
 const char kEnableSmoothScrolling[]         = "enable-smooth-scrolling";
 
@@ -442,6 +458,9 @@ const char kEnableServiceWorkerSync[]       = "enable-service-worker-sync";
 // Enable use of experimental TCP sockets API for sending data in the
 // SYN packet.
 const char kEnableTcpFastOpen[]             = "enable-tcp-fastopen";
+
+// Enable experimental text blob rendering.
+const char kEnableTextBlobs[]               = "enable-text-blobs";
 
 // Enabled threaded compositing for layout tests.
 const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
@@ -884,10 +903,6 @@ const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";
 
-// Enable the PowerSaveBlocker in ContentVideoView. Android only.
-const char kEnableContentVideoViewPowerSaveBlocker[] =
-    "enable-content-video-view-power-save-blocker";
-
 // Enable the recognition part of the Web Speech API.
 const char kEnableSpeechRecognition[]       = "enable-speech-recognition";
 
@@ -927,17 +942,19 @@ const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 // Disables support for Core Animation plugins. This is triggered when
-// accelerated compositing is disabled. See http://crbug.com/122430 .
+// accelerated compositing is disabled. See http://crbug.com/122430.
 const char kDisableCoreAnimationPlugins[] =
     "disable-core-animation-plugins";
+
+// Allows input events to be handed on the compositor thread.
+// This feature is under development, see http://crbug.com/138003.
+extern const char kEnableThreadedEventHandlingMac[] =
+    "enable-threaded-event-handling-mac";
 #endif
 
 #if defined(OS_WIN)
 // Device scale factor passed to certain processes like renderers, etc.
 const char kDeviceScaleFactor[]     = "device-scale-factor";
-
-// Disables the DirectWrite font rendering system on windows.
-const char kDisableDirectWrite[]             = "disable-direct-write";
 
 // Disable the Legacy Window which corresponds to the size of the WebContents.
 const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
@@ -947,6 +964,11 @@ const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
 // the kernel. This is only supported on Windows 8 and beyond.
 const char kEnableWin32kRendererLockDown[]
     = "enable_win32k_renderer_lockdown";
+#endif
+
+#if defined(ENABLE_PLUGINS)
+// Enables the plugin power saver feature.
+const char kEnablePluginPowerSaver[] = "enable-plugin-power-saver";
 #endif
 
 // Don't dump stuff here, follow the same order as the header.

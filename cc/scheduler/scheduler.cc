@@ -73,6 +73,7 @@ Scheduler::Scheduler(
     const SchedulerSettings& scheduler_settings,
     int layer_tree_host_id,
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    base::PowerMonitor* power_monitor,
     SchedulerFrameSourcesConstructor* frame_sources_constructor)
     : frame_source_(),
       primary_frame_source_(NULL),
@@ -84,6 +85,7 @@ Scheduler::Scheduler(
       client_(client),
       layer_tree_host_id_(layer_tree_host_id),
       task_runner_(task_runner),
+      power_monitor_(power_monitor),
       begin_retro_frame_posted_(false),
       state_machine_(scheduler_settings),
       inside_process_scheduled_actions_(false),
@@ -117,9 +119,12 @@ Scheduler::Scheduler(
   background_frame_source_ =
       frame_sources_constructor->ConstructBackgroundFrameSource(this);
   frame_source_->AddSource(background_frame_source_);
+
+  SetupPowerMonitoring();
 }
 
 Scheduler::~Scheduler() {
+  TeardownPowerMonitoring();
 }
 
 base::TimeTicks Scheduler::Now() const {
@@ -129,6 +134,27 @@ base::TimeTicks Scheduler::Now() const {
                "now",
                now);
   return now;
+}
+
+void Scheduler::SetupPowerMonitoring() {
+  if (settings_.disable_hi_res_timer_tasks_on_battery) {
+    DCHECK(power_monitor_);
+    power_monitor_->AddObserver(this);
+    state_machine_.SetImplLatencyTakesPriorityOnBattery(
+        power_monitor_->IsOnBatteryPower());
+  }
+}
+
+void Scheduler::TeardownPowerMonitoring() {
+  if (settings_.disable_hi_res_timer_tasks_on_battery) {
+    DCHECK(power_monitor_);
+    power_monitor_->RemoveObserver(this);
+  }
+}
+
+void Scheduler::OnPowerStateChange(bool on_battery_power) {
+  DCHECK(settings_.disable_hi_res_timer_tasks_on_battery);
+  state_machine_.SetImplLatencyTakesPriorityOnBattery(on_battery_power);
 }
 
 void Scheduler::CommitVSyncParameters(base::TimeTicks timebase,
@@ -682,9 +708,16 @@ void Scheduler::AsValueInto(base::debug::TracedValue* state) const {
   state_machine_.AsValueInto(state, Now());
   state->EndDictionary();
 
-  state->BeginDictionary("frame_source_");
-  frame_source_->AsValueInto(state);
-  state->EndDictionary();
+  // Only trace frame sources when explicitly enabled - http://crbug.com/420607
+  bool frame_tracing_enabled = false;
+  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
+      TRACE_DISABLED_BY_DEFAULT("cc.debug.scheduler.frames"),
+      &frame_tracing_enabled);
+  if (frame_tracing_enabled) {
+    state->BeginDictionary("frame_source_");
+    frame_source_->AsValueInto(state);
+    state->EndDictionary();
+  }
 
   state->BeginDictionary("scheduler_state");
   state->SetDouble("time_until_anticipated_draw_time_ms",

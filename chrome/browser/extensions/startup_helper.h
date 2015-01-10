@@ -20,13 +20,12 @@ namespace extensions {
 class StartupHelper : public PackExtensionJob::Client {
  public:
   StartupHelper();
-  virtual ~StartupHelper();
+  ~StartupHelper() override;
 
-  virtual void OnPackSuccess(
-      const base::FilePath& crx_path,
-      const base::FilePath& output_private_key_path) OVERRIDE;
-  virtual void OnPackFailure(const std::string& error_message,
-                             ExtensionCreator::ErrorType type) OVERRIDE;
+  void OnPackSuccess(const base::FilePath& crx_path,
+                     const base::FilePath& output_private_key_path) override;
+  void OnPackFailure(const std::string& error_message,
+                     ExtensionCreator::ErrorType type) override;
 
   // Handle --pack-extension flag from the |cmd_line| by packing the specified
   // extension. Returns false if the pack job failed.
@@ -38,25 +37,11 @@ class StartupHelper : public PackExtensionJob::Client {
   // into |error|.
   bool ValidateCrx(const base::CommandLine& cmd_line, std::string* error);
 
-  // Handle --install-from-webstore flag from |cmd_line| by downloading
-  // metadata from the webstore for the given id, prompting the user to
-  // confirm, and then downloading the crx and installing it.
-  bool InstallFromWebstore(const base::CommandLine& cmd_line, Profile* profile);
+  // Handle --install-ephemeral-app-from-webstore flag from |cmd_line| by
+  // downloading metadata from the webstore for the given id, prompting the
+  // user to confirm, and then downloading the crx and installing it.
+  bool InstallEphemeralApp(const base::CommandLine& cmd_line, Profile* profile);
 
-  // Handle --limited-install-from-webstore flag from |cmd_line| by downloading
-  // metadata from the webstore for the given id, prompting the user to
-  // confirm, and then downloading the crx and installing it.
-  // This whole process is only kicked off by this function and completed
-  // asynchronously unlike InstallFromWebstore which finishes everything before
-  // returning.
-  void LimitedInstallFromWebstore(const base::CommandLine& cmd_line,
-                                  Profile* profile,
-                                  base::Callback<void()> done_callback);
-
-  // Maps the command line argument to the extension id. Returns an empty string
-  // in the case when there is no mapping.
-  std::string WebStoreIdFromLimitedInstallCmdLine(
-      const base::CommandLine& cmd_line);
  private:
   scoped_refptr<PackExtensionJob> pack_job_;
   bool pack_job_succeeded_;

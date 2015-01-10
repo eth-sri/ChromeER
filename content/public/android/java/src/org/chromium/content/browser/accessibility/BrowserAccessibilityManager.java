@@ -53,6 +53,7 @@ public class BrowserAccessibilityManager {
     private final ViewGroup mView;
     private boolean mUserHasTouchExplored;
     private boolean mPendingScrollToMakeNodeVisible;
+    private boolean mNotifyFrameInfoInitializedCalled;
 
     /**
      * Create a BrowserAccessibilityManager object, which is owned by the C++
@@ -195,22 +196,18 @@ public class BrowserAccessibilityManager {
                 return true;
 
             case AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT: {
-                if (arguments == null)
-                    return false;
+                if (arguments == null) return false;
                 String elementType = arguments.getString(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING);
-                if (elementType == null)
-                    return false;
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING);
+                if (elementType == null) return false;
                 elementType = elementType.toUpperCase(Locale.US);
                 return jumpToElementType(elementType, true);
             }
             case AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT: {
-                if (arguments == null)
-                    return false;
+                if (arguments == null) return false;
                 String elementType = arguments.getString(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING);
-                if (elementType == null)
-                    return false;
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING);
+                if (elementType == null) return false;
                 elementType = elementType.toUpperCase(Locale.US);
                 return jumpToElementType(elementType, false);
             }
@@ -260,6 +257,10 @@ public class BrowserAccessibilityManager {
      * web coordinates to screen coordinates.
      */
     public void notifyFrameInfoInitialized() {
+        if (mNotifyFrameInfoInitializedCalled) return;
+
+        mNotifyFrameInfoInitializedCalled = true;
+
         // Invalidate the container view, since the chrome accessibility tree is now
         // ready and listed as the child of the container view.
         mView.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED);
@@ -273,16 +274,14 @@ public class BrowserAccessibilityManager {
 
     private boolean jumpToElementType(String elementType, boolean forwards) {
         int id = nativeFindElementType(mNativeObj, mAccessibilityFocusId, elementType, forwards);
-        if (id == 0)
-            return false;
+        if (id == 0) return false;
 
         moveAccessibilityFocusToId(id);
         return true;
     }
 
     private boolean moveAccessibilityFocusToId(int newAccessibilityFocusId) {
-        if (newAccessibilityFocusId == mAccessibilityFocusId)
-            return false;
+        if (newAccessibilityFocusId == mAccessibilityFocusId) return false;
 
         mAccessibilityFocusId = newAccessibilityFocusId;
         mAccessibilityFocusRect = null;
@@ -380,6 +379,14 @@ public class BrowserAccessibilityManager {
         return result;
     }
 
+    /**
+     * Returns whether or not the frame info is initialized, meaning we can safely
+     * convert web coordinates to screen coordinates. When this is first initialized,
+     * notifyFrameInfoInitialized is called - but we shouldn't check whether or not
+     * that method was called as a way to determine if frame info is valid because
+     * notifyFrameInfoInitialized might not be called at all if mRenderCoordinates
+     * gets initialized first.
+     */
     private boolean isFrameInfoInitialized() {
         return mRenderCoordinates.getContentWidthCss() != 0.0 ||
                mRenderCoordinates.getContentHeightCss() != 0.0;
@@ -688,15 +695,22 @@ public class BrowserAccessibilityManager {
     }
 
     @CalledByNative
+    protected void setAccessibilityEventHeadingFlag(AccessibilityEvent event,
+            boolean heading) {
+        // Backwards compatibility for KitKat AccessibilityNodeInfo fields.
+        Bundle bundle = getOrCreateBundleForAccessibilityEvent(event);
+        bundle.putBoolean("AccessibilityNodeInfo.CollectionItemInfo.heading", heading);
+    }
+
+    @CalledByNative
     protected void setAccessibilityEventCollectionItemInfo(AccessibilityEvent event,
-            int rowIndex, int rowSpan, int columnIndex, int columnSpan, boolean heading) {
+            int rowIndex, int rowSpan, int columnIndex, int columnSpan) {
         // Backwards compatibility for KitKat AccessibilityNodeInfo fields.
         Bundle bundle = getOrCreateBundleForAccessibilityEvent(event);
         bundle.putInt("AccessibilityNodeInfo.CollectionItemInfo.rowIndex", rowIndex);
         bundle.putInt("AccessibilityNodeInfo.CollectionItemInfo.rowSpan", rowSpan);
         bundle.putInt("AccessibilityNodeInfo.CollectionItemInfo.columnIndex", columnIndex);
         bundle.putInt("AccessibilityNodeInfo.CollectionItemInfo.columnSpan", columnSpan);
-        bundle.putBoolean("AccessibilityNodeInfo.CollectionItemInfo.heading", heading);
     }
 
     @CalledByNative
@@ -714,10 +728,10 @@ public class BrowserAccessibilityManager {
     private native boolean nativeIsNodeValid(long nativeBrowserAccessibilityManagerAndroid, int id);
     private native void nativeHitTest(long nativeBrowserAccessibilityManagerAndroid, int x, int y);
     private native boolean nativePopulateAccessibilityNodeInfo(
-        long nativeBrowserAccessibilityManagerAndroid, AccessibilityNodeInfo info, int id);
+            long nativeBrowserAccessibilityManagerAndroid, AccessibilityNodeInfo info, int id);
     private native boolean nativePopulateAccessibilityEvent(
-        long nativeBrowserAccessibilityManagerAndroid, AccessibilityEvent event, int id,
-        int eventType);
+            long nativeBrowserAccessibilityManagerAndroid, AccessibilityEvent event, int id,
+            int eventType);
     private native void nativeClick(long nativeBrowserAccessibilityManagerAndroid, int id);
     private native void nativeFocus(long nativeBrowserAccessibilityManagerAndroid, int id);
     private native void nativeBlur(long nativeBrowserAccessibilityManagerAndroid);

@@ -22,6 +22,7 @@
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/input/web_input_event_traits.h"
+#include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -38,6 +39,8 @@
 #include "content/renderer/pepper/pepper_file_ref_renderer_host.h"
 #include "content/renderer/pepper/pepper_graphics_2d_host.h"
 #include "content/renderer/pepper/pepper_in_process_router.h"
+#include "content/renderer/pepper/pepper_plugin_instance_impl.h"
+#include "content/renderer/pepper/pepper_plugin_instance_throttler.h"
 #include "content/renderer/pepper/pepper_try_catch.h"
 #include "content/renderer/pepper/pepper_url_loader_host.h"
 #include "content/renderer/pepper/plugin_module.h"
@@ -353,14 +356,13 @@ class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
   PluginInstanceLockTarget(PepperPluginInstanceImpl* plugin)
       : plugin_(plugin) {}
 
-  virtual void OnLockMouseACK(bool succeeded) OVERRIDE {
+  void OnLockMouseACK(bool succeeded) override {
     plugin_->OnLockMouseACK(succeeded);
   }
 
-  virtual void OnMouseLockLost() OVERRIDE { plugin_->OnMouseLockLost(); }
+  void OnMouseLockLost() override { plugin_->OnMouseLockLost(); }
 
-  virtual bool HandleMouseLockedInputEvent(const blink::WebMouseEvent& event)
-      OVERRIDE {
+  bool HandleMouseLockedInputEvent(const blink::WebMouseEvent& event) override {
     plugin_->HandleMouseLockedInputEvent(event);
     return true;
   }
@@ -400,8 +402,12 @@ PepperPluginInstanceImpl* PepperPluginInstanceImpl::Create(
       PPP_Instance_Combined::Create(get_plugin_interface_func);
   if (!ppp_instance_combined)
     return NULL;
-  return new PepperPluginInstanceImpl(
-      render_frame, module, ppp_instance_combined, container, plugin_url);
+
+  return new PepperPluginInstanceImpl(render_frame,
+                                      module,
+                                      ppp_instance_combined,
+                                      container,
+                                      plugin_url);
 }
 
 PepperPluginInstanceImpl::ExternalDocumentLoader::ExternalDocumentLoader()
@@ -482,6 +488,8 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       layer_bound_to_fullscreen_(false),
       layer_is_hardware_(false),
       plugin_url_(plugin_url),
+      power_saver_enabled_(false),
+      plugin_throttled_(false),
       full_frame_(false),
       sent_initial_did_change_view_(false),
       bound_graphics_2d_platform_(NULL),
@@ -494,7 +502,6 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       plugin_mouse_lock_interface_(NULL),
       plugin_pdf_interface_(NULL),
       plugin_private_interface_(NULL),
-      plugin_selection_interface_(NULL),
       plugin_textinput_interface_(NULL),
       plugin_zoom_interface_(NULL),
       checked_for_plugin_input_event_interface_(false),
@@ -575,6 +582,16 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
   if (GetContentClient()->renderer() &&  // NULL in unit tests.
       GetContentClient()->renderer()->IsExternalPepperPlugin(module->name()))
     external_document_load_ = true;
+
+  power_saver_enabled_ = CommandLine::ForCurrentProcess()->HasSwitch(
+                             switches::kEnablePluginPowerSaver) &&
+                         IsPeripheralContent();
+
+  if (power_saver_enabled_) {
+    throttler_.reset(new PepperPluginInstanceThrottler(
+        base::Bind(&PepperPluginInstanceImpl::SetPluginThrottled,
+                   weak_factory_.GetWeakPtr(), true /* throttled */)));
+  }
 }
 
 PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
@@ -1086,6 +1103,16 @@ bool PepperPluginInstanceImpl::HandleInputEvent(
     WebCursorInfo* cursor_info) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::HandleInputEvent");
 
+  if (event.type == blink::WebInputEvent::MouseUp && power_saver_enabled_)
+    power_saver_enabled_ = false;
+
+  if (plugin_throttled_) {
+    if (event.type == blink::WebInputEvent::MouseUp)
+      SetPluginThrottled(false /* throttled */);
+
+    return true;
+  }
+
   if (!render_frame_)
     return false;
   if (WebInputEvent::isMouseEventType(event.type)) {
@@ -1335,6 +1362,8 @@ void PepperPluginInstanceImpl::ViewFlushedPaint() {
 void PepperPluginInstanceImpl::SetSelectedText(
     const base::string16& selected_text) {
   selected_text_ = selected_text;
+  gfx::Range range(0, selected_text.length());
+  render_frame_->SetSelectedText(selected_text, 0, range);
 }
 
 void PepperPluginInstanceImpl::SetLinkUnderCursor(const std::string& url) {
@@ -1377,20 +1406,7 @@ void PepperPluginInstanceImpl::UnregisterMessageHandler(PP_Instance instance) {
 }
 
 base::string16 PepperPluginInstanceImpl::GetSelectedText(bool html) {
-  // Keep a reference on the stack. See NOTE above.
-  scoped_refptr<PepperPluginInstanceImpl> ref(this);
-  if (!LoadSelectionInterface())
-    return selected_text_;
-
-  PP_Var rv = plugin_selection_interface_->GetSelectedText(pp_instance(),
-                                                           PP_FromBool(html));
-  StringVar* string = StringVar::FromPPVar(rv);
-  base::string16 selection;
-  if (string)
-    selection = base::UTF8ToUTF16(string->value());
-  // Release the ref the plugin transfered to us.
-  HostGlobals::Get()->GetVarTracker()->ReleaseVar(rv);
-  return selection;
+  return selected_text_;
 }
 
 base::string16 PepperPluginInstanceImpl::GetLinkAtPosition(
@@ -1542,14 +1558,6 @@ bool PepperPluginInstanceImpl::LoadPrivateInterface() {
   return !!plugin_private_interface_;
 }
 
-bool PepperPluginInstanceImpl::LoadSelectionInterface() {
-  if (!plugin_selection_interface_) {
-    plugin_selection_interface_ = static_cast<const PPP_Selection_Dev*>(
-        module_->GetPluginInterface(PPP_SELECTION_DEV_INTERFACE));
-  }
-  return !!plugin_selection_interface_;
-}
-
 bool PepperPluginInstanceImpl::LoadTextInputInterface() {
   if (!plugin_textinput_interface_) {
     plugin_textinput_interface_ = static_cast<const PPP_TextInput_Dev*>(
@@ -1655,23 +1663,27 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
   if (module()->is_crashed())
     return;
 
+  // When plugin is throttled, send ViewData indicating it's in the background.
+  const ppapi::ViewData& view_data =
+      plugin_throttled_ ? empty_view_data_ : view_data_;
+
   if (view_change_weak_ptr_factory_.HasWeakPtrs() ||
       (sent_initial_did_change_view_ &&
-       last_sent_view_data_.Equals(view_data_)))
+       last_sent_view_data_.Equals(view_data)))
     return;  // Nothing to update.
 
   sent_initial_did_change_view_ = true;
-  last_sent_view_data_ = view_data_;
+  last_sent_view_data_ = view_data;
   ScopedPPResource resource(
       ScopedPPResource::PassRef(),
-      (new PPB_View_Shared(ppapi::OBJECT_IS_IMPL, pp_instance(), view_data_))
+      (new PPB_View_Shared(ppapi::OBJECT_IS_IMPL, pp_instance(), view_data))
           ->GetReference());
 
   UpdateLayerTransform();
 
   if (bound_graphics_2d_platform_ &&
-      (!view_data_.is_page_visible ||
-       PP_ToGfxRect(view_data_.clip_rect).IsEmpty())) {
+      (!view_data.is_page_visible ||
+       PP_ToGfxRect(view_data.clip_rect).IsEmpty())) {
     bound_graphics_2d_platform_->ClearCache();
   }
 
@@ -1679,7 +1691,7 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
   // released its reference to this object yet.
   if (instance_interface_) {
     instance_interface_->DidChangeView(
-        pp_instance(), resource, &view_data_.rect, &view_data_.clip_rect);
+        pp_instance(), resource, &view_data.rect, &view_data.clip_rect);
   }
 }
 
@@ -2287,7 +2299,8 @@ PP_Var PepperPluginInstanceImpl::GetWindowObject(PP_Instance instance) {
   if (!container_)
     return PP_MakeUndefined();
 
-  PepperTryCatchVar try_catch(this, NULL);
+  V8VarConverter converter(pp_instance_, V8VarConverter::kAllowObjectVars);
+  PepperTryCatchVar try_catch(this, &converter, NULL);
   WebLocalFrame* frame = container_->element().document().frame();
   if (!frame) {
     try_catch.SetException("No frame exists for window object.");
@@ -2303,7 +2316,8 @@ PP_Var PepperPluginInstanceImpl::GetWindowObject(PP_Instance instance) {
 PP_Var PepperPluginInstanceImpl::GetOwnerElementObject(PP_Instance instance) {
   if (!container_)
     return PP_MakeUndefined();
-  PepperTryCatchVar try_catch(this, NULL);
+  V8VarConverter converter(pp_instance_, V8VarConverter::kAllowObjectVars);
+  PepperTryCatchVar try_catch(this, &converter, NULL);
   ScopedPPVar result = try_catch.FromV8(container_->v8ObjectForElement());
   DCHECK(!try_catch.HasException());
   return result.Release();
@@ -2319,7 +2333,8 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
   // a reference to ourselves so that we can still process the result after the
   // WebBindings::evaluate() below.
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
-  PepperTryCatchVar try_catch(this, exception);
+  V8VarConverter converter(pp_instance_, V8VarConverter::kAllowObjectVars);
+  PepperTryCatchVar try_catch(this, &converter, exception);
 
   // Check for an exception due to the context being destroyed.
   if (try_catch.HasException())
@@ -2898,7 +2913,6 @@ PP_ExternalPluginResult PepperPluginInstanceImpl::ResetAsProxied(
   plugin_pdf_interface_ = NULL;
   checked_for_plugin_pdf_interface_ = false;
   plugin_private_interface_ = NULL;
-  plugin_selection_interface_ = NULL;
   plugin_textinput_interface_ = NULL;
   plugin_zoom_interface_ = NULL;
 
@@ -3279,6 +3293,36 @@ void PepperPluginInstanceImpl::DidDataFromWebURLResponse(
     dispatcher->Send(new PpapiMsg_PPPInstance_HandleDocumentLoad(
         ppapi::API_ID_PPP_INSTANCE, pp_instance(), pending_host_id, data));
   }
+}
+
+bool PepperPluginInstanceImpl::IsPeripheralContent() const {
+  if (module_->name() != kFlashPluginName)
+    return false;
+
+  // Peripheral plugin content is defined to be peripheral when the plugin
+  // content's origin differs from the top level frame's origin. For example:
+  //  - Peripheral:      a.com -> b.com/plugin.swf
+  //  - Peripheral:      a.com -> b.com/iframe.html -> b.com/plugin.swf
+  //  - NOT peripheral:  a.com -> b.com/iframe-to-a.html -> a.com/plugin.swf
+
+  // TODO(alexmos): Update this to use the origin of the RemoteFrame when 426512
+  // is fixed. For now, case 3 in the comment above doesn't work in
+  // --site-per-process mode.
+  WebFrame* main_frame = render_frame_->GetWebFrame()->view()->mainFrame();
+  if (main_frame->isWebRemoteFrame())
+     return true;
+
+  GURL main_frame_url = main_frame->document().url();
+  return plugin_url_.GetOrigin() != main_frame_url.GetOrigin();
+}
+
+void PepperPluginInstanceImpl::SetPluginThrottled(bool throttled) {
+  // Do not throttle if we've already disabled power saver.
+  if (!power_saver_enabled_ && throttled)
+    return;
+
+  plugin_throttled_ = throttled;
+  SendDidChangeView();
 }
 
 }  // namespace content

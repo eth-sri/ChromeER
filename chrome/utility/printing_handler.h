@@ -25,12 +25,12 @@ struct PageRange;
 class PrintingHandler : public UtilityMessageHandler {
  public:
   PrintingHandler();
-  virtual ~PrintingHandler();
+  ~PrintingHandler() override;
 
   static void PreSandboxStartup();
 
   // IPC::Listener:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
   // IPC message handlers.
@@ -54,7 +54,7 @@ class PrintingHandler : public UtilityMessageHandler {
   int LoadPDF(base::File pdf_file);
   bool RenderPdfPageToMetafile(int page_number,
                                base::File output_file,
-                               double* scale_factor);
+                               float* scale_factor);
 #endif  // OS_WIN
 #if defined(ENABLE_FULL_PRINTING)
   bool RenderPDFPagesToPWGRaster(

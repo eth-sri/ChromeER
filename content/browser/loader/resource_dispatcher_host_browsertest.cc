@@ -36,7 +36,7 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
   ResourceDispatcherHostBrowserTest() : got_downloads_(false) {}
 
  protected:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     base::FilePath path = GetTestFilePath("", "");
     BrowserThread::PostTask(
         BrowserThread::IO,
@@ -50,9 +50,8 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
         base::Bind(&net::URLRequestFailedJob::AddUrlHandler));
   }
 
-  virtual void OnDownloadCreated(
-      DownloadManager* manager,
-      DownloadItem* item) OVERRIDE {
+  void OnDownloadCreated(DownloadManager* manager,
+                         DownloadItem* item) override {
     if (!got_downloads_)
       got_downloads_ = !!manager->InProgressCount();
   }
@@ -271,7 +270,7 @@ scoped_ptr<net::test_server::HttpResponse> NoContentResponseHandler(
   scoped_ptr<net::test_server::BasicHttpResponse> http_response(
       new net::test_server::BasicHttpResponse);
   http_response->set_code(net::HTTP_NO_CONTENT);
-  return http_response.PassAs<net::test_server::HttpResponse>();
+  return http_response.Pass();
 }
 
 }  // namespace
@@ -338,12 +337,17 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   CheckTitleTest(url, "Title Of Awesomeness");
 }
 
+// Flaky on mac bots. crbug.com/429190
+#if defined(OS_MACOSX)
+#define MAYBE_CrossSiteNavigationErrorPage DISABLED_CrossSiteNavigationErrorPage
+#else
+#define MAYBE_CrossSiteNavigationErrorPage CrossSiteNavigationErrorPage
+#endif
 // Tests that a cross-site navigation to an error page (resulting in the link
 // doctor page) still runs the onunload handler and can support navigations
 // away from the link doctor page.  (Bug 1235537)
-// Flaky: http://crbug.com/100823
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
-                       CrossSiteNavigationErrorPage) {
+                       MAYBE_CrossSiteNavigationErrorPage) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/onunload_cookie.html"));
@@ -450,7 +454,7 @@ scoped_ptr<net::test_server::HttpResponse> HandleRedirectRequest(
   http_response->set_code(net::HTTP_FOUND);
   http_response->AddCustomHeader(
       "Location", request.relative_url.substr(request_path.length()));
-  return http_response.PassAs<net::test_server::HttpResponse>();
+  return http_response.Pass();
 }
 
 }  // namespace

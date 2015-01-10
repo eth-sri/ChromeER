@@ -27,18 +27,18 @@ class ImageFetcherImpl : public ImageFetcher,
                          public chrome::BitmapFetcherDelegate {
  public:
   explicit ImageFetcherImpl(net::URLRequestContextGetter* url_request_context);
-  virtual ~ImageFetcherImpl();
+  ~ImageFetcherImpl() override;
 
-  virtual void SetImageFetcherDelegate(ImageFetcherDelegate* delegate) OVERRIDE;
+  void SetImageFetcherDelegate(ImageFetcherDelegate* delegate) override;
 
-  virtual void StartOrQueueNetworkRequest(
-      const GURL& url, const GURL& image_url,
-      base::Callback<void(const GURL&, const SkBitmap*)> callback) OVERRIDE;
+  void StartOrQueueNetworkRequest(
+      const GURL& url,
+      const GURL& image_url,
+      base::Callback<void(const GURL&, const SkBitmap*)> callback) override;
 
  private:
   // Inherited from BitmapFetcherDelegate. Runs on the UI thread.
-  virtual void OnFetchComplete(const GURL image_url,
-                               const SkBitmap* bitmap) OVERRIDE;
+  void OnFetchComplete(const GURL image_url, const SkBitmap* bitmap) override;
 
   typedef std::vector<base::Callback<void(const GURL&, const SkBitmap*)> >
       CallbackVector;

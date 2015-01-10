@@ -93,8 +93,8 @@ void ErrorScreensHistogramHelper::OnErrorShow(ErrorScreen::ErrorState error) {
 void ErrorScreensHistogramHelper::OnErrorShowTime(ErrorScreen::ErrorState error,
                                                   base::Time now) {
   last_error_shown_ = error;
-  if (error_screen_start_time.is_null())
-    error_screen_start_time = now;
+  if (error_screen_start_time_.is_null())
+    error_screen_start_time_ = now;
   StoreErrorScreenToHistogram(screen_name_, error);
 }
 
@@ -103,9 +103,10 @@ void ErrorScreensHistogramHelper::OnErrorHide() {
 }
 
 void ErrorScreensHistogramHelper::OnErrorHideTime(base::Time now) {
-  DCHECK(!error_screen_start_time.is_null());
-  time_on_error_screens += now - error_screen_start_time;
-  error_screen_start_time = base::Time();
+  if (error_screen_start_time_.is_null())
+    return;
+  time_on_error_screens_ += now - error_screen_start_time_;
+  error_screen_start_time_ = base::Time();
 }
 
 ErrorScreensHistogramHelper::~ErrorScreensHistogramHelper() {
@@ -113,12 +114,12 @@ ErrorScreensHistogramHelper::~ErrorScreensHistogramHelper() {
     if (last_error_shown_ == ErrorScreen::ERROR_STATE_NONE) {
       StoreErrorScreenToHistogram(screen_name_, ErrorScreen::ERROR_STATE_NONE);
     } else {
-      if (!error_screen_start_time.is_null()) {
-        time_on_error_screens += base::Time::Now() - error_screen_start_time;
-        error_screen_start_time = base::Time();
+      if (!error_screen_start_time_.is_null()) {
+        time_on_error_screens_ += base::Time::Now() - error_screen_start_time_;
+        error_screen_start_time_ = base::Time();
       }
       StoreTimeOnErrorScreenToHistogram(
-          screen_name_, last_error_shown_, time_on_error_screens);
+          screen_name_, last_error_shown_, time_on_error_screens_);
     }
   }
 }

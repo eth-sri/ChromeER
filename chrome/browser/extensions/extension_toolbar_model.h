@@ -33,7 +33,7 @@ class ExtensionToolbarModel : public content::NotificationObserver,
                               public KeyedService {
  public:
   ExtensionToolbarModel(Profile* profile, ExtensionPrefs* extension_prefs);
-  virtual ~ExtensionToolbarModel();
+  ~ExtensionToolbarModel() override;
 
   // A class which is informed of changes to the model; represents the view of
   // MVC. Also used for signaling view changes such as showing extension popups.
@@ -93,7 +93,7 @@ class ExtensionToolbarModel : public content::NotificationObserver,
   void RemoveObserver(Observer* observer);
 
   // Moves the given |extension|'s icon to the given |index|.
-  void MoveExtensionIcon(const Extension* extension, int index);
+  void MoveExtensionIcon(const std::string& id, size_t index);
 
   // Sets the number of extension icons that should be visible.
   // If count == size(), this will set the visible icon count to -1, meaning
@@ -110,11 +110,6 @@ class ExtensionToolbarModel : public content::NotificationObserver,
   }
 
   bool is_highlighting() const { return is_highlighting_; }
-
-  // Utility functions for converting between an index into the list of
-  // incognito-enabled browser actions, and the list of all browser actions.
-  int IncognitoIndexToOriginal(int incognito_index);
-  int OriginalIndexToIncognito(int original_index);
 
   void OnExtensionToolbarPrefChange();
 
@@ -142,42 +137,39 @@ class ExtensionToolbarModel : public content::NotificationObserver,
   // number of visible icons will be reset to what it was before highlighting.
   void StopHighlighting();
 
-  // Sets the number of visible icons and notifies all observers of the change.
-  void SetVisibleIconCountForTest(size_t visible_icons);
-
  private:
   // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   // Callback when extensions are ready.
   void OnReady();
 
   // ExtensionRegistryObserver:
-  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
-                                 const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      UnloadedExtensionInfo::Reason reason) OVERRIDE;
-  virtual void OnExtensionUninstalled(
-      content::BrowserContext* browser_context,
-      const Extension* extension,
-      extensions::UninstallReason reason) OVERRIDE;
+  void OnExtensionLoaded(content::BrowserContext* browser_context,
+                         const Extension* extension) override;
+  void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                           const Extension* extension,
+                           UnloadedExtensionInfo::Reason reason) override;
+  void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                              const Extension* extension,
+                              extensions::UninstallReason reason) override;
 
   // ExtensionActionAPI::Observer:
-  virtual void OnExtensionActionUpdated(
+  void OnExtensionActionUpdated(
       ExtensionAction* extension_action,
       content::WebContents* web_contents,
-      content::BrowserContext* browser_context) OVERRIDE;
+      content::BrowserContext* browser_context) override;
 
   // To be called after the extension service is ready; gets loaded extensions
-  // from the extension service and their saved order from the pref service
-  // and constructs |toolbar_items_| from these data.
-  void InitializeExtensionList(const ExtensionSet& extensions);
-  void Populate(const ExtensionIdList& positions,
-                const ExtensionSet& extensions);
+  // from the ExtensionRegistry and their saved order from the pref service
+  // and constructs |toolbar_items_| from these data. IncognitoPopulate()
+  // takes the shortcut - looking at the regular model's content and modifying
+  // it.
+  void InitializeExtensionList();
+  void Populate(const ExtensionIdList& positions);
+  void IncognitoPopulate();
 
   // Save the model to prefs.
   void UpdatePrefs();
@@ -199,6 +191,9 @@ class ExtensionToolbarModel : public content::NotificationObserver,
   // Adds or removes the given |extension| from the toolbar model.
   void AddExtension(const Extension* extension);
   void RemoveExtension(const Extension* extension);
+
+  // Removes all current items (because we're going to [re]Populate()).
+  void ClearItems();
 
   // Our observers.
   ObserverList<Observer> observers_;

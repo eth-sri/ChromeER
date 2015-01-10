@@ -123,7 +123,12 @@ class WprRecorder(object):
     self._AddCommandLineArgs()
     self._ParseArgs(args)
     self._ProcessCommandLineArgs()
-    self._page_set = self._GetPageSet(base_dir, target)
+
+    if self._options.page_set_base_dir:
+      page_set_base_dir = self._options.page_set_base_dir
+    else:
+      page_set_base_dir = base_dir
+    self._page_set = self._GetPageSet(page_set_base_dir, target)
 
   @property
   def options(self):
@@ -144,6 +149,8 @@ class WprRecorder(object):
     return results_options.CreateResults(benchmark_metadata, self._options)
 
   def _AddCommandLineArgs(self):
+    self._parser.add_option('--page-set-base-dir', action='store',
+                            type='string')
     page_runner.AddCommandLineArgs(self._parser)
     if self._benchmark is not None:
       self._benchmark.AddCommandLineArgs(self._parser)
@@ -172,6 +179,8 @@ class WprRecorder(object):
     return ps
 
   def Record(self, results):
+    assert self._page_set.wpr_archive_info, (
+      'Pageset archive_data_file path must be specified.')
     self._page_set.wpr_archive_info.AddNewTemporaryRecording()
     self._record_page_test.CustomizeBrowserOptions(self._options)
     page_runner.Run(self._record_page_test, self._page_set,

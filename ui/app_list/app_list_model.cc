@@ -18,6 +18,7 @@ AppListModel::AppListModel()
       search_box_(new SearchBoxModel),
       results_(new SearchResults),
       status_(STATUS_NORMAL),
+      state_(INVALID_STATE),
       folders_enabled_(false) {
   top_level_item_list_->AddObserver(this);
 }
@@ -40,6 +41,19 @@ void AppListModel::SetStatus(Status status) {
   FOR_EACH_OBSERVER(AppListModelObserver,
                     observers_,
                     OnAppListModelStatusChanged());
+}
+
+void AppListModel::SetState(State state) {
+  if (state_ == state)
+    return;
+
+  State old_state = state_;
+
+  state_ = state;
+
+  FOR_EACH_OBSERVER(AppListModelObserver,
+                    observers_,
+                    OnAppListModelStateChanged(old_state, state_));
 }
 
 AppListItem* AppListModel::FindItem(const std::string& id) {
@@ -339,8 +353,7 @@ AppListFolderItem* AppListModel::FindOrCreateFolderItem(
       new AppListFolderItem(folder_id, AppListFolderItem::FOLDER_TYPE_NORMAL));
   new_folder->set_position(
       top_level_item_list_->CreatePositionBefore(syncer::StringOrdinal()));
-  AppListItem* new_folder_item =
-      AddItemToItemListAndNotify(new_folder.PassAs<AppListItem>());
+  AppListItem* new_folder_item = AddItemToItemListAndNotify(new_folder.Pass());
   return static_cast<AppListFolderItem*>(new_folder_item);
 }
 

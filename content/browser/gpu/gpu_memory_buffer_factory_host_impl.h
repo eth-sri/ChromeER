@@ -10,23 +10,22 @@
 #include "content/common/gpu/client/gpu_memory_buffer_factory_host.h"
 
 namespace content {
-class GpuMemoryBufferImpl;
 
 class CONTENT_EXPORT GpuMemoryBufferFactoryHostImpl
     : public GpuMemoryBufferFactoryHost {
  public:
   GpuMemoryBufferFactoryHostImpl();
-  virtual ~GpuMemoryBufferFactoryHostImpl();
+  ~GpuMemoryBufferFactoryHostImpl() override;
 
   // Overridden from GpuMemoryBufferFactoryHost:
-  virtual void CreateGpuMemoryBuffer(
+  void CreateGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat,
-      unsigned usage,
-      const CreateGpuMemoryBufferCallback& callback) OVERRIDE;
-  virtual void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
-                                      int32 sync_point) OVERRIDE;
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage,
+      const CreateGpuMemoryBufferCallback& callback) override;
+  void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+                              int32 sync_point) override;
 
   void set_gpu_host_id(int gpu_host_id) { gpu_host_id_ = gpu_host_id; }
 

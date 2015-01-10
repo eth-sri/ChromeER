@@ -136,7 +136,7 @@ ScopedVpxCodec CreateVP9Codec(const webrtc::DesktopSize& size,
   // Request the lowest-CPU usage that VP9 supports, which depends on whether
   // we are encoding lossy or lossless.
   // Note that this is configured via the same parameter as for VP8.
-  int cpu_used = lossless_encode ? 5 : 7;
+  int cpu_used = lossless_encode ? 5 : 6;
   if (vpx_codec_control(codec.get(), VP8E_SET_CPUUSED, cpu_used))
     return ScopedVpxCodec();
 
@@ -215,12 +215,12 @@ void CreateImage(bool use_i444,
 
 // static
 scoped_ptr<VideoEncoderVpx> VideoEncoderVpx::CreateForVP8() {
-  return scoped_ptr<VideoEncoderVpx>(new VideoEncoderVpx(false));
+  return make_scoped_ptr(new VideoEncoderVpx(false));
 }
 
 // static
 scoped_ptr<VideoEncoderVpx> VideoEncoderVpx::CreateForVP9() {
-  return scoped_ptr<VideoEncoderVpx>(new VideoEncoderVpx(true));
+  return make_scoped_ptr(new VideoEncoderVpx(true));
 }
 
 VideoEncoderVpx::~VideoEncoderVpx() {}

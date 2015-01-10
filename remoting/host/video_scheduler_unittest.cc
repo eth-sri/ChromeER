@@ -66,9 +66,8 @@ class MockVideoEncoder : public VideoEncoder {
   MockVideoEncoder() {}
   virtual ~MockVideoEncoder() {}
 
-  scoped_ptr<VideoPacket> Encode(
-      const webrtc::DesktopFrame& frame) {
-    return scoped_ptr<VideoPacket>(EncodePtr(frame));
+  scoped_ptr<VideoPacket> Encode(const webrtc::DesktopFrame& frame) {
+    return make_scoped_ptr(EncodePtr(frame));
   }
   MOCK_METHOD1(EncodePtr, VideoPacket*(const webrtc::DesktopFrame& frame));
 
@@ -82,7 +81,7 @@ class ThreadCheckVideoEncoder : public VideoEncoderVerbatim {
       scoped_refptr<base::SingleThreadTaskRunner> task_runner)
       : task_runner_(task_runner) {
   }
-  virtual ~ThreadCheckVideoEncoder() {
+  ~ThreadCheckVideoEncoder() override {
     EXPECT_TRUE(task_runner_->BelongsToCurrentThread());
   }
 
@@ -98,7 +97,7 @@ class ThreadCheckDesktopCapturer : public FakeDesktopCapturer {
       scoped_refptr<base::SingleThreadTaskRunner> task_runner)
       : task_runner_(task_runner) {
   }
-  virtual ~ThreadCheckDesktopCapturer() {
+  ~ThreadCheckDesktopCapturer() override {
     EXPECT_TRUE(task_runner_->BelongsToCurrentThread());
   }
 
@@ -114,7 +113,7 @@ class ThreadCheckMouseCursorMonitor : public FakeMouseCursorMonitor {
       scoped_refptr<base::SingleThreadTaskRunner> task_runner)
       : task_runner_(task_runner) {
   }
-  virtual ~ThreadCheckMouseCursorMonitor() {
+  ~ThreadCheckMouseCursorMonitor() override {
     EXPECT_TRUE(task_runner_->BelongsToCurrentThread());
   }
 
@@ -128,8 +127,8 @@ class VideoSchedulerTest : public testing::Test {
  public:
   VideoSchedulerTest();
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   void StartVideoScheduler(
       scoped_ptr<webrtc::DesktopCapturer> capturer,

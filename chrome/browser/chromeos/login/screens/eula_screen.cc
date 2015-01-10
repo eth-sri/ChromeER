@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/customization_document.h"
-#include "chrome/browser/chromeos/login/screens/screen_observer.h"
+#include "chrome/browser/chromeos/login/screens/base_screen_delegate.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
@@ -15,8 +15,12 @@
 
 namespace chromeos {
 
-EulaScreen::EulaScreen(ScreenObserver* observer, EulaScreenActor* actor)
-    : WizardScreen(observer), actor_(actor), password_fetcher_(this) {
+EulaScreen::EulaScreen(BaseScreenDelegate* base_screen_delegate,
+                       EulaScreenActor* actor)
+    : BaseScreen(base_screen_delegate),
+      actor_(actor),
+      delegate_(nullptr),
+      password_fetcher_(this) {
   DCHECK(actor_);
   if (actor_)
     actor_->SetDelegate(this);
@@ -25,6 +29,11 @@ EulaScreen::EulaScreen(ScreenObserver* observer, EulaScreenActor* actor)
 EulaScreen::~EulaScreen() {
   if (actor_)
     actor_->SetDelegate(NULL);
+}
+
+void EulaScreen::SetDelegate(Delegate* delegate) {
+  DCHECK(delegate);
+  delegate_ = delegate;
 }
 
 void EulaScreen::PrepareToShow() {
@@ -68,10 +77,11 @@ GURL EulaScreen::GetOemEulaUrl() const {
 }
 
 void EulaScreen::OnExit(bool accepted, bool usage_stats_enabled) {
-  get_screen_observer()->SetUsageStatisticsReporting(usage_stats_enabled);
-  get_screen_observer()->OnExit(accepted
-                   ? ScreenObserver::EULA_ACCEPTED
-                   : ScreenObserver::EULA_BACK);
+  if (delegate_)
+    delegate_->SetUsageStatisticsReporting(usage_stats_enabled);
+  get_base_screen_delegate()->OnExit(accepted
+                                         ? BaseScreenDelegate::EULA_ACCEPTED
+                                         : BaseScreenDelegate::EULA_BACK);
 }
 
 void EulaScreen::InitiatePasswordFetch() {
@@ -90,7 +100,7 @@ void EulaScreen::OnPasswordFetched(const std::string& tpm_password) {
 }
 
 bool EulaScreen::IsUsageStatsEnabled() const {
-  return get_screen_observer()->GetUsageStatisticsReporting();
+  return delegate_ && delegate_->GetUsageStatisticsReporting();
 }
 
 void EulaScreen::OnActorDestroyed(EulaScreenActor* actor) {

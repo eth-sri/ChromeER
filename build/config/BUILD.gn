@@ -31,8 +31,6 @@ config("feature_flags") {
   # TODO(brettw) most of these need to be parameterized.
   defines = [
       "CHROMIUM_BUILD",
-      "ENABLE_EGLIMAGE=1",
-      "ENABLE_BACKGROUND=1",
       "V8_DEPRECATION_WARNINGS",  # Don't use deprecated V8 APIs anywhere.
   ]
 
@@ -85,6 +83,9 @@ config("feature_flags") {
   if (use_aura) {
     defines += [ "USE_AURA=1" ]
   }
+  if (use_pango) {
+    defines += [ "USE_PANGO=1" ]
+  }
   if (use_cairo) {
     defines += [ "USE_CAIRO=1" ]
   }
@@ -119,6 +120,13 @@ config("feature_flags") {
   }
   if (use_allocator != "tcmalloc") {
     defines += [ "NO_TCMALLOC" ]
+  }
+  if (is_asan) {
+    defines += [
+      "ADDRESS_SANITIZER",
+      "MEMORY_TOOL_REPLACES_ALLOCATOR",
+      "MEMORY_SANITIZER_INITIAL_SIZE",
+    ]
   }
   if (enable_webrtc) {
     defines += [ "ENABLE_WEBRTC=1" ]
@@ -188,6 +196,9 @@ config("feature_flags") {
   }
   if (enable_hidpi) {
     defines += [ "ENABLE_HIDPI=1" ]
+  }
+  if (proprietary_codecs) {
+    defines += [ "USE_PROPRIETARY_CODECS" ]
   }
 }
 

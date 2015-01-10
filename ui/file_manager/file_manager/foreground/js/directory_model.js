@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 // If directory files changes too often, don't rescan directory more than once
 // per specified interval
 var SIMULTANEOUS_RESCAN_INTERVAL = 500;
@@ -20,6 +18,7 @@ var SHORT_RESCAN_INTERVAL = 100;
  * @param {MetadataCache} metadataCache The metadata cache service.
  * @param {VolumeManagerWrapper} volumeManager The volume manager.
  * @constructor
+ * @extends {cr.EventTarget}
  */
 function DirectoryModel(singleSelection, fileFilter, fileWatcher,
                         metadataCache, volumeManager) {
@@ -172,6 +171,18 @@ DirectoryModel.prototype.updateSelectionAndPublishEvent_ =
 DirectoryModel.prototype.onWatcherDirectoryChanged_ = function(event) {
   var directoryEntry = this.getCurrentDirEntry();
 
+  // If the change is deletion of currentDir, move up to its parent directory.
+  directoryEntry.getDirectory(directoryEntry.fullPath, {create: false},
+      function() {},
+      function() {
+        var volumeInfo = this.volumeManager_.getVolumeInfo(directoryEntry);
+        if (volumeInfo) {
+          volumeInfo.resolveDisplayRoot().then(function(displayRoot) {
+            this.changeDirectoryEntry(displayRoot);
+          }.bind(this));
+        }
+      }.bind(this));
+
   if (event.changedFiles) {
     var addedOrUpdatedFileUrls = [];
     var deletedFileUrls = [];
@@ -261,7 +272,8 @@ DirectoryModel.prototype.setSelectedEntries_ = function(value) {
  */
 DirectoryModel.prototype.getLeadEntry_ = function() {
   var index = this.fileListSelection_.leadIndex;
-  return index >= 0 && this.getFileList().item(index);
+  return index >= 0 ?
+      /** @type {Entry} */ (this.getFileList().item(index)) : null;
 };
 
 /**
@@ -271,7 +283,7 @@ DirectoryModel.prototype.getLeadEntry_ = function() {
 DirectoryModel.prototype.setLeadEntry_ = function(value) {
   var fileList = this.getFileList();
   for (var i = 0; i < fileList.length; i++) {
-    if (util.isSameEntry(fileList.item(i), value)) {
+    if (util.isSameEntry(/** @type {Entry} */ (fileList.item(i)), value)) {
       this.fileListSelection_.leadIndex = i;
       return;
     }
@@ -375,7 +387,7 @@ DirectoryModel.prototype.rescan = function(refresh) {
  *
  * This should be used when changing directory or initiating a new search.
  *
- * @param {DirectoryContentes} newDirContents New DirectoryContents instance to
+ * @param {DirectoryContents} newDirContents New DirectoryContents instance to
  *     replace currentDirContents_.
  * @param {function(boolean)} callback Callback with result. True if the scan
  *     is completed successfully, false if the scan is failed.
@@ -700,7 +712,7 @@ DirectoryModel.prototype.onEntriesChanged = function(kind, entries) {
 DirectoryModel.prototype.findIndexByEntry_ = function(entry) {
   var fileList = this.getFileList();
   for (var i = 0; i < fileList.length; i++) {
-    if (util.isSameEntry(fileList.item(i), entry))
+    if (util.isSameEntry(/** @type {Entry} */ (fileList.item(i)), entry))
       return i;
   }
   return -1;
@@ -741,7 +753,7 @@ DirectoryModel.prototype.onRenameEntry = function(
  *
  * @param {string} name Directory name.
  * @param {function(DirectoryEntry)} successCallback Callback on success.
- * @param {function(FileError)} errorCallback Callback on failure.
+ * @param {function(DOMError)} errorCallback Callback on failure.
  * @param {function()} abortCallback Callback on abort (cancelled by user).
  */
 DirectoryModel.prototype.createDirectory = function(name,
@@ -793,7 +805,7 @@ DirectoryModel.prototype.createDirectory = function(name,
           successCallback(newEntry);
         }
       }.bind(this), function(reason) {
-        errorCallback(reason);
+        errorCallback(/** @type {DOMError} */ (reason));
       });
 };
 
@@ -846,7 +858,7 @@ DirectoryModel.prototype.changeDirectoryEntry = function(
 
                 // Notify that the current task of this.directoryChangeQueue_
                 // is completed.
-                setTimeout(queueTaskCallback);
+                setTimeout(queueTaskCallback, 0);
               });
 
           // For tests that open the dialog to empty directories, everything
@@ -944,7 +956,7 @@ DirectoryModel.prototype.selectEntry = function(entry) {
 };
 
 /**
- * @param {Array.<string>} entries Array of entries.
+ * @param {Array.<Entry>} entries Array of entries.
  */
 DirectoryModel.prototype.selectEntries = function(entries) {
   // URLs are needed here, since we are comparing Entries by URLs.
@@ -984,6 +996,18 @@ DirectoryModel.prototype.onVolumeInfoListUpdated_ = function(event) {
       !this.volumeManager_.getVolumeInfo(this.getCurrentDirEntry())) {
     this.volumeManager_.getDefaultDisplayRoot(function(displayRoot) {
       this.changeDirectoryEntry(displayRoot);
+    }.bind(this));
+  }
+
+  // If a new provided volume is mounted, then redirect to it in the focused
+  // window. Note, that this is a temporary solution for crbug.com/427776.
+  if (window.isFocused() &&
+      event.added.length === 1 &&
+      event.added[0].volumeType === VolumeManagerCommon.VolumeType.PROVIDED) {
+    event.added[0].resolveDisplayRoot().then(function(displayRoot) {
+      // Resolving a display root on FSP volumes is instant, despite the
+      // asynchronous call.
+      this.changeDirectoryEntry(event.added[0].displayRoot);
     }.bind(this));
   }
 };

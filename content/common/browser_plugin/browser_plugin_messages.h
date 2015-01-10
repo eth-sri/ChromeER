@@ -53,6 +53,8 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_ResizeGuest_Params,
                     resize_guest_params)
   IPC_STRUCT_MEMBER(gfx::Point, origin)
+  // Whether the browser plugin is a full page plugin document.
+  IPC_STRUCT_MEMBER(bool, is_full_page_plugin)
 IPC_STRUCT_END()
 
 // Browser plugin messages
@@ -124,11 +126,6 @@ IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ReclaimCompositorResources,
                     int /* browser_plugin_instance_id */,
                     FrameHostMsg_ReclaimCompositorResources_Params /* params */)
-
-// When a BrowserPlugin has been removed from the embedder's DOM, it informs
-// the browser process to cleanup the guest.
-IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_PluginDestroyed,
-                    int /* browser_plugin_instance_id */)
 
 // Tells the guest it has been shown or hidden.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetVisibility,
@@ -216,6 +213,11 @@ IPC_MESSAGE_CONTROL2(BrowserPluginMsg_CompositorFrameSwapped,
 IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetMouseLock,
                      int /* browser_plugin_instance_id */,
                      bool /* enable */)
+
+// Sends text to be displayed in tooltip.
+IPC_MESSAGE_CONTROL2(BrowserPluginMsg_SetTooltipText,
+                     int /* browser_plugin_instance_id */,
+                     base::string16 /* tooltip_text */)
 
 // Acknowledge that we presented an ubercomp frame.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_CompositorFrameSwappedACK,

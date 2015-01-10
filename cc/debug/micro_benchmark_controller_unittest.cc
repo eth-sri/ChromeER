@@ -21,7 +21,7 @@ class MicroBenchmarkControllerTest : public testing::Test {
   MicroBenchmarkControllerTest()
       : layer_tree_host_client_(FakeLayerTreeHostClient::DIRECT_3D) {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     impl_proxy_ = make_scoped_ptr(new FakeImplProxy);
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
     layer_tree_host_impl_ = make_scoped_ptr(new FakeLayerTreeHostImpl(
@@ -32,7 +32,7 @@ class MicroBenchmarkControllerTest : public testing::Test {
     layer_tree_host_->InitializeForTesting(scoped_ptr<Proxy>(new FakeProxy));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     layer_tree_host_impl_ = nullptr;
     layer_tree_host_ = nullptr;
     impl_proxy_ = nullptr;
@@ -54,14 +54,14 @@ void IncrementCallCount(int* count, scoped_ptr<base::Value> value) {
 
 TEST_F(MicroBenchmarkControllerTest, ScheduleFail) {
   int id = layer_tree_host_->ScheduleMicroBenchmark(
-      "non_existant_benchmark", scoped_ptr<base::Value>(), base::Bind(&Noop));
+      "non_existant_benchmark", nullptr, base::Bind(&Noop));
   EXPECT_EQ(id, 0);
 }
 
 TEST_F(MicroBenchmarkControllerTest, CommitScheduled) {
   EXPECT_FALSE(layer_tree_host_->needs_commit());
   int id = layer_tree_host_->ScheduleMicroBenchmark(
-      "unittest_only_benchmark", scoped_ptr<base::Value>(), base::Bind(&Noop));
+      "unittest_only_benchmark", nullptr, base::Bind(&Noop));
   EXPECT_GT(id, 0);
   EXPECT_TRUE(layer_tree_host_->needs_commit());
 }
@@ -70,7 +70,7 @@ TEST_F(MicroBenchmarkControllerTest, BenchmarkRan) {
   int run_count = 0;
   int id = layer_tree_host_->ScheduleMicroBenchmark(
       "unittest_only_benchmark",
-      scoped_ptr<base::Value>(),
+      nullptr,
       base::Bind(&IncrementCallCount, base::Unretained(&run_count)));
   EXPECT_GT(id, 0);
 
@@ -85,12 +85,12 @@ TEST_F(MicroBenchmarkControllerTest, MultipleBenchmarkRan) {
   int run_count = 0;
   int id = layer_tree_host_->ScheduleMicroBenchmark(
       "unittest_only_benchmark",
-      scoped_ptr<base::Value>(),
+      nullptr,
       base::Bind(&IncrementCallCount, base::Unretained(&run_count)));
   EXPECT_GT(id, 0);
   id = layer_tree_host_->ScheduleMicroBenchmark(
       "unittest_only_benchmark",
-      scoped_ptr<base::Value>(),
+      nullptr,
       base::Bind(&IncrementCallCount, base::Unretained(&run_count)));
   EXPECT_GT(id, 0);
 
@@ -102,12 +102,12 @@ TEST_F(MicroBenchmarkControllerTest, MultipleBenchmarkRan) {
 
   id = layer_tree_host_->ScheduleMicroBenchmark(
       "unittest_only_benchmark",
-      scoped_ptr<base::Value>(),
+      nullptr,
       base::Bind(&IncrementCallCount, base::Unretained(&run_count)));
   EXPECT_GT(id, 0);
   id = layer_tree_host_->ScheduleMicroBenchmark(
       "unittest_only_benchmark",
-      scoped_ptr<base::Value>(),
+      nullptr,
       base::Bind(&IncrementCallCount, base::Unretained(&run_count)));
   EXPECT_GT(id, 0);
 
@@ -155,7 +155,7 @@ TEST_F(MicroBenchmarkControllerTest, SendMessage) {
   int run_count = 0;
   int id = layer_tree_host_->ScheduleMicroBenchmark(
       "unittest_only_benchmark",
-      scoped_ptr<base::Value>(),
+      nullptr,
       base::Bind(&IncrementCallCount, base::Unretained(&run_count)));
   EXPECT_GT(id, 0);
 

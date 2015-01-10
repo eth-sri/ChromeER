@@ -52,7 +52,7 @@ const struct {
     IDS_LANGUAGES_MEDIUM_LEN_NAME_BRAILLE },
 };
 const size_t kMappingImeIdToMediumLenNameResourceIdLen =
-    ARRAYSIZE_UNSAFE(kMappingImeIdToMediumLenNameResourceId);
+    arraysize(kMappingImeIdToMediumLenNameResourceId);
 
 // Due to asynchronous initialization of component extension manager,
 // GetFirstLogingInputMethodIds may miss component extension IMEs. To enable
@@ -69,14 +69,6 @@ const struct {
   { "zh-TW", "us", "zh-hant-t-i0-und" },
   { "th", "us", "vkd_th" },
   { "vi", "us", "vkd_vi_tcvn" },
-};
-
-// The extension ID map for migration.
-const char* const kExtensionIdMigrationMap[][2] = {
-  // Official Japanese IME extension ID.
-  {"fpfbhcjppmaeaijcidgiibchfbnhbelj", "gjaehgfemfahhmlgpdfknkhdnemmolop"},
-  // Official M17n keyboard extension ID.
-  {"habcdindjejkmepknlhkkloncjcpcnbf", "gjaehgfemfahhmlgpdfknkhdnemmolop"},
 };
 
 // The engine ID map for migration. This migration is for input method IDs from
@@ -116,8 +108,6 @@ const char* const kEngineIdMigrationMap[][2] = {
     {"t13n:ti", "ti-t-i0-und"},
     {"t13n:ur", "ur-t-i0-und"},
 };
-
-const size_t kExtensionIdLen = 32;
 
 const struct EnglishToResouceId {
   const char* english_string_from_ibus;
@@ -395,7 +385,7 @@ void InputMethodUtil::GetFirstLoginInputMethodIds(
 
   const std::string current_layout
       = current_input_method.GetPreferredKeyboardLayout();
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultInputMethodRecommendation);
+  for (size_t i = 0; i < arraysize(kDefaultInputMethodRecommendation);
        ++i) {
     if (kDefaultInputMethodRecommendation[i].locale == language_code &&
         kDefaultInputMethodRecommendation[i].layout == current_layout) {
@@ -494,17 +484,18 @@ bool InputMethodUtil::MigrateInputMethods(
         break;
       }
     }
+    // Migrates the extension IDs.
     std::string id =
         extension_ime_util::GetInputMethodIDByEngineID(engine_id);
-    // Migrates old ime id's to new ones.
-    for (size_t j = 0; j < arraysize(kExtensionIdMigrationMap); ++j) {
-      size_t pos = id.find(kExtensionIdMigrationMap[j][0]);
-      if (pos != std::string::npos)
-        id.replace(pos, kExtensionIdLen, kExtensionIdMigrationMap[j][1]);
-      if (id != ids[i]) {
-        ids[i] = id;
-        rewritten = true;
-      }
+    if (extension_ime_util::IsComponentExtensionIME(id)) {
+      std::string id_new = extension_ime_util::GetInputMethodIDByEngineID(
+          extension_ime_util::GetComponentIDByInputMethodID(id));
+      if (extension_ime_util::IsComponentExtensionIME(id_new))
+        id = id_new;
+    }
+    if (id != ids[i]) {
+      ids[i] = id;
+      rewritten = true;
     }
   }
   if (rewritten) {

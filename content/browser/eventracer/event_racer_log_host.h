@@ -87,7 +87,7 @@ public:
   void CreateEdge(unsigned int, unsigned int);
   void UpdateStringTable(size_t, const std::vector<std::string> &);
 
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& msg) override;
 
   static void WriteDot(scoped_ptr<EventRacerLogHost> log, int32 site_id);
   static void WriteBin(scoped_ptr<EventRacerLogHost> log, int32 site_id);

@@ -4,11 +4,11 @@
 
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -20,14 +20,14 @@ class ContentSettingBlockedImageModel : public ContentSettingImageModel {
   explicit ContentSettingBlockedImageModel(
       ContentSettingsType content_settings_type);
 
-  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
+  void UpdateFromWebContents(WebContents* web_contents) override;
 };
 
 class ContentSettingGeolocationImageModel : public ContentSettingImageModel {
  public:
   ContentSettingGeolocationImageModel();
 
-  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
+  void UpdateFromWebContents(WebContents* web_contents) override;
 };
 
 // Image model for displaying media icons in the location bar.
@@ -35,28 +35,28 @@ class ContentSettingMediaImageModel : public ContentSettingImageModel {
  public:
   explicit ContentSettingMediaImageModel(ContentSettingsType type);
 
-  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
+  void UpdateFromWebContents(WebContents* web_contents) override;
 };
 
 class ContentSettingRPHImageModel : public ContentSettingImageModel {
  public:
   ContentSettingRPHImageModel();
 
-  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
+  void UpdateFromWebContents(WebContents* web_contents) override;
 };
 
 class ContentSettingNotificationsImageModel : public ContentSettingImageModel {
  public:
   ContentSettingNotificationsImageModel();
 
-  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
+  void UpdateFromWebContents(WebContents* web_contents) override;
 };
 
 class ContentSettingMIDISysExImageModel : public ContentSettingImageModel {
  public:
   ContentSettingMIDISysExImageModel();
 
-  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
+  void UpdateFromWebContents(WebContents* web_contents) override;
 };
 
 namespace {

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -15,6 +16,44 @@
 #include "net/quic/quic_server_id.h"
 
 namespace net {
+
+// Histogram that tracks number of times data read/parse/write API calls of
+// QuicServerInfo to and from disk cache is called.
+enum QuicServerInfoAPICall {
+  QUIC_SERVER_INFO_START = 0,
+  QUIC_SERVER_INFO_WAIT_FOR_DATA_READY = 1,
+  QUIC_SERVER_INFO_PARSE = 2,
+  QUIC_SERVER_INFO_WAIT_FOR_DATA_READY_CANCEL = 3,
+  QUIC_SERVER_INFO_READY_TO_PERSIST = 4,
+  QUIC_SERVER_INFO_PERSIST = 5,
+  QUIC_SERVER_INFO_NUM_OF_API_CALLS = 6,
+};
+
+// Histogram that tracks failure reasons to read/load/write of QuicServerInfo to
+// and from disk cache.
+enum FailureReason {
+  WAIT_FOR_DATA_READY_INVALID_ARGUMENT_FAILURE = 0,
+  GET_BACKEND_FAILURE = 1,
+  OPEN_FAILURE = 2,
+  CREATE_OR_OPEN_FAILURE = 3,
+  PARSE_NO_DATA_FAILURE = 4,
+  PARSE_FAILURE = 5,
+  READ_FAILURE = 6,
+  READY_TO_PERSIST_FAILURE = 7,
+  PERSIST_NO_BACKEND_FAILURE = 8,
+  WRITE_FAILURE = 9,
+  NUM_OF_FAILURES = 10,
+};
+
+void RecordQuicServerInfoStatus(QuicServerInfoAPICall call) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.APICall", call,
+                            QUIC_SERVER_INFO_NUM_OF_API_CALLS);
+}
+
+void RecordQuicServerInfoFailure(FailureReason failure) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.FailureReason", failure,
+                            NUM_OF_FAILURES);
+}
 
 // Some APIs inside disk_cache take a handle that the caller must keep alive
 // until the API has finished its asynchronous execution.
@@ -65,6 +104,8 @@ DiskCacheBasedQuicServerInfo::DiskCacheBasedQuicServerInfo(
 void DiskCacheBasedQuicServerInfo::Start() {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(GET_BACKEND, state_);
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_START);
+  load_start_time_ = base::TimeTicks::Now();
   DoLoop(OK);
 }
 
@@ -73,18 +114,29 @@ int DiskCacheBasedQuicServerInfo::WaitForDataReady(
   DCHECK(CalledOnValidThread());
   DCHECK_NE(GET_BACKEND, state_);
 
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_WAIT_FOR_DATA_READY);
   if (ready_)
     return OK;
 
   if (!callback.is_null()) {
     // Prevent a new callback for WaitForDataReady overwriting an existing
     // pending callback (|user_callback_|).
-    if (!user_callback_.is_null())
+    if (!user_callback_.is_null()) {
+      RecordQuicServerInfoFailure(WAIT_FOR_DATA_READY_INVALID_ARGUMENT_FAILURE);
       return ERR_INVALID_ARGUMENT;
+    }
     user_callback_ = callback;
   }
 
   return ERR_IO_PENDING;
+}
+
+void DiskCacheBasedQuicServerInfo::CancelWaitForDataReadyCallback() {
+  DCHECK(CalledOnValidThread());
+
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_WAIT_FOR_DATA_READY_CANCEL);
+  if (!user_callback_.is_null())
+    user_callback_.Reset();
 }
 
 bool DiskCacheBasedQuicServerInfo::IsDataReady() {
@@ -92,9 +144,17 @@ bool DiskCacheBasedQuicServerInfo::IsDataReady() {
 }
 
 bool DiskCacheBasedQuicServerInfo::IsReadyToPersist() {
+  // TODO(rtenneti): Handle updates while a write is pending. Change
+  // Persist() to save the data to be written into a temporary buffer
+  // and then persist that data when we are ready to persist.
+  //
   // The data can be persisted if it has been loaded from the disk cache
   // and there are no pending writes.
-  return ready_ && new_data_.empty();
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_READY_TO_PERSIST);
+  if (ready_ && new_data_.empty())
+    return true;
+  RecordQuicServerInfoFailure(READY_TO_PERSIST_FAILURE);
+  return false;
 }
 
 void DiskCacheBasedQuicServerInfo::Persist() {
@@ -106,8 +166,11 @@ void DiskCacheBasedQuicServerInfo::Persist() {
   DCHECK(user_callback_.is_null());
   new_data_ = Serialize();
 
-  if (!backend_)
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_PERSIST);
+  if (!backend_) {
+    RecordQuicServerInfoFailure(PERSIST_NO_BACKEND_FAILURE);
     return;
+  }
 
   state_ = CREATE_OR_OPEN;
   DoLoop(OK);
@@ -187,6 +250,7 @@ int DiskCacheBasedQuicServerInfo::DoGetBackendComplete(int rv) {
     backend_ = data_shim_->backend;
     state_ = OPEN;
   } else {
+    RecordQuicServerInfoFailure(GET_BACKEND_FAILURE);
     state_ = WAIT_FOR_DATA_READY_DONE;
   }
   return OK;
@@ -198,6 +262,7 @@ int DiskCacheBasedQuicServerInfo::DoOpenComplete(int rv) {
     state_ = READ;
     found_entry_ = true;
   } else {
+    RecordQuicServerInfoFailure(OPEN_FAILURE);
     state_ = WAIT_FOR_DATA_READY_DONE;
   }
 
@@ -207,24 +272,30 @@ int DiskCacheBasedQuicServerInfo::DoOpenComplete(int rv) {
 int DiskCacheBasedQuicServerInfo::DoReadComplete(int rv) {
   if (rv > 0)
     data_.assign(read_buffer_->data(), rv);
+  else if (rv < 0)
+    RecordQuicServerInfoFailure(READ_FAILURE);
 
   state_ = WAIT_FOR_DATA_READY_DONE;
   return OK;
 }
 
 int DiskCacheBasedQuicServerInfo::DoWriteComplete(int rv) {
-  // Keep the entry open for future writes.
-  new_data_.clear();
-  state_ = NONE;
+  if (rv < 0)
+    RecordQuicServerInfoFailure(WRITE_FAILURE);
+  state_ = SET_DONE;
   return OK;
 }
 
 int DiskCacheBasedQuicServerInfo::DoCreateOrOpenComplete(int rv) {
   if (rv != OK) {
+    RecordQuicServerInfoFailure(CREATE_OR_OPEN_FAILURE);
     state_ = SET_DONE;
   } else {
-    if (!entry_)
+    if (!entry_) {
       entry_ = data_shim_->entry;
+      found_entry_ = true;
+    }
+    DCHECK(entry_);
     state_ = WRITE;
   }
   return OK;
@@ -287,7 +358,17 @@ int DiskCacheBasedQuicServerInfo::DoWaitForDataReadyDone() {
   if (entry_)
     entry_->Close();
   entry_ = NULL;
-  Parse(data_);
+
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_PARSE);
+  if (!Parse(data_)) {
+    if (data_.empty())
+      RecordQuicServerInfoFailure(PARSE_NO_DATA_FAILURE);
+    else
+      RecordQuicServerInfoFailure(PARSE_FAILURE);
+  }
+
+  UMA_HISTOGRAM_TIMES("Net.QuicServerInfo.DiskCacheLoadTime",
+                      base::TimeTicks::Now() - load_start_time_);
   return OK;
 }
 

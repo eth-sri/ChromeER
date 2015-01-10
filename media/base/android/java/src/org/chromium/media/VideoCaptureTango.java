@@ -20,9 +20,9 @@ import java.util.Arrays;
  * |s_CAM_PARAMS|; all devices |id| are index 0 towards the parent VideoCapture.
  **/
 @SuppressWarnings("deprecation")
-public class VideoCaptureTango extends VideoCapture {
+public class VideoCaptureTango extends VideoCaptureCamera {
 
-    static class CamParams {
+    private static class CamParams {
         final int mId;
         final String mName;
         final int mWidth;
@@ -43,9 +43,9 @@ public class VideoCaptureTango extends VideoCapture {
     private static final int FISHEYE_CAMERA_ID = 1;
     private static final int FOURMP_CAMERA_ID = 2;
     private static final CamParams CAM_PARAMS[] = {
-         new CamParams(DEPTH_CAMERA_ID, "depth", 320, 240),
-         new CamParams(FISHEYE_CAMERA_ID, "fisheye", 640, 480),
-         new CamParams(FOURMP_CAMERA_ID, "4MP", 1280, 720)};
+            new CamParams(DEPTH_CAMERA_ID, "depth", 320, 240),
+            new CamParams(FISHEYE_CAMERA_ID, "fisheye", 640, 480),
+            new CamParams(FOURMP_CAMERA_ID, "4MP", 1280, 720) };
 
     // SuperFrame size definitions. Note that total size is the amount of lines
     // multiplied by 3/2 due to Chroma components following.
@@ -73,15 +73,15 @@ public class VideoCaptureTango extends VideoCapture {
     }
 
     static CaptureFormat[] getDeviceSupportedFormats(int id) {
-      ArrayList<CaptureFormat> formatList = new ArrayList<CaptureFormat>();
-      if (id == DEPTH_CAMERA_ID) {
-          formatList.add(new CaptureFormat(320, 180, 5, ImageFormat.YV12));
-      } else if (id == FISHEYE_CAMERA_ID) {
-          formatList.add(new CaptureFormat(640, 480, 30, ImageFormat.YV12));
-      } else if (id == FOURMP_CAMERA_ID) {
-          formatList.add(new CaptureFormat(1280, 720, 20, ImageFormat.YV12));
-      }
-      return formatList.toArray(new CaptureFormat[formatList.size()]);
+        ArrayList<CaptureFormat> formatList = new ArrayList<CaptureFormat>();
+        if (id == DEPTH_CAMERA_ID) {
+            formatList.add(new CaptureFormat(320, 180, 5, ImageFormat.YV12));
+        } else if (id == FISHEYE_CAMERA_ID) {
+            formatList.add(new CaptureFormat(640, 480, 30, ImageFormat.YV12));
+        } else if (id == FOURMP_CAMERA_ID) {
+            formatList.add(new CaptureFormat(1280, 720, 20, ImageFormat.YV12));
+        }
+        return formatList.toArray(new CaptureFormat[formatList.size()]);
     }
 
     VideoCaptureTango(Context context,
@@ -161,8 +161,8 @@ public class VideoCaptureTango extends VideoCapture {
                     // them explicitly since they're filled to 128 on creation.
                     ByteBuffer.wrap(data, startY, sizeY).get(mFrameBuffer.array(), 0, sizeY);
                 } else if (mTangoCameraId == FOURMP_CAMERA_ID) {
-                    int startY = SF_WIDTH * (SF_LINES_HEADER + SF_LINES_FISHEYE +
-                                    SF_LINES_RESERVED + SF_LINES_DEPTH_PADDED);
+                    int startY = SF_WIDTH * (SF_LINES_HEADER + SF_LINES_FISHEYE
+                                    + SF_LINES_RESERVED + SF_LINES_DEPTH_PADDED);
                     int sizeY = SF_WIDTH * SF_LINES_BIGIMAGE;
 
                     // The spec is completely inaccurate on the location, sizes

@@ -52,6 +52,14 @@
         "F16F23C83C5F6DAD9B65A120448B34056DD80691",
         "0F585FB1D0FDFBEBCE1FEB5E9DFFB6DA476B8C9B"
       ]
+    },
+    {
+      "channel": "stable",
+      "extension_types": ["extension"],
+      "whitelist": [
+        "06BE211D5F014BAB34BC22D9DDA09C63A81D828E",  // http://crbug.com/425539
+        "F94EE6AB36D6C6588670B2B01EB65212D9C64E33"
+      ]
     }
   ],
   "app.window.shape": {
@@ -69,6 +77,10 @@
        ]
     }
   ],
+  "appview": {
+    "channel": "dev",
+    "extension_types": ["platform_app"]
+  },
   "audioCapture": [
     {
       "channel": "stable",
@@ -103,6 +115,12 @@
       "81986D4F846CEDDDB962643FA501D1780DD441BB"   // http://crbug.com/407693
     ]
   },
+  "declarativeWebRequest": [
+    {
+      "channel": "beta",
+      "extension_types": ["extension", "legacy_packaged_app"]
+    }
+  ],
   "dns": [
     {
       "channel": "dev",
@@ -303,6 +321,18 @@
       "whitelist": [
         "D519188F86D9ACCEE0412007B227D9936EB9676B"  // GAIA Component Extension
       ]
+    }
+  ],
+  "webRequest": [
+    {
+    "channel": "stable",
+    "extension_types": ["extension", "legacy_packaged_app"]
+     }
+  ],
+  "webRequestBlocking": [
+    {
+    "channel": "stable",
+    "extension_types": ["extension", "legacy_packaged_app"]
     }
   ]
 }

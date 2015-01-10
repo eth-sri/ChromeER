@@ -145,6 +145,7 @@ size_t RegisterChromeCrashKeys() {
 
     // base/:
     { "dm-usage", kSmallSize },
+    { "total-dm-usage", kSmallSize },
     // content/:
     { kFontKeyName, kSmallSize},
     { "ppapi_path", kMediumSize },
@@ -166,13 +167,6 @@ size_t RegisterChromeCrashKeys() {
     { "channel_error_bt", kMediumSize },
     { "remove_route_bt", kMediumSize },
     { "rwhvm_window", kMediumSize },
-    // The following keys are for diagnosing crashes in http://crbug.com/369661.
-    // They will not be permanent.
-    { "renderer_page_id", kSmallSize },
-    { "browser_page_id", kSmallSize },
-    { "last_committed_page_id", kSmallSize },
-    { "quick_discard", kSmallSize },
-    // End http://crbug.com/369661
     // media/:
     { "VideoCaptureDeviceQTKit", kSmallSize },
 #endif
@@ -272,7 +266,7 @@ static bool IsBoringSwitch(const std::string& flag) {
          flag == "--flag-switches-begin" ||
          flag == "--flag-switches-end";
 #elif defined(OS_CHROMEOS)
-  static const char* kIgnoreSwitches[] = {
+  static const char* const kIgnoreSwitches[] = {
     ::switches::kEnableImplSidePainting,
     ::switches::kEnableLogging,
     ::switches::kFlagSwitchesBegin,

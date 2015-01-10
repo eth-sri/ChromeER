@@ -14,13 +14,13 @@ cr.exportPath('options');
  *             bookmarksRegistered: boolean,
  *             bookmarksSynced: boolean,
  *             encryptAllData: boolean,
+ *             encryptAllDataAllowed: boolean,
  *             enterGooglePassphraseBody: (string|undefined),
  *             enterPassphraseBody: (string|undefined),
  *             extensionsEnforced: boolean,
  *             extensionsRegistered: boolean,
  *             extensionsSynced: boolean,
  *             fullEncryptionBody: string,
- *             isSupervised: boolean,
  *             passphraseFailed: boolean,
  *             passwordsEnforced: boolean,
  *             passwordsRegistered: boolean,
@@ -41,7 +41,9 @@ cr.exportPath('options');
  *             typedUrlsEnforced: boolean,
  *             typedUrlsRegistered: boolean,
  *             typedUrlsSynced: boolean,
- *             usePassphrase: boolean}}
+ *             usePassphrase: boolean,
+ *             wifiCredentialsEnforced: (boolean|undefined),
+ *             wifiCredentialsSynced: (boolean|undefined)}}
  */
 var SyncConfig;
 
@@ -276,7 +278,7 @@ cr.define('options', function() {
       var googlePassphrase = false;
       if (!$('sync-existing-passphrase-container').hidden) {
         // If we were prompted for an existing passphrase, use it.
-        customPassphrase = $('choose-data-types-form').passphrase.value;
+        customPassphrase = getRequiredElement('passphrase').value;
         usePassphrase = true;
         // If we were displaying the 'enter your old google password' prompt,
         // then that means this is the user's google password.
@@ -306,7 +308,7 @@ cr.define('options', function() {
       $('use-default-link').onclick = null;
 
       // These values need to be kept in sync with where they are read in
-      // SyncSetupFlow::GetDataTypeChoiceData().
+      // sync_setup_handler.cc:GetConfiguration().
       var syncAll = $('sync-select-datatypes').selectedIndex ==
                     options.DataTypeSelection.SYNC_EVERYTHING;
       var syncNothing = $('sync-select-datatypes').selectedIndex ==
@@ -323,6 +325,8 @@ cr.define('options', function() {
         'typedUrlsSynced': syncAll || $('typed-urls-checkbox').checked,
         'appsSynced': syncAll || $('apps-checkbox').checked,
         'tabsSynced': syncAll || $('tabs-checkbox').checked,
+        'wifiCredentialsSynced': syncAll ||
+                                 $('wifi-credentials-checkbox').checked,
         'encryptAllData': encryptAllData,
         'usePassphrase': usePassphrase,
         'isGooglePassphrase': googlePassphrase,
@@ -438,6 +442,17 @@ cr.define('options', function() {
         $('tabs-item').hidden = false;
       } else {
         $('tabs-item').hidden = true;
+      }
+      if (args.wifiCredentialsRegistered) {
+        $('wifi-credentials-checkbox').checked = args.wifiCredentialsSynced;
+        dataTypeBoxesChecked_['wifi-credentials-checkbox'] =
+            args.wifiCredentialsSynced;
+        dataTypeBoxesDisabled_['wifi-credentials-checkbox'] =
+            args.wifiCredentialsEnforced;
+        $('wifi-credentials-checkbox').onclick = this.handleDataTypeClick_;
+        $('wifi-credentials-item').hidden = false;
+      } else {
+        $('wifi-credentials-item').hidden = true;
       }
 
       this.setDataTypeCheckboxes_(datatypeSelect.selectedIndex);
@@ -668,7 +683,7 @@ cr.define('options', function() {
 
       $('sync-custom-passphrase-container').hidden = false;
       $('sync-new-encryption-section-container').hidden = false;
-      $('customize-sync-encryption-new').hidden = args.isSupervised;
+      $('customize-sync-encryption-new').hidden = !args.encryptAllDataAllowed;
 
       $('sync-existing-passphrase-container').hidden = true;
 

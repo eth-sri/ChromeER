@@ -325,10 +325,11 @@ void NetworkConnectionHandler::DisconnectNetwork(
     InvokeErrorCallback(service_path, error_callback, kErrorNotFound);
     return;
   }
-  if (!network->IsConnectedState()) {
+  if (!network->IsConnectedState() && !network->IsConnectingState()) {
     InvokeErrorCallback(service_path, error_callback, kErrorNotConnected);
     return;
   }
+  pending_requests_.erase(service_path);
   CallShillDisconnect(service_path, success_callback, error_callback);
 }
 
@@ -786,14 +787,15 @@ void NetworkConnectionHandler::DisconnectIfPolicyRequires() {
       ::onc::global_network_config::kAllowOnlyPolicyNetworksToAutoconnect,
       &only_policy_autoconnect);
 
-  if (!only_policy_autoconnect)
-    return;
+  if (only_policy_autoconnect)
+    DisconnectFromUnmanagedSharedWiFiNetworks();
 
-  NET_LOG_DEBUG("DisconnectIfPolicyRequires",
-                "Disconnecting unmanaged and shared networks if any exist.");
+  ConnectToBestNetworkAfterLogin();
+}
 
-  // Get the list of unmanaged & shared networks that are connected or
-  // connecting.
+void NetworkConnectionHandler::DisconnectFromUnmanagedSharedWiFiNetworks() {
+  NET_LOG_DEBUG("DisconnectFromUnmanagedSharedWiFiNetworks", "");
+
   NetworkStateHandler::NetworkStateList networks;
   network_state_handler_->GetVisibleNetworkListByType(
       NetworkTypePattern::Wireless(), &networks);
@@ -819,8 +821,6 @@ void NetworkConnectionHandler::DisconnectIfPolicyRequires() {
     CallShillDisconnect(
         network->path(), base::Closure(), network_handler::ErrorCallback());
   }
-
-  ConnectToBestNetworkAfterLogin();
 }
 
 }  // namespace chromeos

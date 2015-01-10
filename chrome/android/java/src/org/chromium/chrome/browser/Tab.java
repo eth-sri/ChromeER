@@ -15,6 +15,7 @@ import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.chrome.R;
 import org.chromium.chrome.browser.banners.AppBannerManager;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuItemDelegate;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator;
@@ -26,14 +27,12 @@ import org.chromium.chrome.browser.dom_distiller.DomDistillerFeedbackReporter;
 import org.chromium.chrome.browser.infobar.AutoLoginProcessor;
 import org.chromium.chrome.browser.infobar.InfoBarContainer;
 import org.chromium.chrome.browser.profiles.Profile;
-import org.chromium.chrome.browser.ui.toolbar.ToolbarModelSecurityLevel;
+import org.chromium.chrome.browser.toolbar.ToolbarModel;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.ContentViewCore;
-import org.chromium.content.browser.NavigationClient;
-import org.chromium.content.browser.WebContentsObserverAndroid;
+import org.chromium.content.browser.WebContentsObserver;
 import org.chromium.content_public.browser.LoadUrlParams;
-import org.chromium.content_public.browser.NavigationHistory;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.base.Clipboard;
 import org.chromium.ui.base.WindowAndroid;
@@ -71,7 +70,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *  unless special care is taken to make sure {@link Tab#incrementIdCounterTo(int)} is called with
  *  the correct value across all affected {@link Activity}s.
  */
-public class Tab implements NavigationClient {
+public class Tab {
     public static final int INVALID_TAB_ID = -1;
 
     /** Used for automatically generating tab ids. */
@@ -121,7 +120,7 @@ public class Tab implements NavigationClient {
 
     // Content layer Observers and Delegates
     private ContentViewClient mContentViewClient;
-    private WebContentsObserverAndroid mWebContentsObserver;
+    private WebContentsObserver mWebContentsObserver;
     private VoiceSearchTabHelper mVoiceSearchTabHelper;
     private TabChromeWebContentsDelegateAndroid mWebContentsDelegate;
     private DomDistillerFeedbackReporter mDomDistillerFeedbackReporter;
@@ -209,7 +208,7 @@ public class Tab implements NavigationClient {
         }
 
         @Override
-        public void showRepostFormWarningDialog(final ContentViewCore contentViewCore) {
+        public void showRepostFormWarningDialog() {
             RepostFormWarningDialog warningDialog = new RepostFormWarningDialog(
                     new Runnable() {
                         @Override
@@ -261,8 +260,8 @@ public class Tab implements NavigationClient {
         }
     }
 
-    private class TabWebContentsObserverAndroid extends WebContentsObserverAndroid {
-        public TabWebContentsObserverAndroid(WebContents webContents) {
+    private class TabWebContentsObserver extends WebContentsObserver {
+        public TabWebContentsObserver(WebContents webContents) {
             super(webContents);
         }
 
@@ -293,6 +292,26 @@ public class Tab implements NavigationClient {
         }
 
         @Override
+        public void didCommitProvisionalLoadForFrame(long frameId, boolean isMainFrame, String url,
+                int transitionType) {
+            for (TabObserver observer : mObservers) {
+                observer.onDidCommitProvisionalLoadForFrame(
+                        Tab.this, frameId, isMainFrame, url, transitionType);
+            }
+        }
+
+        @Override
+        public void didNavigateMainFrame(String url, String baseUrl,
+                boolean isNavigationToDifferentPage, boolean isFragmentNavigation, int statusCode) {
+            for (TabObserver observer : mObservers) {
+                observer.onDidNavigateMainFrame(
+                        Tab.this, url, baseUrl, isNavigationToDifferentPage,
+                        isFragmentNavigation, statusCode);
+
+            }
+        }
+
+        @Override
         public void didChangeThemeColor(int color) {
             for (TabObserver observer : mObservers) {
                 observer.onDidChangeThemeColor(color);
@@ -319,7 +338,7 @@ public class Tab implements NavigationClient {
      * @param window    An instance of a {@link WindowAndroid}.
      */
     public Tab(int id, boolean incognito, Context context, WindowAndroid window) {
-        this(INVALID_TAB_ID, id, incognito, context, window);
+        this(id, INVALID_TAB_ID, incognito, context, window);
     }
 
     /**
@@ -388,23 +407,6 @@ public class Tab implements NavigationClient {
         if (getWebContents() != null) getWebContents().getNavigationController().goForward();
     }
 
-    @Override
-    public NavigationHistory getDirectedNavigationHistory(boolean isForward, int itemLimit) {
-        if (getWebContents() != null) {
-            return getWebContents().getNavigationController()
-                    .getDirectedNavigationHistory(isForward, itemLimit);
-        } else {
-            return new NavigationHistory();
-        }
-    }
-
-    @Override
-    public void goToNavigationIndex(int index) {
-        if (getWebContents() != null) {
-            getWebContents().getNavigationController().goToNavigationIndex(index);
-        }
-    }
-
     /**
      * Loads the current navigation if there is a pending lazy load (after tab restore).
      */
@@ -467,7 +469,7 @@ public class Tab implements NavigationClient {
      * @return Whether or not the tab has something valid to render.
      */
     public boolean isReady() {
-        return mNativePage != null || (mContentViewCore != null && mContentViewCore.isReady());
+        return mNativePage != null || (getWebContents() != null && getWebContents().isReady());
     }
 
     /**
@@ -645,9 +647,9 @@ public class Tab implements NavigationClient {
     /**
      * @return The current {ToolbarModelSecurityLevel} for the tab.
      */
+    // TODO(tedchoc): Remove this and transition all clients to use ToolbarModel directly.
     public int getSecurityLevel() {
-        if (mNativeTabAndroid == 0) return ToolbarModelSecurityLevel.NONE;
-        return nativeGetSecurityLevel(mNativeTabAndroid);
+        return ToolbarModel.getSecurityLevelForWebContents(getWebContents());
     }
 
     /**
@@ -786,6 +788,8 @@ public class Tab implements NavigationClient {
     protected void initContentViewCore(long nativeWebContents) {
         ContentViewCore cvc = new ContentViewCore(mContext);
         ContentView cv = ContentView.newInstance(mContext, cvc);
+        cv.setContentDescription(mContext.getResources().getString(
+                R.string.accessibility_content_view));
         cvc.initialize(cv, cv, nativeWebContents, getWindowAndroid());
         setContentViewCore(cvc);
     }
@@ -808,7 +812,7 @@ public class Tab implements NavigationClient {
         mContentViewCore = cvc;
 
         mWebContentsDelegate = createWebContentsDelegate();
-        mWebContentsObserver = new TabWebContentsObserverAndroid(mContentViewCore.getWebContents());
+        mWebContentsObserver = new TabWebContentsObserver(mContentViewCore.getWebContents());
         mVoiceSearchTabHelper = new VoiceSearchTabHelper(mContentViewCore.getWebContents());
 
         if (mContentViewClient != null) mContentViewCore.setContentViewClient(mContentViewClient);
@@ -1034,7 +1038,7 @@ public class Tab implements NavigationClient {
      */
     @CalledByNative
     private void onWebContentsInstantSupportDisabled() {
-      for (TabObserver observer : mObservers) observer.onWebContentsInstantSupportDisabled();
+        for (TabObserver observer : mObservers) observer.onWebContentsInstantSupportDisabled();
     }
 
     /**
@@ -1091,6 +1095,8 @@ public class Tab implements NavigationClient {
             long newWebContents, boolean didStartLoad, boolean didFinishLoad) {
         ContentViewCore cvc = new ContentViewCore(mContext);
         ContentView cv = ContentView.newInstance(mContext, cvc);
+        cv.setContentDescription(mContext.getResources().getString(
+                R.string.accessibility_content_view));
         cvc.initialize(cv, cv, newWebContents, getWindowAndroid());
         swapContentViewCore(cvc, false, didStartLoad, didFinishLoad);
     }
@@ -1203,7 +1209,6 @@ public class Tab implements NavigationClient {
     private native int nativeLoadUrl(long nativeTabAndroid, String url, String extraHeaders,
             byte[] postData, int transition, String referrerUrl, int referrerPolicy,
             boolean isRendererInitiated);
-    private native int nativeGetSecurityLevel(long nativeTabAndroid);
     private native void nativeSetActiveNavigationEntryTitleForUrl(long nativeTabAndroid, String url,
             String title);
     private native boolean nativePrint(long nativeTabAndroid);

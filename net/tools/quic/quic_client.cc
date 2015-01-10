@@ -49,7 +49,6 @@ QuicClient::QuicClient(IPEndPoint server_address,
       overflow_supported_(false),
       supported_versions_(supported_versions),
       print_response_(print_response) {
-  config_.SetDefaults();
 }
 
 QuicClient::QuicClient(IPEndPoint server_address,
@@ -86,7 +85,6 @@ bool QuicClient::Initialize() {
   DCHECK(!initialized_);
 
   epoll_server_->set_timeout_in_us(50 * 1000);
-  crypto_config_.SetDefaults();
 
   if (!CreateUDPSocket()) {
     return false;
@@ -235,7 +233,7 @@ void QuicClient::SendRequestsAndWaitForResponse(
     BalsaHeaders headers;
     headers.SetRequestFirstlineFromStringPieces("GET", args[i], "HTTP/1.1");
     QuicSpdyClientStream* stream = CreateReliableClientStream();
-    DCHECK(stream != NULL);
+    DCHECK(stream != nullptr);
     stream->SendRequest(headers, "", true);
     stream->set_visitor(this);
   }
@@ -245,7 +243,7 @@ void QuicClient::SendRequestsAndWaitForResponse(
 
 QuicSpdyClientStream* QuicClient::CreateReliableClientStream() {
   if (!connected()) {
-    return NULL;
+    return nullptr;
   }
 
   return session_->CreateOutgoingDataStream();
@@ -293,7 +291,7 @@ void QuicClient::OnEvent(int fd, EpollEvent* event) {
 void QuicClient::OnClose(QuicDataStream* stream) {
   QuicSpdyClientStream* client_stream =
       static_cast<QuicSpdyClientStream*>(stream);
-  if (response_listener_.get() != NULL) {
+  if (response_listener_.get() != nullptr) {
     response_listener_->OnCompleteResponse(
         stream->id(), client_stream->headers(), client_stream->data());
   }
@@ -335,8 +333,9 @@ int QuicClient::ReadPacket(char* buffer,
                            IPEndPoint* server_address,
                            IPAddressNumber* client_ip) {
   return QuicSocketUtils::ReadPacket(
-      fd_, buffer, buffer_len, overflow_supported_ ? &packets_dropped_ : NULL,
-      client_ip, server_address);
+      fd_, buffer, buffer_len,
+      overflow_supported_ ? &packets_dropped_ : nullptr, client_ip,
+      server_address);
 }
 
 bool QuicClient::ReadAndProcessPacket() {

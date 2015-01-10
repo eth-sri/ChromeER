@@ -293,7 +293,6 @@ scoped_ptr<Renderer> PipelineIntegrationTestBase::CreateRenderer(
 
   scoped_ptr<RendererImpl> renderer_impl(
       new RendererImpl(message_loop_.message_loop_proxy(),
-                       demuxer_.get(),
                        audio_renderer.Pass(),
                        video_renderer.Pass()));
 
@@ -304,7 +303,7 @@ scoped_ptr<Renderer> PipelineIntegrationTestBase::CreateRenderer(
   if (clockless_playback_)
     renderer_impl->EnableClocklessVideoPlaybackForTesting();
 
-  return renderer_impl.PassAs<Renderer>();
+  return renderer_impl.Pass();
 }
 
 void PipelineIntegrationTestBase::SetDecryptor(

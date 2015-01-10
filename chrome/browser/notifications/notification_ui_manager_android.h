@@ -12,21 +12,22 @@
 class NotificationUIManagerAndroid : public NotificationUIManager {
  public:
   NotificationUIManagerAndroid();
-  virtual ~NotificationUIManagerAndroid();
+  ~NotificationUIManagerAndroid() override;
 
   // NotificationUIManager implementation;
-  virtual void Add(const Notification& notification, Profile* profile) OVERRIDE;
-  virtual bool Update(const Notification& notification,
-                      Profile* profile) OVERRIDE;
-  virtual const Notification* FindById(
-      const std::string& notification_id) const OVERRIDE;
-  virtual bool CancelById(const std::string& notification_id) OVERRIDE;
-  virtual std::set<std::string> GetAllIdsByProfileAndSourceOrigin(
-      Profile* profile,
-      const GURL& source) OVERRIDE;
-  virtual bool CancelAllBySourceOrigin(const GURL& source_origin) OVERRIDE;
-  virtual bool CancelAllByProfile(Profile* profile) OVERRIDE;
-  virtual void CancelAll() OVERRIDE;
+  void Add(const Notification& notification, Profile* profile) override;
+  bool Update(const Notification& notification,
+              Profile* profile) override;
+  const Notification* FindById(const std::string& delegate_id,
+                               ProfileID profile_id) const override;
+  bool CancelById(const std::string& delegate_id,
+                  ProfileID profile_id) override;
+  std::set<std::string> GetAllIdsByProfileAndSourceOrigin(Profile* profile,
+                                                          const GURL& source)
+      override;
+  bool CancelAllBySourceOrigin(const GURL& source_origin) override;
+  bool CancelAllByProfile(ProfileID profile_id) override;
+  void CancelAll() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NotificationUIManagerAndroid);

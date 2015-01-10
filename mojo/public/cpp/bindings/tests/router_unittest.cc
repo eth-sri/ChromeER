@@ -24,8 +24,10 @@ void AllocRequestMessage(uint32_t name, const char* text, Message* message) {
   builder.Finish(message);
 }
 
-void AllocResponseMessage(uint32_t name, const char* text,
-                          uint64_t request_id, Message* message) {
+void AllocResponseMessage(uint32_t name,
+                          const char* text,
+                          uint64_t request_id,
+                          Message* message) {
   size_t payload_size = strlen(text) + 1;  // Plus null terminator.
   internal::ResponseMessageBuilder builder(name, payload_size, request_id);
   memcpy(builder.buffer()->Allocate(payload_size), text, payload_size);
@@ -34,10 +36,9 @@ void AllocResponseMessage(uint32_t name, const char* text,
 
 class MessageAccumulator : public MessageReceiver {
  public:
-  explicit MessageAccumulator(internal::MessageQueue* queue) : queue_(queue) {
-  }
+  explicit MessageAccumulator(internal::MessageQueue* queue) : queue_(queue) {}
 
-  virtual bool Accept(Message* message) override {
+  bool Accept(Message* message) override {
     queue_->Push(message);
     return true;
   }
@@ -48,19 +49,19 @@ class MessageAccumulator : public MessageReceiver {
 
 class ResponseGenerator : public MessageReceiverWithResponder {
  public:
-  ResponseGenerator() {
-  }
+  ResponseGenerator() {}
 
-  virtual bool Accept(Message* message) override { return false; }
+  bool Accept(Message* message) override { return false; }
 
-  virtual bool AcceptWithResponder(Message* message,
-                                   MessageReceiver* responder) override {
+  bool AcceptWithResponder(Message* message,
+                           MessageReceiver* responder) override {
     EXPECT_TRUE(message->has_flag(internal::kMessageExpectsResponse));
 
     return SendResponse(message->name(), message->request_id(), responder);
   }
 
-  bool SendResponse(uint32_t name, uint64_t request_id,
+  bool SendResponse(uint32_t name,
+                    uint64_t request_id,
                     MessageReceiver* responder) {
     Message response;
     AllocResponseMessage(name, "world", request_id, &response);
@@ -73,15 +74,12 @@ class ResponseGenerator : public MessageReceiverWithResponder {
 
 class LazyResponseGenerator : public ResponseGenerator {
  public:
-  LazyResponseGenerator() : responder_(nullptr), name_(0), request_id_(0) {
-  }
+  LazyResponseGenerator() : responder_(nullptr), name_(0), request_id_(0) {}
 
-  virtual ~LazyResponseGenerator() {
-    delete responder_;
-  }
+  ~LazyResponseGenerator() override { delete responder_; }
 
-  virtual bool AcceptWithResponder(Message* message,
-                                   MessageReceiver* responder) override {
+  bool AcceptWithResponder(Message* message,
+                           MessageReceiver* responder) override {
     name_ = message->name();
     request_id_ = message->request_id();
     responder_ = responder;
@@ -98,23 +96,20 @@ class LazyResponseGenerator : public ResponseGenerator {
  private:
   MessageReceiver* responder_;
   uint32_t name_;
-  uint32_t request_id_;
+  uint64_t request_id_;
 };
 
 class RouterTest : public testing::Test {
  public:
-  RouterTest() {
-  }
+  RouterTest() {}
 
-  virtual void SetUp() override {
+  void SetUp() override {
     CreateMessagePipe(nullptr, &handle0_, &handle1_);
   }
 
-  virtual void TearDown() override {}
+  void TearDown() override {}
 
-  void PumpMessages() {
-    loop_.RunUntilIdle();
-  }
+  void PumpMessages() { loop_.RunUntilIdle(); }
 
  protected:
   ScopedMessagePipeHandle handle0_;
@@ -216,7 +211,6 @@ TEST_F(RouterTest, LateResponse) {
     PumpMessages();
 
     EXPECT_TRUE(generator.has_responder());
-
   }
 
   generator.Complete();  // This should end up doing nothing.

@@ -10,6 +10,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_context_menu.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
+#include "chrome/browser/ui/app_list/search/search_util.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "content/public/browser/user_metrics.h"
@@ -37,8 +38,12 @@ AppResult::AppResult(Profile* profile,
       controller_(controller),
       extension_registry_(NULL) {
   set_id(extensions::Extension::GetBaseURLFromExtensionId(app_id_).spec());
+#if !defined(USE_ATHENA)
+  // TODO(mukai): Athena also needs to use tile-styled search results for apps.
+  // Implement it and then remove this ifdef.
   if (app_list::switches::IsExperimentalAppListEnabled())
     set_display_type(DISPLAY_TILE);
+#endif
 
   const extensions::Extension* extension =
       extensions::ExtensionSystem::Get(profile_)->extension_service()
@@ -89,6 +94,7 @@ void AppResult::UpdateFromLastLaunched(const base::Time& current_time,
 }
 
 void AppResult::Open(int event_flags) {
+  RecordHistogram(APP_SEARCH_RESULT);
   const extensions::Extension* extension =
       extensions::ExtensionSystem::Get(profile_)->extension_service()
           ->GetInstalledExtension(app_id_);
@@ -114,19 +120,12 @@ void AppResult::Open(int event_flags) {
       event_flags);
 }
 
-void AppResult::InvokeAction(int action_index, int event_flags) {}
-
-scoped_ptr<ChromeSearchResult> AppResult::Duplicate() {
-  scoped_ptr<ChromeSearchResult> copy(
-      new AppResult(profile_, app_id_, controller_));
+scoped_ptr<SearchResult> AppResult::Duplicate() {
+  scoped_ptr<SearchResult> copy(new AppResult(profile_, app_id_, controller_));
   copy->set_title(title());
   copy->set_title_tags(title_tags());
 
   return copy.Pass();
-}
-
-ChromeSearchResultType AppResult::GetType() {
-  return APP_SEARCH_RESULT;
 }
 
 ui::MenuModel* AppResult::GetContextMenuModel() {

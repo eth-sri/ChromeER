@@ -8,6 +8,7 @@
 #include <map>
 
 #include "base/compiler_specific.h"
+#include "base/threading/thread_checker.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandlerClient.h"
@@ -36,7 +37,7 @@ class RTCPeerConnectionHandler;
 class CONTENT_EXPORT PeerConnectionTracker : public RenderProcessObserver {
  public:
   PeerConnectionTracker();
-  virtual ~PeerConnectionTracker();
+  ~PeerConnectionTracker() override;
 
   enum Source {
     SOURCE_LOCAL,
@@ -51,7 +52,7 @@ class CONTENT_EXPORT PeerConnectionTracker : public RenderProcessObserver {
   };
 
   // RenderProcessObserver implementation.
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& message) override;
 
   //
   // The following methods send an update to the browser process when a
@@ -176,6 +177,7 @@ class CONTENT_EXPORT PeerConnectionTracker : public RenderProcessObserver {
 
   // This keeps track of the next available local ID.
   int next_lid_;
+  base::ThreadChecker main_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(PeerConnectionTracker);
 };

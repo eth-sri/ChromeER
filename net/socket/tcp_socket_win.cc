@@ -10,6 +10,7 @@
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/stats_counters.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/win/windows_version.h"
 #include "net/base/address_list.h"
 #include "net/base/connection_type_histograms.h"
@@ -245,6 +246,11 @@ void TCPSocketWin::Core::WatchForWrite() {
 }
 
 void TCPSocketWin::Core::ReadDelegate::OnObjectSignaled(HANDLE object) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "TCPSocketWin_Core_ReadDelegate_OnObjectSignaled"));
+
   DCHECK_EQ(object, core_->read_overlapped_.hEvent);
   if (core_->socket_) {
     if (core_->socket_->waiting_connect_)
@@ -258,6 +264,11 @@ void TCPSocketWin::Core::ReadDelegate::OnObjectSignaled(HANDLE object) {
 
 void TCPSocketWin::Core::WriteDelegate::OnObjectSignaled(
     HANDLE object) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "TCPSocketWin_Core_WriteDelegate_OnObjectSignaled"));
+
   DCHECK_EQ(object, core_->write_overlapped_.hEvent);
   if (core_->socket_)
     core_->socket_->DidCompleteWrite();
@@ -755,6 +766,10 @@ int TCPSocketWin::AcceptInternal(scoped_ptr<TCPSocketWin>* socket,
 }
 
 void TCPSocketWin::OnObjectSignaled(HANDLE object) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("TCPSocketWin_OnObjectSignaled"));
+
   WSANETWORKEVENTS ev;
   if (WSAEnumNetworkEvents(socket_, accept_event_, &ev) == SOCKET_ERROR) {
     PLOG(ERROR) << "WSAEnumNetworkEvents()";
@@ -1019,6 +1034,9 @@ void TCPSocketWin::DidSignalRead() {
   core_->read_buffer_length_ = 0;
 
   DCHECK_NE(rv, ERR_IO_PENDING);
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("TCPSocketWin::DidSignalRead"));
   base::ResetAndReturn(&read_callback_).Run(rv);
 }
 

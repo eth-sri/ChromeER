@@ -130,9 +130,9 @@ class ObfuscatedFileEnumerator
     recurse_queue_.push(record);
   }
 
-  virtual ~ObfuscatedFileEnumerator() {}
+  ~ObfuscatedFileEnumerator() override {}
 
-  virtual base::FilePath Next() OVERRIDE {
+  base::FilePath Next() override {
     ProcessRecurseQueue();
     if (display_stack_.empty())
       return base::FilePath();
@@ -158,15 +158,13 @@ class ObfuscatedFileEnumerator
     return virtual_path;
   }
 
-  virtual int64 Size() OVERRIDE {
-    return current_platform_file_info_.size;
-  }
+  int64 Size() override { return current_platform_file_info_.size; }
 
-  virtual base::Time LastModifiedTime() OVERRIDE {
+  base::Time LastModifiedTime() override {
     return current_platform_file_info_.last_modified;
   }
 
-  virtual bool IsDirectory() OVERRIDE {
+  bool IsDirectory() override {
     return current_platform_file_info_.is_directory;
   }
 
@@ -217,10 +215,10 @@ class ObfuscatedOriginEnumerator
       origin_database->ListAllOrigins(&origins_);
   }
 
-  virtual ~ObfuscatedOriginEnumerator() {}
+  ~ObfuscatedOriginEnumerator() override {}
 
   // Returns the next origin.  Returns empty if there are no more origins.
-  virtual GURL Next() OVERRIDE {
+  GURL Next() override {
     OriginRecord record;
     if (!origins_.empty()) {
       record = origins_.back();
@@ -231,7 +229,7 @@ class ObfuscatedOriginEnumerator
   }
 
   // Returns the current origin's information.
-  virtual bool HasTypeDirectory(const std::string& type_string) const OVERRIDE {
+  bool HasTypeDirectory(const std::string& type_string) const override {
     if (current_.path.empty())
       return false;
     if (type_string.empty()) {

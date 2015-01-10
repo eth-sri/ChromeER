@@ -9,7 +9,6 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/common/extensions/chrome_extension_messages.h"
 #include "content/public/browser/render_view_host.h"
@@ -82,7 +81,7 @@ bool AthenaChromeAppDelegate::CheckMediaAccessPermission(
 void AthenaChromeAppDelegate::SetWebContentsBlocked(
     content::WebContents* web_contents,
     bool blocked) {
-  // RenderViewHost may be NULL during shutdown.
+  // RenderViewHost may be nullptr during shutdown.
   content::RenderViewHost* host = web_contents->GetRenderViewHost();
   if (host) {
     host->Send(new ChromeViewMsg_SetVisuallyDeemphasized(host->GetRoutingID(),

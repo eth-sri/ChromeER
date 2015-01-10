@@ -101,7 +101,7 @@ static const char* const kSwitchNames[] = {
   switches::kV,
   switches::kVModule,
 #if defined(OS_MACOSX)
-  switches::kEnableRemoteCoreAnimation,
+  switches::kDisableRemoteCoreAnimation,
   switches::kEnableSandboxLogging,
 #endif
 #if defined(USE_AURA)
@@ -153,10 +153,10 @@ class GpuSandboxedProcessLauncherDelegate
       : ipc_fd_(host->TakeClientFileDescriptor()) {}
 #endif
 
-  virtual ~GpuSandboxedProcessLauncherDelegate() {}
+  ~GpuSandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  virtual bool ShouldSandbox() OVERRIDE {
+  virtual bool ShouldSandbox() override {
     bool sandbox = !cmd_line_->HasSwitch(switches::kDisableGpuSandbox);
     if(! sandbox) {
       DVLOG(1) << "GPU sandbox is disabled";
@@ -165,7 +165,7 @@ class GpuSandboxedProcessLauncherDelegate
   }
 
   virtual void PreSandbox(bool* disable_default_policy,
-                          base::FilePath* exposed_dir) OVERRIDE {
+                          base::FilePath* exposed_dir) override {
     *disable_default_policy = true;
   }
 
@@ -250,16 +250,14 @@ class GpuSandboxedProcessLauncherDelegate
   }
 #elif defined(OS_POSIX)
 
-  virtual int GetIpcFd() OVERRIDE {
-    return ipc_fd_;
-  }
+  base::ScopedFD TakeIpcFd() override { return ipc_fd_.Pass(); }
 #endif  // OS_WIN
 
  private:
 #if defined(OS_WIN)
   base::CommandLine* cmd_line_;
 #elif defined(OS_POSIX)
-  int ipc_fd_;
+  base::ScopedFD ipc_fd_;
 #endif  // OS_WIN
 };
 
@@ -512,7 +510,12 @@ bool GpuProcessHost::Init() {
     gpu_data_manager->AppendGpuCommandLine(command_line);
 
     in_process_gpu_thread_.reset(g_gpu_main_thread_factory(channel_id));
-    in_process_gpu_thread_->Start();
+    base::Thread::Options options;
+#if defined(OS_WIN)
+    // WGL needs to create its own window and pump messages on it.
+    options.message_loop_type = base::MessageLoop::TYPE_UI;
+#endif
+    in_process_gpu_thread_->StartWithOptions(options);
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
   } else if (!LaunchGpuProcess(channel_id)) {
@@ -650,15 +653,14 @@ void GpuProcessHost::CreateViewCommandBuffer(
 void GpuProcessHost::CreateGpuMemoryBuffer(
     const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
-    unsigned internalformat,
-    unsigned usage,
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage,
     const CreateGpuMemoryBufferCallback& callback) {
   TRACE_EVENT0("gpu", "GpuProcessHost::CreateGpuMemoryBuffer");
 
   DCHECK(CalledOnValidThread());
 
-  if (Send(new GpuMsg_CreateGpuMemoryBuffer(
-          handle, size, internalformat, usage))) {
+  if (Send(new GpuMsg_CreateGpuMemoryBuffer(handle, size, format, usage))) {
     create_gpu_memory_buffer_requests_.push(callback);
   } else {
     callback.Run(gfx::GpuMemoryBufferHandle());

@@ -24,6 +24,7 @@ namespace chromeos {
 class AppLaunchSplashScreenActor;
 class BaseScreenHandler;
 class ControllerPairingScreenActor;
+class DeviceDisabledScreenActor;
 class ErrorScreenHandler;
 class HostPairingScreenActor;
 class KioskAppMenuHandler;
@@ -85,36 +86,38 @@ class OobeUI : public OobeDisplay,
   static const char kScreenHIDDetection[];
   static const char kScreenControllerPairing[];
   static const char kScreenHostPairing[];
+  static const char kScreenDeviceDisabled[];
 
   OobeUI(content::WebUI* web_ui, const GURL& url);
   virtual ~OobeUI();
 
   // OobeDisplay implementation:
-  virtual CoreOobeActor* GetCoreOobeActor() OVERRIDE;
-  virtual UpdateScreenActor* GetUpdateScreenActor() OVERRIDE;
-  virtual NetworkScreenActor* GetNetworkScreenActor() OVERRIDE;
-  virtual EulaScreenActor* GetEulaScreenActor() OVERRIDE;
-  virtual EnrollmentScreenActor* GetEnrollmentScreenActor() OVERRIDE;
-  virtual ResetScreenActor* GetResetScreenActor() OVERRIDE;
-  virtual KioskAutolaunchScreenActor* GetKioskAutolaunchScreenActor() OVERRIDE;
-  virtual KioskEnableScreenActor* GetKioskEnableScreenActor() OVERRIDE;
+  virtual CoreOobeActor* GetCoreOobeActor() override;
+  virtual UpdateScreenActor* GetUpdateScreenActor() override;
+  virtual NetworkScreenActor* GetNetworkScreenActor() override;
+  virtual EulaScreenActor* GetEulaScreenActor() override;
+  virtual EnrollmentScreenActor* GetEnrollmentScreenActor() override;
+  virtual ResetScreenActor* GetResetScreenActor() override;
+  virtual KioskAutolaunchScreenActor* GetKioskAutolaunchScreenActor() override;
+  virtual KioskEnableScreenActor* GetKioskEnableScreenActor() override;
   virtual TermsOfServiceScreenActor*
-      GetTermsOfServiceScreenActor() OVERRIDE;
-  virtual UserImageScreenActor* GetUserImageScreenActor() OVERRIDE;
-  virtual ErrorScreenActor* GetErrorScreenActor() OVERRIDE;
-  virtual WrongHWIDScreenActor* GetWrongHWIDScreenActor() OVERRIDE;
+      GetTermsOfServiceScreenActor() override;
+  virtual UserImageScreenActor* GetUserImageScreenActor() override;
+  virtual ErrorScreenActor* GetErrorScreenActor() override;
+  virtual WrongHWIDScreenActor* GetWrongHWIDScreenActor() override;
   virtual AutoEnrollmentCheckScreenActor*
-      GetAutoEnrollmentCheckScreenActor() OVERRIDE;
+      GetAutoEnrollmentCheckScreenActor() override;
   virtual SupervisedUserCreationScreenHandler*
-      GetSupervisedUserCreationScreenActor() OVERRIDE;
+      GetSupervisedUserCreationScreenActor() override;
   virtual AppLaunchSplashScreenActor*
-      GetAppLaunchSplashScreenActor() OVERRIDE;
+      GetAppLaunchSplashScreenActor() override;
   virtual bool IsJSReady(const base::Closure& display_is_ready_callback)
-      OVERRIDE;
-  virtual HIDDetectionScreenActor* GetHIDDetectionScreenActor() OVERRIDE;
+      override;
+  virtual HIDDetectionScreenActor* GetHIDDetectionScreenActor() override;
   virtual ControllerPairingScreenActor* GetControllerPairingScreenActor()
-      OVERRIDE;
-  virtual HostPairingScreenActor* GetHostPairingScreenActor() OVERRIDE;
+      override;
+  virtual HostPairingScreenActor* GetHostPairingScreenActor() override;
+  DeviceDisabledScreenActor* GetDeviceDisabledScreenActor() override;
 
   // Collects localized strings from the owned handlers.
   void GetLocalizedStrings(base::DictionaryValue* localized_strings);
@@ -165,7 +168,7 @@ class OobeUI : public OobeDisplay,
   void AddScreenHandler(BaseScreenHandler* handler);
 
   // CoreOobeHandler::Delegate implementation:
-  virtual void OnCurrentScreenChanged(const std::string& screen) OVERRIDE;
+  virtual void OnCurrentScreenChanged(const std::string& screen) override;
 
   // Type of UI.
   std::string display_type_;
@@ -197,6 +200,7 @@ class OobeUI : public OobeDisplay,
   AppLaunchSplashScreenActor* app_launch_splash_screen_actor_;
   ControllerPairingScreenActor* controller_pairing_screen_actor_;
   HostPairingScreenActor* host_pairing_screen_actor_;
+  DeviceDisabledScreenActor* device_disabled_screen_actor_;
 
   // Reference to ErrorScreenHandler that handles error screen
   // requests and forward calls from native code to JS side.

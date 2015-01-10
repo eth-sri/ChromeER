@@ -104,8 +104,9 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       bool enable_port_selection,
       bool always_require_handshake_confirmation,
       bool disable_connection_pooling,
+      int load_server_info_timeout,
       const QuicTagVector& connection_options);
-  virtual ~QuicStreamFactory();
+  ~QuicStreamFactory() override;
 
   // Creates a new QuicHttpStream to |host_port_pair| which will be
   // owned by |request|. |is_https| specifies if the protocol is https or not.
@@ -147,13 +148,13 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
 
   // Until the servers support roaming, close all connections when the local
   // IP address changes.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // CertDatabase::Observer methods:
 
   // We close all sessions when certificate database is changed.
-  virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE;
-  virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE;
+  void OnCertAdded(const X509Certificate* cert) override;
+  void OnCACertChanged(const X509Certificate* cert) override;
 
   bool require_confirmation() const {
     return require_confirmation_;
@@ -282,6 +283,11 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Set if we do not want connection pooling.
   bool disable_connection_pooling_;
 
+  // Specifies the timeout in milliseconds to wait for loading of QUIC server
+  // information. If we don't want to timeout, set
+  // |load_server_info_timeout_ms_| to 0.
+  int load_server_info_timeout_ms_;
+
   // Each profile will (probably) have a unique port_seed_ value.  This value is
   // used to help seed a pseudo-random number generator (PortSuggester) so that
   // we consistently (within this profile) suggest the same ephemeral port when
@@ -293,6 +299,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Local address of socket that was created in CreateSession.
   IPEndPoint local_address_;
   bool check_persisted_supports_quic_;
+
+  base::TaskRunner* task_runner_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_;
 

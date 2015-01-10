@@ -43,10 +43,26 @@ using content::BrowserThread;
 
 namespace {
 
-enum {
-#define DEFINE_MODEL_TYPE_SELECTION(name,value)  name = value,
-#include "chrome/browser/sync/profile_sync_service_model_type_selection_android.h"
-#undef DEFINE_MODEL_TYPE_SELECTION
+// This enum contains the list of sync ModelTypes that Android can register for
+// invalidations for.
+//
+// A Java counterpart will be generated for this enum.
+// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.sync
+enum ModelTypeSelection {
+  AUTOFILL = 1 << 0,
+  BOOKMARK = 1 << 1,
+  PASSWORD = 1 << 2,
+  SESSION = 1 << 3,
+  TYPED_URL = 1 << 4,
+  AUTOFILL_PROFILE = 1 << 5,
+  HISTORY_DELETE_DIRECTIVE = 1 << 6,
+  PROXY_TABS = 1 << 7,
+  FAVICON_IMAGE = 1 << 8,
+  FAVICON_TRACKING = 1 << 9,
+  NIGORI = 1 << 10,
+  DEVICE_INFO = 1 << 11,
+  EXPERIMENTS = 1 << 12,
+  SUPERVISED_USER_SETTING = 1 << 13,
 };
 
 }  // namespace
@@ -141,6 +157,11 @@ void ProfileSyncServiceAndroid::SignOutSync(JNIEnv* env, jobject) {
   sync_prefs_->SetStartSuppressed(false);
 }
 
+void ProfileSyncServiceAndroid::FlushDirectory(JNIEnv* env, jobject) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  sync_service_->FlushDirectory();
+}
+
 ScopedJavaLocalRef<jstring> ProfileSyncServiceAndroid::QuerySyncStatusSummary(
     JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -171,13 +192,19 @@ jboolean ProfileSyncServiceAndroid::IsEncryptEverythingEnabled(
 
 jboolean ProfileSyncServiceAndroid::IsSyncInitialized(JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return sync_service_->sync_initialized();
+  return sync_service_->backend_initialized();
 }
 
 jboolean ProfileSyncServiceAndroid::IsFirstSetupInProgress(
     JNIEnv* env, jobject) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return sync_service_->FirstSetupInProgress();
+}
+
+jboolean ProfileSyncServiceAndroid::IsEncryptEverythingAllowed(
+    JNIEnv* env, jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return sync_service_->EncryptEverythingAllowed();
 }
 
 jboolean ProfileSyncServiceAndroid::IsPassphraseRequired(JNIEnv* env, jobject) {
@@ -250,6 +277,13 @@ jboolean ProfileSyncServiceAndroid::HasExplicitPassphraseTime(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::Time passphrase_time = sync_service_->GetExplicitPassphraseTime();
   return !passphrase_time.is_null();
+}
+
+jlong ProfileSyncServiceAndroid::GetExplicitPassphraseTime(
+        JNIEnv* env, jobject) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::Time passphrase_time = sync_service_->GetExplicitPassphraseTime();
+  return passphrase_time.ToJavaTime();
 }
 
 ScopedJavaLocalRef<jstring>

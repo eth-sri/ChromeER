@@ -27,13 +27,13 @@ class GCMProfileServiceFactory : public BrowserContextKeyedServiceFactory {
   friend struct DefaultSingletonTraits<GCMProfileServiceFactory>;
 
   GCMProfileServiceFactory();
-  virtual ~GCMProfileServiceFactory();
+  ~GCMProfileServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  virtual KeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
+  KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const override;
+  content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const override;
 
   DISALLOW_COPY_AND_ASSIGN(GCMProfileServiceFactory);
 };

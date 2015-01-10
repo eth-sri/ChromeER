@@ -10,6 +10,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
+#include "base/power_monitor/power_monitor.h"
+#include "base/power_monitor/power_monitor_source.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "cc/test/begin_frame_args_test.h"
@@ -53,7 +55,7 @@ class FakeSchedulerClient : public SchedulerClient {
         FakeSchedulerClient* client)
         : client_(client) {}
 
-    virtual void OnNeedsBeginFramesChange(bool needs_begin_frames) OVERRIDE {
+    void OnNeedsBeginFramesChange(bool needs_begin_frames) override {
       if (needs_begin_frames) {
         client_->actions_.push_back("SetNeedsBeginFrames(true)");
       } else {
@@ -63,12 +65,36 @@ class FakeSchedulerClient : public SchedulerClient {
     }
   };
 
+  class FakePowerMonitorSource : public base::PowerMonitorSource {
+   public:
+    FakePowerMonitorSource() {}
+    ~FakePowerMonitorSource() override {}
+    void GeneratePowerStateEvent(bool on_battery_power) {
+      on_battery_power_impl_ = on_battery_power;
+      ProcessPowerEvent(POWER_STATE_EVENT);
+      base::MessageLoop::current()->RunUntilIdle();
+    }
+    bool IsOnBatteryPowerImpl() override { return on_battery_power_impl_; }
+
+   private:
+    bool on_battery_power_impl_;
+  };
+
   FakeSchedulerClient()
       : automatic_swap_ack_(true),
         swap_contains_incomplete_tile_(false),
         redraw_will_happen_if_update_visible_tiles_happens_(false),
         now_src_(TestNowSource::Create()),
-        fake_frame_source_(this) {
+        task_runner_(new OrderedSimpleTaskRunner(now_src_, true)),
+        fake_frame_source_(this),
+        fake_power_monitor_source_(new FakePowerMonitorSource),
+        power_monitor_(make_scoped_ptr<base::PowerMonitorSource>(
+            fake_power_monitor_source_)),
+        scheduler_(nullptr) {
+    // A bunch of tests require Now() to be > BeginFrameArgs::DefaultInterval()
+    now_src_->AdvanceNow(base::TimeDelta::FromMilliseconds(100));
+    // Fail if we need to run 100 tasks in a row.
+    task_runner_->SetRunTaskLimit(100);
     Reset();
   }
 
@@ -82,10 +108,9 @@ class FakeSchedulerClient : public SchedulerClient {
   }
 
   TestScheduler* CreateScheduler(const SchedulerSettings& settings) {
-    scheduler_ = TestScheduler::Create(now_src_, this, settings, 0);
+    scheduler_ = TestScheduler::Create(
+        now_src_, this, settings, 0, task_runner_, &power_monitor_);
     DCHECK(scheduler_);
-    // Fail if we need to run 100 tasks in a row.
-    task_runner().SetRunTaskLimit(100);
     return scheduler_.get();
   }
 
@@ -107,8 +132,14 @@ class FakeSchedulerClient : public SchedulerClient {
     return scheduler_->settings().begin_frame_scheduling_enabled &&
            scheduler_->settings().throttle_frame_production;
   }
-  virtual FakeBeginFrameSource* ExternalBeginFrameSource() OVERRIDE {
+  FakeBeginFrameSource* ExternalBeginFrameSource() override {
     return &fake_frame_source_;
+  }
+
+  base::PowerMonitor* PowerMonitor() { return &power_monitor_; }
+
+  FakePowerMonitorSource* PowerMonitorSource() {
+    return fake_power_monitor_source_;
   }
 
   void AdvanceFrame() {
@@ -128,7 +159,7 @@ class FakeSchedulerClient : public SchedulerClient {
     EXPECT_TRUE(scheduler_->BeginImplFrameDeadlinePending());
   }
 
-  OrderedSimpleTaskRunner& task_runner() { return scheduler_->task_runner(); }
+  OrderedSimpleTaskRunner& task_runner() { return *task_runner_; }
   TestNowSource* now_src() { return now_src_.get(); }
 
   int ActionIndex(const char* action) const {
@@ -159,19 +190,19 @@ class FakeSchedulerClient : public SchedulerClient {
     redraw_will_happen_if_update_visible_tiles_happens_ = redraw;
   }
   // SchedulerClient implementation.
-  virtual void WillBeginImplFrame(const BeginFrameArgs& args) OVERRIDE {
+  void WillBeginImplFrame(const BeginFrameArgs& args) override {
     actions_.push_back("WillBeginImplFrame");
     states_.push_back(scheduler_->AsValue());
   }
-  virtual void ScheduledActionSendBeginMainFrame() OVERRIDE {
+  void ScheduledActionSendBeginMainFrame() override {
     actions_.push_back("ScheduledActionSendBeginMainFrame");
     states_.push_back(scheduler_->AsValue());
   }
-  virtual void ScheduledActionAnimate() OVERRIDE {
+  void ScheduledActionAnimate() override {
     actions_.push_back("ScheduledActionAnimate");
     states_.push_back(scheduler_->AsValue());
   }
-  virtual DrawResult ScheduledActionDrawAndSwapIfPossible() OVERRIDE {
+  DrawResult ScheduledActionDrawAndSwapIfPossible() override {
     actions_.push_back("ScheduledActionDrawAndSwapIfPossible");
     states_.push_back(scheduler_->AsValue());
     num_draws_++;
@@ -193,48 +224,46 @@ class FakeSchedulerClient : public SchedulerClient {
     }
     return result;
   }
-  virtual DrawResult ScheduledActionDrawAndSwapForced() OVERRIDE {
+  DrawResult ScheduledActionDrawAndSwapForced() override {
     actions_.push_back("ScheduledActionDrawAndSwapForced");
     states_.push_back(scheduler_->AsValue());
     return DRAW_SUCCESS;
   }
-  virtual void ScheduledActionCommit() OVERRIDE {
+  void ScheduledActionCommit() override {
     actions_.push_back("ScheduledActionCommit");
     states_.push_back(scheduler_->AsValue());
   }
-  virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE {
+  void ScheduledActionUpdateVisibleTiles() override {
     actions_.push_back("ScheduledActionUpdateVisibleTiles");
     states_.push_back(scheduler_->AsValue());
     if (redraw_will_happen_if_update_visible_tiles_happens_)
       scheduler_->SetNeedsRedraw();
   }
-  virtual void ScheduledActionActivateSyncTree() OVERRIDE {
+  void ScheduledActionActivateSyncTree() override {
     actions_.push_back("ScheduledActionActivateSyncTree");
     states_.push_back(scheduler_->AsValue());
   }
-  virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE {
+  void ScheduledActionBeginOutputSurfaceCreation() override {
     actions_.push_back("ScheduledActionBeginOutputSurfaceCreation");
     states_.push_back(scheduler_->AsValue());
   }
-  virtual void ScheduledActionManageTiles() OVERRIDE {
+  void ScheduledActionManageTiles() override {
     actions_.push_back("ScheduledActionManageTiles");
     states_.push_back(scheduler_->AsValue());
   }
-  virtual void DidAnticipatedDrawTimeChange(base::TimeTicks) OVERRIDE {
+  void DidAnticipatedDrawTimeChange(base::TimeTicks) override {
     if (log_anticipated_draw_time_change_)
       actions_.push_back("DidAnticipatedDrawTimeChange");
   }
-  virtual base::TimeDelta DrawDurationEstimate() OVERRIDE {
+  base::TimeDelta DrawDurationEstimate() override { return base::TimeDelta(); }
+  base::TimeDelta BeginMainFrameToCommitDurationEstimate() override {
     return base::TimeDelta();
   }
-  virtual base::TimeDelta BeginMainFrameToCommitDurationEstimate() OVERRIDE {
-    return base::TimeDelta();
-  }
-  virtual base::TimeDelta CommitToActivateDurationEstimate() OVERRIDE {
+  base::TimeDelta CommitToActivateDurationEstimate() override {
     return base::TimeDelta();
   }
 
-  virtual void DidBeginImplFrameDeadline() OVERRIDE {}
+  void DidBeginImplFrameDeadline() override {}
 
   base::Callback<bool(void)> ImplFrameDeadlinePending(bool state) {
     return base::Bind(&FakeSchedulerClient::ImplFrameDeadlinePendingCallback,
@@ -256,10 +285,13 @@ class FakeSchedulerClient : public SchedulerClient {
   bool redraw_will_happen_if_update_visible_tiles_happens_;
   base::TimeTicks posted_begin_impl_frame_deadline_;
   std::vector<const char*> actions_;
-  std::vector<scoped_refptr<base::debug::ConvertableToTraceFormat> > states_;
-  scoped_ptr<TestScheduler> scheduler_;
+  std::vector<scoped_refptr<base::debug::ConvertableToTraceFormat>> states_;
   scoped_refptr<TestNowSource> now_src_;
+  scoped_refptr<OrderedSimpleTaskRunner> task_runner_;
   FakeBeginFrameSourceForFakeSchedulerClient fake_frame_source_;
+  FakePowerMonitorSource* fake_power_monitor_source_;
+  base::PowerMonitor power_monitor_;
+  scoped_ptr<TestScheduler> scheduler_;
 };
 
 void InitializeOutputSurfaceAndFirstCommit(Scheduler* scheduler,
@@ -455,23 +487,22 @@ TEST(SchedulerTest, RequestCommitAfterBeginMainFrameSent) {
 
 class SchedulerClientThatsetNeedsDrawInsideDraw : public FakeSchedulerClient {
  public:
-  virtual void ScheduledActionSendBeginMainFrame() OVERRIDE {}
-  virtual DrawResult ScheduledActionDrawAndSwapIfPossible()
-      OVERRIDE {
+  void ScheduledActionSendBeginMainFrame() override {}
+  DrawResult ScheduledActionDrawAndSwapIfPossible() override {
     // Only SetNeedsRedraw the first time this is called
     if (!num_draws_)
       scheduler_->SetNeedsRedraw();
     return FakeSchedulerClient::ScheduledActionDrawAndSwapIfPossible();
   }
 
-  virtual DrawResult ScheduledActionDrawAndSwapForced() OVERRIDE {
+  DrawResult ScheduledActionDrawAndSwapForced() override {
     NOTREACHED();
     return DRAW_SUCCESS;
   }
 
-  virtual void ScheduledActionCommit() OVERRIDE {}
-  virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE {}
-  virtual void DidAnticipatedDrawTimeChange(base::TimeTicks) OVERRIDE {}
+  void ScheduledActionCommit() override {}
+  void ScheduledActionBeginOutputSurfaceCreation() override {}
+  void DidAnticipatedDrawTimeChange(base::TimeTicks) override {}
 };
 
 // Tests for two different situations:
@@ -566,9 +597,8 @@ class SchedulerClientThatSetNeedsCommitInsideDraw : public FakeSchedulerClient {
   SchedulerClientThatSetNeedsCommitInsideDraw()
       : set_needs_commit_on_next_draw_(false) {}
 
-  virtual void ScheduledActionSendBeginMainFrame() OVERRIDE {}
-  virtual DrawResult ScheduledActionDrawAndSwapIfPossible()
-      OVERRIDE {
+  void ScheduledActionSendBeginMainFrame() override {}
+  DrawResult ScheduledActionDrawAndSwapIfPossible() override {
     // Only SetNeedsCommit the first time this is called
     if (set_needs_commit_on_next_draw_) {
       scheduler_->SetNeedsCommit();
@@ -577,14 +607,14 @@ class SchedulerClientThatSetNeedsCommitInsideDraw : public FakeSchedulerClient {
     return FakeSchedulerClient::ScheduledActionDrawAndSwapIfPossible();
   }
 
-  virtual DrawResult ScheduledActionDrawAndSwapForced() OVERRIDE {
+  DrawResult ScheduledActionDrawAndSwapForced() override {
     NOTREACHED();
     return DRAW_SUCCESS;
   }
 
-  virtual void ScheduledActionCommit() OVERRIDE {}
-  virtual void ScheduledActionBeginOutputSurfaceCreation() OVERRIDE {}
-  virtual void DidAnticipatedDrawTimeChange(base::TimeTicks) OVERRIDE {}
+  void ScheduledActionCommit() override {}
+  void ScheduledActionBeginOutputSurfaceCreation() override {}
+  void DidAnticipatedDrawTimeChange(base::TimeTicks) override {}
 
   void SetNeedsCommitOnNextDraw() { set_needs_commit_on_next_draw_ = true; }
 
@@ -721,8 +751,7 @@ TEST(SchedulerTest, NoSwapWhenDrawFails) {
 
 class SchedulerClientNeedsManageTilesInDraw : public FakeSchedulerClient {
  public:
-  virtual DrawResult ScheduledActionDrawAndSwapIfPossible()
-      OVERRIDE {
+  DrawResult ScheduledActionDrawAndSwapIfPossible() override {
     scheduler_->SetNeedsManageTiles();
     return FakeSchedulerClient::ScheduledActionDrawAndSwapIfPossible();
   }
@@ -1043,13 +1072,11 @@ class SchedulerClientWithFixedEstimates : public FakeSchedulerClient {
             begin_main_frame_to_commit_duration),
         commit_to_activate_duration_(commit_to_activate_duration) {}
 
-  virtual base::TimeDelta DrawDurationEstimate() OVERRIDE {
-    return draw_duration_;
-  }
-  virtual base::TimeDelta BeginMainFrameToCommitDurationEstimate() OVERRIDE {
+  base::TimeDelta DrawDurationEstimate() override { return draw_duration_; }
+  base::TimeDelta BeginMainFrameToCommitDurationEstimate() override {
     return begin_main_frame_to_commit_duration_;
   }
-  virtual base::TimeDelta CommitToActivateDurationEstimate() OVERRIDE {
+  base::TimeDelta CommitToActivateDurationEstimate() override {
     return commit_to_activate_duration_;
   }
 
@@ -1965,6 +1992,153 @@ TEST(SchedulerTest, ScheduledActionActivateAfterBecomingInvisible) {
   // Sync tree should be forced to activate.
   EXPECT_ACTION("SetNeedsBeginFrames(false)", client, 0, 2);
   EXPECT_ACTION("ScheduledActionActivateSyncTree", client, 1, 2);
+}
+
+TEST(SchedulerTest, SchedulerPowerMonitoring) {
+  FakeSchedulerClient client;
+  SchedulerSettings settings;
+  settings.disable_hi_res_timer_tasks_on_battery = true;
+  TestScheduler* scheduler = client.CreateScheduler(settings);
+
+  base::TimeTicks before_deadline, after_deadline;
+
+  scheduler->SetCanStart();
+  scheduler->SetVisible(true);
+  scheduler->SetCanDraw(true);
+
+  InitializeOutputSurfaceAndFirstCommit(scheduler, &client);
+
+  scheduler->SetNeedsCommit();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+
+  // On non-battery power
+  EXPECT_FALSE(client.PowerMonitor()->IsOnBatteryPower());
+
+  client.AdvanceFrame();
+  client.Reset();
+
+  before_deadline = client.now_src()->Now();
+  EXPECT_TRUE(client.task_runner().RunTasksWhile(
+      client.ImplFrameDeadlinePending(true)));
+  after_deadline = client.now_src()->Now();
+
+  // We post a non-zero deadline task when not on battery
+  EXPECT_LT(before_deadline, after_deadline);
+
+  // Switch to battery power
+  client.PowerMonitorSource()->GeneratePowerStateEvent(true);
+  EXPECT_TRUE(client.PowerMonitor()->IsOnBatteryPower());
+
+  client.AdvanceFrame();
+  scheduler->SetNeedsCommit();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+
+  before_deadline = client.now_src()->Now();
+  EXPECT_TRUE(client.task_runner().RunTasksWhile(
+      client.ImplFrameDeadlinePending(true)));
+  after_deadline = client.now_src()->Now();
+
+  // We post a zero deadline task when on battery
+  EXPECT_EQ(before_deadline, after_deadline);
+
+  // Switch to non-battery power
+  client.PowerMonitorSource()->GeneratePowerStateEvent(false);
+  EXPECT_FALSE(client.PowerMonitor()->IsOnBatteryPower());
+
+  client.AdvanceFrame();
+  scheduler->SetNeedsCommit();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+
+  // Same as before
+  before_deadline = client.now_src()->Now();
+  EXPECT_TRUE(client.task_runner().RunTasksWhile(
+      client.ImplFrameDeadlinePending(true)));
+  after_deadline = client.now_src()->Now();
+}
+
+TEST(SchedulerTest,
+     SimulateWindowsLowResolutionTimerOnBattery_PrioritizeImplLatencyOff) {
+  FakeSchedulerClient client;
+  SchedulerSettings settings;
+  TestScheduler* scheduler = client.CreateScheduler(settings);
+
+  scheduler->SetCanStart();
+  scheduler->SetVisible(true);
+  scheduler->SetCanDraw(true);
+
+  InitializeOutputSurfaceAndFirstCommit(scheduler, &client);
+
+  // Set needs commit so that the scheduler tries to wait for the main thread
+  scheduler->SetNeedsCommit();
+  // Set needs redraw so that the scheduler doesn't wait too long
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+
+  // Switch to battery power
+  client.PowerMonitorSource()->GeneratePowerStateEvent(true);
+  EXPECT_TRUE(client.PowerMonitor()->IsOnBatteryPower());
+
+  client.AdvanceFrame();
+  scheduler->SetNeedsCommit();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+
+  // Disable auto-advancing of now_src
+  client.task_runner().SetAutoAdvanceNowToPendingTasks(false);
+
+  // Deadline task is pending
+  EXPECT_TRUE(scheduler->BeginImplFrameDeadlinePending());
+  client.task_runner().RunPendingTasks();
+  // Deadline task is still pending
+  EXPECT_TRUE(scheduler->BeginImplFrameDeadlinePending());
+
+  // Advance now by 15 ms - same as windows low res timer
+  client.now_src()->AdvanceNowMicroseconds(15000);
+  EXPECT_TRUE(scheduler->BeginImplFrameDeadlinePending());
+  client.task_runner().RunPendingTasks();
+  // Deadline task finally completes
+  EXPECT_FALSE(scheduler->BeginImplFrameDeadlinePending());
+}
+
+TEST(SchedulerTest,
+     SimulateWindowsLowResolutionTimerOnBattery_PrioritizeImplLatencyOn) {
+  FakeSchedulerClient client;
+  SchedulerSettings settings;
+  settings.disable_hi_res_timer_tasks_on_battery = true;
+  TestScheduler* scheduler = client.CreateScheduler(settings);
+
+  scheduler->SetCanStart();
+  scheduler->SetVisible(true);
+  scheduler->SetCanDraw(true);
+
+  InitializeOutputSurfaceAndFirstCommit(scheduler, &client);
+
+  // Set needs commit so that the scheduler tries to wait for the main thread
+  scheduler->SetNeedsCommit();
+  // Set needs redraw so that the scheduler doesn't wait too long
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+
+  // Switch to battery power
+  client.PowerMonitorSource()->GeneratePowerStateEvent(true);
+  EXPECT_TRUE(client.PowerMonitor()->IsOnBatteryPower());
+
+  client.AdvanceFrame();
+  scheduler->SetNeedsCommit();
+  scheduler->SetNeedsRedraw();
+  client.Reset();
+
+  // Disable auto-advancing of now_src
+  client.task_runner().SetAutoAdvanceNowToPendingTasks(false);
+
+  // Deadline task is pending
+  EXPECT_TRUE(scheduler->BeginImplFrameDeadlinePending());
+  client.task_runner().RunPendingTasks();
+  // Deadline task runs immediately
+  EXPECT_FALSE(scheduler->BeginImplFrameDeadlinePending());
 }
 
 }  // namespace

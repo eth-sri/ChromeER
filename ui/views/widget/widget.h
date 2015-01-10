@@ -261,7 +261,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   };
 
   Widget();
-  virtual ~Widget();
+  ~Widget() override;
 
   // Creates a toplevel window with no context. These methods should only be
   // used in cases where there is no contextual information because we're
@@ -318,7 +318,8 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   static void GetAllChildWidgets(gfx::NativeView native_view,
                                  Widgets* children);
 
-  // Returns all non-child Widgets owned by |native_view|.
+  // Returns all Widgets owned by |native_view| (including child widgets, but
+  // not including itself).
   static void GetAllOwnedWidgets(gfx::NativeView native_view,
                                  Widgets* owned);
 
@@ -655,11 +656,18 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
     return non_client_view_ ? non_client_view_->client_view() : NULL;
   }
 
+  ui::Compositor* GetCompositor() {
+    return const_cast<ui::Compositor*>(
+        const_cast<const Widget*>(this)->GetCompositor());
+  }
   const ui::Compositor* GetCompositor() const;
-  ui::Compositor* GetCompositor();
 
   // Returns the widget's layer, if any.
-  ui::Layer* GetLayer();
+  ui::Layer* GetLayer() {
+    return const_cast<ui::Layer*>(
+        const_cast<const Widget*>(this)->GetLayer());
+  }
+  const ui::Layer* GetLayer() const;
 
   // Reorders the widget's child NativeViews which are associated to the view
   // tree (eg via a NativeViewHost) to match the z-order of the views in the
@@ -742,55 +750,54 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   virtual void OnOwnerClosing();
 
   // Overridden from NativeWidgetDelegate:
-  virtual bool IsModal() const OVERRIDE;
-  virtual bool IsDialogBox() const OVERRIDE;
-  virtual bool CanActivate() const OVERRIDE;
-  virtual bool IsInactiveRenderingDisabled() const OVERRIDE;
-  virtual void EnableInactiveRendering() OVERRIDE;
-  virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE;
-  virtual void OnNativeFocus(gfx::NativeView old_focused_view) OVERRIDE;
-  virtual void OnNativeBlur(gfx::NativeView new_focused_view) OVERRIDE;
-  virtual void OnNativeWidgetVisibilityChanging(bool visible) OVERRIDE;
-  virtual void OnNativeWidgetVisibilityChanged(bool visible) OVERRIDE;
-  virtual void OnNativeWidgetCreated(bool desktop_widget) OVERRIDE;
-  virtual void OnNativeWidgetDestroying() OVERRIDE;
-  virtual void OnNativeWidgetDestroyed() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual gfx::Size GetMaximumSize() const OVERRIDE;
-  virtual void OnNativeWidgetMove() OVERRIDE;
-  virtual void OnNativeWidgetSizeChanged(const gfx::Size& new_size) OVERRIDE;
-  virtual void OnNativeWidgetWindowShowStateChanged() OVERRIDE;
-  virtual void OnNativeWidgetBeginUserBoundsChange() OVERRIDE;
-  virtual void OnNativeWidgetEndUserBoundsChange() OVERRIDE;
-  virtual bool HasFocusManager() const OVERRIDE;
-  virtual bool OnNativeWidgetPaintAccelerated(
-      const gfx::Rect& dirty_region) OVERRIDE;
-  virtual void OnNativeWidgetPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual int GetNonClientComponent(const gfx::Point& point) OVERRIDE;
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool ExecuteCommand(int command_id) OVERRIDE;
-  virtual InputMethod* GetInputMethodDirect() OVERRIDE;
-  virtual const std::vector<ui::Layer*>& GetRootLayers() OVERRIDE;
-  virtual bool HasHitTestMask() const OVERRIDE;
-  virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual Widget* AsWidget() OVERRIDE;
-  virtual const Widget* AsWidget() const OVERRIDE;
-  virtual bool SetInitialFocus(ui::WindowShowState show_state) OVERRIDE;
+  bool IsModal() const override;
+  bool IsDialogBox() const override;
+  bool CanActivate() const override;
+  bool IsInactiveRenderingDisabled() const override;
+  void EnableInactiveRendering() override;
+  void OnNativeWidgetActivationChanged(bool active) override;
+  void OnNativeFocus(gfx::NativeView old_focused_view) override;
+  void OnNativeBlur(gfx::NativeView new_focused_view) override;
+  void OnNativeWidgetVisibilityChanging(bool visible) override;
+  void OnNativeWidgetVisibilityChanged(bool visible) override;
+  void OnNativeWidgetCreated(bool desktop_widget) override;
+  void OnNativeWidgetDestroying() override;
+  void OnNativeWidgetDestroyed() override;
+  gfx::Size GetMinimumSize() const override;
+  gfx::Size GetMaximumSize() const override;
+  void OnNativeWidgetMove() override;
+  void OnNativeWidgetSizeChanged(const gfx::Size& new_size) override;
+  void OnNativeWidgetWindowShowStateChanged() override;
+  void OnNativeWidgetBeginUserBoundsChange() override;
+  void OnNativeWidgetEndUserBoundsChange() override;
+  bool HasFocusManager() const override;
+  bool OnNativeWidgetPaintAccelerated(const gfx::Rect& dirty_region) override;
+  void OnNativeWidgetPaint(gfx::Canvas* canvas) override;
+  int GetNonClientComponent(const gfx::Point& point) override;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnMouseCaptureLost() override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  bool ExecuteCommand(int command_id) override;
+  InputMethod* GetInputMethodDirect() override;
+  const std::vector<ui::Layer*>& GetRootLayers() override;
+  bool HasHitTestMask() const override;
+  void GetHitTestMask(gfx::Path* mask) const override;
+  Widget* AsWidget() override;
+  const Widget* AsWidget() const override;
+  bool SetInitialFocus(ui::WindowShowState show_state) override;
 
   // Overridden from ui::EventSource:
-  virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
+  ui::EventProcessor* GetEventProcessor() override;
 
   // Overridden from FocusTraversable:
-  virtual FocusSearch* GetFocusSearch() OVERRIDE;
-  virtual FocusTraversable* GetFocusTraversableParent() OVERRIDE;
-  virtual View* GetFocusTraversableParentView() OVERRIDE;
+  FocusSearch* GetFocusSearch() override;
+  FocusTraversable* GetFocusTraversableParent() override;
+  View* GetFocusTraversableParentView() override;
 
   // Overridden from ui::NativeThemeObserver:
-  virtual void OnNativeThemeUpdated(ui::NativeTheme* observed_theme) OVERRIDE;
+  void OnNativeThemeUpdated(ui::NativeTheme* observed_theme) override;
 
  protected:
   // Creates the RootView to be used within this Widget. Subclasses may override

@@ -129,14 +129,14 @@ class CONTENT_EXPORT PeerConnectionDependencyFactory
       bool is_local_track);
 
   scoped_refptr<base::MessageLoopProxy> GetWebRtcWorkerThread() const;
+  scoped_refptr<base::MessageLoopProxy> GetWebRtcSignalingThread() const;
 
   // AecDumpMessageFilter::AecDumpDelegate implementation.
   // TODO(xians): Remove when option to disable audio track processing is
   // removed.
-  virtual void OnAecDumpFile(
-      const IPC::PlatformFileForTransit& file_handle) OVERRIDE;
-  virtual void OnDisableAecDump() OVERRIDE;
-  virtual void OnIpcClosing() OVERRIDE;
+  void OnAecDumpFile(const IPC::PlatformFileForTransit& file_handle) override;
+  void OnDisableAecDump() override;
+  void OnIpcClosing() override;
 
  protected:
   // Asks the PeerConnection factory to create a Local Audio Source.

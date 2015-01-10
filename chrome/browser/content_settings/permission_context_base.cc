@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/permission_bubble_request_impl.h"
 #include "chrome/browser/content_settings/permission_context_uma_util.h"
 #include "chrome/browser/content_settings/permission_queue_controller.h"
@@ -14,6 +13,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
 #include "chrome/common/pref_names.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/permission_request_id.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -48,10 +48,17 @@ void PermissionContextBase::RequestPermission(
                    callback);
 }
 
+ContentSetting PermissionContextBase::GetPermissionStatus(
+    const GURL& requesting_origin,
+    const GURL& embedding_origin) const {
+  return profile_->GetHostContentSettingsMap()->GetContentSetting(
+      requesting_origin, embedding_origin, permission_type_, std::string());
+}
+
 void PermissionContextBase::CancelPermissionRequest(
     content::WebContents* web_contents,
     const PermissionRequestID& id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   if (PermissionBubbleManager::Enabled()) {
     PermissionBubbleRequest* cancelling =
@@ -93,7 +100,8 @@ void PermissionContextBase::DecidePermission(
       break;
   }
 
-  PermissionContextUmaUtil::PermissionRequested(permission_type_);
+  PermissionContextUmaUtil::PermissionRequested(
+      permission_type_, requesting_origin);
 
   if (PermissionBubbleManager::Enabled()) {
     PermissionBubbleManager* bubble_manager =
@@ -152,11 +160,14 @@ void PermissionContextBase::PermissionDecided(
   if (PermissionBubbleManager::Enabled()) {
     if (persist) {
       if (allowed)
-        PermissionContextUmaUtil::PermissionGranted(permission_type_);
+        PermissionContextUmaUtil::PermissionGranted(permission_type_,
+                                                    requesting_origin);
       else
-        PermissionContextUmaUtil::PermissionDenied(permission_type_);
+        PermissionContextUmaUtil::PermissionDenied(permission_type_,
+                                                   requesting_origin);
     } else {
-      PermissionContextUmaUtil::PermissionDismissed(permission_type_);
+      PermissionContextUmaUtil::PermissionDismissed(permission_type_,
+                                                    requesting_origin);
     }
   }
 

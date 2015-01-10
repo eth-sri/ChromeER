@@ -37,12 +37,12 @@ class MockJobInterceptor : public net::URLRequestInterceptor {
       : base_path_(base_path),
         map_all_requests_to_base_path_(map_all_requests_to_base_path),
         worker_pool_(worker_pool) {}
-  virtual ~MockJobInterceptor() {}
+  ~MockJobInterceptor() override {}
 
   // net::URLRequestJobFactory::ProtocolHandler implementation
-  virtual net::URLRequestJob* MaybeInterceptRequest(
+  net::URLRequestJob* MaybeInterceptRequest(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return new URLRequestMockHTTPJob(
         request,
         network_delegate,

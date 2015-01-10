@@ -95,7 +95,7 @@ class ResourcePrefetchPredictor
 
   ResourcePrefetchPredictor(const ResourcePrefetchPredictorConfig& config,
                             Profile* profile);
-  virtual ~ResourcePrefetchPredictor();
+  ~ResourcePrefetchPredictor() override;
 
   // Thread safe.
   static bool ShouldRecordRequest(net::URLRequest* request,
@@ -183,13 +183,13 @@ class ResourcePrefetchPredictor
   // Returns true if the request (should have a response in it) is cacheable.
   static bool IsCacheable(const net::URLRequest* request);
 
-  // content::NotificationObserver methods OVERRIDE.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver methods override.
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
-  // KeyedService methods OVERRIDE.
-  virtual void Shutdown() OVERRIDE;
+  // KeyedService methods override.
+  void Shutdown() override;
 
   // Functions called on different network events pertaining to the loading of
   // main frame resource or sub resources.

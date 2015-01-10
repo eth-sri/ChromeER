@@ -60,6 +60,10 @@ void ServiceWorkerProviderHost::SetDocumentUrl(const GURL& url) {
   document_url_ = url;
 }
 
+void ServiceWorkerProviderHost::SetTopmostFrameUrl(const GURL& url) {
+  topmost_frame_url_ = url;
+}
+
 void ServiceWorkerProviderHost::SetControllerVersionAttribute(
     ServiceWorkerVersion* version) {
   if (version == controlling_version_.get())
@@ -147,7 +151,10 @@ void ServiceWorkerProviderHost::DisassociateRegistration() {
 scoped_ptr<ServiceWorkerRequestHandler>
 ServiceWorkerProviderHost::CreateRequestHandler(
     FetchRequestMode request_mode,
+    FetchCredentialsMode credentials_mode,
     ResourceType resource_type,
+    RequestContextType request_context_type,
+    RequestContextFrameType frame_type,
     base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
     scoped_refptr<ResourceRequestBody> body) {
   if (IsHostToRunningServiceWorker()) {
@@ -162,7 +169,10 @@ ServiceWorkerProviderHost::CreateRequestHandler(
                                                   AsWeakPtr(),
                                                   blob_storage_context,
                                                   request_mode,
+                                                  credentials_mode,
                                                   resource_type,
+                                                  request_context_type,
+                                                  frame_type,
                                                   body));
   }
   return scoped_ptr<ServiceWorkerRequestHandler>();

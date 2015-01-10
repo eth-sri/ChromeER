@@ -55,10 +55,10 @@ scoped_ptr<LayerImpl> FakePictureLayerImpl::CreateLayerImpl(
 
 void FakePictureLayerImpl::AppendQuads(
     RenderPass* render_pass,
-    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    const Occlusion& occlusion_in_content_space,
     AppendQuadsData* append_quads_data) {
   PictureLayerImpl::AppendQuads(
-      render_pass, occlusion_tracker, append_quads_data);
+      render_pass, occlusion_in_content_space, append_quads_data);
   ++append_quads_count_;
 }
 
@@ -95,6 +95,16 @@ PictureLayerTiling* FakePictureLayerImpl::LowResTiling() const {
     }
   }
   return result;
+}
+
+void FakePictureLayerImpl::SetPile(scoped_refptr<PicturePileImpl> pile) {
+  pile_.swap(pile);
+  if (tilings()) {
+    for (size_t i = 0; i < num_tilings(); ++i) {
+      tilings()->tiling_at(i)->UpdateTilesToCurrentPile(Region(),
+                                                        pile_->tiling_size());
+    }
+  }
 }
 
 void FakePictureLayerImpl::SetAllTilesVisible() {

@@ -14,7 +14,7 @@
 #include "content/common/message_router.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/mailbox_manager_impl.h"
 #include "gpu/command_buffer/service/memory_program_cache.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
 #include "ipc/message_filter.h"
@@ -31,17 +31,17 @@ class GpuChannelManagerMessageFilter : public IPC::MessageFilter {
       GpuMemoryBufferFactory* gpu_memory_buffer_factory)
       : sender_(NULL), gpu_memory_buffer_factory_(gpu_memory_buffer_factory) {}
 
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+  void OnFilterAdded(IPC::Sender* sender) override {
     DCHECK(!sender_);
     sender_ = sender;
   }
 
-  virtual void OnFilterRemoved() OVERRIDE {
+  void OnFilterRemoved() override {
     DCHECK(sender_);
     sender_ = NULL;
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     DCHECK(sender_);
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(GpuChannelManagerMessageFilter, message)
@@ -52,12 +52,12 @@ class GpuChannelManagerMessageFilter : public IPC::MessageFilter {
   }
 
  protected:
-  virtual ~GpuChannelManagerMessageFilter() {}
+  ~GpuChannelManagerMessageFilter() override {}
 
   void OnCreateGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
                                const gfx::Size& size,
-                               unsigned internalformat,
-                               unsigned usage) {
+                               gfx::GpuMemoryBuffer::Format format,
+                               gfx::GpuMemoryBuffer::Usage usage) {
     TRACE_EVENT2("gpu",
                  "GpuChannelManagerMessageFilter::OnCreateGpuMemoryBuffer",
                  "primary_id",
@@ -66,7 +66,7 @@ class GpuChannelManagerMessageFilter : public IPC::MessageFilter {
                  handle.global_id.secondary_id);
     sender_->Send(new GpuHostMsg_GpuMemoryBufferCreated(
         gpu_memory_buffer_factory_->CreateGpuMemoryBuffer(
-            handle, size, internalformat, usage)));
+            handle, size, format, usage)));
   }
 
   IPC::Sender* sender_;
@@ -178,7 +178,7 @@ void GpuChannelManager::OnEstablishChannel(int client_id,
     if (!share_group_.get()) {
       share_group_ = new gfx::GLShareGroup;
       DCHECK(!mailbox_manager_.get());
-      mailbox_manager_ = new gpu::gles2::MailboxManager;
+      mailbox_manager_ = new gpu::gles2::MailboxManagerImpl;
     }
     share_group = share_group_.get();
     mailbox_manager = mailbox_manager_.get();
@@ -197,9 +197,9 @@ void GpuChannelManager::OnEstablishChannel(int client_id,
 #if defined(OS_POSIX)
   // On POSIX, pass the renderer-side FD. Also mark it as auto-close so
   // that it gets closed after it has been sent.
-  int renderer_fd = channel->TakeRendererFileDescriptor();
-  DCHECK_NE(-1, renderer_fd);
-  channel_handle.socket = base::FileDescriptor(renderer_fd, true);
+  base::ScopedFD renderer_fd = channel->TakeRendererFileDescriptor();
+  DCHECK(renderer_fd.is_valid());
+  channel_handle.socket = base::FileDescriptor(renderer_fd.Pass());
 #endif
 
   gpu_channels_.set(client_id, channel.Pass());

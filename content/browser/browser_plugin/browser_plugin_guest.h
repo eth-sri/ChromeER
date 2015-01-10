@@ -45,7 +45,6 @@ struct FrameHostMsg_ReclaimCompositorResources_Params;
 #if defined(OS_MACOSX)
 struct FrameHostMsg_ShowPopup_Params;
 #endif
-struct ViewHostMsg_TextInputState_Params;
 
 namespace blink {
 class WebInputEvent;
@@ -80,7 +79,7 @@ struct DropData;
 // which means it can share storage and can script this guest.
 class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
  public:
-  virtual ~BrowserPluginGuest();
+  ~BrowserPluginGuest() override;
 
   // The WebContents passed into the factory method here has not been
   // initialized yet and so it does not yet hold a SiteInstance.
@@ -104,6 +103,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // Sets the focus state of the current RenderWidgetHostView.
   void SetFocus(RenderWidgetHost* rwh, bool focused);
 
+  // Sets the tooltip text.
+  void SetTooltipText(const base::string16& tooltip_text);
+
   // Sets the lock state of the pointer. Returns true if |allowed| is true and
   // the mouse has been successfully locked.
   bool LockMouse(bool allowed);
@@ -113,10 +115,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
 
   // Called when the embedder WebContents changes visibility.
   void EmbedderVisibilityChanged(bool visible);
-
-  // Destroys the guest WebContents and all its associated state, including
-  // this BrowserPluginGuest, and its new unattached windows.
-  void Destroy();
 
   // Creates a new guest WebContentsImpl with the provided |params| with |this|
   // as the |opener|.
@@ -151,16 +149,16 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
   // WebContentsObserver implementation.
-  virtual void DidCommitProvisionalLoadForFrame(
+  void DidCommitProvisionalLoadForFrame(
       RenderFrameHost* render_frame_host,
       const GURL& url,
-      ui::PageTransition transition_type) OVERRIDE;
+      ui::PageTransition transition_type) override;
 
-  virtual void RenderViewReady() OVERRIDE;
-  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 RenderFrameHost* render_frame_host) OVERRIDE;
+  void RenderViewReady() override;
+  void RenderProcessGone(base::TerminationStatus status) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message,
+                         RenderFrameHost* render_frame_host) override;
 
   // Exposes the protected web_contents() from WebContentsObserver.
   WebContentsImpl* GetWebContents() const;
@@ -204,6 +202,12 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
                            scoped_ptr<cc::CompositorFrame> frame);
 
   void SetContentsOpaque(bool opaque);
+
+  // Find the given |search_text| in the page. Returns true if the find request
+  // is handled by this browser plugin guest.
+  bool Find(int request_id,
+            const base::string16& search_text,
+            const blink::WebFindOptions& options);
 
  private:
   class EmbedderWebContentsObserver;
@@ -253,7 +257,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
                    bool last_unlocked_by_target,
                    bool privileged);
   void OnLockMouseAck(int instance_id, bool succeeded);
-  void OnPluginDestroyed(int instance_id);
   // Resizes the guest's web contents.
   void OnResizeGuest(
       int instance_id, const BrowserPluginHostMsg_ResizeGuest_Params& params);
@@ -285,9 +288,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   void OnUnlockMouseAck(int instance_id);
   void OnUpdateGeometry(int instance_id, const gfx::Rect& view_rect);
 
-  void OnTextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params);
-
+  void OnTextInputTypeChanged(ui::TextInputType type,
+                              ui::TextInputMode input_mode,
+                              bool can_compose_inline,
+                              int flags);
   void OnImeSetComposition(
       int instance_id,
       const std::string& text,
@@ -326,6 +330,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();
 
+  // The last tooltip that was set with SetTooltipText().
+  base::string16 current_tooltip_text_;
+
   scoped_ptr<EmbedderWebContentsObserver> embedder_web_contents_observer_;
   WebContentsImpl* embedder_web_contents_;
 
@@ -338,6 +345,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   bool pending_lock_request_;
   bool guest_visible_;
   bool embedder_visible_;
+  // Whether the browser plugin is inside a plugin document.
+  bool is_full_page_plugin_;
 
   // Each copy-request is identified by a unique number. The unique number is
   // used to keep track of the right callback.
@@ -363,7 +372,12 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // Text input type states.
   ui::TextInputType last_text_input_type_;
   ui::TextInputMode last_input_mode_;
+  int last_input_flags_;
   bool last_can_compose_inline_;
+
+  // The is the routing ID for a swapped out RenderView for the guest
+  // WebContents in the embedder's process.
+  int guest_proxy_routing_id_;
 
   // This is a queue of messages that are destined to be sent to the embedder
   // once the guest is attached to a particular embedder.

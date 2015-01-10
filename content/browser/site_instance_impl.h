@@ -20,16 +20,16 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
                                         public RenderProcessHostObserver {
  public:
   // SiteInstance interface overrides.
-  virtual int32 GetId() OVERRIDE;
-  virtual bool HasProcess() const OVERRIDE;
-  virtual RenderProcessHost* GetProcess() OVERRIDE;
-  virtual BrowserContext* GetBrowserContext() const OVERRIDE;
-  virtual const GURL& GetSiteURL() const OVERRIDE;
-  virtual SiteInstance* GetRelatedSiteInstance(const GURL& url) OVERRIDE;
-  virtual bool IsRelatedSiteInstance(const SiteInstance* instance) OVERRIDE;
-  virtual size_t GetRelatedActiveContentsCount() OVERRIDE;
-  virtual int32 CreateEventRacerLog() OVERRIDE;
-  virtual EventRacerLogHost *GetEventRacerLog() OVERRIDE;
+  int32 GetId() override;
+  bool HasProcess() const override;
+  RenderProcessHost* GetProcess() override;
+  BrowserContext* GetBrowserContext() const override;
+  const GURL& GetSiteURL() const override;
+  SiteInstance* GetRelatedSiteInstance(const GURL& url) override;
+  bool IsRelatedSiteInstance(const SiteInstance* instance) override;
+  size_t GetRelatedActiveContentsCount() override;
+  virtual int32 CreateEventRacerLog() override;
+  virtual EventRacerLogHost *GetEventRacerLog() override;
 
   // Set the web site that this SiteInstance is rendering pages for.
   // This includes the scheme and registered domain, but not the port.  If the
@@ -92,7 +92,7 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   friend class SiteInstance;
 
   // Virtual to allow tests to extend it.
-  virtual ~SiteInstanceImpl();
+  ~SiteInstanceImpl() override;
 
   // Create a new SiteInstance.  Protected to give access to BrowsingInstance
   // and tests; most callers should use Create or GetRelatedSiteInstance
@@ -101,7 +101,7 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
 
  private:
   // RenderProcessHostObserver implementation.
-  virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE;
+  void RenderProcessHostDestroyed(RenderProcessHost* host) override;
 
   // Used to restrict a process' origin access rights.
   void LockToOrigin();

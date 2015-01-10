@@ -38,8 +38,9 @@ extern const char kNullAudioHash[];
 class DummyTickClock : public base::TickClock {
  public:
   DummyTickClock() : now_() {}
-  virtual ~DummyTickClock() {}
-  virtual base::TimeTicks NowTicks() OVERRIDE;
+  ~DummyTickClock() override {}
+  base::TimeTicks NowTicks() override;
+
  private:
   base::TimeTicks now_;
 };

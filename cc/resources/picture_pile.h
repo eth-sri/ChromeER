@@ -5,8 +5,9 @@
 #ifndef CC_RESOURCES_PICTURE_PILE_H_
 #define CC_RESOURCES_PICTURE_PILE_H_
 
+#include "base/memory/ref_counted.h"
 #include "cc/resources/picture_pile_base.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 class PicturePileImpl;
@@ -16,6 +17,7 @@ class RenderingStatsInstrumentation;
 class CC_EXPORT PicturePile : public PicturePileBase {
  public:
   PicturePile();
+  ~PicturePile() override;
 
   // Re-record parts of the picture that are invalid.
   // Invalidations are in layer space, and will be expanded to cover everything
@@ -51,8 +53,7 @@ class CC_EXPORT PicturePile : public PicturePileBase {
     is_suitable_for_gpu_rasterization_ = false;
   }
 
- protected:
-  virtual ~PicturePile();
+  void SetPixelRecordDistanceForTesting(int d) { pixel_record_distance_ = d; }
 
  private:
   friend class PicturePileImpl;
@@ -60,6 +61,7 @@ class CC_EXPORT PicturePile : public PicturePileBase {
   void DetermineIfSolidColor();
 
   bool is_suitable_for_gpu_rasterization_;
+  int pixel_record_distance_;
 
   DISALLOW_COPY_AND_ASSIGN(PicturePile);
 };

@@ -16,7 +16,6 @@
 #include "base/stl_util.h"
 #include "base/task_runner.h"
 #include "base/threading/worker_pool.h"
-#include "base/time/time.h"
 #include "chromeos/cert_loader.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_service_client.h"
@@ -346,8 +345,9 @@ void ClientCertResolver::OnCertificatesLoaded(
   ResolveNetworks(networks);
 }
 
-void ClientCertResolver::PolicyApplied(const std::string& service_path) {
-  VLOG(2) << "PolicyApplied " << service_path;
+void ClientCertResolver::PolicyAppliedToNetwork(
+    const std::string& service_path) {
+  VLOG(2) << "PolicyAppliedToNetwork " << service_path;
   if (!ClientCertificatesLoaded())
     return;
   // Compare this network with all certificates.

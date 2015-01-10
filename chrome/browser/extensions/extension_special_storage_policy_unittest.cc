@@ -35,23 +35,21 @@ class ExtensionSpecialStoragePolicyTest : public testing::Test {
           expected_change_flags_(0) {
     }
 
-    virtual void OnGranted(const GURL& origin,
-                           int change_flags) OVERRIDE {
+    void OnGranted(const GURL& origin, int change_flags) override {
       EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_GRANT);
       EXPECT_EQ(expected_origin_, origin);
       EXPECT_EQ(expected_change_flags_, change_flags);
       expected_type_ = NOTIFICATION_TYPE_NONE;
     }
 
-    virtual void OnRevoked(const GURL& origin,
-                           int change_flags) OVERRIDE {
+    void OnRevoked(const GURL& origin, int change_flags) override {
       EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_REVOKE);
       EXPECT_EQ(expected_origin_, origin);
       EXPECT_EQ(expected_change_flags_, change_flags);
       expected_type_ = NOTIFICATION_TYPE_NONE;
     }
 
-    virtual void OnCleared() OVERRIDE {
+    void OnCleared() override {
       EXPECT_EQ(expected_type_, NOTIFICATION_TYPE_CLEAR);
       expected_type_ = NOTIFICATION_TYPE_NONE;
     }
@@ -92,9 +90,7 @@ class ExtensionSpecialStoragePolicyTest : public testing::Test {
     DISALLOW_COPY_AND_ASSIGN(PolicyChangeObserver);
   };
 
-  virtual void SetUp() OVERRIDE {
-    policy_ = new ExtensionSpecialStoragePolicy(NULL);
-  }
+  void SetUp() override { policy_ = new ExtensionSpecialStoragePolicy(NULL); }
 
   scoped_refptr<Extension> CreateProtectedApp() {
 #if defined(OS_WIN)

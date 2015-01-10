@@ -19,7 +19,6 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/media/capture/web_contents_capture_util.h"
 #include "content/browser/renderer_host/media/audio_input_device_manager.h"
-#include "content/browser/renderer_host/media/device_request_message_filter.h"
 #include "content/browser/renderer_host/media/media_capture_devices_impl.h"
 #include "content/browser/renderer_host/media/media_stream_requester.h"
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
@@ -1085,7 +1084,7 @@ void MediaStreamManager::StartEnumeration(DeviceRequest* request) {
   // Start enumeration for devices of all requested device types.
   const MediaStreamType streams[] = { request->audio_type(),
                                       request->video_type() };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(streams); ++i) {
+  for (size_t i = 0; i < arraysize(streams); ++i) {
     if (streams[i] == MEDIA_NO_SERVICE)
       continue;
     request->SetState(streams[i], MEDIA_REQUEST_STATE_REQUESTED);

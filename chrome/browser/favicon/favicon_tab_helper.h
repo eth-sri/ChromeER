@@ -38,7 +38,7 @@ class FaviconTabHelper : public content::WebContentsObserver,
                          public FaviconDriver,
                          public content::WebContentsUserData<FaviconTabHelper> {
  public:
-  virtual ~FaviconTabHelper();
+  ~FaviconTabHelper() override;
 
   // Initiates loading the favicon for the specified url.
   void FetchFavicon(const GURL& url);
@@ -64,23 +64,23 @@ class FaviconTabHelper : public content::WebContentsObserver,
 
   // content::WebContentsObserver override. Must be public, because also
   // called from PrerenderContents.
-  virtual void DidUpdateFaviconURL(
-      const std::vector<content::FaviconURL>& candidates) OVERRIDE;
+  void DidUpdateFaviconURL(
+      const std::vector<content::FaviconURL>& candidates) override;
 
   // Saves the favicon for the current page.
   void SaveFavicon();
 
   // FaviconDriver methods.
-  virtual int StartDownload(const GURL& url, int max_bitmap_size) OVERRIDE;
-  virtual void NotifyFaviconUpdated(bool icon_url_changed) OVERRIDE;
-  virtual bool IsOffTheRecord() OVERRIDE;
-  virtual const gfx::Image GetActiveFaviconImage() OVERRIDE;
-  virtual const GURL GetActiveFaviconURL() OVERRIDE;
-  virtual bool GetActiveFaviconValidity() OVERRIDE;
-  virtual const GURL GetActiveURL() OVERRIDE;
-  virtual void SetActiveFaviconImage(gfx::Image image) OVERRIDE;
-  virtual void SetActiveFaviconURL(GURL url) OVERRIDE;
-  virtual void SetActiveFaviconValidity(bool validity) OVERRIDE;
+  int StartDownload(const GURL& url, int max_bitmap_size) override;
+  void NotifyFaviconUpdated(bool icon_url_changed) override;
+  bool IsOffTheRecord() override;
+  const gfx::Image GetActiveFaviconImage() override;
+  const GURL GetActiveFaviconURL() override;
+  bool GetActiveFaviconValidity() override;
+  const GURL GetActiveURL() override;
+  void SetActiveFaviconImage(gfx::Image image) override;
+  void SetActiveFaviconURL(GURL url) override;
+  void SetActiveFaviconValidity(bool validity) override;
 
   // Favicon download callback.
   void DidDownloadFavicon(
@@ -95,12 +95,12 @@ class FaviconTabHelper : public content::WebContentsObserver,
   friend class content::WebContentsUserData<FaviconTabHelper>;
 
   // content::WebContentsObserver overrides.
-  virtual void DidStartNavigationToPendingEntry(
+  void DidStartNavigationToPendingEntry(
       const GURL& url,
-      content::NavigationController::ReloadType reload_type) OVERRIDE;
-  virtual void DidNavigateMainFrame(
+      content::NavigationController::ReloadType reload_type) override;
+  void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
+      const content::FrameNavigateParams& params) override;
 
   // Helper method that returns the active navigation entry's favicon.
   content::FaviconStatus& GetFaviconStatus();

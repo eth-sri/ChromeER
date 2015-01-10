@@ -66,12 +66,6 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
                        'such as about:flags settings, cookies, and '
                        'extensions.\n')
 
-  def AddReplayServerOptions(self, extra_wpr_args):
-    if self.browser_options.netsim:
-      extra_wpr_args.append('--net=%s' % self.browser_options.netsim)
-    else:
-      extra_wpr_args.append('--no-dns_forwarding')
-
   @property
   @decorators.Cache
   def extension_backend(self):
@@ -127,6 +121,20 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
     return args
 
+  @property
+  def _use_host_resolver_rules(self):
+    """Returns True if need --host-resolver-rules to send requests to replay."""
+    if self.browser_options.netsim:
+      # Avoid --host-resolver-rules with netsim because it causes Chrome to
+      # skip DNS requests. With netsim, we want to exercise DNS requests.
+      return False
+    if self.forwarder_factory.does_forwarder_override_dns:
+      # Avoid --host-resolver-rules when the forwarder can map DNS requests
+      # from devices to the replay DNS port on the host running Telemetry.
+      # This allows the browser to exercise DNS requests.
+      return False
+    return True
+
   def GetReplayBrowserStartupArgs(self):
     if self.browser_options.wpr_mode == wpr_modes.WPR_OFF:
       return []
@@ -134,13 +142,15 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     # the HTTP requests directly to Replay. Also use --host-resolver-rules
     # without netsim. With netsim, DNS requests should be sent (to get the
     # simulated latency), however, the flag causes DNS requests to be skipped.
-    use_host_resolver = (
-        not self.forwarder_factory.does_forwarder_override_dns and
-        not self.browser_options.netsim)
     http_remote_port = self.wpr_port_pairs.http.remote_port
     https_remote_port = self.wpr_port_pairs.https.remote_port
-    replay_args = ['--ignore-certificate-errors']
-    if use_host_resolver:
+    replay_args = []
+    if not self.wpr_ca_cert_path:
+      # Ignore certificate errors if the browser backend has not created
+      # and installed a root certificate. When |self.wpr_ca_cert_path| is
+      # set, Web Page Replay uses it to sign HTTPS responses.
+      replay_args.append('--ignore-certificate-errors')
+    if self._use_host_resolver_rules:
       replay_args.append('--host-resolver-rules=MAP * %s,EXCLUDE localhost' %
                          self.forwarder_factory.host_ip)  # replay's host_ip
     # Force the browser to send HTTP/HTTPS requests to fixed ports if they

@@ -48,6 +48,7 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
     STATUS_ERROR_FAILED,
     STATUS_ERROR_MAX,
   };
+  static const char* StatusToString(Status status);
 
   struct CONTENT_EXPORT RegistrationData {
     // These values are immutable for the life of a registration.
@@ -63,6 +64,9 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
     bool has_fetch_handler;
     base::Time last_update_check;
 
+    // Not populated until ServiceWorkerStorage::StoreRegistration is called.
+    uint64 resources_total_size_bytes;
+
     RegistrationData();
     ~RegistrationData();
   };
@@ -70,9 +74,13 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   struct ResourceRecord {
     int64 resource_id;
     GURL url;
+    // Signed so we can store -1 to specify an unknown or error state.  When
+    // stored to the database, this value should always be >= 0.
+    int64 size_bytes;
 
-    ResourceRecord() {}
-    ResourceRecord(int64 id, GURL url) : resource_id(id), url(url) {}
+    ResourceRecord() : resource_id(-1), size_bytes(0) {}
+    ResourceRecord(int64 id, GURL url, int64 size_bytes)
+        : resource_id(id), url(url), size_bytes(size_bytes) {}
   };
 
   // Reads next available ids from the database. Returns OK if they are
@@ -185,13 +193,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // Returns OK on success. Otherwise deletes nothing and returns an error.
   Status PurgeUncommittedResourceIds(const std::set<int64>& ids);
 
-  // Deletes all data for |origin|, namely, unique origin, registrations and
+  // Deletes all data for |origins|, namely, unique origin, registrations and
   // resource records. Resources are moved to the purgeable list. Returns OK if
   // they are successfully deleted or not found in the database. Otherwise,
   // returns an error.
-  Status DeleteAllDataForOrigin(
-      const GURL& origin,
-      std::vector<int64>* newly_purgeable_resources);
+  Status DeleteAllDataForOrigins(const std::set<GURL>& origins,
+                                 std::vector<int64>* newly_purgeable_resources);
 
   // Completely deletes the contents of the database.
   // Be careful using this function.

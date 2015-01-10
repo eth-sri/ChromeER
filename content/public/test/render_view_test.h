@@ -34,26 +34,25 @@ class ContentRendererClient;
 class MockRenderProcess;
 class PageState;
 class RendererMainPlatformDelegate;
-class RendererWebKitPlatformSupportImplNoSandboxImpl;
+class RendererBlinkPlatformImplNoSandboxImpl;
 class RenderView;
 
 class RenderViewTest : public testing::Test {
  public:
-  // A special WebKitPlatformSupportImpl class for getting rid off the
-  // dependency to the sandbox, which is not available in RenderViewTest.
-  class RendererWebKitPlatformSupportImplNoSandbox {
+  // A special BlinkPlatformImpl class for getting rid off the dependency to the
+  // sandbox, which is not available in RenderViewTest.
+  class RendererBlinkPlatformImplNoSandbox {
    public:
-    RendererWebKitPlatformSupportImplNoSandbox();
-    ~RendererWebKitPlatformSupportImplNoSandbox();
+    RendererBlinkPlatformImplNoSandbox();
+    ~RendererBlinkPlatformImplNoSandbox();
     blink::Platform* Get();
 
    private:
-    scoped_ptr<RendererWebKitPlatformSupportImplNoSandboxImpl>
-        webkit_platform_support_;
+    scoped_ptr<RendererBlinkPlatformImplNoSandboxImpl> blink_platform_impl_;
   };
 
   RenderViewTest();
-  virtual ~RenderViewTest();
+  ~RenderViewTest() override;
 
  protected:
   // Spins the message loop to process all messages that are currently pending.
@@ -133,16 +132,16 @@ class RenderViewTest : public testing::Test {
   virtual ContentRendererClient* CreateContentRendererClient();
 
   // testing::Test
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
-  virtual void TearDown() OVERRIDE;
+  void TearDown() override;
 
   base::MessageLoop msg_loop_;
   scoped_ptr<MockRenderProcess> mock_process_;
   // We use a naked pointer because we don't want to expose RenderViewImpl in
   // the embedder's namespace.
   RenderView* view_;
-  RendererWebKitPlatformSupportImplNoSandbox webkit_platform_support_;
+  RendererBlinkPlatformImplNoSandbox blink_platform_impl_;
   scoped_ptr<ContentClient> content_client_;
   scoped_ptr<ContentBrowserClient> content_browser_client_;
   scoped_ptr<ContentRendererClient> content_renderer_client_;

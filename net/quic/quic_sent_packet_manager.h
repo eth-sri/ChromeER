@@ -51,13 +51,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
         TransmissionType transmission_type,
         QuicByteCount byte_size) {}
 
-    virtual void OnSentPacket(
-        const SerializedPacket& packet,
-        QuicPacketSequenceNumber original_sequence_number,
-        QuicTime sent_time,
-        QuicByteCount bytes,
-        TransmissionType transmission_type) {}
-
     virtual void OnIncomingAck(
         const QuicAckFrame& ack_frame,
         QuicTime ack_receive_time,
@@ -327,11 +320,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Newly serialized retransmittable and fec packets are added to this map,
   // which contains owning pointers to any contained frames.  If a packet is
   // retransmitted, this map will contain entries for both the old and the new
-  // packet. The old packet's retransmittable frames entry will be NULL, while
-  // the new packet's entry will contain the frames to retransmit.
+  // packet. The old packet's retransmittable frames entry will be nullptr,
+  // while the new packet's entry will contain the frames to retransmit.
   // If the old packet is acked before the new packet, then the old entry will
   // be removed from the map and the new entry's retransmittable frames will be
-  // set to NULL.
+  // set to nullptr.
   QuicUnackedPacketMap unacked_packets_;
 
   // Pending retransmissions which have not been packetized and sent yet.
@@ -352,6 +345,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   RttStats rtt_stats_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
   scoped_ptr<LossDetectionInterface> loss_algorithm_;
+
+  // Receiver side buffer in bytes.
+  QuicByteCount receive_buffer_bytes_;
 
   // Least sequence number which the peer is still waiting for.
   QuicPacketSequenceNumber least_packet_awaited_by_peer_;

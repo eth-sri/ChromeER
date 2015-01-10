@@ -44,12 +44,16 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // needed to complete authentication, the user provided the right password.
   static const char kSecondFactor[];
 
+  // Magic string indicating that though the user does not have Less Secure
+  // Apps enabled, the user provided the right password.
+  static const char kWebLoginRequired[];
+
   // This will later be hidden behind an auth service which caches
   // tokens.
   GaiaAuthFetcher(GaiaAuthConsumer* consumer,
                   const std::string& source,
                   net::URLRequestContextGetter* getter);
-  virtual ~GaiaAuthFetcher();
+  ~GaiaAuthFetcher() override;
 
   // Start a request to obtain the SID and LSID cookies for the the account
   // identified by |username| and |password|.  If |service| is not null or
@@ -188,7 +192,7 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   void StartGetCheckConnectionInfo();
 
   // Implementation of net::URLFetcherDelegate
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   // StartClientLogin been called && results not back yet?
   bool HasPendingFetch();
@@ -332,6 +336,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
 
   // Is this a special case Gaia error for TwoFactor auth?
   static bool IsSecondFactorSuccess(const std::string& alleged_error);
+
+  // Is this a special case Gaia error for Less Secure Apps?
+  static bool IsWebLoginRequiredSuccess(const std::string& alleged_error);
 
   // Given parameters, create a ClientLogin request body.
   static std::string MakeClientLoginBody(

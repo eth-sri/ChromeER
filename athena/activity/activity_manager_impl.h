@@ -18,20 +18,20 @@ class ActivityManagerImpl : public ActivityManager,
                             public views::WidgetObserver {
  public:
   ActivityManagerImpl();
-  virtual ~ActivityManagerImpl();
+  ~ActivityManagerImpl() override;
 
   int num_activities() const { return activities_.size(); }
 
   // ActivityManager:
-  virtual void AddActivity(Activity* activity) OVERRIDE;
-  virtual void RemoveActivity(Activity* activity) OVERRIDE;
-  virtual void UpdateActivity(Activity* activity) OVERRIDE;
-  virtual Activity* GetActivityForWindow(aura::Window* window) OVERRIDE;
-  virtual void AddObserver(ActivityManagerObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(ActivityManagerObserver* observer) OVERRIDE;
+  void AddActivity(Activity* activity) override;
+  void RemoveActivity(Activity* activity) override;
+  void UpdateActivity(Activity* activity) override;
+  Activity* GetActivityForWindow(aura::Window* window) override;
+  void AddObserver(ActivityManagerObserver* observer) override;
+  void RemoveObserver(ActivityManagerObserver* observer) override;
 
   // views::WidgetObserver
-  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
+  void OnWidgetDestroying(views::Widget* widget) override;
 
  private:
   std::vector<Activity*> activities_;

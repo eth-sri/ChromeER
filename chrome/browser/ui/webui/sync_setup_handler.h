@@ -27,20 +27,19 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
  public:
   // Constructs a new SyncSetupHandler. |profile_manager| may be NULL.
   explicit SyncSetupHandler(ProfileManager* profile_manager);
-  virtual ~SyncSetupHandler();
+  ~SyncSetupHandler() override;
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(base::DictionaryValue* localized_strings)
-      OVERRIDE;
-  virtual void RegisterMessages() OVERRIDE;
+  void GetLocalizedValues(base::DictionaryValue* localized_strings) override;
+  void RegisterMessages() override;
 
   // SyncStartupTracker::Observer implementation;
-  virtual void SyncStartupCompleted() OVERRIDE;
-  virtual void SyncStartupFailed() OVERRIDE;
+  void SyncStartupCompleted() override;
+  void SyncStartupFailed() override;
 
   // LoginUIService::LoginUI implementation.
-  virtual void FocusUI() OVERRIDE;
-  virtual void CloseUI() OVERRIDE;
+  void FocusUI() override;
+  void CloseUI() override;
 
   static void GetStaticLocalizedValues(
       base::DictionaryValue* localized_strings,
@@ -71,6 +70,7 @@ class SyncSetupHandler : public options::OptionsPageUIHandler,
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, TestPassphraseStillRequired);
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, TestSyncIndividualTypes);
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, TurnOnEncryptAll);
+  FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, TurnOnEncryptAllDisallowed);
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerTest, UnsuccessfullySetPassphrase);
   FRIEND_TEST_ALL_PREFIXES(SyncSetupHandlerNonCrosTest,
                            UnrecoverableErrorInitializingSync);

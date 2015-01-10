@@ -4,8 +4,9 @@
 
 import("//build/config/android/config.gni")
 import("//build/config/arm.gni")
-import("//build/config/ui.gni")
+import("//build/config/features.gni")
 import("//build/config/linux/pkg_config.gni")
+import("//build/config/ui.gni")
 import("//media/media_options.gni")
 
 # Common configuration for targets in the media directory.
@@ -27,8 +28,9 @@ config("media_config") {
 }
 
 config("media_dependent_config") {
+  defines = []
   if (!media_use_libvpx) {
-    defines = [ "MEDIA_DISABLE_LIBVPX" ]
+    defines += [ "MEDIA_DISABLE_LIBVPX" ]
   }
   if (is_win) {
     ldflags = [
@@ -177,6 +179,8 @@ component("media") {
     "video/capture/video_capture_device.h",
     "video/capture/video_capture_device_factory.cc",
     "video/capture/video_capture_device_factory.h",
+    "video/capture/video_capture_device_info.cc",
+    "video/capture/video_capture_device_info.h",
     "video/capture/video_capture_types.cc",
     "video/capture/video_capture_types.h",
     "video/capture/win/capability_list_win.cc",
@@ -306,6 +310,13 @@ component("media") {
     }
   }
 
+  if (cpu_arch != "arm" && is_chromeos && use_x11) {
+    sources += [
+      "filters/h264_bitstream_buffer.cc",
+      "filters/h264_bitstream_buffer.h",
+    ]
+  }
+
   if (use_alsa) {
     libs += [ "asound" ]
     defines += [ "USE_ALSA" ]
@@ -366,6 +377,8 @@ component("media") {
 
   if (proprietary_codecs) {
     sources += [
+      "filters/h264_to_annex_b_bitstream_converter.cc",
+      "filters/h264_to_annex_b_bitstream_converter.h",
       "formats/mp2t/es_adapter_video.cc",
       "formats/mp2t/es_adapter_video.h",
       "formats/mp2t/es_parser.cc",

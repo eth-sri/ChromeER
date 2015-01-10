@@ -43,11 +43,13 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       has_pending_tree_(false),
       pending_tree_is_ready_for_activation_(false),
       active_tree_needs_first_draw_(false),
+      did_commit_after_animating_(false),
       did_create_and_initialize_first_output_surface_(false),
       impl_latency_takes_priority_(false),
       skip_next_begin_main_frame_to_reduce_latency_(false),
       skip_begin_main_frame_to_reduce_latency_(false),
-      continuous_painting_(false) {
+      continuous_painting_(false),
+      impl_latency_takes_priority_on_battery_(false) {
 }
 
 const char* SchedulerStateMachine::OutputSurfaceStateToString(
@@ -225,6 +227,7 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
                     pending_tree_is_ready_for_activation_);
   state->SetBoolean("active_tree_needs_first_draw",
                     active_tree_needs_first_draw_);
+  state->SetBoolean("did_commit_after_animating", did_commit_after_animating_);
   state->SetBoolean("did_create_and_initialize_first_output_surface",
                     did_create_and_initialize_first_output_surface_);
   state->SetBoolean("impl_latency_takes_priority",
@@ -236,6 +239,8 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
   state->SetBoolean("skip_next_begin_main_frame_to_reduce_latency",
                     skip_next_begin_main_frame_to_reduce_latency_);
   state->SetBoolean("continuous_painting", continuous_painting_);
+  state->SetBoolean("impl_latency_takes_priority_on_battery",
+                    impl_latency_takes_priority_on_battery_);
   state->EndDictionary();
 }
 
@@ -249,6 +254,10 @@ void SchedulerStateMachine::AdvanceCurrentFrameNumber() {
   skip_begin_main_frame_to_reduce_latency_ =
       skip_next_begin_main_frame_to_reduce_latency_;
   skip_next_begin_main_frame_to_reduce_latency_ = false;
+}
+
+bool SchedulerStateMachine::HasAnimatedThisFrame() const {
+  return last_frame_number_animate_performed_ == current_frame_number_;
 }
 
 bool SchedulerStateMachine::HasSentBeginMainFrameThisFrame() const {
@@ -341,6 +350,11 @@ bool SchedulerStateMachine::ShouldDraw() const {
   if (PendingDrawsShouldBeAborted())
     return active_tree_needs_first_draw_;
 
+  // If a commit has occurred after the animate call, we need to call animate
+  // again before we should draw.
+  if (did_commit_after_animating_)
+    return false;
+
   // After this line, we only want to send a swap request once per frame.
   if (HasRequestedSwapThisFrame())
     return false;
@@ -412,7 +426,8 @@ bool SchedulerStateMachine::ShouldAnimate() const {
   if (!can_draw_)
     return false;
 
-  if (last_frame_number_animate_performed_ == current_frame_number_)
+  // If a commit occurred after our last call, we need to do animation again.
+  if (HasAnimatedThisFrame() && !did_commit_after_animating_)
     return false;
 
   if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_BEGIN_FRAME_STARTING &&
@@ -564,6 +579,7 @@ void SchedulerStateMachine::UpdateState(Action action) {
     case ACTION_ANIMATE:
       last_frame_number_animate_performed_ = current_frame_number_;
       needs_animate_ = false;
+      did_commit_after_animating_ = false;
       // TODO(skyostil): Instead of assuming this, require the client to tell
       // us.
       SetNeedsRedraw();
@@ -618,6 +634,9 @@ void SchedulerStateMachine::UpdateState(Action action) {
 
 void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
   commit_count_++;
+
+  if (!commit_was_aborted && HasAnimatedThisFrame())
+    did_commit_after_animating_ = true;
 
   if (commit_was_aborted || settings_.main_frame_before_activation_enabled) {
     commit_state_ = COMMIT_STATE_IDLE;
@@ -869,6 +888,11 @@ bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineEarly() const {
 
   // Prioritize impl-thread draws in impl_latency_takes_priority_ mode.
   if (impl_latency_takes_priority_)
+    return true;
+
+  // If we are on battery power and want to prioritize impl latency because
+  // we don't trust deadline tasks to execute at the right time.
+  if (impl_latency_takes_priority_on_battery_)
     return true;
 
   return false;

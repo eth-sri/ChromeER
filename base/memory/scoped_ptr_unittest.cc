@@ -25,11 +25,14 @@ class ConDecLogger : public ConDecLoggerParent {
  public:
   ConDecLogger() : ptr_(NULL) { }
   explicit ConDecLogger(int* ptr) { SetPtr(ptr); }
-  virtual ~ConDecLogger() { --*ptr_; }
+  ~ConDecLogger() override { --*ptr_; }
 
-  virtual void SetPtr(int* ptr) OVERRIDE { ptr_ = ptr; ++*ptr_; }
+  void SetPtr(int* ptr) override {
+    ptr_ = ptr;
+    ++*ptr_;
+  }
 
-  virtual int SomeMeth(int x) const OVERRIDE { return x; }
+  int SomeMeth(int x) const override { return x; }
 
  private:
   int* ptr_;
@@ -89,11 +92,6 @@ void GrabAndDrop(scoped_ptr<ConDecLogger> logger) {
 // return a temporarily constructed version of the scoper.
 scoped_ptr<ConDecLogger> TestReturnOfType(int* constructed) {
   return scoped_ptr<ConDecLogger>(new ConDecLogger(constructed));
-}
-
-scoped_ptr<ConDecLoggerParent> UpcastUsingPassAs(
-    scoped_ptr<ConDecLogger> object) {
-  return object.PassAs<ConDecLoggerParent>();
 }
 
 }  // namespace
@@ -398,17 +396,17 @@ TEST(ScopedPtrTest, PassBehavior) {
     EXPECT_TRUE(scoper3.get());
   }
 
-  // Test uncaught Pass() does not leak.
+  // Test uncaught Pass() does not have side effects.
   {
     ConDecLogger* logger = new ConDecLogger(&constructed);
     scoped_ptr<ConDecLogger> scoper(logger);
     EXPECT_EQ(1, constructed);
 
     // Should auto-destruct logger by end of scope.
-    scoper.Pass();
-    // This differs from unique_ptr, as Pass() has side effects but std::move()
-    // does not.
-    EXPECT_FALSE(scoper.get());
+    scoped_ptr<ConDecLogger>&& rvalue = scoper.Pass();
+    // The Pass() function mimics std::move(), which does not have side-effects.
+    EXPECT_TRUE(scoper.get());
+    EXPECT_TRUE(rvalue);
   }
   EXPECT_EQ(0, constructed);
 
@@ -455,22 +453,6 @@ TEST(ScopedPtrTest, ReturnTypeBehavior) {
   // function.
   {
     TestReturnOfType(&constructed);
-  }
-  EXPECT_EQ(0, constructed);
-}
-
-TEST(ScopedPtrTest, PassAs) {
-  int constructed = 0;
-  {
-    scoped_ptr<ConDecLogger> scoper(new ConDecLogger(&constructed));
-    EXPECT_EQ(1, constructed);
-    EXPECT_TRUE(scoper.get());
-
-    scoped_ptr<ConDecLoggerParent> scoper_parent;
-    scoper_parent = UpcastUsingPassAs(scoper.Pass());
-    EXPECT_EQ(1, constructed);
-    EXPECT_TRUE(scoper_parent.get());
-    EXPECT_FALSE(scoper.get());
   }
   EXPECT_EQ(0, constructed);
 }
@@ -655,4 +637,42 @@ TEST(ScopedPtrTest, Conversion) {
   // Upcast with an rvalue works.
   scoped_ptr<Super> super2 = SubClassReturn();
   super2 = SubClassReturn();
+}
+
+// Android death tests don't work properly with assert(). Yay.
+#if !defined(NDEBUG) && defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+TEST(ScopedPtrTest, SelfResetAbortsWithDefaultDeleter) {
+  scoped_ptr<int> x(new int);
+  EXPECT_DEATH(x.reset(x.get()), "");
+}
+
+TEST(ScopedPtrTest, SelfResetAbortsWithDefaultArrayDeleter) {
+  scoped_ptr<int[]> y(new int[4]);
+  EXPECT_DEATH(y.reset(y.get()), "");
+}
+
+TEST(ScopedPtrTest, SelfResetAbortsWithDefaultFreeDeleter) {
+  scoped_ptr<int, base::FreeDeleter> z(static_cast<int*>(malloc(sizeof(int))));
+  EXPECT_DEATH(z.reset(z.get()), "");
+}
+
+// A custom deleter that doesn't opt out should still crash.
+TEST(ScopedPtrTest, SelfResetAbortsWithCustomDeleter) {
+  struct CustomDeleter {
+    inline void operator()(int* x) { delete x; }
+  };
+  scoped_ptr<int, CustomDeleter> x(new int);
+  EXPECT_DEATH(x.reset(x.get()), "");
+}
+#endif
+
+TEST(ScopedPtrTest, SelfResetWithCustomDeleterOptOut) {
+  // A custom deleter should be able to opt out of self-reset abort behavior.
+  struct NoOpDeleter {
+    typedef void AllowSelfReset;
+    inline void operator()(int*) {}
+  };
+  scoped_ptr<int> owner(new int);
+  scoped_ptr<int, NoOpDeleter> x(owner.get());
+  x.reset(x.get());
 }

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
@@ -43,6 +44,9 @@ class StartPageService : public KeyedService {
   void AppListHidden();
   void ToggleSpeechRecognition();
 
+  // Called when the WebUI has finished loading.
+  void WebUILoaded();
+
   // Returns true if the hotword is enabled in the app-launcher.
   bool HotwordEnabled();
 
@@ -71,13 +75,13 @@ class StartPageService : public KeyedService {
   class StartPageWebContentsDelegate;
 
   explicit StartPageService(Profile* profile);
-  virtual ~StartPageService();
+  ~StartPageService() override;
 
   void LoadContents();
   void UnloadContents();
 
   // KeyedService overrides:
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
   Profile* profile_;
   scoped_ptr<content::WebContents> contents_;
@@ -88,6 +92,9 @@ class StartPageService : public KeyedService {
   ObserverList<StartPageObserver> observers_;
   bool speech_button_toggled_manually_;
   bool speech_result_obtained_;
+
+  bool webui_finished_loading_;
+  std::vector<base::Closure> pending_webui_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(StartPageService);
 };

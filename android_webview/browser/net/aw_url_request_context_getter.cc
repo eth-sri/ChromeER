@@ -17,9 +17,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/worker_pool.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_config_service.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_config_service.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/cookie_store_factory.h"
@@ -52,7 +52,8 @@ namespace {
 
 void ApplyCmdlineOverridesToURLRequestContextBuilder(
     net::URLRequestContextBuilder* builder) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kHostResolverRules)) {
     // If hostname remappings were specified on the command-line, layer these
     // rules on top of the real host resolver. This allows forwarding all
@@ -69,7 +70,8 @@ void ApplyCmdlineOverridesToURLRequestContextBuilder(
 void ApplyCmdlineOverridesToNetworkSessionParams(
     net::HttpNetworkSession::Params* params) {
   int value;
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kTestingFixedHttpPort)) {
     base::StringToInt(command_line.GetSwitchValueASCII(
         switches::kTestingFixedHttpPort), &value);
@@ -233,7 +235,7 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
   DCHECK(data_reduction_proxy_settings);
   data_reduction_proxy_auth_request_handler_.reset(
       new data_reduction_proxy::DataReductionProxyAuthRequestHandler(
-          data_reduction_proxy::kClientAndroidWebview,
+          data_reduction_proxy::Client::WEBVIEW_ANDROID,
           data_reduction_proxy_settings->params(),
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
 
@@ -247,7 +249,7 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
 
   main_http_factory_.reset(main_cache);
   url_request_context_->set_http_transaction_factory(main_cache);
-  url_request_context_->set_cookie_store(cookie_store_);
+  url_request_context_->set_cookie_store(cookie_store_.get());
 
   job_factory_ = CreateJobFactory(&protocol_handlers_,
                                   request_interceptors_.Pass());
@@ -281,6 +283,11 @@ AwURLRequestContextGetter::GetDataReductionProxyAuthRequestHandler() const {
 
 net::NetLog* AwURLRequestContextGetter::GetNetLog() {
   return net_log_.get();
+}
+
+void AwURLRequestContextGetter::SetKeyOnIO(const std::string& key) {
+  DCHECK(data_reduction_proxy_auth_request_handler_);
+  data_reduction_proxy_auth_request_handler_->InitAuthentication(key);
 }
 
 }  // namespace android_webview

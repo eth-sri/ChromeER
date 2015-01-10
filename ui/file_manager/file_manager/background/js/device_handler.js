@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Handler of device event.
  * @constructor
@@ -18,14 +16,6 @@ function DeviceHandler() {
    * @private
    */
   this.mountStatus_ = {};
-
-  /**
-   * Map of device path and volumeId of the volume that should be navigated to
-   * from the 'device inserted' notification.
-   * @type {Object.<string, DirectoryEntry>}
-   * @private
-   */
-  this.navigationVolumes_ = {};
 
   chrome.fileManagerPrivate.onDeviceChanged.addListener(
       this.onDeviceChanged_.bind(this));
@@ -175,20 +165,51 @@ DeviceHandler.Notification.FORMAT_FAIL = new DeviceHandler.Notification(
 DeviceHandler.Notification.prototype.show = function(devicePath, opt_message) {
   var notificationId = this.makeId_(devicePath);
   this.queue_.run(function(callback) {
-    var buttons =
-        this.buttonLabel ? [{title: str(this.buttonLabel)}] : undefined;
-    chrome.notifications.create(
-        notificationId,
-        {
-          type: 'basic',
-          title: str(this.title),
-          message: opt_message || str(this.message),
-          iconUrl: chrome.runtime.getURL('/common/images/icon96.png'),
-          buttons: buttons
-        },
-        callback);
+    this.showInternal_(notificationId, opt_message || null, callback);
   }.bind(this));
   return notificationId;
+};
+
+/**
+ * Shows the notification for the device path.
+ * If the existing notification has been already shown, it does not anything.
+ * @param {string} devicePath Device path.
+ */
+DeviceHandler.Notification.prototype.showOnce = function(devicePath) {
+  var notificationId = this.makeId_(devicePath);
+  this.queue_.run(function(callback) {
+    chrome.notifications.getAll(function(idList) {
+      if (idList.indexOf(notificationId) !== -1) {
+        callback();
+        return;
+      }
+      this.showInternal_(notificationId, null, callback);
+    }.bind(this));
+  });
+};
+
+/**
+ * Shows the notificaiton without using AsyncQueue.
+ * @param {string} notificationId Notification ID.
+ * @param {?string} message Message overriding the normal message.
+ * @param {function()} callback Callback to be invoked when the notification is
+ *     created.
+ * @private
+ */
+DeviceHandler.Notification.prototype.showInternal_ = function(
+    notificationId, message, callback) {
+  var buttons =
+      this.buttonLabel ? [{title: str(this.buttonLabel)}] : undefined;
+  chrome.notifications.create(
+      notificationId,
+      {
+        type: 'basic',
+        title: str(this.title),
+        message: message || str(this.message),
+        iconUrl: chrome.runtime.getURL('/common/images/icon96.png'),
+        buttons: buttons
+      },
+      callback);
 };
 
 /**
@@ -256,7 +277,7 @@ DeviceHandler.prototype.onDeviceChanged_ = function(event) {
  * @enum {string}
  * @const
  */
-DeviceHandler.MountStatus = Object.freeze({
+DeviceHandler.MountStatus = {
   // There is no mount results on the device.
   NO_RESULT: 'noResult',
   // There is no error on the device.
@@ -267,7 +288,8 @@ DeviceHandler.MountStatus = Object.freeze({
   CHILD_ERROR: 'childError',
   // There is multiple child results and at least one is failure.
   MULTIPART_ERROR: 'multipartError'
-});
+};
+Object.freeze(DeviceHandler.MountStatus);
 
 /**
  * Handles mount completed events to show notifications for removable devices.
@@ -278,39 +300,14 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
   // If this is remounting, which happens when resuming ChromeOS, the device has
   // already inserted to the computer. So we suppress the notification.
   var volume = event.volumeMetadata;
-  if (!volume.deviceType || !event.shouldNotify)
+  if (!volume.deviceType || !volume.devicePath || !event.shouldNotify)
     return;
 
   // If the current volume status is succeed and it should be handled in
   // Files.app, show the notification to navigate the volume.
-  if (event.eventType === 'mount' &&
-      event.status === 'success') {
-    if (this.navigationVolumes_[event.volumeMetadata.devicePath]) {
-      // The notification has already shown for the device. It seems the device
-      // has multiple volumes. The order of mount events of volumes are
-      // undetermind, so it compares the volume Id and uses the earier order ID
-      // to prevent Files.app from navigating to different volumes for each
-      // time.
-      if (event.volumeMetadata.volumeId <
-          this.navigationVolumes_[event.volumeMetadata.devicePath]) {
-        this.navigationVolumes_[event.volumeMetadata.devicePath] =
-            event.volumeMetadata.volumeId;
-      }
-    } else {
-      this.navigationVolumes_[event.volumeMetadata.devicePath] =
-          event.volumeMetadata.volumeId;
-      DeviceHandler.Notification.DEVICE_NAVIGATION.show(
-          event.volumeMetadata.devicePath);
-    }
-  } else if (event.status === 'error_unknown_filesystem') {
-    // The volume id is necessary to navigate when users click start
-    // format button.
-    this.navigationVolumes_[event.volumeMetadata.devicePath] =
-        event.volumeMetadata.volumeId;
-  }
-
-  if (event.eventType === 'unmount') {
-    this.navigationVolumes_[volume.devicePath] = null;
+  if (event.eventType === 'mount' && event.status === 'success') {
+    DeviceHandler.Notification.DEVICE_NAVIGATION.show(volume.devicePath);
+  } else if (event.eventType === 'unmount') {
     DeviceHandler.Notification.DEVICE_NAVIGATION.hide(volume.devicePath);
   }
 
@@ -402,11 +399,11 @@ DeviceHandler.prototype.onMountCompleted_ = function(event) {
 DeviceHandler.prototype.onNotificationButtonClicked_ = function(id) {
   var pos = id.indexOf(':');
   var type = id.substr(0, pos);
-  var path = id.substr(pos + 1);
+  var devicePath = id.substr(pos + 1);
   if (type === 'deviceNavigation' || type === 'deviceFail') {
     chrome.notifications.clear(id, function() {});
     var event = new Event(DeviceHandler.VOLUME_NAVIGATION_REQUESTED);
-    event.volumeId = this.navigationVolumes_[path];
+    event.devicePath = devicePath;
     this.dispatchEvent(event);
   }
 };

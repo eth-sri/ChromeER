@@ -23,11 +23,10 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/timer/timer.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/lock/webui_screen_locker.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/login/supervised/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
@@ -93,14 +92,14 @@ class ScreenLockObserver : public SessionManagerClient::StubDelegate,
   bool session_started() const { return session_started_; }
 
   // SessionManagerClient::StubDelegate overrides:
-  virtual void LockScreenForStub() OVERRIDE {
+  virtual void LockScreenForStub() override {
     ScreenLocker::HandleLockScreenRequest();
   }
 
   // NotificationObserver overrides:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+                       const content::NotificationDetails& details) override {
     if (type == chrome::NOTIFICATION_SESSION_STARTED)
       session_started_ = true;
     else
@@ -108,7 +107,7 @@ class ScreenLockObserver : public SessionManagerClient::StubDelegate,
   }
 
   // UserAddingScreen::Observer overrides:
-  virtual void OnUserAddingFinished() OVERRIDE {
+  virtual void OnUserAddingFinished() override {
     UserAddingScreen::Get()->RemoveObserver(this);
     ScreenLocker::HandleLockScreenRequest();
   }
@@ -158,8 +157,13 @@ ScreenLocker::ScreenLocker(const user_manager::UserList& users)
 }
 
 void ScreenLocker::Init() {
+  input_method::InputMethodManager* imm =
+      input_method::InputMethodManager::Get();
+  saved_ime_state_ = imm->GetActiveIMEState();
+  imm->SetState(saved_ime_state_->Clone());
+
   authenticator_ = LoginUtils::Get()->CreateAuthenticator(this);
-  extended_authenticator_ = new ExtendedAuthenticator(this);
+  extended_authenticator_ = ExtendedAuthenticator::Create(this);
   delegate_.reset(new WebUIScreenLocker(this));
   delegate_->LockScreen();
 
@@ -214,9 +218,7 @@ void ScreenLocker::OnAuthSuccess(const UserContext& user_context) {
       user_manager::UserManager::Get()->SwitchActiveUser(
           user_context.GetUserID());
     }
-    EasyUnlockService* easy_unlock = EasyUnlockService::GetForUser(*user);
-    if (easy_unlock)
-      easy_unlock->SetHardlocked(false);
+    UserSessionManager::GetInstance()->UpdateEasyUnlockKeys(user_context);
   } else {
     NOTREACHED() << "Logged in user not found.";
   }
@@ -281,13 +283,12 @@ void ScreenLocker::Authenticate(const UserContext& user_context) {
     }
   }
 
-  // TODO(antrim) : migrate to new authenticator for all types of users.
-  // http://crbug.com/351268
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&Authenticator::AuthenticateToUnlock,
-                 authenticator_.get(),
-                 user_context));
+      base::Bind(&ExtendedAuthenticator::AuthenticateToCheck,
+                 extended_authenticator_.get(),
+                 user_context,
+                 base::Closure()));
 }
 
 const user_manager::User* ScreenLocker::FindUnlockUser(
@@ -361,7 +362,10 @@ void ScreenLocker::HandleLockScreenRequest() {
   if (g_screen_lock_observer->session_started() &&
       user_manager::UserManager::Get()->CanCurrentUserLock()) {
     ScreenLocker::Show();
+#if !defined(USE_ATHENA)
+    // TOOD(dpolukhin): crbug.com/413926.
     ash::Shell::GetInstance()->lock_state_controller()->OnStartingLock();
+#endif
   } else {
     // If the current user's session cannot be locked or the user has not
     // completed all sign-in steps yet, log out instead. The latter is done to
@@ -375,11 +379,6 @@ void ScreenLocker::HandleLockScreenRequest() {
 
 // static
 void ScreenLocker::Show() {
-#if defined(USE_ATHENA)
-  // crbug.com/413926
-  return;
-#endif
-
   content::RecordAction(UserMetricsAction("ScreenLocker_Show"));
   DCHECK(base::MessageLoopForUI::IsCurrent());
 
@@ -392,6 +391,7 @@ void ScreenLocker::Show() {
     return;
   }
 
+#if !defined(USE_ATHENA)
   // If the active window is fullscreen, exit fullscreen to avoid the web page
   // or app mimicking the lock screen. Do not exit fullscreen if the shelf is
   // visible while in fullscreen because the shelf makes it harder for a web
@@ -403,6 +403,7 @@ void ScreenLocker::Show() {
     const ash::wm::WMEvent event(ash::wm::WM_EVENT_TOGGLE_FULLSCREEN);
     active_window_state->OnWMEvent(&event);
   }
+#endif
 
   if (!screen_locker_) {
     ScreenLocker* locker =
@@ -419,11 +420,6 @@ void ScreenLocker::Show() {
 
 // static
 void ScreenLocker::Hide() {
-#if defined(USE_ATHENA)
-  // crbug.com/413926
-  return;
-#endif
-
   DCHECK(base::MessageLoopForUI::IsCurrent());
   // For a guest/demo user, screen_locker_ would have never been initialized.
   if (user_manager::UserManager::Get()->IsLoggedInAsGuest() ||
@@ -435,8 +431,12 @@ void ScreenLocker::Hide() {
   DCHECK(screen_locker_);
   base::Callback<void(void)> callback =
       base::Bind(&ScreenLocker::ScheduleDeletion);
+#if !defined(USE_ATHENA)
   ash::Shell::GetInstance()->lock_state_controller()->
     OnLockScreenHide(callback);
+#else
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback);
+#endif
 }
 
 void ScreenLocker::ScheduleDeletion() {
@@ -445,7 +445,9 @@ void ScreenLocker::ScheduleDeletion() {
     return;
   VLOG(1) << "Deleting ScreenLocker " << screen_locker_;
 
+#if !defined(USE_ATHENA)
   ash::PlaySystemSoundIfSpokenFeedback(SOUND_UNLOCK);
+#endif
 
   delete screen_locker_;
   screen_locker_ = NULL;
@@ -462,9 +464,12 @@ ScreenLocker::~ScreenLocker() {
     authenticator_->SetConsumer(NULL);
   ClearErrors();
 
+#if !defined(USE_ATHENA)
+  // TOOD(dpolukhin): we need to to something similar for Athena.
   VLOG(1) << "Moving desktop background to unlocked container";
   ash::Shell::GetInstance()->
       desktop_background_controller()->MoveDesktopToUnlockedContainer();
+#endif
 
   screen_locker_ = NULL;
   bool state = false;
@@ -495,14 +500,10 @@ void ScreenLocker::ScreenLockReady() {
   UMA_HISTOGRAM_TIMES("ScreenLocker.ScreenLockTime", delta);
 
   VLOG(1) << "Moving desktop background to locked container";
+#if !defined(USE_ATHENA)
   ash::Shell::GetInstance()->
       desktop_background_controller()->MoveDesktopToLockedContainer();
-
-  input_method::InputMethodManager* imm =
-      input_method::InputMethodManager::Get();
-  saved_ime_state_ = imm->GetActiveIMEState();
-  imm->SetState(saved_ime_state_->Clone());
-  imm->GetActiveIMEState()->EnableLockScreenLayouts();
+#endif
 
   bool state = true;
   VLOG(1) << "Emitting SCREEN_LOCK_STATE_CHANGED with state=" << state;
@@ -512,6 +513,10 @@ void ScreenLocker::ScreenLockReady() {
       content::Details<bool>(&state));
   VLOG(1) << "Calling session manager's HandleLockScreenShown D-Bus method";
   DBusThreadManager::Get()->GetSessionManagerClient()->NotifyLockScreenShown();
+
+  input_method::InputMethodManager::Get()
+      ->GetActiveIMEState()
+      ->EnableLockScreenLayouts();
 }
 
 content::WebUI* ScreenLocker::GetAssociatedWebUI() {

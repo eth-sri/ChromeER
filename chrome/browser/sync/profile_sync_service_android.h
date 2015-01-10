@@ -46,6 +46,9 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   // Called from Java when the user signs out of Chrome
   void SignOutSync(JNIEnv* env, jobject obj);
 
+  // Called from Java when we get a signal that the Directory should be saved.
+  void FlushDirectory(JNIEnv* env, jobject obj);
+
   // Returns a string version of browser_sync::SyncBackendHost::StatusSummary
   base::android::ScopedJavaLocalRef<jstring> QuerySyncStatusSummary(
       JNIEnv* env, jobject obj);
@@ -61,6 +64,9 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
 
   // Returns true if the sync is currently being setup for the first time.
   jboolean IsFirstSetupInProgress(JNIEnv* env, jobject obj);
+
+  // Returns true if encrypting everything is allowed.
+  jboolean IsEncryptEverythingAllowed(JNIEnv* env, jobject obj);
 
   // Returns true if the user is currently encrypting everything.
   jboolean IsEncryptEverythingEnabled(JNIEnv* env, jobject obj);
@@ -108,6 +114,9 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
 
   // Returns true if the current explicit passphrase time is defined.
   jboolean HasExplicitPassphraseTime(JNIEnv* env, jobject);
+
+  // Returns the current explicit passphrase time.
+  jlong GetExplicitPassphraseTime(JNIEnv* env, jobject);
 
   base::android::ScopedJavaLocalRef<jstring>
       GetSyncEnterGooglePassphraseBodyWithDateText(
@@ -178,7 +187,7 @@ class ProfileSyncServiceAndroid : public ProfileSyncServiceObserver {
   jint GetAuthError(JNIEnv* env, jobject obj);
 
   // ProfileSyncServiceObserver:
-  virtual void OnStateChanged() OVERRIDE;
+  virtual void OnStateChanged() override;
 
   // Returns a timestamp for when a sync was last executed. The return value is
   // the internal value of base::Time.

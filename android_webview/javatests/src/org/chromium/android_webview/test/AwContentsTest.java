@@ -139,6 +139,7 @@ public class AwContentsTest extends AwTestBase {
                 new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MENU));
     }
 
+    @DisableHardwareAccelerationForTest
     @LargeTest
     @Feature({"AndroidWebView"})
     public void testCreateAndGcManyTimes() throws Throwable {
@@ -216,7 +217,7 @@ public class AwContentsTest extends AwTestBase {
         runTestOnUiThread(new Runnable() {
             @Override
             public void run() {
-              awContents.documentHasImages(msg);
+                awContents.documentHasImages(msg);
             }
         });
         assertTrue(s.tryAcquire(WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS));
@@ -254,9 +255,8 @@ public class AwContentsTest extends AwTestBase {
                 createAwTestContainerViewOnMainSync(mContentsClient);
         final AwContents awContents = testContainer.getAwContents();
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String pagePath = "/clear_cache_test.html";
             List<Pair<String, String>> headers = new ArrayList<Pair<String, String>>();
             // Set Cache-Control headers to cache this request. One century should be long enough.
@@ -296,7 +296,7 @@ public class AwContentsTest extends AwTestBase {
                         pageUrl);
             assertEquals(2, webServer.getRequestCount(pagePath));
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -324,10 +324,8 @@ public class AwContentsTest extends AwTestBase {
         final AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
         final AwContents awContents = testView.getAwContents();
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
-
             final String faviconUrl = webServer.setResponseBase64(
                     "/" + CommonResources.FAVICON_FILENAME, CommonResources.FAVICON_DATA_BASE64,
                     CommonResources.getImagePngHeaders(false));
@@ -351,13 +349,13 @@ public class AwContentsTest extends AwTestBase {
 
             final Object originalFaviconSource = (new URL(faviconUrl)).getContent();
             final Bitmap originalFavicon =
-                BitmapFactory.decodeStream((InputStream) originalFaviconSource);
+                    BitmapFactory.decodeStream((InputStream) originalFaviconSource);
             assertNotNull(originalFavicon);
 
             assertTrue(awContents.getFavicon().sameAs(originalFavicon));
 
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -376,13 +374,12 @@ public class AwContentsTest extends AwTestBase {
         downloadHeaders.add(Pair.create("Content-Type", mimeType));
         downloadHeaders.add(Pair.create("Content-Length", Integer.toString(data.length())));
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String pageUrl = webServer.setResponse(
                     "/download.txt", data, downloadHeaders);
             final OnDownloadStartHelper downloadStartHelper =
-                mContentsClient.getOnDownloadStartHelper();
+                    mContentsClient.getOnDownloadStartHelper();
             final int callCount = downloadStartHelper.getCallCount();
             loadUrlAsync(awContents, pageUrl);
             downloadStartHelper.waitForCallback(callCount);
@@ -392,7 +389,7 @@ public class AwContentsTest extends AwTestBase {
             assertEquals(mimeType, downloadStartHelper.getMimeType());
             assertEquals(data.length(), downloadStartHelper.getContentLength());
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 
@@ -408,17 +405,17 @@ public class AwContentsTest extends AwTestBase {
 
         // Default to "online".
         assertEquals("true", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
-              script));
+                script));
 
         // Forcing "offline".
         setNetworkAvailableOnUiThread(awContents, false);
         assertEquals("false", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
-              script));
+                script));
 
         // Forcing "online".
         setNetworkAvailableOnUiThread(awContents, true);
         assertEquals("true", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
-              script));
+                script));
     }
 
 
@@ -479,9 +476,8 @@ public class AwContentsTest extends AwTestBase {
                 createAwTestContainerViewOnMainSync(mContentsClient);
         final AwContents awContents = testContainer.getAwContents();
 
-        TestWebServer webServer = null;
+        TestWebServer webServer = TestWebServer.start();
         try {
-            webServer = new TestWebServer(false);
             final String pagePath = "/test_can_inject_headers.html";
             final String pageUrl = webServer.setResponse(
                     pagePath, "<html><body>foo</body></html>", null);
@@ -504,7 +500,7 @@ public class AwContentsTest extends AwTestBase {
                 assertEquals(value.getValue(), matchingHeaders[0].getValue());
             }
         } finally {
-            if (webServer != null) webServer.shutdown();
+            webServer.shutdown();
         }
     }
 

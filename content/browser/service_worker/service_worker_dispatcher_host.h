@@ -19,6 +19,7 @@ struct EmbeddedWorkerHostMsg_ReportConsoleMessage_Params;
 namespace content {
 
 class MessagePortMessageFilter;
+class ResourceContext;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextWrapper;
 class ServiceWorkerHandle;
@@ -32,14 +33,15 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
  public:
   ServiceWorkerDispatcherHost(
       int render_process_id,
-      MessagePortMessageFilter* message_port_message_filter);
+      MessagePortMessageFilter* message_port_message_filter,
+      ResourceContext* resource_context);
 
   void Init(ServiceWorkerContextWrapper* context_wrapper);
 
   // BrowserMessageFilter implementation
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnDestruct() const override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // IPC::Sender implementation
 
@@ -47,7 +49,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   // class assumes that Send() can only fail after that when the renderer
   // process has terminated, at which point the whole instance will eventually
   // be destroyed.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
   // Returns the existing registration handle whose reference count is
   // incremented or newly created one if it doesn't exist.
@@ -64,7 +66,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   }
 
  protected:
-  virtual ~ServiceWorkerDispatcherHost();
+  ~ServiceWorkerDispatcherHost() override;
 
  private:
   friend class BrowserThread;
@@ -158,6 +160,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
 
   int render_process_id_;
   MessagePortMessageFilter* const message_port_message_filter_;
+  ResourceContext* resource_context_;
   scoped_refptr<ServiceWorkerContextWrapper> context_wrapper_;
 
   IDMap<ServiceWorkerHandle, IDMapOwnPointer> handles_;

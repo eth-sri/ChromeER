@@ -37,7 +37,7 @@ class ASH_EXPORT MaximizeModeWindowManager : public aura::WindowObserver,
                                              public ui::EventHandler {
  public:
   // This should only be deleted by the creator (ash::Shell).
-  virtual ~MaximizeModeWindowManager();
+  ~MaximizeModeWindowManager() override;
 
   // Returns the number of maximized & tracked windows by this manager.
   int GetNumberOfManagedWindows();
@@ -52,24 +52,24 @@ class ASH_EXPORT MaximizeModeWindowManager : public aura::WindowObserver,
   void WindowStateDestroyed(aura::Window* window);
 
   // ShellObserver overrides:
-  virtual void OnOverviewModeStarting() OVERRIDE;
-  virtual void OnOverviewModeEnding() OVERRIDE;
+  void OnOverviewModeStarting() override;
+  void OnOverviewModeEnding() override;
 
   // Overridden from WindowObserver:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
-  virtual void OnWindowAdded(aura::Window* window) OVERRIDE;
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
+  void OnWindowDestroying(aura::Window* window) override;
+  void OnWindowAdded(aura::Window* window) override;
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override;
 
   // gfx::DisplayObserver overrides:
-  virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
-  virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
-  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
-                                       uint32_t metrics) OVERRIDE;
+  void OnDisplayAdded(const gfx::Display& display) override;
+  void OnDisplayRemoved(const gfx::Display& display) override;
+  void OnDisplayMetricsChanged(const gfx::Display& display,
+                               uint32_t metrics) override;
 
   // ui::EventHandler override:
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  void OnTouchEvent(ui::TouchEvent* event) override;
 
  protected:
   friend class MaximizeModeController;

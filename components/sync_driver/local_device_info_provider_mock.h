@@ -23,15 +23,14 @@ class LocalDeviceInfoProviderMock
       const std::string& sync_user_agent,
       const sync_pb::SyncEnums::DeviceType device_type,
       const std::string& signin_scoped_device_id);
-  virtual ~LocalDeviceInfoProviderMock();
+  ~LocalDeviceInfoProviderMock() override;
 
-  virtual const DeviceInfo* GetLocalDeviceInfo() const OVERRIDE;
-  virtual std::string GetLocalSyncCacheGUID() const OVERRIDE;
-  virtual void Initialize(
-      const std::string& cache_guid,
-      const std::string& signin_scoped_device_id) OVERRIDE;
-  virtual scoped_ptr<Subscription> RegisterOnInitializedCallback(
-    const base::Closure& callback) OVERRIDE;
+  const DeviceInfo* GetLocalDeviceInfo() const override;
+  std::string GetLocalSyncCacheGUID() const override;
+  void Initialize(const std::string& cache_guid,
+                  const std::string& signin_scoped_device_id) override;
+  scoped_ptr<Subscription> RegisterOnInitializedCallback(
+      const base::Closure& callback) override;
 
   void SetInitialized(bool is_initialized);
 

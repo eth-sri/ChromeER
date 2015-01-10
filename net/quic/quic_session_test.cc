@@ -9,6 +9,9 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
+#include "base/rand_util.h"
+#include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_flags.h"
@@ -52,7 +55,7 @@ class TestCryptoStream : public QuicCryptoStream {
   }
 
   virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE {
+      const CryptoHandshakeMessage& message) override {
     encryption_established_ = true;
     handshake_confirmed_ = true;
     CryptoHandshakeMessage msg;
@@ -91,12 +94,12 @@ class TestStream : public QuicDataStream {
 
   using ReliableQuicStream::CloseWriteSide;
 
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE {
+  virtual uint32 ProcessData(const char* data, uint32 data_len) override {
     return data_len;
   }
 
   void SendBody(const string& data, bool fin) {
-    WriteOrBufferData(data, fin, NULL);
+    WriteOrBufferData(data, fin, nullptr);
   }
 
   MOCK_METHOD0(OnCanWrite, void());
@@ -129,17 +132,17 @@ class TestSession : public QuicSession {
     InitializeSession();
   }
 
-  virtual TestCryptoStream* GetCryptoStream() OVERRIDE {
+  virtual TestCryptoStream* GetCryptoStream() override {
     return &crypto_stream_;
   }
 
-  virtual TestStream* CreateOutgoingDataStream() OVERRIDE {
+  virtual TestStream* CreateOutgoingDataStream() override {
     TestStream* stream = new TestStream(GetNextStreamId(), this);
     ActivateStream(stream);
     return stream;
   }
 
-  virtual TestStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE {
+  virtual TestStream* CreateIncomingDataStream(QuicStreamId id) override {
     return new TestStream(id, this);
   }
 
@@ -157,7 +160,7 @@ class TestSession : public QuicSession {
       QuicStreamOffset offset,
       bool fin,
       FecProtection fec_protection,
-      QuicAckNotifier::DelegateInterface* ack_notifier_delegate) OVERRIDE {
+      QuicAckNotifier::DelegateInterface* ack_notifier_delegate) override {
     // Always consumes everything.
     if (writev_consumes_all_data_) {
       return QuicConsumedData(data.TotalBufferSize(), fin);
@@ -172,7 +175,7 @@ class TestSession : public QuicSession {
   }
 
   QuicConsumedData SendStreamData(QuicStreamId id) {
-    return WritevData(id, IOVector(), 0, true, MAY_FEC_PROTECT, NULL);
+    return WritevData(id, IOVector(), 0, true, MAY_FEC_PROTECT, nullptr);
   }
 
   using QuicSession::PostProcessAfterData;
@@ -225,7 +228,7 @@ class QuicSessionTest : public ::testing::TestWithParam<QuicVersion> {
 
   void CheckClosedStreams() {
     for (int i = kCryptoStreamId; i < 100; i++) {
-      if (closed_streams_.count(i) == 0) {
+      if (!ContainsKey(closed_streams_, i)) {
         EXPECT_FALSE(session_.IsClosedStream(i)) << " stream id: " << i;
       } else {
         EXPECT_TRUE(session_.IsClosedStream(i)) << " stream id: " << i;
@@ -268,12 +271,12 @@ TEST_P(QuicSessionTest, IsClosedStreamDefault) {
 }
 
 TEST_P(QuicSessionTest, ImplicitlyCreatedStreams) {
-  ASSERT_TRUE(session_.GetIncomingDataStream(7) != NULL);
+  ASSERT_TRUE(session_.GetIncomingDataStream(7) != nullptr);
   // Both 3 and 5 should be implicitly created.
   EXPECT_FALSE(session_.IsClosedStream(3));
   EXPECT_FALSE(session_.IsClosedStream(5));
-  ASSERT_TRUE(session_.GetIncomingDataStream(5) != NULL);
-  ASSERT_TRUE(session_.GetIncomingDataStream(3) != NULL);
+  ASSERT_TRUE(session_.GetIncomingDataStream(5) != nullptr);
+  ASSERT_TRUE(session_.GetIncomingDataStream(3) != nullptr);
 }
 
 TEST_P(QuicSessionTest, IsClosedStreamLocallyCreated) {
@@ -527,13 +530,11 @@ TEST_P(QuicSessionTest, OnCanWriteWithClosedStream) {
 }
 
 TEST_P(QuicSessionTest, OnCanWriteLimitsNumWritesIfFlowControlBlocked) {
-  if (version() < QUIC_VERSION_19) {
-    return;
-  }
-
   // Ensure connection level flow control blockage.
   QuicFlowControllerPeer::SetSendWindowOffset(session_.flow_controller(), 0);
   EXPECT_TRUE(session_.flow_controller()->IsBlocked());
+  EXPECT_TRUE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
 
   // Mark the crypto and headers streams as write blocked, we expect them to be
   // allowed to write later.
@@ -579,11 +580,11 @@ TEST_P(QuicSessionTest, DoNotSendGoAwayTwice) {
 
 TEST_P(QuicSessionTest, IncreasedTimeoutAfterCryptoHandshake) {
   EXPECT_EQ((FLAGS_quic_unified_timeouts ?
-             kInitialIdleTimeoutSecs : kDefaultIdleTimeoutSecs) + 1,
+             kInitialIdleTimeoutSecs : kDefaultIdleTimeoutSecs) + 3,
             QuicConnectionPeer::GetNetworkTimeout(connection_).ToSeconds());
   CryptoHandshakeMessage msg;
   session_.GetCryptoStream()->OnHandshakeMessage(msg);
-  EXPECT_EQ(kMaximumIdleTimeoutSecs + 1,
+  EXPECT_EQ(kMaximumIdleTimeoutSecs + 3,
             QuicConnectionPeer::GetNetworkTimeout(connection_).ToSeconds());
 }
 
@@ -641,9 +642,16 @@ TEST_P(QuicSessionTest, HandshakeUnblocksFlowControlBlockedStream) {
   TestStream* stream2 = session_.CreateOutgoingDataStream();
   string body(kDefaultFlowControlSendWindow, '.');
   EXPECT_FALSE(stream2->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
   stream2->SendBody(body, false);
   EXPECT_TRUE(stream2->flow_controller()->IsBlocked());
+  EXPECT_TRUE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_TRUE(session_.IsStreamFlowControlBlocked());
 
+  // The handshake message will call OnCanWrite, so the stream can resume
+  // writing.
+  EXPECT_CALL(*stream2, OnCanWrite());
   // Now complete the crypto handshake, resulting in an increased flow control
   // send window.
   CryptoHandshakeMessage msg;
@@ -651,6 +659,107 @@ TEST_P(QuicSessionTest, HandshakeUnblocksFlowControlBlockedStream) {
 
   // Stream is now unblocked.
   EXPECT_FALSE(stream2->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+}
+
+TEST_P(QuicSessionTest, HandshakeUnblocksFlowControlBlockedCryptoStream) {
+  if (version() <= QUIC_VERSION_19) {
+    return;
+  }
+  // Test that if the crypto stream is flow control blocked, then if the SHLO
+  // contains a larger send window offset, the stream becomes unblocked.
+  session_.set_writev_consumes_all_data(true);
+  TestCryptoStream* crypto_stream = session_.GetCryptoStream();
+  EXPECT_FALSE(crypto_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+  QuicHeadersStream* headers_stream =
+      QuicSessionPeer::GetHeadersStream(&session_);
+  EXPECT_FALSE(headers_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+  // Write until the crypto stream is flow control blocked.
+  int i = 0;
+  while (!crypto_stream->flow_controller()->IsBlocked() && i < 1000) {
+    EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+    EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+    QuicConfig config;
+    CryptoHandshakeMessage crypto_message;
+    config.ToHandshakeMessage(&crypto_message);
+    crypto_stream->SendHandshakeMessage(crypto_message);
+    ++i;
+  }
+  EXPECT_TRUE(crypto_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(headers_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_TRUE(session_.IsStreamFlowControlBlocked());
+  EXPECT_FALSE(session_.HasDataToWrite());
+  EXPECT_TRUE(crypto_stream->HasBufferedData());
+
+  // The handshake message will call OnCanWrite, so the stream can
+  // resume writing.
+  EXPECT_CALL(*crypto_stream, OnCanWrite());
+  // Now complete the crypto handshake, resulting in an increased flow control
+  // send window.
+  CryptoHandshakeMessage msg;
+  session_.GetCryptoStream()->OnHandshakeMessage(msg);
+
+  // Stream is now unblocked and will no longer have buffered data.
+  EXPECT_FALSE(crypto_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+}
+
+TEST_P(QuicSessionTest, HandshakeUnblocksFlowControlBlockedHeadersStream) {
+  if (version() <= QUIC_VERSION_19) {
+    return;
+  }
+  // Test that if the header stream is flow control blocked, then if the SHLO
+  // contains a larger send window offset, the stream becomes unblocked.
+  session_.set_writev_consumes_all_data(true);
+  TestCryptoStream* crypto_stream = session_.GetCryptoStream();
+  EXPECT_FALSE(crypto_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+  QuicHeadersStream* headers_stream =
+      QuicSessionPeer::GetHeadersStream(&session_);
+  EXPECT_FALSE(headers_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+  QuicStreamId stream_id = 5;
+  // Write until the header stream is flow control blocked.
+  SpdyHeaderBlock headers;
+  while (!headers_stream->flow_controller()->IsBlocked() && stream_id < 2000) {
+    EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+    EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+    headers["header"] = base::Uint64ToString(base::RandUint64()) +
+        base::Uint64ToString(base::RandUint64()) +
+        base::Uint64ToString(base::RandUint64());
+    headers_stream->WriteHeaders(stream_id, headers, true, nullptr);
+    stream_id += 2;
+  }
+  // Write once more to ensure that the headers stream has buffered data. The
+  // random headers may have exactly filled the flow control window.
+  headers_stream->WriteHeaders(stream_id, headers, true, nullptr);
+  EXPECT_TRUE(headers_stream->HasBufferedData());
+
+  EXPECT_TRUE(headers_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(crypto_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_TRUE(session_.IsStreamFlowControlBlocked());
+  EXPECT_FALSE(session_.HasDataToWrite());
+
+  // Now complete the crypto handshake, resulting in an increased flow control
+  // send window.
+  CryptoHandshakeMessage msg;
+  session_.GetCryptoStream()->OnHandshakeMessage(msg);
+
+  // Stream is now unblocked and will no longer have buffered data.
+  EXPECT_FALSE(headers_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
+  EXPECT_FALSE(headers_stream->HasBufferedData());
 }
 
 TEST_P(QuicSessionTest, InvalidFlowControlWindowInHandshake) {
@@ -670,43 +779,7 @@ TEST_P(QuicSessionTest, InvalidFlowControlWindowInHandshake) {
   session_.OnConfigNegotiated();
 }
 
-TEST_P(QuicSessionTest, InvalidStreamFlowControlWindowInHandshake) {
-  // Test that receipt of an invalid (< default) stream flow control window from
-  // the peer results in the connection being torn down.
-  if (version() <= QUIC_VERSION_19) {
-    return;
-  }
-
-  uint32 kInvalidWindow = kDefaultFlowControlSendWindow - 1;
-  QuicConfigPeer::SetReceivedInitialStreamFlowControlWindow(session_.config(),
-                                                            kInvalidWindow);
-
-  EXPECT_CALL(*connection_,
-              SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW));
-  session_.OnConfigNegotiated();
-}
-
-TEST_P(QuicSessionTest, InvalidSessionFlowControlWindowInHandshake) {
-  // Test that receipt of an invalid (< default) session flow control window
-  // from the peer results in the connection being torn down.
-  if (version() <= QUIC_VERSION_19) {
-    return;
-  }
-
-  uint32 kInvalidWindow = kDefaultFlowControlSendWindow - 1;
-  QuicConfigPeer::SetReceivedInitialSessionFlowControlWindow(session_.config(),
-                                                             kInvalidWindow);
-
-  EXPECT_CALL(*connection_,
-              SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW));
-  session_.OnConfigNegotiated();
-}
-
 TEST_P(QuicSessionTest, ConnectionFlowControlAccountingRstOutOfOrder) {
-  if (version() < QUIC_VERSION_19) {
-    return;
-  }
-
   // Test that when we receive an out of order stream RST we correctly adjust
   // our connection level flow control receive window.
   // On close, the stream should mark as consumed all bytes between the highest
@@ -731,10 +804,6 @@ TEST_P(QuicSessionTest, ConnectionFlowControlAccountingRstOutOfOrder) {
 }
 
 TEST_P(QuicSessionTest, ConnectionFlowControlAccountingFinAndLocalReset) {
-  if (version() < QUIC_VERSION_19) {
-    return;
-  }
-
   // Test the situation where we receive a FIN on a stream, and before we fully
   // consume all the data from the sequencer buffer we locally RST the stream.
   // The bytes between highest consumed byte, and the final byte offset that we
@@ -777,9 +846,6 @@ TEST_P(QuicSessionTest, ConnectionFlowControlAccountingFinAfterRst) {
   // Test that when we RST the stream (and tear down stream state), and then
   // receive a FIN from the peer, we correctly adjust our connection level flow
   // control receive window.
-  if (version() < QUIC_VERSION_19) {
-    return;
-  }
 
   // Connection starts with some non-zero highest received byte offset,
   // due to other active streams.
@@ -819,9 +885,6 @@ TEST_P(QuicSessionTest, ConnectionFlowControlAccountingRstAfterRst) {
   // Test that when we RST the stream (and tear down stream state), and then
   // receive a RST from the peer, we correctly adjust our connection level flow
   // control receive window.
-  if (version() < QUIC_VERSION_19) {
-    return;
-  }
 
   // Connection starts with some non-zero highest received byte offset,
   // due to other active streams.
@@ -851,6 +914,38 @@ TEST_P(QuicSessionTest, ConnectionFlowControlAccountingRstAfterRst) {
             session_.flow_controller()->highest_received_byte_offset());
 }
 
+TEST_P(QuicSessionTest, InvalidStreamFlowControlWindowInHandshake) {
+  // Test that receipt of an invalid (< default) stream flow control window from
+  // the peer results in the connection being torn down.
+  if (version() <= QUIC_VERSION_19) {
+    return;
+  }
+
+  uint32 kInvalidWindow = kDefaultFlowControlSendWindow - 1;
+  QuicConfigPeer::SetReceivedInitialStreamFlowControlWindow(session_.config(),
+                                                            kInvalidWindow);
+
+  EXPECT_CALL(*connection_,
+              SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW));
+  session_.OnConfigNegotiated();
+}
+
+TEST_P(QuicSessionTest, InvalidSessionFlowControlWindowInHandshake) {
+  // Test that receipt of an invalid (< default) session flow control window
+  // from the peer results in the connection being torn down.
+  if (version() == QUIC_VERSION_19) {
+    return;
+  }
+
+  uint32 kInvalidWindow = kDefaultFlowControlSendWindow - 1;
+  QuicConfigPeer::SetReceivedInitialSessionFlowControlWindow(session_.config(),
+                                                             kInvalidWindow);
+
+  EXPECT_CALL(*connection_,
+              SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW));
+  session_.OnConfigNegotiated();
+}
+
 TEST_P(QuicSessionTest, FlowControlWithInvalidFinalOffset) {
   // Test that if we receive a stream RST with a highest byte offset that
   // violates flow control, that we close the connection.
@@ -873,26 +968,6 @@ TEST_P(QuicSessionTest, FlowControlWithInvalidFinalOffset) {
   session_.OnRstStream(rst_frame);
 }
 
-TEST_P(QuicSessionTest, VersionNegotiationDisablesFlowControl) {
-  if (version() < QUIC_VERSION_19) {
-    return;
-  }
-
-  // Test that after successful version negotiation, flow control is disabled
-  // appropriately at both the connection and stream level.
-
-  // Initially both stream and connection flow control are enabled.
-  TestStream* stream = session_.CreateOutgoingDataStream();
-  EXPECT_TRUE(stream->flow_controller()->IsEnabled());
-  EXPECT_TRUE(session_.flow_controller()->IsEnabled());
-
-  // Version 18 implies that stream flow control is enabled, but connection
-  // level is disabled.
-  session_.OnSuccessfulVersionNegotiation(QUIC_VERSION_18);
-  EXPECT_FALSE(session_.flow_controller()->IsEnabled());
-  EXPECT_TRUE(stream->flow_controller()->IsEnabled());
-}
-
 TEST_P(QuicSessionTest, WindowUpdateUnblocksHeadersStream) {
   // Test that a flow control blocked headers stream gets unblocked on recipt of
   // a WINDOW_UPDATE frame. Regression test for b/17413860.
@@ -906,6 +981,8 @@ TEST_P(QuicSessionTest, WindowUpdateUnblocksHeadersStream) {
   QuicFlowControllerPeer::SetSendWindowOffset(headers_stream->flow_controller(),
                                               0);
   EXPECT_TRUE(headers_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_TRUE(session_.IsStreamFlowControlBlocked());
 
   // Unblock the headers stream by supplying a WINDOW_UPDATE.
   QuicWindowUpdateFrame window_update_frame(headers_stream->id(),
@@ -914,17 +991,13 @@ TEST_P(QuicSessionTest, WindowUpdateUnblocksHeadersStream) {
   frames.push_back(window_update_frame);
   session_.OnWindowUpdateFrames(frames);
   EXPECT_FALSE(headers_stream->flow_controller()->IsBlocked());
+  EXPECT_FALSE(session_.IsConnectionFlowControlBlocked());
+  EXPECT_FALSE(session_.IsStreamFlowControlBlocked());
 }
 
 TEST_P(QuicSessionTest, TooManyUnfinishedStreamsCauseConnectionClose) {
-  if (version() < QUIC_VERSION_18) {
-    return;
-  }
   // If a buggy/malicious peer creates too many streams that are not ended with
   // a FIN or RST then we send a connection close.
-  ValueRestore<bool> old_flag(&FLAGS_close_quic_connection_unfinished_streams_2,
-                              true);
-
   EXPECT_CALL(*connection_,
               SendConnectionClose(QUIC_TOO_MANY_UNFINISHED_STREAMS)).Times(1);
 

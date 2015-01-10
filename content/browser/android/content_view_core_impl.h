@@ -47,25 +47,25 @@ class ContentViewCoreImpl : public ContentViewCore,
                       jobject java_bridge_retained_object_set);
 
   // ContentViewCore implementation.
-  virtual base::android::ScopedJavaLocalRef<jobject> GetJavaObject() OVERRIDE;
-  virtual WebContents* GetWebContents() const OVERRIDE;
-  virtual ui::ViewAndroid* GetViewAndroid() const OVERRIDE;
-  virtual ui::WindowAndroid* GetWindowAndroid() const OVERRIDE;
-  virtual scoped_refptr<cc::Layer> GetLayer() const OVERRIDE;
-  virtual void ShowPastePopup(int x, int y) OVERRIDE;
+  virtual base::android::ScopedJavaLocalRef<jobject> GetJavaObject() override;
+  virtual WebContents* GetWebContents() const override;
+  virtual ui::ViewAndroid* GetViewAndroid() const override;
+  virtual ui::WindowAndroid* GetWindowAndroid() const override;
+  virtual scoped_refptr<cc::Layer> GetLayer() const override;
+  virtual void ShowPastePopup(int x, int y) override;
   virtual void GetScaledContentBitmap(
       float scale,
       SkColorType color_type,
       gfx::Rect src_subrect,
       const base::Callback<void(bool, const SkBitmap&)>& result_callback)
-      OVERRIDE;
-  virtual float GetDpiScale() const OVERRIDE;
-  virtual void PauseOrResumeGeolocation(bool should_pause) OVERRIDE;
+      override;
+  virtual float GetDpiScale() const override;
+  virtual void PauseOrResumeGeolocation(bool should_pause) override;
   virtual void RequestTextSurroundingSelection(
       int max_length,
       const base::Callback<void(const base::string16& content,
                                 int start_offset,
-                                int end_offset)>& callback) OVERRIDE;
+                                int end_offset)>& callback) override;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -151,8 +151,6 @@ class ContentViewCoreImpl : public ContentViewCore,
                                        jobject obj,
                                        jboolean enabled);
 
-  void PostMessageToFrame(JNIEnv* env, jobject obj, jstring frame_id,
-      jstring message, jstring source_origin, jstring target_origin);
   long GetNativeImeAdapter(JNIEnv* env, jobject obj);
   void SetFocus(JNIEnv* env, jobject obj, jboolean focused);
 
@@ -245,16 +243,14 @@ class ContentViewCoreImpl : public ContentViewCore,
   // testing/benchmarking purposes
   base::android::ScopedJavaLocalRef<jobject> CreateTouchEventSynthesizer();
 
-  base::android::ScopedJavaLocalRef<jobject> GetContentVideoViewClient();
-
-  // Returns the context that the ContentViewCore was created with, it would
-  // typically be an Activity context for an on screen view.
-  base::android::ScopedJavaLocalRef<jobject> GetContext();
-
   // Returns True if the given media should be blocked to load.
   bool ShouldBlockMediaRequest(const GURL& url);
 
   void DidStopFlinging();
+
+  // Returns the context with which the ContentViewCore was created, typically
+  // the Activity context.
+  base::android::ScopedJavaLocalRef<jobject> GetContext() const;
 
   // Returns the viewport size after accounting for the viewport offset.
   gfx::Size GetViewSize() const;
@@ -284,10 +280,10 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual ~ContentViewCoreImpl();
 
   // WebContentsObserver implementation.
-  virtual void RenderViewReady() OVERRIDE;
+  virtual void RenderViewReady() override;
   virtual void RenderViewHostChanged(RenderViewHost* old_host,
-                                     RenderViewHost* new_host) OVERRIDE;
-  virtual void WebContentsDestroyed() OVERRIDE;
+                                     RenderViewHost* new_host) override;
+  virtual void WebContentsDestroyed() override;
 
   // --------------------------------------------------------------------------
   // Other private methods and data

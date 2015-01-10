@@ -7,7 +7,9 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
+#include "components/copresence/handlers/audio/tick_clock_ref_counted.h"
 
 namespace copresence {
 
@@ -16,11 +18,14 @@ namespace copresence {
 AudioDirective::AudioDirective() {
 }
 
-AudioDirective::AudioDirective(const std::string& op_id, base::Time end_time)
+AudioDirective::AudioDirective(const std::string& op_id,
+                               base::TimeTicks end_time)
     : op_id(op_id), end_time(end_time) {
 }
 
-AudioDirectiveList::AudioDirectiveList() {
+AudioDirectiveList::AudioDirectiveList()
+    : clock_(new TickClockRefCounted(
+          make_scoped_ptr(new base::DefaultTickClock))) {
 }
 
 AudioDirectiveList::~AudioDirectiveList() {
@@ -28,7 +33,7 @@ AudioDirectiveList::~AudioDirectiveList() {
 
 void AudioDirectiveList::AddDirective(const std::string& op_id,
                                       base::TimeDelta ttl) {
-  base::Time end_time = base::Time::Now() + ttl;
+  base::TimeTicks end_time = clock_->NowTicks() + ttl;
 
   // In case this op is already in the list, update it instead of adding
   // it again.
@@ -62,15 +67,22 @@ scoped_ptr<AudioDirective> AudioDirectiveList::GetActiveDirective() {
   // has passed, means all our previous instructions have expired too, hence
   // clear the list.
   if (!active_directives_.empty() &&
-      active_directives_.front().end_time < base::Time::Now()) {
+      active_directives_.front().end_time < clock_->NowTicks()) {
     active_directives_.clear();
   }
 
   if (active_directives_.empty())
-    return make_scoped_ptr<AudioDirective>(NULL);
+    return scoped_ptr<AudioDirective>().Pass();
 
   return make_scoped_ptr(new AudioDirective(active_directives_.front()));
 }
+
+void AudioDirectiveList::set_clock_for_testing(
+    const scoped_refptr<TickClockRefCounted>& clock) {
+  clock_ = clock;
+}
+
+// Private methods.
 
 std::vector<AudioDirective>::iterator AudioDirectiveList::FindDirectiveByOpId(
     const std::string& op_id) {

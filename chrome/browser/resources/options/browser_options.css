@@ -135,7 +135,7 @@ html[dir=rtl] #account-picture-wrapper {
   padding: 10px;
 }
 
-.sync-error .link-button {
+.sync-error [is='action-link'] {
   margin: 0 1ex;
   padding: 0;
 }
@@ -184,6 +184,15 @@ input[type='range'] {
 
 .hotword-settings {
   -webkit-margin-start: 22px;
+}
+
+.hotword-description {
+  -webkit-margin-start: 1.8em;
+  color: gray;
+}
+
+.hotword-learn-more-link {
+  -webkit-padding-start: 8px;
 }
 
 /* Internet settings */
@@ -453,6 +462,13 @@ list:not([disabled]) > .network-group[selected] {
   -webkit-margin-start: 0.6em;
 }
 
+#battery-icon {
+  display: inline-block;
+  height: 25px;
+  vertical-align: middle;
+  width: 25px;
+}
+
 div[guestmode=true] :-webkit-any(
 <if expr="not chromeos">
     #searchBox,
@@ -473,9 +489,8 @@ footer {
   display: flex;
 }
 
-#version-button {
-  -webkit-margin-start: auto;
-  color: #999;
+#about-button {
+  -webkit-margin-end: 30px;
 }
 
 /* An input that has no function except to take up the same amount of space as

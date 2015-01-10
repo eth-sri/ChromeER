@@ -1549,40 +1549,6 @@ void GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
   }
 }
 
-void GenSharedIdsCHROMIUM(GLuint namespace_id,
-                          GLuint id_offset,
-                          GLsizei n,
-                          uint32_t ids_shm_id,
-                          uint32_t ids_shm_offset) {
-  gles2::cmds::GenSharedIdsCHROMIUM* c =
-      GetCmdSpace<gles2::cmds::GenSharedIdsCHROMIUM>();
-  if (c) {
-    c->Init(namespace_id, id_offset, n, ids_shm_id, ids_shm_offset);
-  }
-}
-
-void DeleteSharedIdsCHROMIUM(GLuint namespace_id,
-                             GLsizei n,
-                             uint32_t ids_shm_id,
-                             uint32_t ids_shm_offset) {
-  gles2::cmds::DeleteSharedIdsCHROMIUM* c =
-      GetCmdSpace<gles2::cmds::DeleteSharedIdsCHROMIUM>();
-  if (c) {
-    c->Init(namespace_id, n, ids_shm_id, ids_shm_offset);
-  }
-}
-
-void RegisterSharedIdsCHROMIUM(GLuint namespace_id,
-                               GLsizei n,
-                               uint32_t ids_shm_id,
-                               uint32_t ids_shm_offset) {
-  gles2::cmds::RegisterSharedIdsCHROMIUM* c =
-      GetCmdSpace<gles2::cmds::RegisterSharedIdsCHROMIUM>();
-  if (c) {
-    c->Init(namespace_id, n, ids_shm_id, ids_shm_offset);
-  }
-}
-
 void EnableFeatureCHROMIUM(GLuint bucket_id,
                            uint32_t result_shm_id,
                            uint32_t result_shm_offset) {
@@ -1960,6 +1926,13 @@ void MatrixLoadIdentityCHROMIUM(GLenum matrixMode) {
       GetCmdSpace<gles2::cmds::MatrixLoadIdentityCHROMIUM>();
   if (c) {
     c->Init(matrixMode);
+  }
+}
+
+void BlendBarrierKHR() {
+  gles2::cmds::BlendBarrierKHR* c = GetCmdSpace<gles2::cmds::BlendBarrierKHR>();
+  if (c) {
+    c->Init();
   }
 }
 

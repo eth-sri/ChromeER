@@ -3130,6 +3130,13 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Hotword.HotwordTrigger">
+  <owner>amistry@chromium.org</owner>
+  <owner>rlp@chromium.org</owner>
+  <owner>somast@chromium.org</owner>
+  <description>User triggered the hotword by saying 'Ok Google'.</description>
+</action>
+
 <action name="ImportLockDialogCocoa_Shown">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -9097,6 +9104,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_ShowBatterySettings">
+  <owner>michaelpg@chromium.org</owner>
+  <description>Settings: Power settings</description>
+</action>
+
 <action name="Options_ShowBookmarksBar_Disable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -11162,46 +11174,58 @@ should be able to be added at any place in this file.
 <action name="UpgradeCheck_AlreadyUpToDate">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
 </action>
 
 <action name="UpgradeCheck_AlreadyUpgraded">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
 </action>
 
 <action name="UpgradeCheck_Done">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Not present in codebase.</obsolete>
 </action>
 
 <action name="UpgradeCheck_Error">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Removed from codebase; see GoogleUpdate.UpgradeResult,
+    GoogleUpdate.UpdateErrorCode, and GoogleUpdate.ErrorHresult.
+  </obsolete>
 </action>
 
 <action name="UpgradeCheck_Started">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
 </action>
 
 <action name="UpgradeCheck_TimedOut">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Not present in codebase.</obsolete>
 </action>
 
 <action name="UpgradeCheck_UpgradeIsAvailable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
 </action>
 
 <action name="UpgradeCheck_Upgraded">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
 </action>
 
 <action name="Upgrade_Started">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>Removed from codebase; see GoogleUpdate.UpgradeResult.</obsolete>
 </action>
 
 <action name="ViewAboutConflicts">
@@ -11596,7 +11620,19 @@ should be able to be added at any place in this file.
 
 <action name="webapps.AddShortcut.Bookmark">
   <owner>dfalcantara@chromium.org</owner>
-  <description>Shortcut added to the homescreen for a bookmark.</description>
+  <description>
+    Shortcut added to the homescreen for a page containing neither
+    mobile-webapp-capable nor apple-mobile-webapp-capable meta tags.
+  </description>
+</action>
+
+<action name="webapps.AddShortcut.Manifest">
+  <owner>mlamouri@chromium.org</owner>
+  <description>
+    Shortcut added to the homescreen with a valid Manifest. This action will be
+    recorded in addition to AppShortcut, AppShortcutApple and Bookmark actions
+    to keep a trend of whether the webapp also add meta tags.
+  </description>
 </action>
 
 </actions>

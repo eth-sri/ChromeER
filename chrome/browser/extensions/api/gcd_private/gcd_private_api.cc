@@ -149,16 +149,16 @@ class GcdPrivateAPIImpl : public EventRouter::Observer,
       PasswordMap;
 
   // EventRouter::Observer implementation.
-  virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
-  virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
+  void OnListenerAdded(const EventListenerInfo& details) override;
+  void OnListenerRemoved(const EventListenerInfo& details) override;
 
   // local_discovery::PrivetDeviceLister implementation.
-  virtual void DeviceChanged(
+  void DeviceChanged(
       bool added,
       const std::string& name,
-      const local_discovery::DeviceDescription& description) OVERRIDE;
-  virtual void DeviceRemoved(const std::string& name) OVERRIDE;
-  virtual void DeviceCacheFlushed() OVERRIDE;
+      const local_discovery::DeviceDescription& description) override;
+  void DeviceRemoved(const std::string& name) override;
+  void DeviceCacheFlushed() override;
 
   void SendMessageInternal(int session_id,
                            const std::string& api,
@@ -196,15 +196,17 @@ class GcdPrivateRequest : public local_discovery::PrivetV3Session::Request {
                     const base::DictionaryValue& input,
                     const GcdPrivateAPIImpl::MessageResponseCallback& callback,
                     GcdPrivateSessionHolder* session_holder);
-  virtual ~GcdPrivateRequest();
+  ~GcdPrivateRequest() override;
 
   // local_discovery::PrivetV3Session::Request implementation.
-  virtual std::string GetName() OVERRIDE;
-  virtual const base::DictionaryValue& GetInput() OVERRIDE;
-  virtual void OnError(
-      local_discovery::PrivetURLFetcher::ErrorType error) OVERRIDE;
-  virtual void OnParsedJson(const base::DictionaryValue& value,
-                            bool has_error) OVERRIDE;
+  std::string GetName() override;
+  const base::DictionaryValue& GetInput() override;
+  void OnError() override;
+  void OnParsedJson(const base::DictionaryValue& value,
+                    bool has_error) override;
+
+  void RunCallback(gcd_private::Status status,
+                   const base::DictionaryValue& value);
 
  private:
   std::string api_;
@@ -224,7 +226,7 @@ class GcdPrivateSessionHolder
   GcdPrivateSessionHolder(const std::string& ip_address,
                           int port,
                           net::URLRequestContextGetter* request_context);
-  virtual ~GcdPrivateSessionHolder();
+  ~GcdPrivateSessionHolder() override;
 
   void Start(const ConfirmationCodeCallback& callback);
 
@@ -240,10 +242,10 @@ class GcdPrivateSessionHolder
 
  private:
   // local_discovery::PrivetV3Session::Delegate implementation.
-  virtual void OnSetupConfirmationNeeded(
+  void OnSetupConfirmationNeeded(
       const std::string& confirmation_code,
-      api::gcd_private::ConfirmationType confirmation_type) OVERRIDE;
-  virtual void OnSessionStatus(api::gcd_private::Status status) OVERRIDE;
+      api::gcd_private::ConfirmationType confirmation_type) override;
+  void OnSessionStatus(api::gcd_private::Status status) override;
 
   scoped_ptr<local_discovery::PrivetHTTPClient> http_client_;
   scoped_ptr<local_discovery::PrivetV3Session> privet_session_;
@@ -507,18 +509,23 @@ const base::DictionaryValue& GcdPrivateRequest::GetInput() {
   return *input_;
 }
 
-void GcdPrivateRequest::OnError(
-    local_discovery::PrivetURLFetcher::ErrorType error) {
-  callback_.Run(gcd_private::STATUS_CONNECTIONERROR, base::DictionaryValue());
-
+void GcdPrivateRequest::OnError() {
+  RunCallback(gcd_private::STATUS_CONNECTIONERROR, base::DictionaryValue());
   session_holder_->DeleteRequest(this);
 }
 
 void GcdPrivateRequest::OnParsedJson(const base::DictionaryValue& value,
                                      bool has_error) {
-  callback_.Run(gcd_private::STATUS_SUCCESS, value);
-
+  RunCallback(gcd_private::STATUS_SUCCESS, value);
   session_holder_->DeleteRequest(this);
+}
+
+void GcdPrivateRequest::RunCallback(gcd_private::Status status,
+                                    const base::DictionaryValue& value) {
+  if (callback_.is_null())
+    return;
+  callback_.Run(status, value);
+  callback_.Reset();
 }
 
 GcdPrivateSessionHolder::GcdPrivateSessionHolder(
@@ -581,16 +588,25 @@ void GcdPrivateSessionHolder::DeleteRequest(GcdPrivateRequest* request) {
 void GcdPrivateSessionHolder::OnSetupConfirmationNeeded(
     const std::string& confirmation_code,
     gcd_private::ConfirmationType confirmation_type) {
+  if (confirm_callback_.is_null())
+    return;
   confirm_callback_.Run(
       gcd_private::STATUS_SUCCESS, confirmation_code, confirmation_type);
-
   confirm_callback_.Reset();
 }
 
 void GcdPrivateSessionHolder::OnSessionStatus(gcd_private::Status status) {
-  session_established_callback_.Run(status);
-
-  session_established_callback_.Reset();
+  if (!session_established_callback_.is_null()) {
+    session_established_callback_.Run(status);
+    session_established_callback_.Reset();
+  }
+  // Fail all requests created before session established.
+  RequestVector tmp_requests;
+  tmp_requests.swap(requests_);
+  for (GcdPrivateRequest* request : tmp_requests) {
+    request->RunCallback(gcd_private::STATUS_SESSIONERROR,
+                         base::DictionaryValue());
+  }
 }
 
 GcdPrivateAPI::GcdPrivateAPI(content::BrowserContext* context)

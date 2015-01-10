@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/base_paths.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -30,12 +31,12 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_metrics.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_protocol.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_statistics_prefs.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_metrics.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_protocol.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/domain_reliability/monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -52,7 +53,6 @@
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_retry_info.h"
 #include "net/proxy/proxy_server.h"
-#include "net/socket_stream/socket_stream.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 
@@ -231,6 +231,8 @@ void ReportInvalidReferrerSend(const GURL& target_url,
                                const GURL& referrer_url) {
   base::RecordAction(
       base::UserMetricsAction("Net.URLRequest_StartJob_InvalidReferrer"));
+  base::debug::DumpWithoutCrashing();
+  NOTREACHED();
 }
 
 }  // namespace
@@ -570,8 +572,8 @@ void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
           data_reduction_proxy::GetDataReductionProxyRequestType(request);
 
       base::TimeDelta freshness_lifetime =
-          request->response_info().headers->GetFreshnessLifetime(
-              request->response_info().response_time);
+          request->response_info().headers->GetFreshnessLifetimes(
+              request->response_info().response_time).freshness;
       int64 adjusted_original_content_length =
           data_reduction_proxy::GetAdjustedOriginalContentLength(
               request_type, original_content_length,
@@ -796,23 +798,6 @@ bool ChromeNetworkDelegate::OnCanEnablePrivacyMode(
       url, first_party_for_cookies);
   bool privacy_mode = !(reading_cookie_allowed && setting_cookie_allowed);
   return privacy_mode;
-}
-
-int ChromeNetworkDelegate::OnBeforeSocketStreamConnect(
-    net::SocketStream* socket,
-    const net::CompletionCallback& callback) {
-#if defined(ENABLE_CONFIGURATION_POLICY)
-  if (url_blacklist_manager_ &&
-      url_blacklist_manager_->IsURLBlocked(socket->url())) {
-    // URL access blocked by policy.
-    socket->net_log()->AddEvent(
-        net::NetLog::TYPE_CHROME_POLICY_ABORTED_REQUEST,
-        net::NetLog::StringCallback("url",
-                                    &socket->url().possibly_invalid_spec()));
-    return net::ERR_BLOCKED_BY_ADMINISTRATOR;
-  }
-#endif
-  return net::OK;
 }
 
 bool ChromeNetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(

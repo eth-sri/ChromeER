@@ -17,7 +17,6 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "media/base/android/media_player_android.h"
-#include "media/base/android/media_player_listener.h"
 #include "url/gurl.h"
 
 namespace media {
@@ -57,38 +56,29 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual void Initialize();
 
   // MediaPlayerAndroid implementation.
-  virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Pause(bool is_media_related_action ALLOW_UNUSED) OVERRIDE;
-  virtual void SeekTo(base::TimeDelta timestamp) OVERRIDE;
-  virtual void Release() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual int GetVideoWidth() OVERRIDE;
-  virtual int GetVideoHeight() OVERRIDE;
-  virtual base::TimeDelta GetCurrentTime() OVERRIDE;
-  virtual base::TimeDelta GetDuration() OVERRIDE;
-  virtual bool IsPlaying() OVERRIDE;
-  virtual bool CanPause() OVERRIDE;
-  virtual bool CanSeekForward() OVERRIDE;
-  virtual bool CanSeekBackward() OVERRIDE;
-  virtual bool IsPlayerReady() OVERRIDE;
-  virtual GURL GetUrl() OVERRIDE;
-  virtual GURL GetFirstPartyForCookies() OVERRIDE;
-  virtual bool IsSurfaceInUse() const OVERRIDE;
+  virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) override;
+  virtual void Start() override;
+  virtual void Pause(bool is_media_related_action) override;
+  virtual void SeekTo(base::TimeDelta timestamp) override;
+  virtual void Release() override;
+  virtual void SetVolume(double volume) override;
+  virtual int GetVideoWidth() override;
+  virtual int GetVideoHeight() override;
+  virtual base::TimeDelta GetCurrentTime() override;
+  virtual base::TimeDelta GetDuration() override;
+  virtual bool IsPlaying() override;
+  virtual bool CanPause() override;
+  virtual bool CanSeekForward() override;
+  virtual bool CanSeekBackward() override;
+  virtual bool IsPlayerReady() override;
+  virtual GURL GetUrl() override;
+  virtual GURL GetFirstPartyForCookies() override;
 
-  // MediaPlayerListener callbacks.
-  void OnVideoSizeChanged(int width, int height);
-  void OnMediaError(int error_type);
-  void OnBufferingUpdate(int percent);
-  void OnPlaybackComplete();
-  void OnMediaInterrupted();
-  void OnSeekComplete();
   void OnDidSetDataUriDataSource(JNIEnv* env, jobject obj, jboolean success);
 
  protected:
   void SetJavaMediaPlayerBridge(jobject j_media_player_bridge);
   base::android::ScopedJavaLocalRef<jobject> GetJavaMediaPlayerBridge();
-  void SetMediaPlayerListener();
   void SetDuration(base::TimeDelta time);
 
   virtual void PendingSeekInternal(const base::TimeDelta& time);
@@ -97,7 +87,12 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   // OnMediaPrepared() will be called. Otherwise, OnMediaError() will
   // be called with an error type.
   virtual void Prepare();
-  void OnMediaPrepared();
+
+  // MediaPlayerAndroid implementation.
+  virtual void OnVideoSizeChanged(int width, int height) override;
+  virtual void OnPlaybackComplete() override;
+  virtual void OnMediaInterrupted() override;
+  virtual void OnMediaPrepared() override;
 
   // Create the corresponding Java class instance.
   virtual void CreateJavaMediaPlayerBridge();
@@ -106,8 +101,6 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual base::android::ScopedJavaLocalRef<jobject> GetAllowedOperations();
 
  private:
-  friend class MediaPlayerListener;
-
   // Set the data source for the media player.
   void SetDataSource(const std::string& url);
 
@@ -151,6 +144,9 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   // Pending seek time while player is preparing.
   base::TimeDelta pending_seek_;
 
+  // Whether a seek should be performed after preparing.
+  bool should_seek_on_prepare_;
+
   // Url for playback.
   GURL url_;
 
@@ -181,19 +177,12 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
 
   base::RepeatingTimer<MediaPlayerBridge> time_update_timer_;
 
-  // Listener object that listens to all the media player events.
-  scoped_ptr<MediaPlayerListener> listener_;
-
-  // Whether player is currently using a surface.
-  bool is_surface_in_use_;
-
   // Volume of playback.
   double volume_;
 
   // Whether user credentials are allowed to be passed.
   bool allow_credentials_;
 
-  // Weak pointer passed to |listener_| for callbacks.
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<MediaPlayerBridge> weak_factory_;
 

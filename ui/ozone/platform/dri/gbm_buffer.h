@@ -38,10 +38,12 @@ class GbmBuffer : public GbmBufferBase {
 class GbmPixmap : public NativePixmap {
  public:
   GbmPixmap(scoped_refptr<GbmBuffer> buffer);
+  bool Initialize(DriWrapper* dri);
 
   // NativePixmap:
-  virtual void* GetEGLClientBuffer() OVERRIDE;
-  virtual int GetDmaBufFd() OVERRIDE;
+  virtual void* GetEGLClientBuffer() override;
+  virtual int GetDmaBufFd() override;
+  virtual int GetDmaBufPitch() override;
 
   scoped_refptr<GbmBuffer> buffer() { return buffer_; }
 
@@ -49,6 +51,7 @@ class GbmPixmap : public NativePixmap {
   virtual ~GbmPixmap();
 
   scoped_refptr<GbmBuffer> buffer_;
+  int dma_buf_;
 
   DISALLOW_COPY_AND_ASSIGN(GbmPixmap);
 };

@@ -16,9 +16,14 @@
 #include "components/signin/core/browser/signin_manager_base.h"
 
 class Browser;
+class ChromeUserMetricsExtension;
 
 namespace base {
 class FilePath;
+}
+
+namespace metrics {
+class ChromeUserMetricsExtension;
 }
 
 // Collect login status of all opened profiles during one UMA session and record
@@ -29,12 +34,11 @@ class SigninStatusMetricsProvider : public metrics::MetricsProvider,
                                     public SigninManagerBase::Observer,
                                     public SigninManagerFactory::Observer {
  public:
-  virtual ~SigninStatusMetricsProvider();
+  ~SigninStatusMetricsProvider() override;
 
-  // Record the collected sign-in status into a histogram and re-check current
-  // sign-in status to get prepared for the next UMA session. Called by
-  // MetricsServiceClient when it is collecting final metrics.
-  void RecordSigninStatusHistogram();
+  // metrics::MetricsProvider:
+  void ProvideGeneralMetrics(
+      metrics::ChromeUserMetricsExtension* uma_proto) override;
 
   // Factory method, creates a new instance of this class.
   static SigninStatusMetricsProvider* CreateInstance();
@@ -67,18 +71,18 @@ class SigninStatusMetricsProvider : public metrics::MetricsProvider,
 
   // chrome::BrowserListObserver:
   // This will never be called on Android.
-  virtual void OnBrowserAdded(Browser* browser) OVERRIDE;
+  void OnBrowserAdded(Browser* browser) override;
 
   // SigninManagerFactory::Observer:
-  virtual void SigninManagerCreated(SigninManagerBase* manager) OVERRIDE;
-  virtual void SigninManagerShutdown(SigninManagerBase* manager) OVERRIDE;
+  void SigninManagerCreated(SigninManagerBase* manager) override;
+  void SigninManagerShutdown(SigninManagerBase* manager) override;
 
   // SigninManagerBase::Observer:
-  virtual void GoogleSigninSucceeded(const std::string& account_id,
-                                     const std::string& username,
-                                     const std::string& password) OVERRIDE;
-  virtual void GoogleSignedOut(const std::string& account_id,
-                               const std::string& username) OVERRIDE;
+  void GoogleSigninSucceeded(const std::string& account_id,
+                             const std::string& username,
+                             const std::string& password) override;
+  void GoogleSignedOut(const std::string& account_id,
+                       const std::string& username) override;
 
   // Obtain sign-in status and add observers.
   void Initialize();

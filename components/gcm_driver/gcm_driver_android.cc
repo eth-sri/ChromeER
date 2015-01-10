@@ -95,6 +95,9 @@ bool GCMDriverAndroid::RegisterBindings(JNIEnv* env) {
 void GCMDriverAndroid::OnSignedIn() {
 }
 
+void GCMDriverAndroid::OnSignedOut() {
+}
+
 void GCMDriverAndroid::Purge() {
 }
 
@@ -147,6 +150,15 @@ void GCMDriverAndroid::UpdateAccountMapping(
 }
 
 void GCMDriverAndroid::RemoveAccountMapping(const std::string& account_id) {
+  NOTIMPLEMENTED();
+}
+
+base::Time GCMDriverAndroid::GetLastTokenFetchTime() {
+  NOTIMPLEMENTED();
+  return base::Time();
+}
+
+void GCMDriverAndroid::SetLastTokenFetchTime(const base::Time& time) {
   NOTIMPLEMENTED();
 }
 

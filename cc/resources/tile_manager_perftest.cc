@@ -37,9 +37,9 @@ static const int kTimeCheckInterval = 10;
 class FakeRasterizerImpl : public Rasterizer, public RasterizerTaskClient {
  public:
   // Overridden from Rasterizer:
-  virtual void SetClient(RasterizerClient* client) OVERRIDE {}
-  virtual void Shutdown() OVERRIDE {}
-  virtual void ScheduleTasks(RasterTaskQueue* queue) OVERRIDE {
+  void SetClient(RasterizerClient* client) override {}
+  void Shutdown() override {}
+  void ScheduleTasks(RasterTaskQueue* queue) override {
     for (RasterTaskQueue::Item::Vector::const_iterator it =
              queue->items.begin();
          it != queue->items.end();
@@ -53,7 +53,7 @@ class FakeRasterizerImpl : public Rasterizer, public RasterizerTaskClient {
       completed_tasks_.push_back(task);
     }
   }
-  virtual void CheckForCompletedTasks() OVERRIDE {
+  void CheckForCompletedTasks() override {
     for (RasterTask::Vector::iterator it = completed_tasks_.begin();
          it != completed_tasks_.end();
          ++it) {
@@ -69,12 +69,11 @@ class FakeRasterizerImpl : public Rasterizer, public RasterizerTaskClient {
   }
 
   // Overridden from RasterizerTaskClient:
-  virtual scoped_ptr<RasterBuffer> AcquireBufferForRaster(
-      const Resource* resource) OVERRIDE {
+  scoped_ptr<RasterBuffer> AcquireBufferForRaster(
+      const Resource* resource) override {
     return nullptr;
   }
-  virtual void ReleaseBufferForRaster(
-      scoped_ptr<RasterBuffer> buffer) OVERRIDE {}
+  void ReleaseBufferForRaster(scoped_ptr<RasterBuffer> buffer) override {}
 
  private:
   RasterTask::Vector completed_tasks_;
@@ -112,7 +111,7 @@ class TileManagerPerfTest : public testing::Test {
     host_impl_.tile_manager()->SetGlobalStateForTesting(state);
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     picture_pile_ = FakePicturePileImpl::CreateInfiniteFilledPile();
     InitializeRenderer();
     SetTreePriority(SAME_PRIORITY_FOR_BOTH_TREES);
@@ -188,8 +187,10 @@ class TileManagerPerfTest : public testing::Test {
     int priority_count = 0;
 
     std::vector<LayerImpl*> layers = CreateLayers(layer_count, 10);
-    for (unsigned i = 0; i < layers.size(); ++i)
-      layers[i]->UpdateTiles(Occlusion());
+    bool resourceless_software_draw = false;
+    for (unsigned i = 0; i < layers.size(); ++i) {
+      layers[i]->UpdateTiles(Occlusion(), resourceless_software_draw);
+    }
 
     timer_.Reset();
     do {
@@ -215,8 +216,10 @@ class TileManagerPerfTest : public testing::Test {
                                  NEW_CONTENT_TAKES_PRIORITY};
 
     std::vector<LayerImpl*> layers = CreateLayers(layer_count, 100);
-    for (unsigned i = 0; i < layers.size(); ++i)
-      layers[i]->UpdateTiles(Occlusion());
+    bool resourceless_software_draw = false;
+    for (unsigned i = 0; i < layers.size(); ++i) {
+      layers[i]->UpdateTiles(Occlusion(), resourceless_software_draw);
+    }
 
     int priority_count = 0;
     timer_.Reset();
@@ -250,10 +253,11 @@ class TileManagerPerfTest : public testing::Test {
     int priority_count = 0;
 
     std::vector<LayerImpl*> layers = CreateLayers(layer_count, 10);
+    bool resourceless_software_draw = false;
     for (unsigned i = 0; i < layers.size(); ++i) {
       FakePictureLayerImpl* layer =
           static_cast<FakePictureLayerImpl*>(layers[i]);
-      layer->UpdateTiles(Occlusion());
+      layer->UpdateTiles(Occlusion(), resourceless_software_draw);
       for (size_t j = 0; j < layer->GetTilings()->num_tilings(); ++j) {
         tile_manager()->InitializeTilesWithResourcesForTesting(
             layer->GetTilings()->tiling_at(j)->AllTilesForTesting());
@@ -285,10 +289,11 @@ class TileManagerPerfTest : public testing::Test {
     int priority_count = 0;
 
     std::vector<LayerImpl*> layers = CreateLayers(layer_count, tile_count);
+    bool resourceless_software_draw = false;
     for (unsigned i = 0; i < layers.size(); ++i) {
       FakePictureLayerImpl* layer =
           static_cast<FakePictureLayerImpl*>(layers[i]);
-      layer->UpdateTiles(Occlusion());
+      layer->UpdateTiles(Occlusion(), resourceless_software_draw);
       for (size_t j = 0; j < layer->GetTilings()->num_tilings(); ++j) {
         tile_manager()->InitializeTilesWithResourcesForTesting(
             layer->GetTilings()->tiling_at(j)->AllTilesForTesting());
@@ -394,11 +399,13 @@ class TileManagerPerfTest : public testing::Test {
     std::vector<LayerImpl*> layers =
         CreateLayers(layer_count, approximate_tile_count_per_layer);
     timer_.Reset();
+    bool resourceless_software_draw = false;
     do {
       BeginFrameArgs args = CreateBeginFrameArgsForTesting();
       host_impl_.UpdateCurrentBeginFrameArgs(args);
-      for (unsigned i = 0; i < layers.size(); ++i)
-        layers[i]->UpdateTiles(Occlusion());
+      for (unsigned i = 0; i < layers.size(); ++i) {
+        layers[i]->UpdateTiles(Occlusion(), resourceless_software_draw);
+      }
 
       GlobalStateThatImpactsTilePriority global_state(GlobalStateForTest());
       tile_manager()->ManageTiles(global_state);

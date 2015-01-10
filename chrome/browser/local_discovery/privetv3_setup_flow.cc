@@ -19,14 +19,14 @@ const char kUserJsonKeyName[] = "registration.user";
 class SetupRequest : public PrivetV3Session::Request {
  public:
   explicit SetupRequest(PrivetV3SetupFlow* setup_flow);
-  virtual ~SetupRequest();
+  ~SetupRequest() override;
 
-  virtual std::string GetName() OVERRIDE { return "/privet/v3/setup/start"; }
-  virtual const base::DictionaryValue& GetInput() OVERRIDE;
+  std::string GetName() override { return "/privet/v3/setup/start"; }
+  const base::DictionaryValue& GetInput() override;
 
-  virtual void OnError(PrivetURLFetcher::ErrorType error) OVERRIDE;
-  virtual void OnParsedJson(const base::DictionaryValue& value,
-                            bool has_error) OVERRIDE;
+  void OnError() override;
+  void OnParsedJson(const base::DictionaryValue& value,
+                    bool has_error) override;
 
   void SetWiFiCridentials(const std::string& ssid, const std::string& password);
 
@@ -49,7 +49,7 @@ const base::DictionaryValue& SetupRequest::GetInput() {
   return input_;
 }
 
-void SetupRequest::OnError(PrivetURLFetcher::ErrorType error) {
+void SetupRequest::OnError() {
   setup_flow_->OnSetupError();
 }
 

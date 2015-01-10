@@ -50,10 +50,10 @@ class MockWrenchMenuModel : public WrenchMenuModel {
 
 class DummyRouter : public browser_sync::LocalSessionEventRouter {
  public:
-  virtual ~DummyRouter() {}
-  virtual void StartRoutingTo(
-      browser_sync::LocalSessionEventHandler* handler) OVERRIDE {}
-  virtual void Stop() OVERRIDE {}
+  ~DummyRouter() override {}
+  void StartRoutingTo(
+      browser_sync::LocalSessionEventHandler* handler) override {}
+  void Stop() override {}
 };
 
 class WrenchMenuControllerTest
@@ -71,7 +71,7 @@ class WrenchMenuControllerTest
 
   virtual ~WrenchMenuControllerTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(browser());
 
@@ -100,7 +100,7 @@ class WrenchMenuControllerTest
     return manager_.get();
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     fake_model_.reset();
     controller_.reset();
     manager_.reset();

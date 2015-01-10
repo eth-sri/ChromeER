@@ -34,7 +34,7 @@ class TouchExplorationTest : public InProcessBrowserTest {
   virtual ~TouchExplorationTest() {}
 
  protected:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  virtual void SetUpOnMainThread() override {
     // The RenderView for WebContents is created as a result of the
     // navigation to the New Tab page which is done as part of the test
     // SetUp. The creation involves sending a resize message to the renderer
@@ -50,7 +50,7 @@ class TouchExplorationTest : public InProcessBrowserTest {
     root_window_->AddPreTargetHandler(event_handler_.get());
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() override {
     SwitchTouchExplorationMode(false);
     root_window_->RemovePreTargetHandler(event_handler_.get());
   }
@@ -59,7 +59,7 @@ class TouchExplorationTest : public InProcessBrowserTest {
     ash::AccessibilityDelegate* ad =
         ash::Shell::GetInstance()->accessibility_delegate();
     if (on != ad->IsSpokenFeedbackEnabled())
-      ad->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
+      ad->ToggleSpokenFeedback(ui::A11Y_NOTIFICATION_NONE);
   }
 
   base::TimeDelta Now() {
@@ -76,9 +76,16 @@ private:
   DISALLOW_COPY_AND_ASSIGN(TouchExplorationTest);
 };
 
+#if defined(OS_CHROMEOS)
+// crbug.com/422943
+#define MAYBE_NoRewritingEventsWhenOff DISABLED_NoRewritingEventsWhenOff
+#else
+#define MAYBE_NoRewritingEventsWhenOff NoRewritingEventsWhenOff
+#endif
+
 // This test turns the touch exploration mode off and confirms that events
 // aren't modified.
-IN_PROC_BROWSER_TEST_F(TouchExplorationTest, NoRewritingEventsWhenOff) {
+IN_PROC_BROWSER_TEST_F(TouchExplorationTest, MAYBE_NoRewritingEventsWhenOff) {
   SwitchTouchExplorationMode(false);
   ui::test::EventGenerator generator(root_window_);
 

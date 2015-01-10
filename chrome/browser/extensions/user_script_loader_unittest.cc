@@ -42,7 +42,7 @@ class UserScriptLoaderTest : public testing::Test,
  public:
   UserScriptLoaderTest() : shared_memory_(NULL) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     // Register for all user script notifications.
@@ -58,14 +58,14 @@ class UserScriptLoaderTest : public testing::Test,
         BrowserThread::UI, base::MessageLoop::current()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     file_thread_.reset();
     ui_thread_.reset();
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     DCHECK(type == extensions::NOTIFICATION_USER_SCRIPTS_UPDATED);
 
     shared_memory_ = content::Details<base::SharedMemory>(details).ptr();

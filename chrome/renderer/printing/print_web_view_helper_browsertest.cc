@@ -110,7 +110,7 @@ class DidPreviewPageListener : public IPC::Listener {
   explicit DidPreviewPageListener(base::RunLoop* run_loop)
       : run_loop_(run_loop) {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     if (message.type() == PrintHostMsg_MetafileReadyForPrinting::ID ||
         message.type() == PrintHostMsg_PrintPreviewFailed::ID ||
         message.type() == PrintHostMsg_PrintPreviewCancelled::ID)
@@ -128,7 +128,7 @@ class DidPreviewPageListener : public IPC::Listener {
 class PrintWebViewHelperTestBase : public ChromeRenderViewTest {
  public:
   PrintWebViewHelperTestBase() {}
-  virtual ~PrintWebViewHelperTestBase() {}
+  ~PrintWebViewHelperTestBase() override {}
 
  protected:
   void PrintWithJavaScript() {
@@ -226,11 +226,9 @@ class PrintWebViewHelperTestBase : public ChromeRenderViewTest {
 class PrintWebViewHelperTest : public PrintWebViewHelperTestBase {
  public:
   PrintWebViewHelperTest() {}
-  virtual ~PrintWebViewHelperTest() {}
+  ~PrintWebViewHelperTest() override {}
 
-  virtual void SetUp() OVERRIDE {
-    ChromeRenderViewTest::SetUp();
-  }
+  void SetUp() override { ChromeRenderViewTest::SetUp(); }
 
  protected:
   DISALLOW_COPY_AND_ASSIGN(PrintWebViewHelperTest);
@@ -470,7 +468,7 @@ TEST_F(PrintWebViewHelperTest, PrintLayoutTest) {
 class PrintWebViewHelperPreviewTest : public PrintWebViewHelperTestBase {
  public:
   PrintWebViewHelperPreviewTest() {}
-  virtual ~PrintWebViewHelperPreviewTest() {}
+  ~PrintWebViewHelperPreviewTest() override {}
 
  protected:
   void VerifyPrintPreviewCancelled(bool did_cancel) {

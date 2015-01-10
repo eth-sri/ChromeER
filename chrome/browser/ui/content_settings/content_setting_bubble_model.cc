@@ -8,7 +8,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
@@ -25,6 +24,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/content_settings/core/browser/content_settings_utils.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
@@ -179,11 +179,11 @@ class ContentSettingTitleLinkAndCustomModel
                                         WebContents* web_contents,
                                         Profile* profile,
                                         ContentSettingsType content_type);
-  virtual ~ContentSettingTitleLinkAndCustomModel() {}
+  ~ContentSettingTitleLinkAndCustomModel() override {}
 
  private:
   void SetCustomLink();
-  virtual void OnCustomLinkClicked() OVERRIDE {}
+  void OnCustomLinkClicked() override {}
 };
 
 ContentSettingTitleLinkAndCustomModel::ContentSettingTitleLinkAndCustomModel(
@@ -215,7 +215,7 @@ class ContentSettingSingleRadioGroup
                                  WebContents* web_contents,
                                  Profile* profile,
                                  ContentSettingsType content_type);
-  virtual ~ContentSettingSingleRadioGroup();
+  ~ContentSettingSingleRadioGroup() override;
 
  protected:
   bool settings_changed() const;
@@ -224,7 +224,7 @@ class ContentSettingSingleRadioGroup
  private:
   void SetRadioGroup();
   void AddException(ContentSetting setting);
-  virtual void OnRadioClicked(int radio_index) OVERRIDE;
+  void OnRadioClicked(int radio_index) override;
 
   ContentSetting block_setting_;
   int selected_item_;
@@ -410,10 +410,10 @@ class ContentSettingCookiesBubbleModel : public ContentSettingSingleRadioGroup {
                                    Profile* profile,
                                    ContentSettingsType content_type);
 
-  virtual ~ContentSettingCookiesBubbleModel();
+  ~ContentSettingCookiesBubbleModel() override;
 
  private:
-  virtual void OnCustomLinkClicked() OVERRIDE;
+  void OnCustomLinkClicked() override;
 };
 
 ContentSettingCookiesBubbleModel::ContentSettingCookiesBubbleModel(
@@ -454,10 +454,10 @@ class ContentSettingPluginBubbleModel : public ContentSettingSingleRadioGroup {
                                   Profile* profile,
                                   ContentSettingsType content_type);
 
-  virtual ~ContentSettingPluginBubbleModel();
+  ~ContentSettingPluginBubbleModel() override;
 
  private:
-  virtual void OnCustomLinkClicked() OVERRIDE;
+  void OnCustomLinkClicked() override;
 };
 
 ContentSettingPluginBubbleModel::ContentSettingPluginBubbleModel(
@@ -504,11 +504,11 @@ class ContentSettingPopupBubbleModel : public ContentSettingSingleRadioGroup {
                                  WebContents* web_contents,
                                  Profile* profile,
                                  ContentSettingsType content_type);
-  virtual ~ContentSettingPopupBubbleModel() {}
+  ~ContentSettingPopupBubbleModel() override {}
 
  private:
   void SetPopups();
-  virtual void OnPopupClicked(int index) OVERRIDE;
+  void OnPopupClicked(int index) override;
 };
 
 ContentSettingPopupBubbleModel::ContentSettingPopupBubbleModel(
@@ -557,7 +557,7 @@ class ContentSettingMediaStreamBubbleModel
                                        WebContents* web_contents,
                                        Profile* profile);
 
-  virtual ~ContentSettingMediaStreamBubbleModel();
+  ~ContentSettingMediaStreamBubbleModel() override;
 
  private:
   void SetTitle();
@@ -574,9 +574,9 @@ class ContentSettingMediaStreamBubbleModel
                                   const std::string& device);
 
   // ContentSettingBubbleModel implementation.
-  virtual void OnRadioClicked(int radio_index) OVERRIDE;
-  virtual void OnMediaMenuClicked(content::MediaStreamType type,
-                                  const std::string& selected_device) OVERRIDE;
+  void OnRadioClicked(int radio_index) override;
+  void OnMediaMenuClicked(content::MediaStreamType type,
+                          const std::string& selected_device) override;
 
   // The index of the selected radio item.
   int selected_item_;
@@ -861,12 +861,12 @@ class ContentSettingDomainListBubbleModel
                                       WebContents* web_contents,
                                       Profile* profile,
                                       ContentSettingsType content_type);
-  virtual ~ContentSettingDomainListBubbleModel() {}
+  ~ContentSettingDomainListBubbleModel() override {}
 
  private:
   void MaybeAddDomainList(const std::set<std::string>& hosts, int title_id);
   void SetDomainsAndCustomLink();
-  virtual void OnCustomLinkClicked() OVERRIDE;
+  void OnCustomLinkClicked() override;
 };
 
 ContentSettingDomainListBubbleModel::ContentSettingDomainListBubbleModel(
@@ -950,10 +950,10 @@ class ContentSettingMixedScriptBubbleModel
                                        Profile* profile,
                                        ContentSettingsType content_type);
 
-  virtual ~ContentSettingMixedScriptBubbleModel() {}
+  ~ContentSettingMixedScriptBubbleModel() override {}
 
  private:
-  virtual void OnCustomLinkClicked() OVERRIDE;
+  void OnCustomLinkClicked() override;
 };
 
 ContentSettingMixedScriptBubbleModel::ContentSettingMixedScriptBubbleModel(
@@ -964,11 +964,14 @@ ContentSettingMixedScriptBubbleModel::ContentSettingMixedScriptBubbleModel(
     : ContentSettingTitleLinkAndCustomModel(
         delegate, web_contents, profile, content_type) {
   DCHECK_EQ(content_type, CONTENT_SETTINGS_TYPE_MIXEDSCRIPT);
+  TabSpecificContentSettings::RecordMixedScriptAction(
+      TabSpecificContentSettings::MIXED_SCRIPT_ACTION_DISPLAYED_BUBBLE);
   set_custom_link_enabled(true);
 }
 
 void ContentSettingMixedScriptBubbleModel::OnCustomLinkClicked() {
-  content::RecordAction(UserMetricsAction("MixedScript_LoadAnyway_Bubble"));
+  TabSpecificContentSettings::RecordMixedScriptAction(
+      TabSpecificContentSettings::MIXED_SCRIPT_ACTION_CLICKED_ALLOW);
   DCHECK(web_contents());
   web_contents()->SendToAllFrames(
       new ChromeViewMsg_SetAllowRunningInsecureContent(MSG_ROUTING_NONE, true));
@@ -1114,12 +1117,12 @@ class ContentSettingMidiSysExBubbleModel
                                      WebContents* web_contents,
                                      Profile* profile,
                                      ContentSettingsType content_type);
-  virtual ~ContentSettingMidiSysExBubbleModel() {}
+  ~ContentSettingMidiSysExBubbleModel() override {}
 
  private:
   void MaybeAddDomainList(const std::set<std::string>& hosts, int title_id);
   void SetDomainsAndCustomLink();
-  virtual void OnCustomLinkClicked() OVERRIDE;
+  void OnCustomLinkClicked() override;
 };
 
 ContentSettingMidiSysExBubbleModel::ContentSettingMidiSysExBubbleModel(

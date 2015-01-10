@@ -29,18 +29,19 @@ class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
   P2PSocketHostUdp(IPC::Sender* message_sender,
                    int socket_id,
                    P2PMessageThrottler* throttler);
-  virtual ~P2PSocketHostUdp();
+  ~P2PSocketHostUdp() override;
 
   // P2PSocketHost overrides.
-  virtual bool Init(const net::IPEndPoint& local_address,
-                    const P2PHostAndIPEndPoint& remote_address) OVERRIDE;
-  virtual void Send(const net::IPEndPoint& to,
-                    const std::vector<char>& data,
-                    const rtc::PacketOptions& options,
-                    uint64 packet_id) OVERRIDE;
-  virtual P2PSocketHost* AcceptIncomingTcpConnection(
-      const net::IPEndPoint& remote_address, int id) OVERRIDE;
-  virtual bool SetOption(P2PSocketOption option, int value) OVERRIDE;
+  bool Init(const net::IPEndPoint& local_address,
+            const P2PHostAndIPEndPoint& remote_address) override;
+  void Send(const net::IPEndPoint& to,
+            const std::vector<char>& data,
+            const rtc::PacketOptions& options,
+            uint64 packet_id) override;
+  P2PSocketHost* AcceptIncomingTcpConnection(
+      const net::IPEndPoint& remote_address,
+      int id) override;
+  bool SetOption(P2PSocketOption option, int value) override;
 
  private:
   friend class P2PSocketHostUdpTest;

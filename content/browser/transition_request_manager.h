@@ -13,6 +13,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 
 template <typename T>
@@ -27,11 +28,13 @@ namespace content {
 
 // This struct passes data about an imminent transition between threads.
 struct TransitionLayerData {
-  TransitionLayerData();
-  ~TransitionLayerData();
+  CONTENT_EXPORT TransitionLayerData();
+  CONTENT_EXPORT ~TransitionLayerData();
 
   std::string markup;
   std::string css_selector;
+  std::vector<std::string> names;
+  std::vector<gfx::Rect> rects;
   scoped_refptr<net::HttpResponseHeaders> response_headers;
   GURL request_url;
 };
@@ -57,10 +60,11 @@ class TransitionRequestManager {
   // Returns whether the RenderFrameHost specified by the given IDs currently
   // has any pending transition request data. If so, we will have to delay the
   // response until the embedder resumes the request.
-  bool HasPendingTransitionRequest(int render_process_id,
-                                   int render_frame_id,
-                                   const GURL& request_url,
-                                   TransitionLayerData* transition_data);
+  CONTENT_EXPORT bool HasPendingTransitionRequest(
+      int render_process_id,
+      int render_frame_id,
+      const GURL& request_url,
+      TransitionLayerData* transition_data);
 
   // Adds pending request data for a transition navigation for the
   // RenderFrameHost specified by the given IDs.
@@ -69,10 +73,15 @@ class TransitionRequestManager {
       int render_frame_id,
       const std::string& allowed_destination_host_pattern,
       const std::string& css_selector,
-      const std::string& markup);
+      const std::string& markup,
+      const std::vector<std::string>& names,
+      const std::vector<gfx::Rect>& rects);
+  CONTENT_EXPORT void AddPendingTransitionRequestDataForTesting(
+      int render_process_id,
+      int render_frame_id);
 
-  void ClearPendingTransitionRequestData(int render_process_id,
-                                         int render_frame_id);
+  CONTENT_EXPORT void ClearPendingTransitionRequestData(int render_process_id,
+                                                        int render_frame_id);
 
  private:
   class TransitionRequestData {
@@ -81,7 +90,9 @@ class TransitionRequestManager {
     ~TransitionRequestData();
     void AddEntry(const std::string& allowed_destination_host_pattern,
                   const std::string& selector,
-                  const std::string& markup);
+                  const std::string& markup,
+                  const std::vector<std::string>& names,
+                  const std::vector<gfx::Rect>& rects);
     bool FindEntry(const GURL& request_url,
                     TransitionLayerData* transition_data);
 
@@ -93,13 +104,15 @@ class TransitionRequestManager {
       std::string allowed_destination_host_pattern;
       std::string css_selector;
       std::string markup;
+      std::vector<std::string> names;
+      std::vector<gfx::Rect> rects;
 
       AllowedEntry(const std::string& allowed_destination_host_pattern,
                    const std::string& css_selector,
-                   const std::string& markup) :
-        allowed_destination_host_pattern(allowed_destination_host_pattern),
-        css_selector(css_selector),
-        markup(markup) {}
+                   const std::string& markup,
+                   const std::vector<std::string>& names,
+                   const std::vector<gfx::Rect>& rects);
+      ~AllowedEntry();
     };
     std::vector<AllowedEntry> allowed_entries_;
   };

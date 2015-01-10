@@ -20,16 +20,16 @@
 
 namespace extensions {
 
-static const char* kHotwordHelperExtensionId =
+static const char kHotwordHelperExtensionId[] =
     "dnhpdliibojhegemfjheidglijccjfmc";
 
 class HotwordBrowserTest : public ExtensionBrowserTest {
  public:
   HotwordBrowserTest() : error_console_(NULL) { }
-  virtual ~HotwordBrowserTest() { }
+  ~HotwordBrowserTest() override {}
 
  protected:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
 
     // Force the VoiceTrigger field trial on to enable the hotword_helper
@@ -46,7 +46,7 @@ class HotwordBrowserTest : public ExtensionBrowserTest {
         FeatureSwitch::OVERRIDE_ENABLED);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ExtensionBrowserTest::SetUpOnMainThread();
 
     // Errors are only kept if we have Developer Mode enabled.

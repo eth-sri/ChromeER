@@ -16,7 +16,8 @@
 #include "extensions/browser/app_window/app_window_client.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/common/constants.cc"
+#include "extensions/common/constants.h"
+#include "extensions/common/switches.h"
 #include "extensions/shell/browser/shell_browser_context.h"
 #include "extensions/shell/browser/shell_browser_main_delegate.h"
 #include "extensions/shell/browser/shell_desktop_controller.h"
@@ -24,6 +25,7 @@
 #include "extensions/shell/browser/shell_extension_system.h"
 #include "extensions/shell/browser/shell_extension_system_factory.h"
 #include "extensions/shell/browser/shell_extensions_browser_client.h"
+#include "extensions/shell/browser/shell_oauth2_token_service.h"
 #include "extensions/shell/browser/shell_omaha_query_params_delegate.h"
 #include "extensions/shell/common/shell_extensions_client.h"
 #include "extensions/shell/common/switches.h"
@@ -51,7 +53,12 @@
 #include "extensions/shell/browser/shell_nacl_browser_delegate.h"
 #endif
 
+using base::CommandLine;
 using content::BrowserContext;
+
+#if !defined(DISABLE_NACL)
+using content::BrowserThread;
+#endif
 
 namespace extensions {
 
@@ -80,7 +87,7 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 
   chromeos::NetworkHandler::Initialize();
   network_controller_.reset(new ShellNetworkController(
-      base::CommandLine::ForCurrentProcess()->GetSwitchValueNative(
+      CommandLine::ForCurrentProcess()->GetSwitchValueNative(
           switches::kAppShellPreferredNetwork)));
 
   chromeos::CrasAudioHandler::Initialize(
@@ -109,7 +116,7 @@ int ShellBrowserMainParts::PreCreateThreads() {
 
 void ShellBrowserMainParts::PreMainMessageLoopRun() {
   // Initialize our "profile" equivalent.
-  browser_context_.reset(new ShellBrowserContext);
+  browser_context_.reset(new ShellBrowserContext(net_log_.get()));
 
   aura::Env::GetInstance()->set_context_factory(content::GetContextFactory());
 
@@ -149,12 +156,21 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
       browser_context_.get());
 
+  // Initialize OAuth2 support from command line.
+  CommandLine* cmd = CommandLine::ForCurrentProcess();
+  oauth2_token_service_.reset(new ShellOAuth2TokenService(
+      browser_context_.get(),
+      cmd->GetSwitchValueASCII(switches::kAppShellUser),
+      cmd->GetSwitchValueASCII(switches::kAppShellRefreshToken)));
+
 #if !defined(DISABLE_NACL)
   // Takes ownership.
   nacl::NaClBrowser::SetDelegate(
       new ShellNaClBrowserDelegate(browser_context_.get()));
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
+  // Track the task so it can be canceled if app_shell shuts down very quickly,
+  // such as in browser tests.
+  task_tracker_.PostTask(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
       FROM_HERE,
       base::Bind(nacl::NaClProcessHost::EarlyStartup));
 #endif
@@ -184,6 +200,12 @@ bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code) {
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
   browser_main_delegate_->Shutdown();
 
+#if !defined(DISABLE_NACL)
+  task_tracker_.TryCancelAll();
+  nacl::NaClBrowser::SetDelegate(nullptr);
+#endif
+
+  oauth2_token_service_.reset();
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
       browser_context_.get());
   extension_system_ = NULL;

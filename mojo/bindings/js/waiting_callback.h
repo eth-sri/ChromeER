@@ -17,7 +17,7 @@ namespace mojo {
 namespace js {
 
 class WaitingCallback : public gin::Wrappable<WaitingCallback>,
-                        public gin::HandleCloseObserver {
+                        public HandleCloseObserver {
  public:
   static gin::WrapperInfo kWrapperInfo;
 
@@ -25,7 +25,7 @@ class WaitingCallback : public gin::Wrappable<WaitingCallback>,
   static gin::Handle<WaitingCallback> Create(
       v8::Isolate* isolate,
       v8::Handle<v8::Function> callback,
-      gin::Handle<gin::HandleWrapper> handle_wrapper,
+      gin::Handle<HandleWrapper> handle_wrapper,
       MojoHandleSignals signals);
 
   // Cancels the callback. Does nothing if a callback is not pending. This is
@@ -36,8 +36,8 @@ class WaitingCallback : public gin::Wrappable<WaitingCallback>,
  private:
   WaitingCallback(v8::Isolate* isolate,
                   v8::Handle<v8::Function> callback,
-                  gin::Handle<gin::HandleWrapper> handle_wrapper);
-  virtual ~WaitingCallback();
+                  gin::Handle<HandleWrapper> handle_wrapper);
+  ~WaitingCallback() override;
 
   // Callback from MojoAsyncWaiter. |closure| is the WaitingCallback.
   static void CallOnHandleReady(void* closure, MojoResult result);
@@ -47,12 +47,12 @@ class WaitingCallback : public gin::Wrappable<WaitingCallback>,
 
   // Invoked by the HandleWrapper if the handle is closed while this wait is
   // still in progress.
-  virtual void OnWillCloseHandle() override;
+  void OnWillCloseHandle() override;
 
   base::WeakPtr<gin::Runner> runner_;
   MojoAsyncWaitID wait_id_;
 
-  gin::HandleWrapper* handle_wrapper_;
+  HandleWrapper* handle_wrapper_;
 
   DISALLOW_COPY_AND_ASSIGN(WaitingCallback);
 };

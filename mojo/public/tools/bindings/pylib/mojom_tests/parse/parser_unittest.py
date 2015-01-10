@@ -614,9 +614,10 @@ class ParserTest(unittest.TestCase):
 
     source = """\
         struct MyStruct {
-          int32[] normal_array;
-          int32[1] fixed_size_array_one_entry;
-          int32[10] fixed_size_array_ten_entries;
+          array<int32> normal_array;
+          array<int32, 1> fixed_size_array_one_entry;
+          array<int32, 10> fixed_size_array_ten_entries;
+          array<array<array<int32, 1>>, 2> nested_arrays;
         };
         """
     expected = ast.Mojom(
@@ -630,13 +631,15 @@ class ParserTest(unittest.TestCase):
                  ast.StructField('fixed_size_array_one_entry', None, 'int32[1]',
                                  None),
                  ast.StructField('fixed_size_array_ten_entries', None,
-                                 'int32[10]', None)]))])
+                                 'int32[10]', None),
+                 ast.StructField('nested_arrays', None,
+                                 'int32[1][][2]', None)]))])
     self.assertEquals(parser.Parse(source, "my_file.mojom"), expected)
 
   def testValidNestedArray(self):
     """Tests parsing a nested array."""
 
-    source = "struct MyStruct { int32[][] nested_array; };"
+    source = "struct MyStruct { array<array<int32>> nested_array; };"
     expected = ast.Mojom(
         None,
         ast.ImportList(),
@@ -652,36 +655,77 @@ class ParserTest(unittest.TestCase):
 
     source1 = """\
         struct MyStruct {
-          int32[0] zero_size_array;
+          array<int32, 0> zero_size_array;
         };
         """
     with self.assertRaisesRegexp(
         parser.ParseError,
         r"^my_file\.mojom:2: Error: Fixed array size 0 invalid\n"
-            r" *int32\[0\] zero_size_array;$"):
+            r" *array<int32, 0> zero_size_array;$"):
       parser.Parse(source1, "my_file.mojom")
 
     source2 = """\
         struct MyStruct {
-          int32[999999999999] too_big_array;
+          array<int32, 999999999999> too_big_array;
         };
         """
     with self.assertRaisesRegexp(
         parser.ParseError,
         r"^my_file\.mojom:2: Error: Fixed array size 999999999999 invalid\n"
-            r" *int32\[999999999999\] too_big_array;$"):
+            r" *array<int32, 999999999999> too_big_array;$"):
       parser.Parse(source2, "my_file.mojom")
 
     source3 = """\
         struct MyStruct {
-          int32[abcdefg] not_a_number;
+          array<int32, abcdefg> not_a_number;
         };
         """
     with self.assertRaisesRegexp(
         parser.ParseError,
         r"^my_file\.mojom:2: Error: Unexpected 'abcdefg':\n"
-        r" *int32\[abcdefg\] not_a_number;"):
+        r" *array<int32, abcdefg> not_a_number;"):
       parser.Parse(source3, "my_file.mojom")
+
+  def testValidAssociativeArrays(self):
+    """Tests that we can parse valid associative array structures."""
+
+    source1 = "struct MyStruct { map<string, uint8> data; };"
+    expected1 = ast.Mojom(
+        None,
+        ast.ImportList(),
+        [ast.Struct(
+            'MyStruct',
+            None,
+            ast.StructBody(
+                [ast.StructField('data', None, 'uint8{string}', None)]))])
+    self.assertEquals(parser.Parse(source1, "my_file.mojom"), expected1)
+
+    source2 = "interface MyInterface { MyMethod(map<string, uint8> a); };"
+    expected2 = ast.Mojom(
+        None,
+        ast.ImportList(),
+        [ast.Interface(
+            'MyInterface',
+            None,
+            ast.InterfaceBody(
+                ast.Method(
+                    'MyMethod',
+                    None,
+                    ast.ParameterList(
+                      ast.Parameter('a', None, 'uint8{string}')),
+                    None)))])
+    self.assertEquals(parser.Parse(source2, "my_file.mojom"), expected2)
+
+    source3 = "struct MyStruct { map<string, array<uint8>> data; };"
+    expected3 = ast.Mojom(
+        None,
+        ast.ImportList(),
+        [ast.Struct(
+            'MyStruct',
+            None,
+            ast.StructBody(
+                [ast.StructField('data', None, 'uint8[]{string}', None)]))])
+    self.assertEquals(parser.Parse(source3, "my_file.mojom"), expected3)
 
   def testValidMethod(self):
     """Tests parsing method declarations."""
@@ -917,7 +961,7 @@ class ParserTest(unittest.TestCase):
     """Tests parsing import statements."""
 
     # One import (no module statement).
-    source1 = "import \"somedir/my.mojom\""
+    source1 = "import \"somedir/my.mojom\";"
     expected1 = ast.Mojom(
         None,
         ast.ImportList(ast.Import("somedir/my.mojom")),
@@ -926,8 +970,8 @@ class ParserTest(unittest.TestCase):
 
     # Two imports (no module statement).
     source2 = """\
-        import "somedir/my1.mojom"
-        import "somedir/my2.mojom"
+        import "somedir/my1.mojom";
+        import "somedir/my2.mojom";
         """
     expected2 = ast.Mojom(
         None,
@@ -938,8 +982,8 @@ class ParserTest(unittest.TestCase):
 
     # Imports with module statement.
     source3 = """\
-        import "somedir/my1.mojom"
-        import "somedir/my2.mojom"
+        import "somedir/my1.mojom";
+        import "somedir/my2.mojom";
         module my_module {}
         """
     expected3 = ast.Mojom(
@@ -972,6 +1016,16 @@ class ParserTest(unittest.TestCase):
             r" *module {}$"):
       parser.Parse(source2, "my_file.mojom")
 
+    source3 = """\
+        import "foo.mojom"  // Missing semicolon.
+        module {}
+        """
+    with self.assertRaisesRegexp(
+        parser.ParseError,
+        r"^my_file\.mojom:2: Error: Unexpected 'module':\n"
+            r" *module {}$"):
+      parser.Parse(source3, "my_file.mojom")
+
   def testValidNullableTypes(self):
     """Tests parsing nullable types."""
 
@@ -980,11 +1034,11 @@ class ParserTest(unittest.TestCase):
           int32? a;  // This is actually invalid, but handled at a different
                      // level.
           string? b;
-          int32[] ? c;
-          string ? [] ? d;
-          int32[]?[]? e;
-          int32[1]? f;
-          string?[1]? g;
+          array<int32> ? c;
+          array<string ? > ? d;
+          array<array<int32>?>? e;
+          array<int32, 1>? f;
+          array<string?, 1>? g;
           some_struct? h;
           handle? i;
           handle<data_pipe_consumer>? j;

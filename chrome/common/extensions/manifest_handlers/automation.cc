@@ -44,26 +44,23 @@ class AutomationManifestPermission : public ManifestPermission {
       : automation_info_(automation_info.Pass()) {}
 
   // extensions::ManifestPermission overrides.
-  virtual std::string name() const OVERRIDE;
+  std::string name() const override;
 
-  virtual std::string id() const OVERRIDE;
+  std::string id() const override;
 
-  virtual bool HasMessages() const OVERRIDE;
+  bool HasMessages() const override;
 
-  virtual PermissionMessages GetMessages() const OVERRIDE;
+  PermissionMessages GetMessages() const override;
 
-  virtual bool FromValue(const base::Value* value) OVERRIDE;
+  bool FromValue(const base::Value* value) override;
 
-  virtual scoped_ptr<base::Value> ToValue() const OVERRIDE;
+  scoped_ptr<base::Value> ToValue() const override;
 
-  virtual ManifestPermission* Diff(
-      const ManifestPermission* rhs) const OVERRIDE;
+  ManifestPermission* Diff(const ManifestPermission* rhs) const override;
 
-  virtual ManifestPermission* Union(
-      const ManifestPermission* rhs) const OVERRIDE;
+  ManifestPermission* Union(const ManifestPermission* rhs) const override;
 
-  virtual ManifestPermission* Intersect(
-      const ManifestPermission* rhs) const OVERRIDE;
+  ManifestPermission* Intersect(const ManifestPermission* rhs) const override;
 
  private:
   scoped_ptr<const AutomationInfo> automation_info_;

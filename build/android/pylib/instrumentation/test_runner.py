@@ -99,14 +99,15 @@ class TestRunner(base_test_runner.BaseTestRunner):
                       str(self.device))
       return
 
+    host_device_file_tuples = []
     test_data = _GetDataFilesForTestSuite(self.test_pkg.GetApkName())
     if test_data:
       # Make sure SD card is ready.
       self.device.WaitUntilFullyBooted(timeout=20)
-      for p in test_data:
-        self.device.PushChangedFiles(
-            os.path.join(constants.DIR_SOURCE_ROOT, p),
-            os.path.join(self.device.GetExternalStoragePath(), p))
+      host_device_file_tuples += [
+          (os.path.join(constants.DIR_SOURCE_ROOT, p),
+           os.path.join(self.device.GetExternalStoragePath(), p))
+          for p in test_data]
 
     # TODO(frankf): Specify test data in this file as opposed to passing
     # as command-line.
@@ -117,13 +118,15 @@ class TestRunner(base_test_runner.BaseTestRunner):
       host_test_files_path = os.path.join(constants.DIR_SOURCE_ROOT,
                                           host_src)
       if os.path.exists(host_test_files_path):
-        self.device.PushChangedFiles(
+        host_device_file_tuples += [(
             host_test_files_path,
             '%s/%s/%s' % (
                 self.device.GetExternalStoragePath(),
                 TestRunner._DEVICE_DATA_DIR,
-                dst_layer))
-    self.tool.CopyFiles()
+                dst_layer))]
+    if host_device_file_tuples:
+      self.device.PushChangedFiles(host_device_file_tuples)
+    self.tool.CopyFiles(self.device)
     TestRunner._DEVICE_HAS_TEST_FILES[str(self.device)] = True
 
   def _GetInstrumentationArgs(self):
@@ -355,8 +358,8 @@ class TestRunner(base_test_runner.BaseTestRunner):
 
     cmd = ['am', 'instrument', '-r']
     for k, v in self._GetInstrumentationArgs().iteritems():
-      cmd.extend(['-e', k, "'%s'" % v])
-    cmd.extend(['-e', 'class', "'%s'" % test])
+      cmd.extend(['-e', k, v])
+    cmd.extend(['-e', 'class', test])
     cmd.extend(['-w', instrumentation_path])
     return self.device.RunShellCommand(cmd, timeout=timeout, retries=0)
 
@@ -484,6 +487,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
     timeout = (self._GetIndividualTestTimeoutSecs(test) *
                self._GetIndividualTestTimeoutScale(test) *
                self.tool.GetTimeoutScale())
+    if (self.device.GetProp('ro.build.version.sdk')
+        < constants.ANDROID_SDK_VERSION_CODES.JELLY_BEAN):
+      timeout *= 4
 
     start_ms = 0
     duration_ms = 0

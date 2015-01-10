@@ -213,50 +213,33 @@ void SetUsesEasyResizeTargeter(aura::Window* container) {
 class EmptyWindowDelegate : public aura::WindowDelegate {
  public:
   EmptyWindowDelegate() {}
-  virtual ~EmptyWindowDelegate() {}
+  ~EmptyWindowDelegate() override {}
 
   // aura::WindowDelegate overrides:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
-    return gfx::Size();
-  }
-  virtual gfx::Size GetMaximumSize() const OVERRIDE {
-    return gfx::Size();
-  }
-  virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
-                               const gfx::Rect& new_bounds) OVERRIDE {
-  }
-  virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE {
+  gfx::Size GetMinimumSize() const override { return gfx::Size(); }
+  gfx::Size GetMaximumSize() const override { return gfx::Size(); }
+  void OnBoundsChanged(const gfx::Rect& old_bounds,
+                       const gfx::Rect& new_bounds) override {}
+  gfx::NativeCursor GetCursor(const gfx::Point& point) override {
     return gfx::kNullCursor;
   }
-  virtual int GetNonClientComponent(
-      const gfx::Point& point) const OVERRIDE {
+  int GetNonClientComponent(const gfx::Point& point) const override {
     return HTNOWHERE;
   }
-  virtual bool ShouldDescendIntoChildForEventHandling(
+  bool ShouldDescendIntoChildForEventHandling(
       aura::Window* child,
-      const gfx::Point& location) OVERRIDE {
+      const gfx::Point& location) override {
     return false;
   }
-  virtual bool CanFocus() OVERRIDE {
-    return false;
-  }
-  virtual void OnCaptureLost() OVERRIDE {
-  }
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
-  }
-  virtual void OnDeviceScaleFactorChanged(
-      float device_scale_factor) OVERRIDE {
-  }
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {
-    delete this;
-  }
-  virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {
-  }
-  virtual bool HasHitTestMask() const OVERRIDE {
-    return false;
-  }
-  virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
+  bool CanFocus() override { return false; }
+  void OnCaptureLost() override {}
+  void OnPaint(gfx::Canvas* canvas) override {}
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+  void OnWindowDestroying(aura::Window* window) override {}
+  void OnWindowDestroyed(aura::Window* window) override { delete this; }
+  void OnWindowTargetVisibilityChanged(bool visible) override {}
+  bool HasHitTestMask() const override { return false; }
+  void GetHitTestMask(gfx::Path* mask) const override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(EmptyWindowDelegate);
@@ -439,7 +422,7 @@ void RootWindowController::UpdateAfterLoginStatusChange(
 
 void RootWindowController::HandleInitialDesktopBackgroundAnimationStarted() {
 #if defined(OS_CHROMEOS)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshAnimateFromBootSplashScreen) &&
       boot_splash_screen_.get()) {
     // Make the splash screen fade out so it doesn't obscure the desktop
@@ -739,7 +722,7 @@ void RootWindowController::Init(RootWindowType root_window_type,
   }
 
 #if defined(OS_CHROMEOS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshDisableTouchExplorationMode)) {
     touch_exploration_manager_.reset(new AshTouchExplorationManager(this));
   }
@@ -817,7 +800,7 @@ void RootWindowController::InitLayoutManagers() {
 }
 
 void RootWindowController::InitTouchHuds() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kAshTouchHud))
     set_touch_hud_debug(new TouchHudDebug(GetRootWindow()));
   if (Shell::GetInstance()->is_touch_hud_projection_enabled())
@@ -838,9 +821,9 @@ void RootWindowController::CreateSystemBackground(
   // Make a copy of the system's boot splash screen so we can composite it
   // onscreen until the desktop background is ready.
   if (is_first_run_after_boot &&
-      (CommandLine::ForCurrentProcess()->HasSwitch(
+      (base::CommandLine::ForCurrentProcess()->HasSwitch(
            switches::kAshCopyHostBackgroundAtBoot) ||
-       CommandLine::ForCurrentProcess()->HasSwitch(
+       base::CommandLine::ForCurrentProcess()->HasSwitch(
            switches::kAshAnimateFromBootSplashScreen)))
     boot_splash_screen_.reset(new BootSplashScreen(GetHost()));
 #endif
@@ -962,7 +945,7 @@ void RootWindowController::CreateContainersInRootWindow(
       "LockScreenContainer",
       lock_screen_containers);
   wm::SetSnapsChildrenToPhysicalPixelBoundary(lock_container);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAshDisableLockLayoutManager)) {
     lock_container->SetLayoutManager(
             new WorkspaceLayoutManager(lock_container));

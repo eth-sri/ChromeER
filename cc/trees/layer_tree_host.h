@@ -39,10 +39,13 @@
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/proxy.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
+
+namespace gpu {
+class GpuMemoryBufferManager;
+}
 
 namespace cc {
-
 class AnimationRegistrar;
 class HeadsUpDisplayLayer;
 class Layer;
@@ -84,7 +87,8 @@ class CC_EXPORT LayerTreeHost {
   // The SharedBitmapManager will be used on the compositor thread.
   static scoped_ptr<LayerTreeHost> CreateThreaded(
       LayerTreeHostClient* client,
-      SharedBitmapManager* manager,
+      SharedBitmapManager* shared_bitmap_manager,
+      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       const LayerTreeSettings& settings,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
@@ -92,7 +96,8 @@ class CC_EXPORT LayerTreeHost {
   static scoped_ptr<LayerTreeHost> CreateSingleThreaded(
       LayerTreeHostClient* client,
       LayerTreeHostSingleThreadClient* single_thread_client,
-      SharedBitmapManager* manager,
+      SharedBitmapManager* shared_bitmap_manager,
+      gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       const LayerTreeSettings& settings,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
   virtual ~LayerTreeHost();
@@ -300,9 +305,12 @@ class CC_EXPORT LayerTreeHost {
 
   void BreakSwapPromises(SwapPromise::DidNotSwapReason reason);
 
+  size_t num_queued_swap_promises() const { return swap_promise_list_.size(); }
+
  protected:
   LayerTreeHost(LayerTreeHostClient* client,
-                SharedBitmapManager* manager,
+                SharedBitmapManager* shared_bitmap_manager,
+                gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
                 const LayerTreeSettings& settings);
   void InitializeThreaded(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
@@ -400,7 +408,6 @@ class CC_EXPORT LayerTreeHost {
   float page_scale_factor_;
   float min_page_scale_factor_;
   float max_page_scale_factor_;
-  gfx::Transform impl_transform_;
   bool has_gpu_rasterization_trigger_;
   bool content_is_suitable_for_gpu_rasterization_;
   bool gpu_rasterization_histogram_recorded_;
@@ -452,6 +459,7 @@ class CC_EXPORT LayerTreeHost {
   LayerSelectionBound selection_end_;
 
   SharedBitmapManager* shared_bitmap_manager_;
+  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;

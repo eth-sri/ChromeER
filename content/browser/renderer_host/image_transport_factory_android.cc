@@ -24,7 +24,7 @@ class GLContextLostListener
     : public blink::WebGraphicsContext3D::WebGraphicsContextLostCallback {
  public:
   // WebGraphicsContextLostCallback implementation.
-  virtual void onContextLost() OVERRIDE;
+  virtual void onContextLost() override;
  private:
   static void DidLoseContext();
 };
@@ -38,8 +38,8 @@ class CmdBufferImageTransportFactory : public ImageTransportFactoryAndroid {
   CmdBufferImageTransportFactory();
   virtual ~CmdBufferImageTransportFactory();
 
-  virtual GLHelper* GetGLHelper() OVERRIDE;
-  virtual uint32 GetChannelID() OVERRIDE {
+  virtual GLHelper* GetGLHelper() override;
+  virtual uint32 GetChannelID() override {
     return BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
   }
 
@@ -55,7 +55,7 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
       BrowserGpuChannelHostFactory::instance();
   scoped_refptr<GpuChannelHost> gpu_channel_host(factory->EstablishGpuChannelSync(
       CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
-  DCHECK(gpu_channel_host);
+  DCHECK(gpu_channel_host.get());
 
   blink::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;

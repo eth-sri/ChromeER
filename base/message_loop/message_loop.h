@@ -115,7 +115,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // Creates a TYPE_CUSTOM MessageLoop with the supplied MessagePump, which must
   // be non-NULL.
   explicit MessageLoop(scoped_ptr<base::MessagePump> pump);
-  virtual ~MessageLoop();
+  ~MessageLoop() override;
 
   // Returns the MessageLoop object for the current thread, or null if none.
   static MessageLoop* current();
@@ -194,9 +194,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // good).
   //
   // NOTE: This method may be called on any thread.  The object will be deleted
-  // on the thread that executes MessageLoop::Run().  If this is not the same
-  // as the thread that calls PostDelayedTask(FROM_HERE, ), then T MUST inherit
-  // from RefCountedThreadSafe<T>!
+  // on the thread that executes MessageLoop::Run().
   template <class T>
   void DeleteSoon(const tracked_objects::Location& from_here, const T* object) {
     base::subtle::DeleteHelperInternal<T, void>::DeleteViaSequencedTaskRunner(
@@ -223,7 +221,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // NOTE: This method may be called on any thread.  The object will be
   // released (and thus possibly deleted) on the thread that executes
   // MessageLoop::Run().  If this is not the same as the thread that calls
-  // PostDelayedTask(FROM_HERE, ), then T MUST inherit from
+  // ReleaseSoon(FROM_HERE, ), then T MUST inherit from
   // RefCountedThreadSafe<T>!
   template <class T>
   void ReleaseSoon(const tracked_objects::Location& from_here,
@@ -444,9 +442,9 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   void HistogramEvent(int event);
 
   // MessagePump::Delegate methods:
-  virtual bool DoWork() OVERRIDE;
-  virtual bool DoDelayedWork(TimeTicks* next_delayed_work_time) OVERRIDE;
-  virtual bool DoIdleWork() OVERRIDE;
+  bool DoWork() override;
+  bool DoDelayedWork(TimeTicks* next_delayed_work_time) override;
+  bool DoIdleWork() override;
 
   const Type type_;
 
@@ -598,7 +596,7 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
     return loop && loop->type() == MessageLoop::TYPE_IO;
   }
 
-#if !defined(OS_NACL)
+#if !defined(OS_NACL) || defined(__native_client_nonsfi__)
 
 #if defined(OS_WIN)
   typedef MessagePumpForIO::IOHandler IOHandler;
@@ -644,7 +642,7 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
                            FileDescriptorWatcher *controller,
                            Watcher *delegate);
 #endif  // defined(OS_IOS) || defined(OS_POSIX)
-#endif  // !defined(OS_NACL)
+#endif  // !defined(OS_NACL) || defined(__native_client_nonsfi__)
 };
 
 // Do not add any member variables to MessageLoopForIO!  This is important b/c

@@ -11,7 +11,6 @@
 #include "chrome/browser/android/accessibility_util.h"
 #include "chrome/browser/android/banners/app_banner_manager.h"
 #include "chrome/browser/android/bookmarks/bookmarks_bridge.h"
-#include "chrome/browser/android/browser_version.h"
 #include "chrome/browser/android/chrome_web_contents_delegate_android.h"
 #include "chrome/browser/android/chromium_application.h"
 #include "chrome/browser/android/content_view_util.h"
@@ -19,6 +18,8 @@
 #include "chrome/browser/android/dom_distiller/feedback_reporter_android.h"
 #include "chrome/browser/android/enhanced_bookmarks/enhanced_bookmarks_bridge.h"
 #include "chrome/browser/android/favicon_helper.h"
+#include "chrome/browser/android/feature_utilities.h"
+#include "chrome/browser/android/find_in_page/find_in_page_bridge.h"
 #include "chrome/browser/android/foreign_session_helper.h"
 #include "chrome/browser/android/intent_helper.h"
 #include "chrome/browser/android/logo_bridge.h"
@@ -27,8 +28,8 @@
 #include "chrome/browser/android/omnibox/answers_image_bridge.h"
 #include "chrome/browser/android/omnibox/autocomplete_controller_android.h"
 #include "chrome/browser/android/omnibox/omnibox_prerender.h"
-#include "chrome/browser/android/password_authentication_manager.h"
 #include "chrome/browser/android/password_ui_view_android.h"
+#include "chrome/browser/android/preferences/pref_service_bridge.h"
 #include "chrome/browser/android/profiles/profile_downloader_android.h"
 #include "chrome/browser/android/provider/chrome_browser_provider.h"
 #include "chrome/browser/android/recently_closed_tabs_bridge.h"
@@ -57,6 +58,7 @@
 #include "chrome/browser/ui/android/autofill/autofill_dialog_result.h"
 #include "chrome/browser/ui/android/autofill/autofill_logger_android.h"
 #include "chrome/browser/ui/android/autofill/autofill_popup_view_android.h"
+#include "chrome/browser/ui/android/autofill/password_generation_popup_view_android.h"
 #include "chrome/browser/ui/android/chrome_http_auth_handler.h"
 #include "chrome/browser/ui/android/context_menu_helper.h"
 #include "chrome/browser/ui/android/infobars/auto_login_infobar_delegate_android.h"
@@ -64,15 +66,15 @@
 #include "chrome/browser/ui/android/infobars/data_reduction_proxy_infobar.h"
 #include "chrome/browser/ui/android/infobars/infobar_android.h"
 #include "chrome/browser/ui/android/infobars/infobar_container_android.h"
-#include "chrome/browser/ui/android/infobars/save_password_infobar.h"
 #include "chrome/browser/ui/android/infobars/translate_infobar.h"
 #include "chrome/browser/ui/android/javascript_app_modal_dialog_android.h"
 #include "chrome/browser/ui/android/navigation_popup.h"
 #include "chrome/browser/ui/android/omnibox/omnibox_view_util.h"
 #include "chrome/browser/ui/android/ssl_client_certificate_request.h"
-#include "chrome/browser/ui/android/tab_model/tab_model_base.h"
+#include "chrome/browser/ui/android/tab_model/tab_model_jni_bridge.h"
 #include "chrome/browser/ui/android/toolbar/toolbar_model_android.h"
 #include "chrome/browser/ui/android/website_settings_popup_android.h"
+#include "chrome/browser/ui/android/website_settings_popup_legacy_android.h"
 #include "components/bookmarks/common/android/component_jni_registrar.h"
 #include "components/dom_distiller/android/component_jni_registrar.h"
 #include "components/gcm_driver/android/component_jni_registrar.h"
@@ -120,7 +122,6 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     autofill::AutofillPopupViewAndroid::RegisterAutofillPopupViewAndroid },
   { "AutoLoginDelegate", AutoLoginInfoBarDelegateAndroid::Register },
   { "BookmarksBridge", BookmarksBridge::RegisterBookmarksBridge },
-  { "BrowserVersion", RegisterBrowserVersion },
   { "CertificateViewer", RegisterCertificateViewer },
   { "ChromeBrowserProvider",
     ChromeBrowserProvider::RegisterChromeBrowserProvider },
@@ -145,7 +146,9 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
       prerender::ExternalPrerenderHandlerAndroid::
       RegisterExternalPrerenderHandlerAndroid },
   { "FaviconHelper", FaviconHelper::RegisterFaviconHelper },
+  { "FeatureUtilities", RegisterFeatureUtilities },
   { "FeedbackReporter", dom_distiller::android::RegisterFeedbackReporter },
+  { "FindInPageBridge", FindInPageBridge::RegisterFindInPageBridge },
   { "FontSizePrefsAndroid", FontSizePrefsAndroid::Register },
   { "ForeignSessionHelper",
     ForeignSessionHelper::RegisterForeignSessionHelper },
@@ -164,23 +167,23 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
     NewTabPagePrefs::RegisterNewTabPagePrefs },
   { "OmniboxPrerender", RegisterOmniboxPrerender },
   { "OmniboxViewUtil", OmniboxViewUtil::RegisterOmniboxViewUtil },
-  { "PasswordAuthenticationManager",
-    PasswordAuthenticationManager::RegisterPasswordAuthenticationManager },
+  { "PasswordGenerationPopup",
+    autofill::PasswordGenerationPopupViewAndroid::Register},
   { "PasswordUIViewAndroid",
     PasswordUIViewAndroid::RegisterPasswordUIViewAndroid },
   { "PersonalDataManagerAndroid",
     autofill::PersonalDataManagerAndroid::Register },
+  { "PrefServiceBridge", RegisterPrefServiceBridge },
   { "ProfileAndroid", ProfileAndroid::RegisterProfileAndroid },
-  { "ProfileDownloaderAndroid", ProfileDownloaderAndroid::Register },
+  { "ProfileDownloader", RegisterProfileDownloader },
   { "ProfileSyncService", ProfileSyncServiceAndroid::Register },
   { "RecentlyClosedBridge", RecentlyClosedTabsBridge::Register },
-  { "SavePasswordInfoBar", RegisterSavePasswordInfoBar },
   { "SigninManager", SigninManagerAndroid::Register },
   { "SqliteCursor", SQLiteCursor::RegisterSqliteCursor },
   { "SSLClientCertificateRequest", RegisterSSLClientCertificateRequestAndroid },
   { "StartupMetricUtils", RegisterStartupMetricUtils },
   { "TabAndroid", TabAndroid::RegisterTabAndroid },
-  { "TabModelBase", RegisterTabModelBase},
+  { "TabModelJniBridge", TabModelJniBridge::Register},
   { "TemplateUrlServiceAndroid", TemplateUrlServiceAndroid::Register },
   { "ToolbarModelAndroid", ToolbarModelAndroid::RegisterToolbarModelAndroid },
   { "TranslateInfoBarDelegate", RegisterTranslateInfoBarDelegate },
@@ -191,6 +194,9 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "VoiceSearchTabHelper", RegisterVoiceSearchTabHelper },
   { "WebsiteSettingsPopupAndroid",
     WebsiteSettingsPopupAndroid::RegisterWebsiteSettingsPopupAndroid },
+  { "WebsiteSettingsPopupLegacyAndroid",
+    WebsiteSettingsPopupLegacyAndroid::
+        RegisterWebsiteSettingsPopupLegacyAndroid },
 #if defined(ENABLE_PRINTING) && !defined(ENABLE_FULL_PRINTING)
   { "PrintingContext",
     printing::PrintingContextAndroid::RegisterPrintingContext},

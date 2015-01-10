@@ -13,39 +13,37 @@ namespace content {
 class GpuMemoryBufferImplOzoneNativeBuffer : public GpuMemoryBufferImpl {
  public:
   static void Create(const gfx::Size& size,
-                     unsigned internalformat,
-                     unsigned usage,
+                     Format format,
                      int client_id,
                      const CreationCallback& callback);
 
   static void AllocateForChildProcess(const gfx::Size& size,
-                                      unsigned internalformat,
-                                      unsigned usage,
+                                      Format format,
                                       int child_client_id,
                                       const AllocationCallback& callback);
 
   static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat,
+      Format format,
       const DestructionCallback& callback);
 
-  static bool IsFormatSupported(unsigned internalformat);
-  static bool IsUsageSupported(unsigned usage);
-  static bool IsConfigurationSupported(unsigned internalformat, unsigned usage);
+  static bool IsFormatSupported(Format format);
+  static bool IsUsageSupported(Usage usage);
+  static bool IsConfigurationSupported(Format format, Usage usage);
 
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void* Map() OVERRIDE;
-  virtual void Unmap() OVERRIDE;
-  virtual uint32 GetStride() const OVERRIDE;
-  virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE;
+  void* Map() override;
+  void Unmap() override;
+  uint32 GetStride() const override;
+  gfx::GpuMemoryBufferHandle GetHandle() const override;
 
  private:
   GpuMemoryBufferImplOzoneNativeBuffer(const gfx::Size& size,
-                                       unsigned internalformat,
+                                       Format format,
                                        const DestructionCallback& callback,
                                        const gfx::GpuMemoryBufferId& id);
-  virtual ~GpuMemoryBufferImplOzoneNativeBuffer();
+  ~GpuMemoryBufferImplOzoneNativeBuffer() override;
 
   gfx::GpuMemoryBufferId id_;
 

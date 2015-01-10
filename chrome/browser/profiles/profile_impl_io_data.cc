@@ -34,11 +34,11 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_auth_request_handler.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_protocol.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_statistics_prefs.h"
-#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
-#include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_protocol.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
 #include "components/domain_reliability/monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
@@ -114,9 +114,7 @@ ProfileImplIOData::Handle::~Handle() {
   if (io_data_->http_server_properties_manager_)
     io_data_->http_server_properties_manager_->ShutdownOnPrefThread();
 
-  if (io_data_->domain_reliability_monitor_)
-    io_data_->domain_reliability_monitor_->DestroyReportingPref();
-
+  io_data_->data_reduction_proxy_enabled()->Destroy();
   io_data_->ShutdownOnUIThread(GetAllContextGetters().Pass());
 }
 
@@ -336,6 +334,7 @@ void ProfileImplIOData::Handle::ClearNetworkingHistorySince(
 }
 
 void ProfileImplIOData::Handle::LazyInitialize() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (initialized_)
     return;
 
@@ -441,6 +440,8 @@ void ProfileImplIOData::InitializeInternal(
   data_reduction_proxy_usage_stats()->set_unavailable_callback(
       data_reduction_proxy_unavailable_callback());
 
+  network_delegate()->set_data_reduction_proxy_enabled_pref(
+      &data_reduction_proxy_enabled_);
   network_delegate()->set_data_reduction_proxy_params(
       data_reduction_proxy_params());
   network_delegate()->set_data_reduction_proxy_usage_stats(
@@ -596,6 +597,7 @@ void ProfileImplIOData::InitializeInternal(
         domain_reliability_monitor_.get();
     monitor->InitURLRequestContext(main_context);
     monitor->AddBakedInConfigs();
+    monitor->SetDiscardUploads(!GetMetricsEnabledStateOnIOThread());
     network_delegate()->set_domain_reliability_monitor(monitor);
   }
 
@@ -715,9 +717,7 @@ net::URLRequestContext* ProfileImplIOData::InitializeAppRequestContext(
 
   // Transfer ownership of the cookies and cache to AppRequestContext.
   context->SetCookieStore(cookie_store.get());
-  context->SetHttpTransactionFactory(
-      scoped_ptr<net::HttpTransactionFactory>(
-          app_http_cache.PassAs<net::HttpTransactionFactory>()));
+  context->SetHttpTransactionFactory(app_http_cache.Pass());
 
   scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
       new net::URLRequestJobFactoryImpl());
@@ -773,8 +773,7 @@ ProfileImplIOData::InitializeMediaRequestContext(
       CreateHttpFactory(main_network_session, media_backend);
 
   // Transfer ownership of the cache to MediaRequestContext.
-  context->SetHttpTransactionFactory(
-      media_http_cache.PassAs<net::HttpTransactionFactory>());
+  context->SetHttpTransactionFactory(media_http_cache.Pass());
 
   // Note that we do not create a new URLRequestJobFactory because
   // the media context should behave exactly like its parent context
@@ -831,4 +830,10 @@ void ProfileImplIOData::ClearNetworkingHistorySinceOnIOThread(
   transport_security_state()->DeleteAllDynamicDataSince(time);
   DCHECK(http_server_properties_manager_);
   http_server_properties_manager_->Clear(completion);
+}
+
+bool ProfileImplIOData::IsDataReductionProxyEnabled() const {
+  return data_reduction_proxy_enabled_.GetValue() ||
+         CommandLine::ForCurrentProcess()->HasSwitch(
+            data_reduction_proxy::switches::kEnableDataReductionProxy);
 }

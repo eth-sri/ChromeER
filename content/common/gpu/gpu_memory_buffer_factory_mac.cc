@@ -6,31 +6,33 @@
 
 #include "base/logging.h"
 #include "content/common/gpu/gpu_memory_buffer_factory_io_surface.h"
+#include "gpu/command_buffer/service/image_factory.h"
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_image_shared_memory.h"
 
 namespace content {
 namespace {
 
-class GpuMemoryBufferFactoryImpl : public GpuMemoryBufferFactory {
+class GpuMemoryBufferFactoryImpl : public GpuMemoryBufferFactory,
+                                   public gpu::ImageFactory {
  public:
   // Overridden from GpuMemoryBufferFactory:
-  virtual gfx::GpuMemoryBufferHandle CreateGpuMemoryBuffer(
+  gfx::GpuMemoryBufferHandle CreateGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat,
-      unsigned usage) OVERRIDE {
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage) override {
     switch (handle.type) {
       case gfx::IO_SURFACE_BUFFER:
         return io_surface_factory_.CreateGpuMemoryBuffer(
-            handle.global_id, size, internalformat);
+            handle.global_id, size, format);
       default:
         NOTREACHED();
         return gfx::GpuMemoryBufferHandle();
     }
   }
-  virtual void DestroyGpuMemoryBuffer(
-      const gfx::GpuMemoryBufferHandle& handle) OVERRIDE {
+  void DestroyGpuMemoryBuffer(
+      const gfx::GpuMemoryBufferHandle& handle) override {
     switch (handle.type) {
       case gfx::IO_SURFACE_BUFFER:
         io_surface_factory_.DestroyGpuMemoryBuffer(handle.global_id);
@@ -40,16 +42,20 @@ class GpuMemoryBufferFactoryImpl : public GpuMemoryBufferFactory {
         break;
     }
   }
-  virtual scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
+  gpu::ImageFactory* AsImageFactory() override { return this; }
+
+  // Overridden from gpu::ImageFactory:
+  scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
+      gfx::GpuMemoryBuffer::Format format,
       unsigned internalformat,
-      int client_id) OVERRIDE {
+      int client_id) override {
     switch (handle.type) {
       case gfx::SHARED_MEMORY_BUFFER: {
         scoped_refptr<gfx::GLImageSharedMemory> image(
             new gfx::GLImageSharedMemory(size, internalformat));
-        if (!image->Initialize(handle))
+        if (!image->Initialize(handle, format))
           return NULL;
 
         return image;
@@ -60,7 +66,7 @@ class GpuMemoryBufferFactoryImpl : public GpuMemoryBufferFactory {
           return scoped_refptr<gfx::GLImage>();
 
         return io_surface_factory_.CreateImageForGpuMemoryBuffer(
-            handle.global_id, size, internalformat);
+            handle.global_id, size, format);
       }
       default:
         NOTREACHED();

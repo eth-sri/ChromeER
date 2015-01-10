@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Namespace object for file type utility functions.
  */
@@ -165,7 +163,7 @@ FileType.types = [
   },
   {
     type: 'document', name: 'HTML_DOCUMENT_FILE_TYPE',
-    subtype: 'HTML', pattern: /\.(html?|mht|mhtml)$/i
+    subtype: 'HTML', pattern: /\.(html?|mht(ml)?|shtml|xht(ml)?)$/i
   },
   {
     type: 'document', icon: 'word', name: 'WORD_DOCUMENT_FILE_TYPE',

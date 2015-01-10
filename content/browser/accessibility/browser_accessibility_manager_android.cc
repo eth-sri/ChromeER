@@ -74,8 +74,9 @@ BrowserAccessibilityManagerAndroid::BrowserAccessibilityManagerAndroid(
     const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
-    : BrowserAccessibilityManager(initial_tree, delegate, factory) {
+    : BrowserAccessibilityManager(delegate, factory) {
   SetContentViewCore(content_view_core);
+  Initialize(initial_tree);
 }
 
 BrowserAccessibilityManagerAndroid::~BrowserAccessibilityManagerAndroid() {
@@ -356,14 +357,17 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityEvent(
         node->ColumnCount(),
         node->IsHierarchical());
   }
-  if (node->IsCollectionItem() || node->IsHeading()) {
+  if (node->IsHeading()) {
+    Java_BrowserAccessibilityManager_setAccessibilityEventHeadingFlag(
+        env, obj, event, true);
+  }
+  if (node->IsCollectionItem()) {
     Java_BrowserAccessibilityManager_setAccessibilityEventCollectionItemInfo(
         env, obj, event,
         node->RowIndex(),
         node->RowSpan(),
         node->ColumnIndex(),
-        node->ColumnSpan(),
-        node->IsHeading());
+        node->ColumnSpan());
   }
   if (node->IsRangeType()) {
     Java_BrowserAccessibilityManager_setAccessibilityEventRangeInfo(
@@ -411,7 +415,7 @@ void BrowserAccessibilityManagerAndroid::HandleHoverEvent(
 
   BrowserAccessibilityAndroid* ancestor =
       static_cast<BrowserAccessibilityAndroid*>(node->GetParent());
-  while (ancestor) {
+  while (ancestor && ancestor != GetRoot()) {
     if (ancestor->PlatformIsLeaf() ||
         (ancestor->IsFocusable() && !ancestor->HasFocusableChild())) {
       node = ancestor;

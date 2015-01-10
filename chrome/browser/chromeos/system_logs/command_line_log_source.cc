@@ -37,6 +37,10 @@ void ExecuteCommandLines(system_logs::SystemLogsResponse* response) {
   command = CommandLine((base::FilePath("/usr/bin/audio_diagnostics")));
   commands.push_back(std::make_pair("audio_diagnostics", command));
 
+#if 0
+  // This command hangs as of R39. TODO(alhli): Make cras_test_client more
+  // robust or add a wrapper script that times out, and fix this or remove
+  // this code. crbug.com/419523
   command = CommandLine((base::FilePath("/usr/bin/cras_test_client")));
   command.AppendArg("--loopback_file");
   command.AppendArg("/dev/null");
@@ -46,6 +50,7 @@ void ExecuteCommandLines(system_logs::SystemLogsResponse* response) {
   command.AppendArg("0.01");
   command.AppendArg("--show_total_rms");
   commands.push_back(std::make_pair("cras_rms", command));
+#endif
 
   command = CommandLine((base::FilePath("/usr/bin/printenv")));
   commands.push_back(std::make_pair("env", command));
@@ -73,6 +78,7 @@ void ExecuteCommandLines(system_logs::SystemLogsResponse* response) {
   commands.push_back(std::make_pair("user_files", command));
 
   for (size_t i = 0; i < commands.size(); ++i) {
+    VLOG(1) << "Executting System Logs Command: " << commands[i].first;
     std::string output;
     base::GetAppOutput(commands[i].second, &output);
     (*response)[commands[i].first] = output;
@@ -82,6 +88,12 @@ void ExecuteCommandLines(system_logs::SystemLogsResponse* response) {
 }  // namespace
 
 namespace system_logs {
+
+CommandLineLogSource::CommandLineLogSource() : SystemLogsSource("CommandLine") {
+}
+
+CommandLineLogSource::~CommandLineLogSource() {
+}
 
 void CommandLineLogSource::Fetch(const SysLogsSourceCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));

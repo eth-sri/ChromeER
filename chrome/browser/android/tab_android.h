@@ -46,10 +46,13 @@ class TabAndroid : public CoreTabHelperDelegate,
                    public SearchTabHelperDelegate,
                    public content::NotificationObserver {
  public:
+  // A Java counterpart will be generated for this enum.
+  // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser
   enum TabLoadStatus {
-#define DEFINE_TAB_LOAD_STATUS(name, value)  name = value,
-#include "chrome/browser/android/tab_load_status.h"
-#undef DEFINE_TAB_LOAD_STATUS
+    PAGE_LOAD_FAILED = 0,
+    DEFAULT_PAGE_LOAD = 1,
+    PARTIAL_PRERENDERED_PAGE_LOAD = 2,
+    FULL_PRERENDERED_PAGE_LOAD = 3,
   };
 
   // Convenience method to retrieve the Tab associated with the passed
@@ -96,10 +99,6 @@ class TabAndroid : public CoreTabHelperDelegate,
 
   virtual void HandlePopupNavigation(chrome::NavigateParams* params);
 
-  // Called to determine if chrome://welcome should contain links to the terms
-  // of service and the privacy notice.
-  virtual bool ShouldWelcomePageLinkToTermsOfService();
-
   bool HasPrerenderedUrl(GURL gurl);
 
   void MakeLoadURLParams(
@@ -111,16 +110,16 @@ class TabAndroid : public CoreTabHelperDelegate,
   virtual void SwapTabContents(content::WebContents* old_contents,
                                content::WebContents* new_contents,
                                bool did_start_load,
-                               bool did_finish_load) OVERRIDE;
+                               bool did_finish_load) override;
 
   // Overridden from SearchTabHelperDelegate:
   virtual void OnWebContentsInstantSupportDisabled(
-      const content::WebContents* web_contents) OVERRIDE;
+      const content::WebContents* web_contents) override;
 
   // NotificationObserver -----------------------------------------------------
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+                       const content::NotificationDetails& details) override;
 
   // Methods called from Java via JNI -----------------------------------------
 
@@ -145,7 +144,6 @@ class TabAndroid : public CoreTabHelperDelegate,
                                 jstring j_referrer_url,
                                 jint referrer_policy,
                                 jboolean is_renderer_initiated);
-  ToolbarModel::SecurityLevel GetSecurityLevel(JNIEnv* env, jobject obj);
   void SetActiveNavigationEntryTitleForUrl(JNIEnv* env,
                                            jobject obj,
                                            jstring jurl,

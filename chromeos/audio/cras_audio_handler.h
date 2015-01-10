@@ -184,6 +184,12 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   // Removes all active audio nodes, including the primary active ones.
   virtual void RemoveAllActiveNodes();
 
+  // Swaps the left and right channel of the internal speaker.
+  // Swap the left and right channel if |swap| is true; otherwise, swap the left
+  // and right channel back to the normal mode.
+  // If the feature is not supported on the device, nothing happens.
+  virtual void SwapInternalSpeakerLeftRightChannel(bool swap);
+
   // Enables error logging.
   virtual void LogErrors();
 
@@ -196,16 +202,16 @@ class CHROMEOS_EXPORT CrasAudioHandler : public CrasAudioClient::Observer,
   friend class CrasAudioHandlerTest;
 
   // CrasAudioClient::Observer overrides.
-  virtual void AudioClientRestarted() OVERRIDE;
-  virtual void NodesChanged() OVERRIDE;
-  virtual void ActiveOutputNodeChanged(uint64 node_id) OVERRIDE;
-  virtual void ActiveInputNodeChanged(uint64 node_id) OVERRIDE;
+  virtual void AudioClientRestarted() override;
+  virtual void NodesChanged() override;
+  virtual void ActiveOutputNodeChanged(uint64 node_id) override;
+  virtual void ActiveInputNodeChanged(uint64 node_id) override;
 
   // AudioPrefObserver overrides.
-  virtual void OnAudioPolicyPrefChanged() OVERRIDE;
+  virtual void OnAudioPolicyPrefChanged() override;
 
   // SessionManagerClient::Observer overrides.
-  virtual void EmitLoginPromptVisibleCalled() OVERRIDE;
+  virtual void EmitLoginPromptVisibleCalled() override;
 
   // Sets the active audio output/input node to the node with |node_id|.
   void SetActiveOutputNode(uint64 node_id);

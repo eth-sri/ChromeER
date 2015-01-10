@@ -98,7 +98,7 @@ class EasyUnlockServiceTest : public InProcessBrowserTest {
 #endif
 
   // InProcessBrowserTest:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  virtual void SetUpInProcessBrowserTestFixture() override {
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
@@ -136,23 +136,12 @@ class EasyUnlockServiceTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceTest);
 };
 
-// Tests that EasyUnlock is on by default.
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceTest, DefaultOn) {
-  EXPECT_TRUE(service()->IsAllowed());
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceTest, NoFinchNoService) {
+  EXPECT_FALSE(service()->IsAllowed());
 #if defined(GOOGLE_CHROME_BUILD)
-  EXPECT_TRUE(HasEasyUnlockApp());
-#endif
-}
-
-#if defined(GOOGLE_CHROME_BUILD)
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceTest, UnloadsOnSuspend) {
-  EXPECT_TRUE(HasEasyUnlockApp());
-  power_manager_client()->SendSuspendImminent();
   EXPECT_FALSE(HasEasyUnlockApp());
-  power_manager_client()->SendSuspendDone();
-  EXPECT_TRUE(HasEasyUnlockApp());
-}
 #endif
+}
 
 class EasyUnlockServiceNoBluetoothTest : public EasyUnlockServiceTest {
  public:
@@ -160,7 +149,7 @@ class EasyUnlockServiceNoBluetoothTest : public EasyUnlockServiceTest {
   virtual ~EasyUnlockServiceNoBluetoothTest() {}
 
   // InProcessBrowserTest:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  virtual void SetUpInProcessBrowserTestFixture() override {
     set_is_bluetooth_adapter_present(false);
     EasyUnlockServiceTest::SetUpInProcessBrowserTestFixture();
   }
@@ -182,7 +171,7 @@ class EasyUnlockServiceFinchEnabledTest : public EasyUnlockServiceTest {
   virtual ~EasyUnlockServiceFinchEnabledTest() {}
 
   // InProcessBrowserTest:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  virtual void SetUpCommandLine(CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kForceFieldTrials,
                                     "EasyUnlock/Enable/");
   }
@@ -190,6 +179,23 @@ class EasyUnlockServiceFinchEnabledTest : public EasyUnlockServiceTest {
  private:
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceFinchEnabledTest);
 };
+
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, Enabled) {
+  EXPECT_TRUE(service()->IsAllowed());
+#if defined(GOOGLE_CHROME_BUILD)
+  EXPECT_TRUE(HasEasyUnlockApp());
+#endif
+}
+
+#if defined(GOOGLE_CHROME_BUILD)
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, UnloadsOnSuspend) {
+  EXPECT_TRUE(HasEasyUnlockApp());
+  power_manager_client()->SendSuspendImminent();
+  EXPECT_FALSE(HasEasyUnlockApp());
+  power_manager_client()->SendSuspendDone();
+  EXPECT_TRUE(HasEasyUnlockApp());
+}
+#endif
 
 // Tests that policy can override finch to turn easy unlock off.
 IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, PolicyOveride) {
@@ -218,7 +224,7 @@ class EasyUnlockServiceFinchDisabledTest : public EasyUnlockServiceTest {
   virtual ~EasyUnlockServiceFinchDisabledTest() {}
 
   // InProcessBrowserTest:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  virtual void SetUpCommandLine(CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kForceFieldTrials,
                                     "EasyUnlock/Disable/");
   }
@@ -250,7 +256,7 @@ class EasyUnlockServiceMultiProfileTest : public LoginManagerTest {
   virtual ~EasyUnlockServiceMultiProfileTest() {}
 
   // InProcessBrowserTest:
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  virtual void SetUpInProcessBrowserTestFixture() override {
     LoginManagerTest::SetUpInProcessBrowserTestFixture();
 
     mock_adapter_ = new testing::NiceMock<MockBluetoothAdapter>();
@@ -269,8 +275,9 @@ IN_PROC_BROWSER_TEST_F(EasyUnlockServiceMultiProfileTest,
   StartupUtils::MarkOobeCompleted();
 }
 
+// Hangs flakily. See http://crbug.com/421448.
 IN_PROC_BROWSER_TEST_F(EasyUnlockServiceMultiProfileTest,
-                       DisallowedOnSecondaryProfile) {
+                       DISABLED_DisallowedOnSecondaryProfile) {
   LoginUser(kTestUser1);
   chromeos::UserAddingScreen::Get()->Start();
   base::RunLoop().RunUntilIdle();

@@ -8,10 +8,14 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/browser/loader/navigation_url_loader_delegate.h"
 #include "content/common/content_export.h"
 #include "content/common/navigation_params.h"
 
 namespace content {
+
+class FrameTreeNode;
+class NavigationURLLoader;
 class ResourceRequestBody;
 struct NavigationRequestInfo;
 
@@ -21,13 +25,13 @@ struct NavigationRequestInfo;
 // ResourceDispatcherHost (that lives on the IO thread).
 // TODO(clamy): Describe the interactions between the UI and IO thread during
 // the navigation following its refactoring.
-class CONTENT_EXPORT NavigationRequest {
+class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
  public:
-  NavigationRequest(int64 frame_tree_node_id,
+  NavigationRequest(FrameTreeNode* frame_tree_node,
                     const CommonNavigationParams& common_params,
                     const CommitNavigationParams& commit_params);
 
-  ~NavigationRequest();
+  ~NavigationRequest() override;
 
   // Called on the UI thread by the RenderFrameHostManager which owns the
   // NavigationRequest. Takes ownership of |info|. After calling this function,
@@ -35,22 +39,22 @@ class CONTENT_EXPORT NavigationRequest {
   void BeginNavigation(scoped_ptr<NavigationRequestInfo> info,
                        scoped_refptr<ResourceRequestBody> body);
 
-  // Called on the UI thread by the RenderFrameHostManager which owns the
-  // NavigationRequest whenever this navigation request should be canceled.
-  void CancelNavigation();
-
-  int64 frame_tree_node_id() const { return frame_tree_node_id_; }
-  int64 navigation_request_id() const { return navigation_request_id_; }
-
   CommonNavigationParams& common_params() { return common_params_; }
 
   const CommitNavigationParams& commit_params() const { return commit_params_; }
 
-  NavigationRequestInfo* info_for_test() const { return info_.get(); }
+  NavigationURLLoader* loader_for_testing() const { return loader_.get(); }
 
  private:
-  const int64 navigation_request_id_;
-  const int64 frame_tree_node_id_;
+  // NavigationURLLoaderDelegate implementation.
+  void OnRequestRedirected(
+      const net::RedirectInfo& redirect_info,
+      const scoped_refptr<ResourceResponse>& response) override;
+  void OnResponseStarted(const scoped_refptr<ResourceResponse>& response,
+                         scoped_ptr<StreamHandle> body) override;
+  void OnRequestFailed(int net_error) override;
+
+  FrameTreeNode* frame_tree_node_;
 
   // Initialized on creation of the NavigationRequest. Sent to the renderer when
   // the navigation is ready to commit.
@@ -60,8 +64,7 @@ class CONTENT_EXPORT NavigationRequest {
   CommonNavigationParams common_params_;
   const CommitNavigationParams commit_params_;
 
-  // Initialized when beginning the navigation.
-  scoped_ptr<NavigationRequestInfo> info_;
+  scoped_ptr<NavigationURLLoader> loader_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationRequest);
 };

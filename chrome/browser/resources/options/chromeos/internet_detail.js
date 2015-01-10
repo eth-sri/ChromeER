@@ -20,17 +20,6 @@
  */
 var IPInfo;
 
-/**
- * InternetDetailedInfo argument passed to showDetailedInfo.
- * @see chrome/browser/ui/webui/options/chromeos/internet_options_handler.cc
- * @typedef {{
- *   servicePath: string,
- *   showCarrierSelect: (boolean|undefined),
- *   showViewAccountButton: (boolean|undefined)
- * }}
- */
-var InternetDetailedInfo;
-
 cr.define('options.internet', function() {
   var OncData = cr.onc.OncData;
   var Page = cr.ui.pageManager.Page;
@@ -108,7 +97,7 @@ cr.define('options.internet', function() {
   function sendCheckedIfEnabled(path, message, checkboxId, opt_action) {
     var checkbox = assertInstanceof($(checkboxId), HTMLInputElement);
     if (!checkbox.hidden && !checkbox.disabled) {
-      chrome.send(message, [path, checkbox.checked ? 'true' : 'false']);
+      chrome.send(message, [path, !!checkbox.checked]);
       if (opt_action)
         sendChromeMetricsAction(opt_action);
     }
@@ -179,10 +168,6 @@ cr.define('options.internet', function() {
     // We show the Proxy configuration tab for remembered networks and when
     // configuring a proxy from the login screen.
     this.showProxy_ = false;
-    // In Chrome we sometimes want to enable the Cellular carrier select UI.
-    this.showCarrierSelect_ = false;
-    // In Chrome we sometimes want to show the 'View Account' button.
-    this.showViewAccountButton_ = false;
 
     Page.call(this, 'detailsInternetPage', '', 'details-internet-page');
   }
@@ -207,8 +192,9 @@ cr.define('options.internet', function() {
       var servicePath = parseQueryParams(window.location).servicePath;
       if (!servicePath || !servicePath.length)
         return;
-      var networkType = '';  // ignored for 'showDetails'
-      chrome.send('networkCommand', [networkType, servicePath, 'showDetails']);
+      // TODO(stevenjb): chrome.networkingPrivate.getManagedProperties
+      // with initializeDetailsPage as the callback.
+      chrome.send('getManagedProperties', [servicePath]);
     },
 
     /**
@@ -384,6 +370,36 @@ cr.define('options.internet', function() {
     },
 
     /**
+     * Sends the IP Config info to chrome.
+     * @param {string} nameServerType The selected name server type:
+     *   'automatic', 'google', or 'user'.
+     * @private
+     */
+    sendIpConfig_: function(nameServerType) {
+      var userNameServerString = '';
+      if (nameServerType == 'user') {
+        var userNameServers = [];
+        for (var i = 1; i <= 4; ++i) {
+          var nameServerField = $('ipconfig-dns' + i);
+          // Skip empty values.
+          if (nameServerField && nameServerField.model &&
+              nameServerField.model.value) {
+            userNameServers.push(nameServerField.model.value);
+          }
+        }
+        userNameServerString = userNameServers.sort().join(',');
+      }
+      chrome.send('setIPConfig',
+                  [this.servicePath_,
+                   Boolean($('ip-automatic-configuration-checkbox').checked),
+                   $('ip-address').model.value || '',
+                   $('ip-netmask').model.value || '',
+                   $('ip-gateway').model.value || '',
+                   nameServerType,
+                   userNameServerString]);
+    },
+
+    /**
      * Creates an indicator event for controlled properties using
      * the same dictionary format as CoreOptionsHandler::CreateValueForPref.
      * @param {string} name The name for the Event.
@@ -446,7 +462,7 @@ cr.define('options.internet', function() {
      */
     updateControls: function() {
       // Note: onc may be undefined when called from a pref update before
-      // initialized in sendNetworkDetails.
+      // initialized in initializeDetailsPage.
       var onc = this.onc_;
 
       // Always show the ipconfig section. TODO(stevenjb): Improve the display
@@ -614,7 +630,7 @@ cr.define('options.internet', function() {
     },
 
     /**
-     * Helper method called from showDetailedInfo and updateConnectionData.
+     * Helper method called from initializeDetailsPage and updateConnectionData.
      * Updates visibility/enabled of the login/disconnect/configure buttons.
      * @private
      */
@@ -653,7 +669,7 @@ cr.define('options.internet', function() {
     },
 
     /**
-     * Helper method called from showDetailedInfo and updateConnectionData.
+     * Helper method called from initializeDetailsPage and updateConnectionData.
      * Updates the connection state property and account / sim card links.
      * @private
      */
@@ -679,7 +695,7 @@ cr.define('options.internet', function() {
           $('sim-card-lock-enabled').checked = lockEnabled;
           $('change-pin').hidden = !lockEnabled;
         }
-        showViewAccount = this.showViewAccountButton_;
+        showViewAccount = onc.getActiveValue('showViewAccountButton');
         var activationState = onc.getActiveValue('Cellular.ActivationState');
         showActivate = activationState == 'NotActivated' ||
             activationState == 'PartiallyActivated';
@@ -693,7 +709,7 @@ cr.define('options.internet', function() {
     },
 
     /**
-     * Helper method called from showDetailedInfo and updateConnectionData.
+     * Helper method called from initializeDetailsPage and updateConnectionData.
      * Updates the fields in the header section of the details frame.
      * @private
      */
@@ -732,7 +748,8 @@ cr.define('options.internet', function() {
     },
 
     /**
-     * Helper method called from showDetailedInfo to initialize the Apn list.
+     * Helper method called from initializeDetailsPage to initialize the Apn
+     * list.
      * @private
      */
     initializeApnList_: function() {
@@ -1046,16 +1063,14 @@ cr.define('options.internet', function() {
 
   DetailsInternetPage.configureNetwork = function() {
     var detailsPage = DetailsInternetPage.getInstance();
-    chrome.send('networkCommand',
-                [detailsPage.type_, detailsPage.servicePath_, 'configure']);
+    chrome.send('configureNetwork', [detailsPage.servicePath_]);
     PageManager.closeOverlay();
   };
 
   DetailsInternetPage.activateFromDetails = function() {
     var detailsPage = DetailsInternetPage.getInstance();
     if (detailsPage.type_ == 'Cellular') {
-      chrome.send('networkCommand',
-                  [detailsPage.type_, detailsPage.servicePath_, 'activate']);
+      chrome.send('activateNetwork', [detailsPage.servicePath_]);
     }
     PageManager.closeOverlay();
   };
@@ -1104,26 +1119,8 @@ cr.define('options.internet', function() {
         break;
       }
     }
+    detailsPage.sendIpConfig_(nameServerType);
 
-    // Skip any empty values.
-    var userNameServers = [];
-    for (var i = 1; i <= 4; ++i) {
-      var nameServerField = $('ipconfig-dns' + i);
-      if (nameServerField && nameServerField.model &&
-          nameServerField.model.value) {
-        userNameServers.push(nameServerField.model.value);
-      }
-    }
-
-    userNameServers = userNameServers.sort();
-    chrome.send('setIPConfig',
-                [servicePath,
-                 Boolean($('ip-automatic-configuration-checkbox').checked),
-                 $('ip-address').model.value || '',
-                 $('ip-netmask').model.value || '',
-                 $('ip-gateway').model.value || '',
-                 nameServerType,
-                 userNameServers.join(',')]);
     PageManager.closeOverlay();
   };
 
@@ -1165,32 +1162,9 @@ cr.define('options.internet', function() {
   };
 
   /**
-   * Method called from Chrome with a dictionary of non ONC configuration
-   * properties, including the HUID and service path to be used for requesting
-   * the ONC properties. Note: currently GUID is only used to confirm that the
-   * selected network still exists. It will be used instead of servicePath
-   * once switching to the networkingPrivate API (see TODO below).
-   * @param {InternetDetailedInfo} info
-   */
-  DetailsInternetPage.showDetailedInfo = function(info) {
-    if (!('GUID' in info)) {
-      // No network was found for, close the overlay.
-      PageManager.closeOverlay();
-      return;
-    }
-    var detailsPage = DetailsInternetPage.getInstance();
-    detailsPage.servicePath_ = info.servicePath;
-    detailsPage.showCarrierSelect_ = info.showCarrierSelect;
-    detailsPage.showViewAccountButton_ = info.showViewAccountButton;
-    // Ask Chrome to call sendNetworkDetails with the ONC properties.
-    // TODO(stevenjb): Use networkingPrivate.getManagedProperties(info.guid).
-    chrome.send('getManagedProperties', [info.servicePath]);
-  };
-
-  /**
    * Method called from Chrome when the ONC properties for the displayed
    * network may have changed.
-   * @param {Object} update The updated ONC dictionary for the network.
+   * @param {Object} oncData The updated ONC dictionary for the network.
    */
   DetailsInternetPage.updateConnectionData = function(oncData) {
     var detailsPage = DetailsInternetPage.getInstance();
@@ -1209,14 +1183,25 @@ cr.define('options.internet', function() {
   };
 
   /**
-   * Method called from Chrome when the initial dictionary of ONC configuration
-   * properties is available.
+   * Method called from Chrome in response to getManagedProperties.
+   * We only use this when we want to call initializeDetailsPage.
+   * TODO(stevenjb): Eliminate when we switch to networkingPrivate
+   * (initializeDetailsPage will be provided as the callback).
    * @param {Object} oncData Dictionary of ONC properties.
    */
-  DetailsInternetPage.sendNetworkDetails = function(oncData) {
+  DetailsInternetPage.getManagedPropertiesResult = function(oncData) {
+    DetailsInternetPage.initializeDetailsPage(oncData);
+  };
+
+  /**
+   * Initializes the details page with the provided ONC data.
+   * @param {Object} oncData Dictionary of ONC properties.
+   */
+  DetailsInternetPage.initializeDetailsPage = function(oncData) {
     var onc = new OncData(oncData);
 
     var detailsPage = DetailsInternetPage.getInstance();
+    detailsPage.servicePath_ = oncData.servicePath;
     detailsPage.onc_ = onc;
     var type = onc.getActiveValue('Type');
     detailsPage.type_ = type;
@@ -1357,19 +1342,27 @@ cr.define('options.internet', function() {
 
     // Set Nameserver fields.
     var nameServerType = 'automatic';
-    if (staticNameServersString &&
-        staticNameServersString == inetNameServersString) {
-      nameServerType = 'user';
+    if (staticNameServersString) {
+      // If static nameservers are defined and match the google name servers,
+      // show that in the UI, otherwise show the custom static nameservers.
+      if (staticNameServersString == GoogleNameServersString)
+        nameServerType = 'google';
+      else if (staticNameServersString == inetNameServersString)
+        nameServerType = 'user';
     }
-    if (inetNameServersString == GoogleNameServersString)
-      nameServerType = 'google';
-
-    $('automatic-dns-display').textContent = inetNameServersString;
+    if (nameServerType == 'automatic')
+      $('automatic-dns-display').textContent = inetNameServersString;
+    else
+      $('automatic-dns-display').textContent = savedNameServersString;
     $('google-dns-display').textContent = GoogleNameServersString;
 
     var nameServersUser = [];
-    if (staticNameServers)
+    if (staticNameServers) {
       nameServersUser = staticNameServers;
+    } else if (savedNameServers) {
+      // Pre-populate with values provided by DHCP server.
+      nameServersUser = savedNameServers;
+    }
 
     var nameServerModels = [];
     for (var i = 0; i < 4; ++i)
@@ -1454,7 +1447,7 @@ cr.define('options.internet', function() {
       var isGsm = onc.getActiveValue('Cellular.Family') == 'GSM';
 
       var currentCarrierIndex = -1;
-      if (this.showCarrierSelect_) {
+      if (loadTimeData.getValue('showCarrierSelect')) {
         var currentCarrier =
             isGsm ? CarrierGenericUMTS : onc.getActiveValue('Cellular.Carrier');
         var supportedCarriers =

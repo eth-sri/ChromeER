@@ -11,6 +11,10 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "extensions/common/extension.h"
 
+#if !defined(ENABLE_EXTENSIONS)
+#error "Extensions must be enabled"
+#endif
+
 class ExtensionService;
 
 #if defined(OS_CHROMEOS)
@@ -51,7 +55,7 @@ class WarningService;
 class ExtensionSystem : public KeyedService {
  public:
   ExtensionSystem();
-  virtual ~ExtensionSystem();
+  ~ExtensionSystem() override;
 
   // Returns the instance for the given browser context, or NULL if none.
   static ExtensionSystem* Get(content::BrowserContext* context);
@@ -75,9 +79,6 @@ class ExtensionSystem : public KeyedService {
 
   // The SharedUserScriptMaster is created at startup.
   virtual SharedUserScriptMaster* shared_user_script_master() = 0;
-
-  // The ProcessManager is created at startup.
-  virtual ProcessManager* process_manager() = 0;
 
   // The StateStore is created at startup.
   virtual StateStore* state_store() = 0;

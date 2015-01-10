@@ -6,6 +6,7 @@
 
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/direct_renderer.h"
@@ -22,10 +23,13 @@ namespace cc {
 
 Display::Display(DisplayClient* client,
                  SurfaceManager* manager,
-                 SharedBitmapManager* bitmap_manager)
+                 SharedBitmapManager* bitmap_manager,
+                 gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager)
     : client_(client),
       manager_(manager),
       bitmap_manager_(bitmap_manager),
+      gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
+      device_scale_factor_(1.f),
       blocking_main_thread_task_runner_(
           BlockingTaskRunner::Create(base::MessageLoopProxy::current())),
       texture_mailbox_deleter_(
@@ -37,39 +41,43 @@ Display::~Display() {
   manager_->RemoveObserver(this);
 }
 
-void Display::Resize(SurfaceId id, const gfx::Size& size) {
+bool Display::Initialize(scoped_ptr<OutputSurface> output_surface) {
+  output_surface_ = output_surface.Pass();
+  return output_surface_->BindToClient(this);
+}
+
+void Display::Resize(SurfaceId id,
+                     const gfx::Size& size,
+                     float device_scale_factor) {
   current_surface_id_ = id;
   current_surface_size_ = size;
+  device_scale_factor_ = device_scale_factor;
   client_->DisplayDamaged();
 }
 
-void Display::InitializeOutputSurface() {
-  if (output_surface_)
-    return;
-  scoped_ptr<OutputSurface> output_surface = client_->CreateOutputSurface();
-  if (!output_surface->BindToClient(this))
+void Display::InitializeRenderer() {
+  if (resource_provider_)
     return;
 
   int highp_threshold_min = 0;
   bool use_rgba_4444_texture_format = false;
   size_t id_allocation_chunk_size = 1;
-  bool use_distance_field_text = false;
   scoped_ptr<ResourceProvider> resource_provider =
-      ResourceProvider::Create(output_surface.get(),
+      ResourceProvider::Create(output_surface_.get(),
                                bitmap_manager_,
+                               gpu_memory_buffer_manager_,
                                blocking_main_thread_task_runner_.get(),
                                highp_threshold_min,
                                use_rgba_4444_texture_format,
-                               id_allocation_chunk_size,
-                               use_distance_field_text);
+                               id_allocation_chunk_size);
   if (!resource_provider)
     return;
 
-  if (output_surface->context_provider()) {
+  if (output_surface_->context_provider()) {
     scoped_ptr<GLRenderer> renderer =
         GLRenderer::Create(this,
                            &settings_,
-                           output_surface.get(),
+                           output_surface_.get(),
                            resource_provider.get(),
                            texture_mailbox_deleter_.get(),
                            highp_threshold_min);
@@ -78,22 +86,25 @@ void Display::InitializeOutputSurface() {
     renderer_ = renderer.Pass();
   } else {
     scoped_ptr<SoftwareRenderer> renderer = SoftwareRenderer::Create(
-        this, &settings_, output_surface.get(), resource_provider.get());
+        this, &settings_, output_surface_.get(), resource_provider.get());
     if (!renderer)
       return;
     renderer_ = renderer.Pass();
   }
 
-  output_surface_ = output_surface.Pass();
   resource_provider_ = resource_provider.Pass();
   aggregator_.reset(new SurfaceAggregator(manager_, resource_provider_.get()));
+}
+
+void Display::DidLoseOutputSurface() {
+  client_->OutputSurfaceLost();
 }
 
 bool Display::Draw() {
   if (current_surface_id_.is_null())
     return false;
 
-  InitializeOutputSurface();
+  InitializeRenderer();
   if (!output_surface_)
     return false;
 
@@ -105,20 +116,16 @@ bool Display::Draw() {
     return false;
 
   TRACE_EVENT0("cc", "Display::Draw");
+  benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
   DelegatedFrameData* frame_data = frame->delegated_frame_data.get();
 
-  // Only reshape when we know we are going to draw. Otherwise, the reshape
-  // can leave the window at the wrong size if we never draw and the proper
-  // viewport size is never set.
-  output_surface_->Reshape(current_surface_size_, 1.f);
-  float device_scale_factor = 1.0f;
   gfx::Rect device_viewport_rect = gfx::Rect(current_surface_size_);
   gfx::Rect device_clip_rect = device_viewport_rect;
   bool disable_picture_quad_image_filtering = false;
 
   renderer_->DecideRenderPassAllocationsForFrame(frame_data->render_pass_list);
   renderer_->DrawFrame(&frame_data->render_pass_list,
-                       device_scale_factor,
+                       device_scale_factor_,
                        device_viewport_rect,
                        device_clip_rect,
                        disable_picture_quad_image_filtering);
@@ -145,6 +152,10 @@ void Display::DidSwapBuffersComplete() {
 void Display::CommitVSyncParameters(base::TimeTicks timebase,
                                     base::TimeDelta interval) {
   client_->CommitVSyncParameters(timebase, interval);
+}
+
+void Display::SetMemoryPolicy(const ManagedMemoryPolicy& policy) {
+  client_->SetMemoryPolicy(policy);
 }
 
 void Display::OnSurfaceDamaged(SurfaceId surface) {

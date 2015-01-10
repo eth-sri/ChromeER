@@ -58,19 +58,6 @@
     // Any webpage can use the app API.
     "matches": ["<all_urls>"]
   },
-  // The API for the *embedder* of appview. Appview has both an embedder and
-  // guest API, which are different.
-  "appViewEmbedderInternal": {
-    "internal": true,
-    "contexts": ["blessed_extension"],
-    "dependencies": ["permission:appview"]
-  },
-  // TODO(fsamuel,kalman): Rename this appViewGuestInternal.
-  "appViewInternal": {
-    "internal": true,
-    "channel": "dev",
-    "contexts": ["blessed_extension"]
-  },
   "app.getDetails": {
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
     "matches": []
@@ -106,22 +93,6 @@
   },
   "autotestPrivate": {
     "dependencies": ["permission:autotestPrivate"],
-    "contexts": ["blessed_extension"]
-  },
-  "bluetooth": {
-    "dependencies": ["manifest:bluetooth"],
-    "contexts": ["blessed_extension"]
-  },
-  "bluetoothLowEnergy": {
-    "dependencies": ["manifest:bluetooth"],
-    "contexts": ["blessed_extension"]
-  },
-  "bluetoothPrivate": {
-    "dependencies": ["permission:bluetoothPrivate"],
-    "contexts": ["blessed_extension"]
-  },
-  "bluetoothSocket": {
-    "dependencies": ["manifest:bluetooth"],
     "contexts": ["blessed_extension"]
   },
   "bookmarkManagerPrivate": {
@@ -250,10 +221,6 @@
     "dependencies": ["permission:declarativeContent"],
     "contexts": ["blessed_extension"]
   },
-  "declarativeWebRequest": {
-    "dependencies": ["permission:declarativeWebRequest"],
-    "contexts": ["blessed_extension"]
-  },
   "desktopCapture": {
     "dependencies": ["permission:desktopCapture"],
     "contexts": ["blessed_extension"]
@@ -312,13 +279,6 @@
   "enterprise.platformKeysPrivate": {
     "dependencies": ["permission:enterprise.platformKeysPrivate"],
     "contexts": ["blessed_extension"]
-  },
-  "events": {
-    "internal": true,
-    "channel": "stable",
-    "extension_types": ["platform_app", "extension"],
-    "contexts": "all",
-    "matches": ["<all_urls>"]
   },
   "experienceSamplingPrivate": {
     "dependencies": ["permission:experienceSamplingPrivate"],
@@ -591,10 +551,6 @@
     "dependencies": ["manifest:page_action"],
     "contexts": ["blessed_extension"]
   },
-  "pageActions": {
-    "dependencies": ["manifest:page_actions"],
-    "contexts": ["blessed_extension"]
-  },
   "pageCapture": {
     "dependencies": ["permission:pageCapture"],
     "contexts": ["blessed_extension"]
@@ -726,21 +682,6 @@
     "dependencies": ["permission:webNavigation"],
     "contexts": ["blessed_extension"]
   },
-  "webRequest": {
-    "dependencies": ["permission:webRequest"],
-    "contexts": ["blessed_extension"]
-  },
-  "webRequestInternal": [{
-    "internal": true,
-    "channel": "stable",
-    "contexts": ["blessed_extension"]
-  }, {
-    // webview uses webRequestInternal API.
-    "channel": "stable",
-    "internal": true,
-    "contexts": ["webui"],
-    "matches": ["chrome://chrome-signin/*"]
-  }],
   "webrtcAudioPrivate": {
     "dependencies": ["permission:webrtcAudioPrivate"],
     "contexts": ["blessed_extension"]
@@ -768,14 +709,6 @@
     // given the blessed_extension denomination. Confusing.
     "contexts": ["blessed_extension"]
   },
-  "webViewRequest": [{
-    "dependencies": ["permission:webview"],
-    "contexts": ["blessed_extension"]
-  }, {
-    "channel": "stable",
-    "contexts": ["webui"],
-    "matches": ["chrome://chrome-signin/*"]
-  }],
   "webviewTag": {
     "internal": true,
     "channel": "stable",

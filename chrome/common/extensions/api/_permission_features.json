@@ -51,10 +51,6 @@
       "5107DE9024C329EEA9C9A72D94C16723790C6422"  // Apps Developer Tool Dev.
     ]
   },
-  "appview": {
-    "channel": "dev",
-    "extension_types": ["platform_app"]
-  },
   "alarms": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
@@ -318,7 +314,8 @@
         "4A4EA121622FCA3D78ED2AB534197F43D7189EE0", // Spark nightly build.
         "9FDE6E7F06FCFA11D9A05041C7FF6D8AE662F5D1", // Spark release.
         "50B4A905D522C06E27CA6D099E3E54BDA1F152C5", // Spark Beta channel.
-        "BA0C8BB92084C9741312D90D3EA882526853455F"  // Spark dev channel.
+        "BA0C8BB92084C9741312D90D3EA882526853455F", // Spark dev channel.
+        "5F57A9AE8DFF5D6BB09DF8606270402612E871E5"  // http://crbug.com/422624
     ]
   },
   "devtools": {
@@ -329,12 +326,6 @@
     "channel": "stable",
     "extension_types": ["extension"]
   },
-  "declarativeWebRequest": [
-    {
-      "channel": "beta",
-      "extension_types": ["extension", "legacy_packaged_app"]
-    }
-  ],
   "desktopCapture": {
     "channel": "stable",
     "extension_types": ["extension", "platform_app"]
@@ -387,7 +378,7 @@
     ]
   },
   "experienceSamplingPrivate": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension"],
     "whitelist": [
       "0B5B953E53AC1859AC1DD3F67E115D1A5C2D6123"  // https://crbug.com/384635
@@ -487,7 +478,7 @@
     "extension_types": ["extension", "legacy_packaged_app"]
   },
   "gcdPrivate": {
-    "channel": "dev",
+    "channel": "stable",
     "extension_types": ["extension", "platform_app"],
     "whitelist": [
       "11B478CEC461C766A2DC1E5BEEB7970AE06DC9C2",  // http://crbug.com/394124
@@ -644,7 +635,8 @@
         "11B478CEC461C766A2DC1E5BEEB7970AE06DC9C2",  // http://crbug.com/408276
         "0EFB879311E9EFBB7C45251F89EC655711B1F6ED",  // http://crbug.com/408276
         "9193D3A51E2FE33B496CDA53EA330423166E7F02",  // http://crbug.com/408276
-        "F9119B8B18C7C82B51E7BC6FF816B694F2EC3E89"   // http://crbug.com/408276
+        "F9119B8B18C7C82B51E7BC6FF816B694F2EC3E89",  // http://crbug.com/408276
+        "5F57A9AE8DFF5D6BB09DF8606270402612E871E5"   // http://crbug.com/422624
       ]
     },
     {
@@ -727,7 +719,8 @@
       "0EEDFC0EED87871237213F34EBC7B4982A195C95",  // http://crbug.com/374955
       "D2DAA9362153E8A5E3CF593E6DF4666421ABAD21",  // http://crbug.com/374965
       "D7986543275120831B39EF28D1327552FC343960",  // http://crbug.com/378067
-      "A291B26E088FA6BA53FFD72F0916F06EBA7C585A"   // http://crbug.com/378067
+      "A291B26E088FA6BA53FFD72F0916F06EBA7C585A",  // http://crbug.com/378067
+      "62CCAAD339E6451BBF97C4BBDF758E934A05AD0B"   // Hotword triggering
     ]
   },
   "mdns": {
@@ -767,7 +760,7 @@
   "networkingPrivate": {
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app", "platform_app"],
-    "platforms": ["chromeos", "mac", "win"],
+    "platforms": ["chromeos", "mac", "win", "linux"],
     "whitelist": [
       "1C93BD3CF875F4A73C0B2A163BB8FBDA8B8B3D80",  // http://crbug.com/293683
       "A3BC37E2148AC4E99BE4B16AF9D42DD1E592BBBE",  // http://crbug.com/293683
@@ -835,7 +828,8 @@
       "C41AD9DCD670210295614257EF8C9945AD68D86E",  // Google Now
       "D5736E4B5CF695CB93A2FB57E4FDC6E5AFAB6FE2",  // http://crbug.com/312900
       "D57DE394F36DC1C3220E7604C575D29C51A6C495",  // http://crbug.com/319444
-      "3F65507A3B39259B38C8173C6FFA3D12DF64CCE9"   // http://crbug.com/371562
+      "3F65507A3B39259B38C8173C6FFA3D12DF64CCE9",  // http://crbug.com/371562
+      "852290F2442EEE45EF673B8DA6090112079012A2"   // http://crbug.com/375484
     ]
   },
   "principalsPrivate": {
@@ -1062,13 +1056,5 @@
       "2653F6F6C39BC6EEBD36A09AFB92A19782FF7EB4",  // Enterprise Web Store
       "2779FA8B45841D61A37207CCFAC9CB393964FE5B"   // Login Proxy (prototype)
     ]
-  },
-  "webRequest": {
-    "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app"]
-  },
-  "webRequestBlocking": {
-    "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app"]
   }
 }

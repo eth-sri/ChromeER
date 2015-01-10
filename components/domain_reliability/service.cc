@@ -35,22 +35,19 @@ class DomainReliabilityServiceImpl : public DomainReliabilityService {
       const std::string& upload_reporter_string)
       : upload_reporter_string_(upload_reporter_string) {}
 
-  virtual ~DomainReliabilityServiceImpl() {}
+  ~DomainReliabilityServiceImpl() override {}
 
   // DomainReliabilityService implementation:
 
-  virtual scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
-      scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-      PrefService* local_state_pref_service,
-      const char* reporting_pref_name) OVERRIDE {
+  scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
+      scoped_refptr<base::SingleThreadTaskRunner> network_task_runner)
+      override {
     DCHECK(!network_task_runner_.get());
 
     scoped_ptr<DomainReliabilityMonitor> monitor(
         new DomainReliabilityMonitor(upload_reporter_string_,
                                      base::MessageLoopProxy::current(),
-                                     network_task_runner,
-                                     local_state_pref_service,
-                                     reporting_pref_name));
+                                     network_task_runner));
 
     monitor_ = monitor->MakeWeakPtr();
     network_task_runner_ = network_task_runner;
@@ -58,8 +55,8 @@ class DomainReliabilityServiceImpl : public DomainReliabilityService {
     return monitor.Pass();
   }
 
-  virtual void ClearBrowsingData(DomainReliabilityClearMode clear_mode,
-                                 const base::Closure& callback) OVERRIDE {
+  void ClearBrowsingData(DomainReliabilityClearMode clear_mode,
+                         const base::Closure& callback) override {
     DCHECK(network_task_runner_.get());
 
     network_task_runner_->PostTaskAndReply(
@@ -70,9 +67,8 @@ class DomainReliabilityServiceImpl : public DomainReliabilityService {
         callback);
   }
 
-  virtual void GetWebUIData(
-      const base::Callback<void(scoped_ptr<base::Value>)>& callback)
-      const OVERRIDE {
+  void GetWebUIData(const base::Callback<void(scoped_ptr<base::Value>)>&
+                        callback) const override {
     DCHECK(network_task_runner_.get());
 
     PostTaskAndReplyWithResult(

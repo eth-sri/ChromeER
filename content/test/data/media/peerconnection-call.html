@@ -7,6 +7,12 @@
     return document.getElementById(id);
   };
 
+  window.onerror = function(errorMsg, url, lineNumber, column, errorObj) {
+    failTest('Error: ' + errorMsg + '\nScript: ' + url +
+             '\nLine: ' + lineNumber + '\nColumn: ' + column +
+             '\nStackTrace: ' + errorObj);
+  }
+
   var gFirstConnection = null;
   var gSecondConnection = null;
   var gTestWithoutMsid = false;
@@ -282,7 +288,6 @@
     waitForVideo('remote-view-2');
   }
 
-
   // Test call with a data channel and later add audio and video.
   function callWithDataAndLaterAddMedia() {
     createConnections({optional:[{RtpDataChannels: true}]});
@@ -548,11 +553,7 @@
     // When |firstDataChannel| transition to open state, send a text string.
     firstDataChannel.onopen = function() {
       assertEquals('open', firstDataChannel.readyState);
-      if (firstDataChannel.reliable) {
-        firstDataChannel.send(sendDataString);
-      } else {
-        sendDataRepeatedlyUntilClosed(firstDataChannel);
-      }
+      firstDataChannel.send(sendDataString);
     }
 
     // When |firstDataChannel| receive a message, close the channel and
@@ -578,29 +579,9 @@
       secondDataChannel.onmessage = function(event) {
         assertEquals(event.data, sendDataString);
         console.log("gSecondConnection received data");
-        if (secondDataChannel.reliable) {
-          // If we're reliable we will just send one message over the channel,
-          // and therefore channel one's message handler cannot have shut us
-          // down already.
-          assertEquals('open', secondDataChannel.readyState);
-          secondDataChannel.send(sendDataString);
-        } else {
-          // If unreliable, this could be one in a series of messages and it
-          // is possible we already replied (which will close our channel).
-          sendDataRepeatedlyUntilClosed(secondDataChannel);
-        }
+        assertEquals('open', secondDataChannel.readyState);
+        secondDataChannel.send(sendDataString);
       }
-    }
-
-    // Sends |sendDataString| on |dataChannel| every 200ms as long as
-    // |dataChannel| is open.
-    function sendDataRepeatedlyUntilClosed(dataChannel) {
-      var sendTimer = setInterval(function() {
-        if (dataChannel.readyState == 'open')
-          dataChannel.send(sendDataString);
-        else
-          clearInterval(sendTimer);
-      }, 200);
     }
   }
 
@@ -627,7 +608,6 @@
       assertEquals(event.data, sendDataString);
       firstDataChannel.send(sendDataString);
     }
-
 
     // Event handler for when |gSecondConnection| receive a new dataChannel.
     gSecondConnection.ondatachannel = function (event) {
@@ -803,12 +783,16 @@
 
     var parsedOffer = new RTCSessionDescription({ type: 'offer',
                                                   sdp: offerSdp });
-    callee.setRemoteDescription(parsedOffer, function() {},
+    callee.setRemoteDescription(parsedOffer,
+                                function() {
+                                  assertEquals('have-remote-offer',
+                                               callee.signalingState);
+                                  callee.createAnswer(
+                                    function (answer) {
+                                      onAnswerCreated(answer, caller, callee);
+                                    });
+                                },
                                 onRemoteDescriptionError);
-    callee.createAnswer(function (answer) {
-                          onAnswerCreated(answer, caller, callee);
-                        });
-    assertEquals('have-remote-offer', callee.signalingState);
   }
 
   function removeMsid(offerSdp) {
@@ -912,23 +896,16 @@
 <body>
   <table border="0">
     <tr>
-      <td>Local Preview</td>
-      <td>Remote Stream for Connection 1</td>
-      <td>Remote Stream for Connection 2</td>
-      <td>Remote Stream for Connection 3</td>
-      <td>Remote Stream for Connection 4</td>
-    </tr>
-    <tr>
-      <td><video width="320" height="240" id="local-view" autoplay muted>
-          </video></td>
-      <td><video width="320" height="240" id="remote-view-1" autoplay>
-          </video></td>
-      <td><video width="320" height="240" id="remote-view-2" autoplay>
-          </video></td>
-      <td><video width="320" height="240" id="remote-view-3" autoplay>
-          </video></td>
-      <td><video width="320" height="240" id="remote-view-4" autoplay>
-          </video></td>
+      <td><video width="320" height="240" id="local-view" style="display:none"
+          autoplay muted></video></td>
+      <td><video width="320" height="240" id="remote-view-1"
+          style="display:none" autoplay></video></td>
+      <td><video width="320" height="240" id="remote-view-2"
+          style="display:none" autoplay></video></td>
+      <td><video width="320" height="240" id="remote-view-3"
+        style="display:none" autoplay></video></td>
+      <td><video width="320" height="240" id="remote-view-4"
+        style="display:none" autoplay></video></td>
       <!-- Canvases are named after their corresponding video elements. -->
       <td><canvas width="320" height="240" id="remote-view-1-canvas"
           style="display:none"></canvas></td>

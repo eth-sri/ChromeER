@@ -5,9 +5,11 @@
 #ifndef UI_GFX_PLATFORM_FONT_WIN_H_
 #define UI_GFX_PLATFORM_FONT_WIN_H_
 
+#include <dwrite.h>
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/platform_font.h"
@@ -54,19 +56,26 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   Font DeriveFontWithHeight(int height, int style);
 
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
-  virtual int GetHeight() const OVERRIDE;
-  virtual int GetBaseline() const OVERRIDE;
-  virtual int GetCapHeight() const OVERRIDE;
-  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
-  virtual int GetStyle() const OVERRIDE;
-  virtual std::string GetFontName() const OVERRIDE;
-  virtual std::string GetActualFontNameForTesting() const OVERRIDE;
-  virtual int GetFontSize() const OVERRIDE;
-  virtual const FontRenderParams& GetFontRenderParams() const OVERRIDE;
-  virtual NativeFont GetNativeFont() const OVERRIDE;
+  virtual Font DeriveFont(int size_delta, int style) const override;
+  virtual int GetHeight() const override;
+  virtual int GetBaseline() const override;
+  virtual int GetCapHeight() const override;
+  virtual int GetExpectedTextWidth(int length) const override;
+  virtual int GetStyle() const override;
+  virtual std::string GetFontName() const override;
+  virtual std::string GetActualFontNameForTesting() const override;
+  virtual int GetFontSize() const override;
+  virtual const FontRenderParams& GetFontRenderParams() const override;
+  virtual NativeFont GetNativeFont() const override;
+
+  // Called once during initialization if we are using DirectWrite for fonts.
+  static void set_direct_write_factory(IDWriteFactory* factory) {
+    direct_write_factory_ = factory;
+  }
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UniscribeFallback);
+
   virtual ~PlatformFontWin() {}
 
   // Chrome text drawing bottoms out in the Windows GDI functions that take an
@@ -105,6 +114,7 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
 
    private:
     friend class base::RefCounted<HFontRef>;
+    FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UniscribeFallback);
 
     ~HFontRef();
 
@@ -151,6 +161,13 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   // |base_font|.
   static Font DeriveWithCorrectedSize(HFONT base_font);
 
+  // Converts the GDI font identified by the |gdi_font| parameter to a
+  // DirectWrite compatible HFONT, i.e with metrics compatible with
+  // DirectWrite.
+  // Returns the HFONT which is created from DirectWrite compatible font
+  // metrics.
+  static HFONT ConvertGDIFontToDirectWriteFont(HFONT gdi_font);
+
   // Creates a new PlatformFontWin with the specified HFontRef. Used when
   // constructing a Font from a HFONT we don't want to copy.
   explicit PlatformFontWin(HFontRef* hfont_ref);
@@ -160,6 +177,10 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
 
   // Indirect reference to the HFontRef, which references the underlying HFONT.
   scoped_refptr<HFontRef> font_ref_;
+
+  // Pointer to the global IDWriteFactory interface. This is only set if we are
+  // using DirectWrite for fonts. Defaults to NULL.
+  static IDWriteFactory* direct_write_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PlatformFontWin);
 };

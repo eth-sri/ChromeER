@@ -22,7 +22,6 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
-#include "content/browser/battery_status/battery_status_service.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/download/save_file_manager.h"
@@ -51,6 +50,7 @@
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
 #include "crypto/nss_util.h"
+#include "device/battery/battery_status_service.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/media.h"
 #include "media/base/user_input_monitor.h"
@@ -76,8 +76,10 @@
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
 #include "content/browser/android/browser_startup_controller.h"
-#include "content/browser/android/surface_texture_peer_browser_impl.h"
+#include "content/browser/android/browser_surface_texture_manager.h"
 #include "content/browser/android/tracing_controller_android.h"
+#include "content/browser/screen_orientation/screen_orientation_delegate_android.h"
+#include "content/public/browser/screen_orientation_provider.h"
 #include "ui/gl/gl_surface.h"
 #endif
 
@@ -314,12 +316,11 @@ void ImmediateShutdownAndExitProcess() {
 class BrowserMainLoop::MemoryObserver : public base::MessageLoop::TaskObserver {
  public:
   MemoryObserver() {}
-  virtual ~MemoryObserver() {}
+  ~MemoryObserver() override {}
 
-  virtual void WillProcessTask(const base::PendingTask& pending_task) OVERRIDE {
-  }
+  void WillProcessTask(const base::PendingTask& pending_task) override {}
 
-  virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+  void DidProcessTask(const base::PendingTask& pending_task) override {
 #if !defined(OS_IOS)  // No ProcessMetrics on IOS.
     scoped_ptr<base::ProcessMetrics> process_metrics(
         base::ProcessMetrics::CreateProcessMetrics(
@@ -537,8 +538,16 @@ void BrowserMainLoop::MainMessageLoopStart() {
 
 #if defined(OS_ANDROID)
   {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:SurfaceTexturePeer");
-    SurfaceTexturePeer::InitInstance(new SurfaceTexturePeerBrowserImpl());
+    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:SurfaceTextureManager");
+    SurfaceTextureManager::InitInstance(new BrowserSurfaceTextureManager);
+  }
+
+  {
+    TRACE_EVENT0("startup",
+                 "BrowserMainLoop::Subsystem:ScreenOrientationProvider");
+    screen_orientation_delegate_.reset(
+        new ScreenOrientationDelegateAndroid());
+    ScreenOrientationProvider::SetDelegate(screen_orientation_delegate_.get());
   }
 #endif
 
@@ -930,7 +939,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   }
   {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:BatteryStatusService");
-    BatteryStatusService::GetInstance()->Shutdown();
+    device::BatteryStatusService::GetInstance()->Shutdown();
   }
   {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DeleteDataSources");

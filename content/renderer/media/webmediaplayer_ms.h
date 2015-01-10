@@ -83,10 +83,6 @@ class WebMediaPlayerMS
                      const blink::WebRect& rect,
                      unsigned char alpha,
                      SkXfermode::Mode mode);
-  // TODO(dshwang): remove it because above method replaces. crbug.com/401027
-  virtual void paint(blink::WebCanvas* canvas,
-                     const blink::WebRect& rect,
-                     unsigned char alpha);
 
   // True if the loaded media has a playable video/audio track.
   virtual bool hasVideo() const;
@@ -118,11 +114,10 @@ class WebMediaPlayerMS
   virtual unsigned videoDecodedByteCount() const;
 
   // VideoFrameProvider implementation.
-  virtual void SetVideoFrameProviderClient(
-      cc::VideoFrameProvider::Client* client) OVERRIDE;
-  virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() OVERRIDE;
-  virtual void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame)
-      OVERRIDE;
+  void SetVideoFrameProviderClient(
+      cc::VideoFrameProvider::Client* client) override;
+  scoped_refptr<media::VideoFrame> GetCurrentFrame() override;
+  void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame) override;
 
  private:
   // The callback for VideoFrameProvider to signal a new frame is available.

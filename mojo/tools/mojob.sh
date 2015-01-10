@@ -19,35 +19,38 @@ command should be one of:
   build - Build.
   test - Run unit tests (does not build).
   perftest - Run perf tests (does not build).
-  pytest - Run Python unit tests.
-  gyp - Run gyp for mojo (does not sync).
-  gypall - Run gyp for all of chromium (does not sync).
-  sync - Sync using gclient (does not run gyp).
+  pytest - Run Python unit tests (does not build).
+  gn - Run gn for mojo (does not sync).
+  sync - Sync using gclient (does not run gn).
   show-bash-alias - Outputs an appropriate bash alias for mojob. In bash do:
       \$ eval \`mojo/tools/mojob.sh show-bash-alias\`
 
-option (which will only apply to following commands) should be one of:
-  Build/test options (specified before build/test/perftest):
-    --debug - Build/test in Debug mode.
-    --release - Build/test in Release mode.
-    --debug-and-release - Build/test in both Debug and Release modes (default).
-  Compiler options (specified before gyp):
-    --clang - Use clang (default).
-    --gcc - Use gcc.
-  Component options:
-    --shared Build components as shared libraries (default).
-    --static Build components as static libraries.
-  Use goma:
-    --use-goma - Use goma if \$GOMA_DIR is set or \$HOME/goma exists (default).
-    --no-use-goma - Do not use goma.
+option (which will only apply to commands which follow) should be one of:
+  General options (specify before everything):
+    --debug / --release / --debug-and-release - Debug (default) build /
+        Release build / Debug and Release builds.
+  gn options (specify before gn):
+    --clang / --gcc - Use clang (default) / gcc.
+    --use-goma / --no-use-goma - Use goma (if \$GOMA_DIR is set or \$HOME/goma
+        exists; default) / don't use goma.
 
 Note: It will abort on the first failure (if any).
 EOF
 }
 
+get_gn_arg_value() {
+  grep -m 1 "^[[:space:]]*\<$2\>" "$1/args.gn" | \
+      sed -n 's/.* = "\?\([^"]*\)"\?$/\1/p'
+}
+
 do_build() {
   echo "Building in out/$1 ..."
-  if [ "$GOMA" = "auto" -a -v GOMA_DIR ]; then
+  if [ "$(get_gn_arg_value "out/$1" use_goma)" = "true" ]; then
+    # Use the configured goma directory.
+    local goma_dir="$(get_gn_arg_value "out/$1" goma_dir)"
+    echo "Ensuring goma (in ${goma_dir}) started ..."
+    "${goma_dir}/goma_ctl.py" ensure_start
+
     ninja -j 1000 -l 100 -C "out/$1" mojo || exit 1
   else
     ninja -C "out/$1" mojo || exit 1
@@ -65,20 +68,10 @@ do_perftests() {
   "out/$1/mojo_public_system_perftests" || exit 1
 }
 
-do_pytests() {
-  python mojo/tools/run_mojo_python_tests.py || exit 1
-}
-
-do_gyp() {
-  local gyp_defines="$(make_gyp_defines)"
-  echo "Running gyp for mojo with GYP_DEFINES=$gyp_defines ..."
-  GYP_DEFINES="$gyp_defines" build/gyp_chromium mojo/mojo.gyp || exit 1
-}
-
-do_gypall() {
-  local gyp_defines="$(make_gyp_defines)"
-  echo "Running gyp for everything with GYP_DEFINES=$gyp_defines ..."
-  GYP_DEFINES="$gyp_defines" build/gyp_chromium || exit 1
+do_gn() {
+  local gn_args="$(make_gn_args $1)"
+  echo "Running gn with --args=\"${gn_args}\" ..."
+  gn gen --args="${gn_args}" "out/$1"
 }
 
 do_sync() {
@@ -87,67 +80,54 @@ do_sync() {
 }
 
 # Valid values: Debug, Release, or Debug_and_Release.
-BUILD_TEST_TYPE=Debug_and_Release
+BUILD_TYPE=Debug_and_Release
 should_do_Debug() {
-  test "$BUILD_TEST_TYPE" = Debug -o "$BUILD_TEST_TYPE" = Debug_and_Release
+  test "$BUILD_TYPE" = Debug -o "$BUILD_TYPE" = Debug_and_Release
 }
 should_do_Release() {
-  test "$BUILD_TEST_TYPE" = Release -o "$BUILD_TEST_TYPE" = Debug_and_Release
+  test "$BUILD_TYPE" = Release -o "$BUILD_TYPE" = Debug_and_Release
 }
 
 # Valid values: clang or gcc.
 COMPILER=clang
-# Valid values: shared or static.
-COMPONENT=shared
 # Valid values: auto or disabled.
 GOMA=auto
-make_gyp_defines() {
-  local options=()
-  # Always include these options.
-  options+=("use_aura=1")
-  case "$COMPILER" in
-    clang)
-      options+=("clang=1")
+make_gn_args() {
+  local args=()
+  # TODO(vtl): It's a bit of a hack to infer the build type from the output
+  # directory name, but it's what we have right now (since we support "debug and
+  # release" mode).
+  case "$1" in
+    Debug)
+      # (Default.)
       ;;
-    gcc)
-      options+=("clang=0")
+    Release)
+      args+=("is_debug=false")
       ;;
   esac
-  case "$COMPONENT" in
-    shared)
-      options+=("component=shared_library")
+  case "$COMPILER" in
+    clang)
+      # (Default.)
       ;;
-    static)
-      options+=("component=static_library")
+    gcc)
+      args+=("is_clang=false")
       ;;
   esac
   case "$GOMA" in
     auto)
       if [ -v GOMA_DIR ]; then
-        options+=("use_goma=1" "gomadir=\"${GOMA_DIR}\"")
+        args+=("use_goma=true" "goma_dir=\"${GOMA_DIR}\"")
+      elif [ -d "${HOME}/goma" ]; then
+        args+=("use_goma=true" "goma_dir=\"${HOME}/goma\"")
       else
-        options+=("use_goma=0")
+        :  # (Default.)
       fi
       ;;
     disabled)
-      options+=("use_goma=0")
+      # (Default.)
       ;;
   esac
-  echo "${options[*]}"
-}
-
-set_goma_dir_if_necessary() {
-  if [ "$GOMA" = "auto" -a ! -v GOMA_DIR ]; then
-    if [ -d "${HOME}/goma" ]; then
-      GOMA_DIR="${HOME}/goma"
-    fi
-  fi
-}
-
-start_goma_if_necessary() {
-  if [ "$GOMA" = "auto" -a -v GOMA_DIR ]; then
-    "${GOMA_DIR}/goma_ctl.py" ensure_start
-  fi
+  echo "${args[*]}"
 }
 
 # We're in src/mojo/tools. We want to get to src.
@@ -166,8 +146,6 @@ for arg in "$@"; do
       exit 0
       ;;
     build)
-      set_goma_dir_if_necessary
-      start_goma_if_necessary
       should_do_Debug && do_build Debug
       should_do_Release && do_build Release
       ;;
@@ -179,16 +157,9 @@ for arg in "$@"; do
       should_do_Debug && do_perftests Debug
       should_do_Release && do_perftests Release
       ;;
-    pytest)
-      do_pytests
-      ;;
-    gyp)
-      set_goma_dir_if_necessary
-      do_gyp
-      ;;
-    gypall)
-      set_goma_dir_if_necessary
-      do_gypall
+    gn)
+      should_do_Debug && do_gn Debug
+      should_do_Release && do_gn Release
       ;;
     sync)
       do_sync
@@ -204,25 +175,19 @@ for arg in "$@"; do
       ;;
     # Options ------------------------------------------------------------------
     --debug)
-      BUILD_TEST_TYPE=Debug
+      BUILD_TYPE=Debug
       ;;
     --release)
-      BUILD_TEST_TYPE=Release
+      BUILD_TYPE=Release
       ;;
     --debug-and-release)
-      BUILD_TEST_TYPE=Debug_and_Release
+      BUILD_TYPE=Debug_and_Release
       ;;
     --clang)
       COMPILER=clang
       ;;
     --gcc)
       COMPILER=gcc
-      ;;
-    --shared)
-      COMPONENT=shared
-      ;;
-    --static)
-      COMPONENT=static
       ;;
     --use-goma)
       GOMA=auto
@@ -236,3 +201,5 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+exit 0

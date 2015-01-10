@@ -2,20 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/files/file_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
+#include "chrome/browser/extensions/extension_toolbar_model_factory.h"
+#include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/test_extension_dir.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "components/crx_file/id_util.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/feature_switch.h"
@@ -25,6 +32,38 @@
 namespace extensions {
 
 namespace {
+
+// Creates a new ExtensionToolbarModel for the given |context|.
+KeyedService* BuildToolbarModel(content::BrowserContext* context) {
+  return new ExtensionToolbarModel(Profile::FromBrowserContext(context),
+                                   ExtensionPrefs::Get(context));
+}
+
+// Given a |profile|, assigns the testing keyed service function to
+// BuildToolbarModel() and uses it to create and initialize a new
+// ExtensionToolbarModel.
+ExtensionToolbarModel* CreateToolbarModelForProfile(Profile* profile) {
+  ExtensionToolbarModel* model = ExtensionToolbarModel::Get(profile);
+  if (model)
+    return model;
+
+  // No existing model means it's a new profile (since we, by default, don't
+  // create the ToolbarModel in testing).
+  ExtensionToolbarModelFactory::GetInstance()->SetTestingFactory(
+      profile, &BuildToolbarModel);
+  model = ExtensionToolbarModel::Get(profile);
+  // Fake the extension system ready signal.
+  // HACK ALERT! In production, the ready task on ExtensionSystem (and most
+  // everything else on it, too) is shared between incognito and normal
+  // profiles, but a TestExtensionSystem doesn't have the concept of "shared".
+  // Because of this, we have to set any new profile's TestExtensionSystem's
+  // ready task, too.
+  static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile))->SetReady();
+  // Run tasks posted to TestExtensionSystem.
+  base::RunLoop().RunUntilIdle();
+
+  return model;
+}
 
 // Create an extension. If |action_key| is non-NULL, it should point to either
 // kBrowserAction or kPageAction, and the extension will have the associated
@@ -49,7 +88,7 @@ class ExtensionToolbarModelTestObserver
     : public ExtensionToolbarModel::Observer {
  public:
   explicit ExtensionToolbarModelTestObserver(ExtensionToolbarModel* model);
-  virtual ~ExtensionToolbarModelTestObserver();
+  ~ExtensionToolbarModelTestObserver() override;
 
   size_t inserted_count() const { return inserted_count_; }
   size_t removed_count() const { return removed_count_; }
@@ -58,39 +97,33 @@ class ExtensionToolbarModelTestObserver
 
  private:
   // ExtensionToolbarModel::Observer:
-  virtual void ToolbarExtensionAdded(const Extension* extension,
-                                     int index) OVERRIDE {
+  void ToolbarExtensionAdded(const Extension* extension, int index) override {
     ++inserted_count_;
   }
 
-  virtual void ToolbarExtensionRemoved(const Extension* extension) OVERRIDE {
+  void ToolbarExtensionRemoved(const Extension* extension) override {
     ++removed_count_;
   }
 
-  virtual void ToolbarExtensionMoved(const Extension* extension,
-                                     int index) OVERRIDE {
+  void ToolbarExtensionMoved(const Extension* extension, int index) override {
     ++moved_count_;
   }
 
-  virtual void ToolbarExtensionUpdated(const Extension* extension) OVERRIDE {
-  }
+  void ToolbarExtensionUpdated(const Extension* extension) override {}
 
-  virtual bool ShowExtensionActionPopup(const Extension* extension,
-                                        bool grant_active_tab) OVERRIDE {
+  bool ShowExtensionActionPopup(const Extension* extension,
+                                bool grant_active_tab) override {
     return false;
   }
 
-  virtual void ToolbarVisibleCountChanged() OVERRIDE {
-  }
+  void ToolbarVisibleCountChanged() override {}
 
-  virtual void ToolbarHighlightModeChanged(bool is_highlighting) OVERRIDE {
+  void ToolbarHighlightModeChanged(bool is_highlighting) override {
     // Add one if highlighting, subtract one if not.
     highlight_mode_count_ += is_highlighting ? 1 : -1;
   }
 
-  virtual Browser* GetBrowser() OVERRIDE {
-    return NULL;
-  }
+  Browser* GetBrowser() override { return NULL; }
 
   ExtensionToolbarModel* model_;
 
@@ -137,9 +170,13 @@ class ExtensionToolbarModelUnitTest : public ExtensionServiceTestBase {
 
   // Returns the extension at the given index in the toolbar model, or NULL
   // if one does not exist.
+  // If |model| is specified, it is used. Otherwise, this defaults to
+  // |toolbar_model_|.
+  const Extension* GetExtensionAtIndex(
+      size_t index, const ExtensionToolbarModel* model) const;
   const Extension* GetExtensionAtIndex(size_t index) const;
 
-  ExtensionToolbarModel* toolbar_model() { return toolbar_model_.get(); }
+  ExtensionToolbarModel* toolbar_model() { return toolbar_model_; }
 
   const ExtensionToolbarModelTestObserver* observer() const {
     return model_observer_.get();
@@ -161,8 +198,8 @@ class ExtensionToolbarModelUnitTest : public ExtensionServiceTestBase {
   testing::AssertionResult AddAndVerifyExtensions(
       const ExtensionList& extensions);
 
-  // The associated (and owned) toolbar model.
-  scoped_ptr<ExtensionToolbarModel> toolbar_model_;
+  // The toolbar model associated with the testing profile.
+  ExtensionToolbarModel* toolbar_model_;
 
   // The test observer to track events. Must come after toolbar_model_ so that
   // it is destroyed and removes itself as an observer first.
@@ -181,14 +218,8 @@ class ExtensionToolbarModelUnitTest : public ExtensionServiceTestBase {
 
 void ExtensionToolbarModelUnitTest::Init() {
   InitializeEmptyExtensionService();
-  toolbar_model_.reset(
-      new ExtensionToolbarModel(profile(), ExtensionPrefs::Get(profile())));
-  model_observer_.reset(
-      new ExtensionToolbarModelTestObserver(toolbar_model_.get()));
-  static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile()))->
-      SetReady();
-  // Run tasks posted to TestExtensionSystem.
-  base::RunLoop().RunUntilIdle();
+  toolbar_model_ = CreateToolbarModelForProfile(profile());
+  model_observer_.reset(new ExtensionToolbarModelTestObserver(toolbar_model_));
 }
 
 testing::AssertionResult ExtensionToolbarModelUnitTest::AddExtension(
@@ -253,10 +284,15 @@ ExtensionToolbarModelUnitTest::AddBrowserActionExtensions() {
 }
 
 const Extension* ExtensionToolbarModelUnitTest::GetExtensionAtIndex(
-    size_t index) const {
-  return index < toolbar_model_->toolbar_items().size()
-             ? toolbar_model_->toolbar_items()[index].get()
+    size_t index, const ExtensionToolbarModel* model) const {
+  return index < model->toolbar_items().size()
+             ? model->toolbar_items()[index].get()
              : NULL;
+}
+
+const Extension* ExtensionToolbarModelUnitTest::GetExtensionAtIndex(
+    size_t index) const {
+  return GetExtensionAtIndex(index, toolbar_model_);
 }
 
 testing::AssertionResult ExtensionToolbarModelUnitTest::AddAndVerifyExtensions(
@@ -296,7 +332,7 @@ TEST_F(ExtensionToolbarModelUnitTest, BasicExtensionToolbarModelTest) {
   EXPECT_EQ(extension2.get(), GetExtensionAtIndex(0u));
 
   // Should be a no-op, but still fires the events.
-  toolbar_model()->MoveExtensionIcon(extension2.get(), 0);
+  toolbar_model()->MoveExtensionIcon(extension2->id(), 0);
   EXPECT_EQ(1u, observer()->moved_count());
   EXPECT_EQ(1u, num_toolbar_items());
   EXPECT_EQ(extension2.get(), GetExtensionAtIndex(0u));
@@ -322,7 +358,7 @@ TEST_F(ExtensionToolbarModelUnitTest, ExtensionToolbarReorderAndReinsert) {
   EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(2u));
 
   // Order is now A, B, C. Let's put C first.
-  toolbar_model()->MoveExtensionIcon(browser_action_c(), 0);
+  toolbar_model()->MoveExtensionIcon(browser_action_c()->id(), 0);
   EXPECT_EQ(1u, observer()->moved_count());
   EXPECT_EQ(3u, num_toolbar_items());
   EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(0u));
@@ -330,7 +366,7 @@ TEST_F(ExtensionToolbarModelUnitTest, ExtensionToolbarReorderAndReinsert) {
   EXPECT_EQ(browser_action_b(), GetExtensionAtIndex(2u));
 
   // Order is now C, A, B. Let's put A last.
-  toolbar_model()->MoveExtensionIcon(browser_action_a(), 2);
+  toolbar_model()->MoveExtensionIcon(browser_action_a()->id(), 2);
   EXPECT_EQ(2u, observer()->moved_count());
   EXPECT_EQ(3u, num_toolbar_items());
   EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(0u));
@@ -359,13 +395,13 @@ TEST_F(ExtensionToolbarModelUnitTest, ExtensionToolbarReorderAndReinsert) {
   EXPECT_EQ(2u, num_toolbar_items());
 
   // Order is now C, A. Flip it.
-  toolbar_model()->MoveExtensionIcon(browser_action_a(), 0);
+  toolbar_model()->MoveExtensionIcon(browser_action_a()->id(), 0);
   EXPECT_EQ(3u, observer()->moved_count());
   EXPECT_EQ(browser_action_a(), GetExtensionAtIndex(0u));
   EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(1u));
 
   // Move A to the location it already occupies.
-  toolbar_model()->MoveExtensionIcon(browser_action_a(), 0);
+  toolbar_model()->MoveExtensionIcon(browser_action_a()->id(), 0);
   EXPECT_EQ(4u, observer()->moved_count());
   EXPECT_EQ(browser_action_a(), GetExtensionAtIndex(0u));
   EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(1u));
@@ -435,7 +471,7 @@ TEST_F(ExtensionToolbarModelUnitTest,
   EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(2u));
 
   // Move browser_action_b() to be first.
-  toolbar_model()->MoveExtensionIcon(browser_action_b(), 0);
+  toolbar_model()->MoveExtensionIcon(browser_action_b()->id(), 0);
   EXPECT_EQ(browser_action_b(), GetExtensionAtIndex(0u));
 
   // Uninstall Extension B.
@@ -737,6 +773,170 @@ TEST_F(ExtensionToolbarModelUnitTest,
   EXPECT_EQ(browser_action_a(), GetExtensionAtIndex(0u));
   EXPECT_EQ(browser_action_b(), GetExtensionAtIndex(1u));
   EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(2u));
+}
+
+TEST_F(ExtensionToolbarModelUnitTest, ExtensionToolbarIncognitoModeTest) {
+  Init();
+  ASSERT_TRUE(AddBrowserActionExtensions());
+
+  // Give two extensions incognito access.
+  // Note: We use ExtensionPrefs::SetIsIncognitoEnabled instead of
+  // util::SetIsIncognitoEnabled because the latter tries to reload the
+  // extension, which requries a filepath associated with the extension (and,
+  // for this test, reloading the extension is irrelevant to us).
+  ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(profile());
+  extension_prefs->SetIsIncognitoEnabled(browser_action_b()->id(), true);
+  extension_prefs->SetIsIncognitoEnabled(browser_action_c()->id(), true);
+
+  util::SetIsIncognitoEnabled(browser_action_b()->id(), profile(), true);
+  util::SetIsIncognitoEnabled(browser_action_c()->id(), profile(), true);
+
+  // Move C to the second index.
+  toolbar_model()->MoveExtensionIcon(browser_action_c()->id(), 1u);
+  // Set visible count to 2 so that c is overflowed. State is A C [B].
+  toolbar_model()->SetVisibleIconCount(2);
+  EXPECT_EQ(1u, observer()->moved_count());
+
+  // Get an incognito profile and toolbar.
+  ExtensionToolbarModel* incognito_model =
+      CreateToolbarModelForProfile(profile()->GetOffTheRecordProfile());
+
+  ExtensionToolbarModelTestObserver incognito_observer(incognito_model);
+  EXPECT_EQ(0u, incognito_observer.moved_count());
+
+  // We should have two items, C and B, and the order should be preserved from
+  // the original model.
+  EXPECT_EQ(2u, incognito_model->toolbar_items().size());
+  EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(0u, incognito_model));
+  EXPECT_EQ(browser_action_b(), GetExtensionAtIndex(1u, incognito_model));
+
+  // Extensions in the overflow menu in the regular toolbar should remain in
+  // overflow in the incognito toolbar. So, we should have C [B].
+  EXPECT_EQ(1, incognito_model->GetVisibleIconCount());
+  // The regular model should still have two icons visible.
+  EXPECT_EQ(2, toolbar_model()->GetVisibleIconCount());
+
+  // Changing the incognito model size should not affect the regular model.
+  incognito_model->SetVisibleIconCount(0);
+  EXPECT_EQ(0, incognito_model->GetVisibleIconCount());
+  EXPECT_EQ(2, toolbar_model()->GetVisibleIconCount());
+
+  // Expanding the incognito model to 2 should register as "all icons" (-1),
+  // since it is all of the incognito-enabled extensions.
+  incognito_model->SetVisibleIconCount(2u);
+  EXPECT_EQ(-1, incognito_model->GetVisibleIconCount());
+
+  // Moving icons in the incognito toolbar should not affect the regular
+  // toolbar. Incognito currently has C B...
+  incognito_model->MoveExtensionIcon(browser_action_b()->id(), 0u);
+  // So now it should be B C...
+  EXPECT_EQ(1u, incognito_observer.moved_count());
+  EXPECT_EQ(browser_action_b(), GetExtensionAtIndex(0u, incognito_model));
+  EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(1u, incognito_model));
+  // ... and the regular toolbar should be unaffected.
+  EXPECT_EQ(browser_action_a(), GetExtensionAtIndex(0u));
+  EXPECT_EQ(browser_action_c(), GetExtensionAtIndex(1u));
+  EXPECT_EQ(browser_action_b(), GetExtensionAtIndex(2u));
+
+  // Similarly, the observer for the regular model should not have received
+  // any updates.
+  EXPECT_EQ(1u, observer()->moved_count());
+
+  // And performing moves on the regular model should have no effect on the
+  // incognito model or its observers.
+  toolbar_model()->MoveExtensionIcon(browser_action_c()->id(), 2u);
+  EXPECT_EQ(2u, observer()->moved_count());
+  EXPECT_EQ(1u, incognito_observer.moved_count());
+}
+
+// Test that enabling extensions incognito with an active incognito profile
+// works.
+TEST_F(ExtensionToolbarModelUnitTest,
+       ExtensionToolbarIncognitoEnableExtension) {
+  Init();
+
+  const char* kManifest =
+      "{"
+      "  \"name\": \"%s\","
+      "  \"version\": \"1.0\","
+      "  \"manifest_version\": 2,"
+      "  \"browser_action\": {}"
+      "}";
+
+  // For this test, we need to have "real" extension files, because we need to
+  // be able to reload them during the incognito process. Since the toolbar
+  // needs to be notified of the reload, we need it this time (as opposed to
+  // above, where we simply set the prefs before the incognito bar was
+  // created.
+  TestExtensionDir dir1;
+  dir1.WriteManifest(base::StringPrintf(kManifest, "incognito1"));
+  TestExtensionDir dir2;
+  dir2.WriteManifest(base::StringPrintf(kManifest, "incognito2"));
+
+  TestExtensionDir* dirs[] = { &dir1, &dir2 };
+  const Extension* extensions[] = { nullptr, nullptr };
+  for (size_t i = 0; i < arraysize(dirs); ++i) {
+    // The extension id will be calculated from the file path; we need this to
+    // wait for the extension to load.
+    base::FilePath path_for_id =
+        base::MakeAbsoluteFilePath(dirs[i]->unpacked_path());
+    std::string id = crx_file::id_util::GenerateIdForPath(path_for_id);
+    TestExtensionRegistryObserver observer(registry(), id);
+    UnpackedInstaller::Create(service())->Load(dirs[i]->unpacked_path());
+    observer.WaitForExtensionLoaded();
+    extensions[i] = registry()->enabled_extensions().GetByID(id);
+    ASSERT_TRUE(extensions[i]);
+  }
+
+  // For readability, alias to A and B. Since we'll be reloading these
+  // extensions, we also can't rely on pointers.
+  std::string extension_a = extensions[0]->id();
+  std::string extension_b = extensions[1]->id();
+
+  // The first model should have both extensions visible.
+  EXPECT_EQ(2u, toolbar_model()->toolbar_items().size());
+  EXPECT_EQ(extension_a, GetExtensionAtIndex(0)->id());
+  EXPECT_EQ(extension_b, GetExtensionAtIndex(1)->id());
+
+  // Set the model to only show one extension, so the order is A [B].
+  toolbar_model()->SetVisibleIconCount(1u);
+
+  // Get an incognito profile and toolbar.
+  ExtensionToolbarModel* incognito_model =
+      CreateToolbarModelForProfile(profile()->GetOffTheRecordProfile());
+  ExtensionToolbarModelTestObserver incognito_observer(incognito_model);
+
+  // Right now, no extensions are enabled in incognito mode.
+  EXPECT_EQ(0u, incognito_model->toolbar_items().size());
+
+  // Set extension b (which is overflowed) to be enabled in incognito. This
+  // results in b reloading, so wait for it.
+  {
+    TestExtensionRegistryObserver observer(registry(), extension_b);
+    util::SetIsIncognitoEnabled(extension_b, profile(), true);
+    observer.WaitForExtensionLoaded();
+  }
+
+  // Now, we should have one icon in the incognito bar. But, since B is
+  // overflowed in the main bar, it shouldn't be visible.
+  EXPECT_EQ(1u, incognito_model->toolbar_items().size());
+  EXPECT_EQ(extension_b, GetExtensionAtIndex(0u, incognito_model)->id());
+  EXPECT_EQ(0, incognito_model->GetVisibleIconCount());
+
+  // Also enable extension a for incognito (again, wait for the reload).
+  {
+    TestExtensionRegistryObserver observer(registry(), extension_a);
+    util::SetIsIncognitoEnabled(extension_a, profile(), true);
+    observer.WaitForExtensionLoaded();
+  }
+
+  // Now, both extensions should be enabled in incognito mode. In addition, the
+  // incognito toolbar should have expanded to show extension a (since it isn't
+  // overflowed in the main bar).
+  EXPECT_EQ(2u, incognito_model->toolbar_items().size());
+  EXPECT_EQ(extension_a, GetExtensionAtIndex(0u, incognito_model)->id());
+  EXPECT_EQ(extension_b, GetExtensionAtIndex(1u, incognito_model)->id());
+  EXPECT_EQ(1, incognito_model->GetVisibleIconCount());
 }
 
 // Test that hiding actions on the toolbar results in sending them to the

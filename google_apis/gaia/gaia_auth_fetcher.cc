@@ -10,6 +10,7 @@
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -147,6 +148,8 @@ const char GaiaAuthFetcher::kAccountTypeGoogle[] =
 
 // static
 const char GaiaAuthFetcher::kSecondFactor[] = "Info=InvalidSecondFactor";
+// static
+const char GaiaAuthFetcher::kWebLoginRequired[] = "Info=WebLoginRequired";
 
 // static
 const char GaiaAuthFetcher::kAuthHeaderFormat[] =
@@ -737,6 +740,9 @@ GoogleServiceAuthError GaiaAuthFetcher::GenerateAuthError(
   if (IsSecondFactorSuccess(data))
     return GoogleServiceAuthError(GoogleServiceAuthError::TWO_FACTOR);
 
+  if (IsWebLoginRequiredSuccess(data))
+    return GoogleServiceAuthError(GoogleServiceAuthError::WEB_LOGIN_REQUIRED);
+
   std::string error;
   std::string url;
   std::string captcha_url;
@@ -929,6 +935,11 @@ void GaiaAuthFetcher::OnGetCheckConnectionInfoFetched(
 }
 
 void GaiaAuthFetcher::OnURLFetchComplete(const net::URLFetcher* source) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422577 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422577 GaiaAuthFetcher::OnURLFetchComplete"));
+
   fetch_pending_ = false;
   // Some of the GAIA requests perform redirects, which results in the final
   // URL of the fetcher not being the original URL requested.  Therefore use
@@ -980,5 +991,12 @@ void GaiaAuthFetcher::OnURLFetchComplete(const net::URLFetcher* source) {
 bool GaiaAuthFetcher::IsSecondFactorSuccess(
     const std::string& alleged_error) {
   return alleged_error.find(kSecondFactor) !=
+      std::string::npos;
+}
+
+// static
+bool GaiaAuthFetcher::IsWebLoginRequiredSuccess(
+    const std::string& alleged_error) {
+  return alleged_error.find(kWebLoginRequired) !=
       std::string::npos;
 }

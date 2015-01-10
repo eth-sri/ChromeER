@@ -8,7 +8,6 @@ import android.view.KeyEvent;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
-import org.chromium.content.browser.ContentViewCore;
 
 /**
  * Java peer of the native class of the same name.
@@ -138,10 +137,11 @@ public class WebContentsDelegateAndroid {
 
     /**
      * Report a form resubmission. The overwriter of this function should eventually call
-     * either of ContentViewCore.ContinuePendingReload or ContentViewCore.CancelPendingReload.
+     * either of NavigationController.ContinuePendingReload or
+     * NavigationController.CancelPendingReload.
      */
     @CalledByNative
-    public void showRepostFormWarningDialog(ContentViewCore contentViewCore) {
+    public void showRepostFormWarningDialog() {
     }
 
     @CalledByNative

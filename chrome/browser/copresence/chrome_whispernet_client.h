@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "components/copresence/public/copresence_constants.h"
 #include "components/copresence/public/whispernet_client.h"
 
 namespace content {
@@ -30,31 +31,32 @@ class AudioBusRefCounted;
 
 // This class is responsible for communication with our ledger_proxy extension
 // that talks to the whispernet audio library.
-class ChromeWhispernetClient : public copresence::WhispernetClient {
+class ChromeWhispernetClient final : public copresence::WhispernetClient {
  public:
   // The browser context needs to outlive this class.
   explicit ChromeWhispernetClient(content::BrowserContext* browser_context);
-  virtual ~ChromeWhispernetClient();
+  ~ChromeWhispernetClient() override;
 
   // WhispernetClient overrides:
-  virtual void Initialize(const SuccessCallback& init_callback) OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  void Initialize(const SuccessCallback& init_callback) override;
+  void Shutdown() override;
 
-  virtual void EncodeToken(const std::string& token, bool audible) OVERRIDE;
-  virtual void DecodeSamples(const std::string& samples) OVERRIDE;
-  virtual void DetectBroadcast() OVERRIDE;
+  void EncodeToken(const std::string& token,
+                   copresence::AudioType type) override;
+  void DecodeSamples(copresence::AudioType type,
+                     const std::string& samples) override;
+  void DetectBroadcast() override;
 
-  virtual void RegisterTokensCallback(
-      const TokensCallback& tokens_callback) OVERRIDE;
-  virtual void RegisterSamplesCallback(
-      const SamplesCallback& samples_callback) OVERRIDE;
-  virtual void RegisterDetectBroadcastCallback(
-      const SuccessCallback& db_callback) OVERRIDE;
+  void RegisterTokensCallback(const TokensCallback& tokens_callback) override;
+  void RegisterSamplesCallback(
+      const SamplesCallback& samples_callback) override;
+  void RegisterDetectBroadcastCallback(
+      const SuccessCallback& db_callback) override;
 
-  virtual TokensCallback GetTokensCallback() OVERRIDE;
-  virtual SamplesCallback GetSamplesCallback() OVERRIDE;
-  virtual SuccessCallback GetDetectBroadcastCallback() OVERRIDE;
-  virtual SuccessCallback GetInitializedCallback() OVERRIDE;
+  TokensCallback GetTokensCallback() override;
+  SamplesCallback GetSamplesCallback() override;
+  SuccessCallback GetDetectBroadcastCallback() override;
+  SuccessCallback GetInitializedCallback() override;
 
   static const char kWhispernetProxyExtensionId[];
 

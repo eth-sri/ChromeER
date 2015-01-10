@@ -4,9 +4,13 @@
 
 package org.chromium.chrome.browser.sync;
 
+import android.app.Activity;
 import android.content.Context;
 import android.util.Log;
 
+import org.chromium.base.ActivityState;
+import org.chromium.base.ApplicationStatus;
+import org.chromium.base.ApplicationStatus.ActivityStateListener;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
@@ -90,6 +94,16 @@ public class ProfileSyncService {
         // been set up, but ProfileSyncService::Startup() won't be called until
         // credentials are available.
         mNativeProfileSyncServiceAndroid = nativeInit();
+
+        // When the application gets paused, tell sync to flush the directory to disk.
+        ApplicationStatus.registerStateListenerForAllActivities(new ActivityStateListener() {
+            @Override
+            public void onActivityStateChange(Activity activity, int newState) {
+                if (newState == ActivityState.PAUSED) {
+                    flushDirectory();
+                }
+            }
+        });
     }
 
     @CalledByNative
@@ -222,6 +236,14 @@ public class ProfileSyncService {
         return nativeHasExplicitPassphraseTime(mNativeProfileSyncServiceAndroid);
     }
 
+    /**
+     * Returns the current explicit passphrase time in milliseconds since epoch.
+     */
+    public long getExplicitPassphraseTime() {
+        assert isSyncInitialized();
+        return nativeGetExplicitPassphraseTime(mNativeProfileSyncServiceAndroid);
+    }
+
     public String getSyncEnterGooglePassphraseBodyWithDateText() {
         assert isSyncInitialized();
         return nativeGetSyncEnterGooglePassphraseBodyWithDateText(mNativeProfileSyncServiceAndroid);
@@ -291,6 +313,17 @@ public class ProfileSyncService {
      */
     public boolean isFirstSetupInProgress() {
         return nativeIsFirstSetupInProgress(mNativeProfileSyncServiceAndroid);
+    }
+
+    /**
+     * Checks if encrypting all the data types is allowed.
+     *
+     * @return true if encrypting all data types is allowed, false if only passwords are allowed to
+     * be encrypted.
+     */
+    public boolean isEncryptEverythingAllowed() {
+        assert isSyncInitialized();
+        return nativeIsEncryptEverythingAllowed(mNativeProfileSyncServiceAndroid);
     }
 
     /**
@@ -495,6 +528,13 @@ public class ProfileSyncService {
     }
 
     /**
+     * Flushes the sync directory.
+     */
+    public void flushDirectory() {
+        nativeFlushDirectory(mNativeProfileSyncServiceAndroid);
+    }
+
+    /**
      * Returns the time when the last sync cycle was completed.
      *
      * @return The difference measured in microseconds, between last sync cycle completion time
@@ -541,6 +581,7 @@ public class ProfileSyncService {
     private native long nativeInit();
     private native void nativeEnableSync(long nativeProfileSyncServiceAndroid);
     private native void nativeDisableSync(long nativeProfileSyncServiceAndroid);
+    private native void nativeFlushDirectory(long nativeProfileSyncServiceAndroid);
     private native void nativeSignInSync(long nativeProfileSyncServiceAndroid);
     private native void nativeSignOutSync(long nativeProfileSyncServiceAndroid);
     private native boolean nativeSetSyncSessionsId(
@@ -549,6 +590,7 @@ public class ProfileSyncService {
     private native int nativeGetAuthError(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsSyncInitialized(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsFirstSetupInProgress(long nativeProfileSyncServiceAndroid);
+    private native boolean nativeIsEncryptEverythingAllowed(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsEncryptEverythingEnabled(long nativeProfileSyncServiceAndroid);
     private native void nativeEnableEncryptEverything(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsPassphraseRequiredForDecryption(
@@ -563,6 +605,7 @@ public class ProfileSyncService {
     private native boolean nativeIsCryptographerReady(long nativeProfileSyncServiceAndroid);
     private native int nativeGetPassphraseType(long nativeProfileSyncServiceAndroid);
     private native boolean nativeHasExplicitPassphraseTime(long nativeProfileSyncServiceAndroid);
+    private native long nativeGetExplicitPassphraseTime(long nativeProfileSyncServiceAndroid);
     private native String nativeGetSyncEnterGooglePassphraseBodyWithDateText(
             long nativeProfileSyncServiceAndroid);
     private native String nativeGetSyncEnterCustomPassphraseBodyWithDateText(
@@ -571,8 +614,7 @@ public class ProfileSyncService {
     private native String nativeGetSyncEnterCustomPassphraseBodyText(
             long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsSyncKeystoreMigrationDone(long nativeProfileSyncServiceAndroid);
-    private native long nativeGetEnabledDataTypes(
-        long nativeProfileSyncServiceAndroid);
+    private native long nativeGetEnabledDataTypes(long nativeProfileSyncServiceAndroid);
     private native void nativeSetPreferredDataTypes(
             long nativeProfileSyncServiceAndroid, boolean syncEverything, long modelTypeSelection);
     private native void nativeSetSetupInProgress(

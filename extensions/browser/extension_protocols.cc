@@ -20,6 +20,7 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/path_service.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -83,10 +84,15 @@ class GeneratedBackgroundPageJob : public net::URLRequestSimpleJob {
   }
 
   // Overridden from URLRequestSimpleJob:
-  virtual int GetData(std::string* mime_type,
-                      std::string* charset,
-                      std::string* data,
-                      const net::CompletionCallback& callback) const OVERRIDE {
+  int GetData(std::string* mime_type,
+              std::string* charset,
+              std::string* data,
+              const net::CompletionCallback& callback) const override {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/422489 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "422489 GeneratedBackgroundPageJob::GetData"));
+
     *mime_type = "text/html";
     *charset = "utf-8";
 
@@ -102,12 +108,12 @@ class GeneratedBackgroundPageJob : public net::URLRequestSimpleJob {
     return net::OK;
   }
 
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE {
+  void GetResponseInfo(net::HttpResponseInfo* info) override {
     *info = response_info_;
   }
 
  private:
-  virtual ~GeneratedBackgroundPageJob() {}
+  ~GeneratedBackgroundPageJob() override {}
 
   scoped_refptr<const Extension> extension_;
   net::HttpResponseInfo response_info_;
@@ -192,11 +198,11 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
     }
   }
 
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE {
+  void GetResponseInfo(net::HttpResponseInfo* info) override {
     *info = response_info_;
   }
 
-  virtual void Start() OVERRIDE {
+  void Start() override {
     request_timer_.reset(new base::ElapsedTimer());
     base::FilePath* read_file_path = new base::FilePath;
     base::Time* last_modified_time = new base::Time();
@@ -214,8 +220,11 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
     DCHECK(posted);
   }
 
-  virtual void SetExtraRequestHeaders(
-      const net::HttpRequestHeaders& headers) OVERRIDE {
+  bool IsRedirectResponse(GURL* location, int* http_status_code) override {
+    return false;
+  }
+
+  void SetExtraRequestHeaders(const net::HttpRequestHeaders& headers) override {
     // TODO(asargent) - we'll need to add proper support for range headers.
     // crbug.com/369895.
     std::string range_header;
@@ -226,7 +235,7 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
     URLRequestFileJob::SetExtraRequestHeaders(headers);
   }
 
-  virtual void OnSeekComplete(int64 result) OVERRIDE {
+  void OnSeekComplete(int64 result) override {
     DCHECK_EQ(seek_position_, 0);
     seek_position_ = result;
     // TODO(asargent) - we'll need to add proper support for range headers.
@@ -235,7 +244,7 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
       verify_job_ = NULL;
   }
 
-  virtual void OnReadComplete(net::IOBuffer* buffer, int result) OVERRIDE {
+  void OnReadComplete(net::IOBuffer* buffer, int result) override {
     if (result >= 0)
       UMA_HISTOGRAM_COUNTS("ExtensionUrlRequest.OnReadCompleteResult", result);
     else
@@ -252,7 +261,7 @@ class URLRequestExtensionJob : public net::URLRequestFileJob {
   }
 
  private:
-  virtual ~URLRequestExtensionJob() {
+  ~URLRequestExtensionJob() override {
     UMA_HISTOGRAM_COUNTS("ExtensionUrlRequest.TotalKbRead", bytes_read_ / 1024);
     UMA_HISTOGRAM_COUNTS("ExtensionUrlRequest.SeekPosition", seek_position_);
     if (request_timer_.get())
@@ -379,11 +388,11 @@ class ExtensionProtocolHandler
                            extensions::InfoMap* extension_info_map)
       : is_incognito_(is_incognito), extension_info_map_(extension_info_map) {}
 
-  virtual ~ExtensionProtocolHandler() {}
+  ~ExtensionProtocolHandler() override {}
 
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
+      net::NetworkDelegate* network_delegate) const override;
 
  private:
   const bool is_incognito_;
@@ -482,26 +491,8 @@ ExtensionProtocolHandler::MaybeCreateJob(
     const Extension* new_extension =
         extension_info_map_->extensions().GetByID(new_extension_id);
 
-    bool first_party_in_import = false;
-    // NB: This first_party_for_cookies call is not for security, it is only
-    // used so an exported extension can limit the visible surface to the
-    // extension that imports it, more or less constituting its API.
-    const std::string& first_party_path =
-        request->first_party_for_cookies().path();
-    if (SharedModuleInfo::IsImportedPath(first_party_path)) {
-      std::string first_party_id;
-      std::string dummy;
-      SharedModuleInfo::ParseImportedPath(first_party_path, &first_party_id,
-                                          &dummy);
-      if (first_party_id == new_extension_id) {
-        first_party_in_import = true;
-      }
-    }
-
     if (SharedModuleInfo::ImportsExtensionById(extension, new_extension_id) &&
-        new_extension &&
-        (first_party_in_import ||
-         SharedModuleInfo::IsExportAllowed(new_extension, new_relative_path))) {
+        new_extension) {
       directory_path = new_extension->path();
       extension_id = new_extension_id;
       relative_path = base::FilePath::FromUTF8Unsafe(new_relative_path);

@@ -33,9 +33,9 @@
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/layer_tree_owner.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/gfx/geometry/vector3d_f.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/vector3d_f.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/window_util.h"
@@ -277,42 +277,35 @@ class CrossFadeObserver : public ui::CompositorObserver,
     window_->AddObserver(this);
     layer_owner_->root()->GetCompositor()->AddObserver(this);
   }
-  virtual ~CrossFadeObserver() {
+  ~CrossFadeObserver() override {
     window_->RemoveObserver(this);
     window_ = NULL;
     layer_owner_->root()->GetCompositor()->RemoveObserver(this);
   }
 
   // ui::CompositorObserver overrides:
-  virtual void OnCompositingDidCommit(ui::Compositor* compositor) OVERRIDE {
-  }
-  virtual void OnCompositingStarted(ui::Compositor* compositor,
-                                    base::TimeTicks start_time) OVERRIDE {
-  }
-  virtual void OnCompositingEnded(ui::Compositor* compositor) OVERRIDE {
-  }
-  virtual void OnCompositingAborted(ui::Compositor* compositor) OVERRIDE {
+  void OnCompositingDidCommit(ui::Compositor* compositor) override {}
+  void OnCompositingStarted(ui::Compositor* compositor,
+                            base::TimeTicks start_time) override {}
+  void OnCompositingEnded(ui::Compositor* compositor) override {}
+  void OnCompositingAborted(ui::Compositor* compositor) override {
     // Triggers OnImplicitAnimationsCompleted() to be called and deletes us.
     layer_owner_->root()->GetAnimator()->StopAnimating();
   }
-  virtual void OnCompositingLockStateChanged(
-      ui::Compositor* compositor) OVERRIDE {
-  }
+  void OnCompositingLockStateChanged(ui::Compositor* compositor) override {}
 
   // aura::WindowObserver overrides:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
+  void OnWindowDestroying(aura::Window* window) override {
     // Triggers OnImplicitAnimationsCompleted() to be called and deletes us.
     layer_owner_->root()->GetAnimator()->StopAnimating();
   }
-  virtual void OnWindowRemovingFromRootWindow(aura::Window* window,
-                                              aura::Window* new_root) OVERRIDE {
+  void OnWindowRemovingFromRootWindow(aura::Window* window,
+                                      aura::Window* new_root) override {
     layer_owner_->root()->GetAnimator()->StopAnimating();
   }
 
   // ui::ImplicitAnimationObserver overrides:
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE {
-    delete this;
-  }
+  void OnImplicitAnimationsCompleted() override { delete this; }
 
  private:
   aura::Window* window_;  // not owned

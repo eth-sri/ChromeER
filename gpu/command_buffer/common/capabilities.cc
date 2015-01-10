@@ -19,7 +19,9 @@ Capabilities::Capabilities()
       discard_framebuffer(false),
       sync_query(false),
       image(false),
-      future_sync_points(false) {
+      future_sync_points(false),
+      blend_equation_advanced(false),
+      blend_equation_advanced_coherent(false) {
 }
 
 }  // namespace gpu

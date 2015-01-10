@@ -9,22 +9,20 @@
 #include "base/i18n/rtl.h"
 #include "base/memory/singleton.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
-#include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
-#include "chrome/browser/ui/app_modal_dialogs/javascript_app_modal_dialog.h"
-#include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
-#include "chrome/common/chrome_constants.h"
-#include "chrome/grit/generated_resources.h"
+#include "components/app_modal_dialogs/app_modal_dialog.h"
+#include "components/app_modal_dialogs/app_modal_dialog_queue.h"
+#include "components/app_modal_dialogs/javascript_app_modal_dialog.h"
+#include "components/app_modal_dialogs/native_app_modal_dialog.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/javascript_message_type.h"
+#include "grit/components_strings.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(ENABLE_EXTENSIONS)
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/common/extension.h"
 #endif  // defined(ENABLE_EXTENSIONS)
 
 using content::BrowserContext;
@@ -41,8 +39,7 @@ namespace {
 // Returns the ProcessManager for the browser context from |web_contents|.
 extensions::ProcessManager* GetExtensionsProcessManager(
     WebContents* web_contents) {
-  return extensions::ExtensionSystem::Get(
-      web_contents->GetBrowserContext())->process_manager();
+  return extensions::ProcessManager::Get(web_contents->GetBrowserContext());
 }
 
 // Returns the extension associated with |web_contents| or NULL if there is no
@@ -88,37 +85,33 @@ class ChromeJavaScriptDialogManager : public JavaScriptDialogManager {
  public:
   static ChromeJavaScriptDialogManager* GetInstance();
 
-  virtual void RunJavaScriptDialog(
-      WebContents* web_contents,
-      const GURL& origin_url,
-      const std::string& accept_lang,
-      content::JavaScriptMessageType message_type,
-      const base::string16& message_text,
-      const base::string16& default_prompt_text,
-      const DialogClosedCallback& callback,
-      bool* did_suppress_message) OVERRIDE;
+  void RunJavaScriptDialog(WebContents* web_contents,
+                           const GURL& origin_url,
+                           const std::string& accept_lang,
+                           content::JavaScriptMessageType message_type,
+                           const base::string16& message_text,
+                           const base::string16& default_prompt_text,
+                           const DialogClosedCallback& callback,
+                           bool* did_suppress_message) override;
 
-  virtual void RunBeforeUnloadDialog(
-      WebContents* web_contents,
-      const base::string16& message_text,
-      bool is_reload,
-      const DialogClosedCallback& callback) OVERRIDE;
+  void RunBeforeUnloadDialog(WebContents* web_contents,
+                             const base::string16& message_text,
+                             bool is_reload,
+                             const DialogClosedCallback& callback) override;
 
-  virtual bool HandleJavaScriptDialog(
-      WebContents* web_contents,
-      bool accept,
-      const base::string16* prompt_override) OVERRIDE;
+  bool HandleJavaScriptDialog(WebContents* web_contents,
+                              bool accept,
+                              const base::string16* prompt_override) override;
 
-  virtual void CancelActiveAndPendingDialogs(
-      WebContents* web_contents) OVERRIDE;
+  void CancelActiveAndPendingDialogs(WebContents* web_contents) override;
 
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  void WebContentsDestroyed(WebContents* web_contents) override;
 
  private:
   friend struct DefaultSingletonTraits<ChromeJavaScriptDialogManager>;
 
   ChromeJavaScriptDialogManager();
-  virtual ~ChromeJavaScriptDialogManager();
+  ~ChromeJavaScriptDialogManager() override;
 
   base::string16 GetTitle(WebContents* web_contents,
                           const GURL& origin_url,
@@ -175,11 +168,14 @@ void ChromeJavaScriptDialogManager::RunJavaScriptDialog(
   base::TimeDelta time_since_last_message = base::TimeTicks::Now() -
       extra_data->last_javascript_message_dismissal_;
   bool display_suppress_checkbox = false;
-  // Show a checkbox offering to suppress further messages if this message is
-  // being displayed within kJavaScriptMessageExpectedDelay of the last one.
+  // If a WebContents is impolite and displays a second JavaScript
+  // alert within kJavaScriptMessageExpectedDelay of a previous
+  // JavaScript alert being dismissed, show a checkbox offering to
+  // suppress future alerts from this WebContents.
+  const int kJavaScriptMessageExpectedDelay = 1000;
+
   if (time_since_last_message <
-      base::TimeDelta::FromMilliseconds(
-          chrome::kJavaScriptMessageExpectedDelay)) {
+      base::TimeDelta::FromMilliseconds(kJavaScriptMessageExpectedDelay)) {
     display_suppress_checkbox = true;
   } else {
     display_suppress_checkbox = false;

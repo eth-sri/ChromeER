@@ -33,10 +33,12 @@ class ExtensionResourcesJob : public net::URLRequestFileJob {
                     base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)),
         weak_ptr_factory_(this) {}
 
-  virtual void Start() OVERRIDE;
+  void Start() override;
+
+  bool IsRedirectResponse(GURL* location, int* http_status_code) override;
 
  protected:
-  virtual ~ExtensionResourcesJob() {}
+  ~ExtensionResourcesJob() override {}
 
   void ResolvePathDone(const base::FilePath& resolved_path);
 
@@ -57,6 +59,11 @@ void ExtensionResourcesJob::Start() {
           weak_ptr_factory_.GetWeakPtr()));
 }
 
+bool ExtensionResourcesJob::IsRedirectResponse(GURL* location,
+                                               int* http_status_code) {
+  return false;
+}
+
 void ExtensionResourcesJob::ResolvePathDone(
     const base::FilePath& resolved_path) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -68,11 +75,11 @@ class ExtensionResourceProtocolHandler
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
   ExtensionResourceProtocolHandler() {}
-  virtual ~ExtensionResourceProtocolHandler() {}
+  ~ExtensionResourceProtocolHandler() override {}
 
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
+      net::NetworkDelegate* network_delegate) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ExtensionResourceProtocolHandler);

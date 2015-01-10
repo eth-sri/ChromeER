@@ -15,7 +15,9 @@
 
 #include <android/log.h>
 #include <crazy_linker.h>
+#include <fcntl.h>
 #include <jni.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -574,6 +576,66 @@ jlong GetRandomBaseLoadAddress(JNIEnv* env, jclass clazz, jlong bytes) {
   return static_cast<jlong>(reinterpret_cast<uintptr_t>(address));
 }
 
+// Check whether the device supports loading a library directly from the APK
+// file.
+//
+// |env| is the current JNI environment handle.
+// |clazz| is the static class handle which is not used here.
+// |apkfile_name| is the filename of the APK.
+// Returns true if supported.
+jboolean CheckLibraryLoadFromApkSupport(JNIEnv* env, jclass clazz,
+                                        jstring apkfile_name) {
+  String apkfile_name_str(env, apkfile_name);
+  const char* apkfile_name_c_str = apkfile_name_str.c_str();
+
+  int fd = open(apkfile_name_c_str, O_RDONLY);
+  if (fd == -1) {
+    LOG_ERROR("%s: Failed to open %s\n", __FUNCTION__, apkfile_name_c_str);
+    return false;
+  }
+
+  LOG_INFO(
+      "%s: Memory mapping the first page of %s with executable permissions\n",
+      __FUNCTION__, apkfile_name_c_str);
+  void* address = mmap(NULL, PAGE_SIZE, PROT_EXEC, MAP_PRIVATE, fd, 0);
+
+  jboolean status;
+  if (address == MAP_FAILED) {
+    status = false;
+  } else {
+    status = true;
+    munmap(address, PAGE_SIZE);
+  }
+
+  close(fd);
+
+  LOG_INFO("%s: %s\n", __FUNCTION__, status ? "Supported" : "NOT supported");
+  return status;
+}
+
+// Check whether a library is page aligned in the APK file.
+//
+// |env| is the current JNI environment handle.
+// |clazz| is the static class handle which is not used here.
+// |apkfile_name| is the filename of the APK.
+// |library_name| is the library base name.
+// Returns true if page aligned.
+jboolean CheckLibraryAlignedInApk(JNIEnv* env, jclass clazz,
+                                  jstring apkfile_name, jstring library_name) {
+  String apkfile_name_str(env, apkfile_name);
+  const char* apkfile_name_c_str = apkfile_name_str.c_str();
+  String library_name_str(env, library_name);
+  const char* library_name_c_str = library_name_str.c_str();
+
+  LOG_INFO("%s: Checking if %s is page-aligned in %s\n", __FUNCTION__,
+           library_name_c_str, apkfile_name_c_str);
+  jboolean aligned = crazy_linker_check_library_aligned_in_zip_file(
+      apkfile_name_c_str, library_name_c_str) == CRAZY_STATUS_SUCCESS;
+  LOG_INFO("%s: %s\n", __FUNCTION__, aligned ? "Aligned" : "NOT aligned");
+
+  return aligned;
+}
+
 const JNINativeMethod kNativeMethods[] = {
     {"nativeLoadLibrary",
      "("
@@ -623,7 +685,20 @@ const JNINativeMethod kNativeMethods[] = {
      "J"
      ")"
      "J",
-     reinterpret_cast<void*>(&GetRandomBaseLoadAddress)}, };
+     reinterpret_cast<void*>(&GetRandomBaseLoadAddress)},
+     {"nativeCheckLibraryLoadFromApkSupport",
+      "("
+      "Ljava/lang/String;"
+      ")"
+      "Z",
+      reinterpret_cast<void*>(&CheckLibraryLoadFromApkSupport)},
+     {"nativeCheckLibraryAlignedInApk",
+      "("
+      "Ljava/lang/String;"
+      "Ljava/lang/String;"
+      ")"
+      "Z",
+      reinterpret_cast<void*>(&CheckLibraryAlignedInApk)}, };
 
 }  // namespace
 

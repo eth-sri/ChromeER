@@ -254,6 +254,9 @@ BASE_EXPORT bool IsStringASCII(const StringPiece16& str);
 // A convenience adaptor for WebStrings, as they don't convert into
 // StringPieces directly.
 BASE_EXPORT bool IsStringASCII(const string16& str);
+#if defined(WCHAR_T_IS_UTF32)
+BASE_EXPORT bool IsStringASCII(const std::wstring& str);
+#endif
 
 // Converts the elements of the given string.  This version uses a pointer to
 // clearly differentiate it from the non-pointer variant.
@@ -358,14 +361,14 @@ inline bool IsHexDigit(Char c) {
 }
 
 template <typename Char>
-inline Char HexDigitToInt(Char c) {
+inline char HexDigitToInt(Char c) {
   DCHECK(IsHexDigit(c));
   if (c >= '0' && c <= '9')
-    return c - '0';
+    return static_cast<char>(c - '0');
   if (c >= 'A' && c <= 'F')
-    return c - 'A' + 10;
+    return static_cast<char>(c - 'A' + 10);
   if (c >= 'a' && c <= 'f')
-    return c - 'a' + 10;
+    return static_cast<char>(c - 'a' + 10);
   return 0;
 }
 

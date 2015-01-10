@@ -19,7 +19,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "build/build_config.h"
 #include "crypto/nss_util.h"
@@ -152,19 +151,19 @@ class HostProcess
               int* exit_code_out);
 
   // ConfigWatcher::Delegate interface.
-  virtual void OnConfigUpdated(const std::string& serialized_config) OVERRIDE;
-  virtual void OnConfigWatcherError() OVERRIDE;
+  void OnConfigUpdated(const std::string& serialized_config) override;
+  void OnConfigWatcherError() override;
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelError() override;
 
   // HeartbeatSender::Listener overrides.
-  virtual void OnHeartbeatSuccessful() OVERRIDE;
-  virtual void OnUnknownHostIdError() OVERRIDE;
+  void OnHeartbeatSuccessful() override;
+  void OnUnknownHostIdError() override;
 
   // HostChangeNotificationListener::Listener overrides.
-  virtual void OnHostDeleted() OVERRIDE;
+  void OnHostDeleted() override;
 
   // Initializes the pairing registry on Windows.
   void OnInitializePairingRegistry(
@@ -204,7 +203,7 @@ class HostProcess
   };
 
   friend class base::RefCountedThreadSafe<HostProcess>;
-  virtual ~HostProcess();
+  ~HostProcess() override;
 
   void StartOnNetworkThread();
 
@@ -259,6 +258,8 @@ class HostProcess
   void ScheduleHostShutdown();
 
   void ShutdownOnNetworkThread();
+
+  void OnPolicyWatcherShutdown();
 
   // Crashes the process in response to a daemon's request. The daemon passes
   // the location of the code that detected the fatal error resulted in this
@@ -524,8 +525,8 @@ void HostProcess::OnConfigUpdated(
     // already loaded so PolicyWatcher has to be started here. Separate policy
     // loading from policy verifications and move |policy_watcher_|
     // initialization to StartOnNetworkThread().
-    policy_watcher_.reset(
-        policy_hack::PolicyWatcher::Create(context_->file_task_runner()));
+    policy_watcher_ = policy_hack::PolicyWatcher::Create(
+        nullptr, context_->network_task_runner());
     policy_watcher_->StartWatching(
         base::Bind(&HostProcess::OnPolicyUpdate, base::Unretained(this)));
   } else {
@@ -1411,22 +1412,23 @@ void HostProcess::ShutdownOnNetworkThread() {
     state_ = HOST_STOPPED;
 
     if (policy_watcher_.get()) {
-      base::WaitableEvent done_event(true, false);
-      policy_watcher_->StopWatching(&done_event);
-      done_event.Wait();
-      policy_watcher_.reset();
+      policy_watcher_->StopWatching(
+          base::Bind(&HostProcess::OnPolicyWatcherShutdown, this));
+    } else {
+      OnPolicyWatcherShutdown();
     }
-
-    config_watcher_.reset();
-
-    // Complete the rest of shutdown on the main thread.
-    context_->ui_task_runner()->PostTask(
-        FROM_HERE,
-        base::Bind(&HostProcess::ShutdownOnUiThread, this));
   } else {
     // This method is only called in STOPPING_TO_RESTART and STOPPING states.
     NOTREACHED();
   }
+}
+
+void HostProcess::OnPolicyWatcherShutdown() {
+  policy_watcher_.reset();
+
+  // Complete the rest of shutdown on the main thread.
+  context_->ui_task_runner()->PostTask(
+      FROM_HERE, base::Bind(&HostProcess::ShutdownOnUiThread, this));
 }
 
 void HostProcess::OnCrash(const std::string& function_name,

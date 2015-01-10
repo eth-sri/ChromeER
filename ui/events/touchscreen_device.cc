@@ -4,15 +4,20 @@
 
 #include "ui/events/touchscreen_device.h"
 
+#include <string>
+
+#include "ui/events/input_device.h"
+
 namespace ui {
 
-// static
-const int TouchscreenDevice::kInvalidId = 0;
+TouchscreenDevice::TouchscreenDevice() {
+}
 
-TouchscreenDevice::TouchscreenDevice(int id,
-                                     const gfx::Size& size,
-                                     bool is_internal)
-    : id(id), size(size), is_internal(is_internal) {
+TouchscreenDevice::TouchscreenDevice(unsigned int id,
+                                     InputDeviceType type,
+                                     const std::string& name,
+                                     const gfx::Size& size)
+    : InputDevice(id, type, name), size(size) {
 }
 
 }  // namespace ui

@@ -12,7 +12,7 @@ class FileSystemProviderApiTest : public ExtensionApiTest {
       : current_channel_(chrome::VersionInfo::CHANNEL_DEV) {}
 
   // Loads a helper testing extension.
-  virtual void SetUpOnMainThread() OVERRIDE {
+  virtual void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
     const extensions::Extension* extension = LoadExtensionWithFlags(
         test_data_dir_.AppendASCII("file_system_provider/test_util"),
@@ -130,5 +130,8 @@ IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, Thumbnail) {
                                           kFlagLoadAsComponent))
       << message_;
 }
+
+// TODO(mtomasz): Add a test for Notify() once it's wired to
+// chrome.fileManagerPrivate.
 
 }  // namespace extensions

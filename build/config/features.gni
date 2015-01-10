@@ -36,6 +36,9 @@ declare_args() {
   #enable_webrtc = !is_ios  TODO(GYP) use this condition when WebRTC works in
   #                         the GN build.
   enable_webrtc = false
+
+  # Enables proprietary codecs and demuxers; e.g. H264, MOV, AAC, and MP3.
+  proprietary_codecs = false
 }
 
 # Additional dependent variables -----------------------------------------------
@@ -123,7 +126,7 @@ enable_task_manager = !is_ios && !is_android
 
 use_cups = is_desktop_linux || is_mac
 
-enable_themes = !is_android && !is_chromeos
+enable_themes = !is_android && !is_ios
 
 # TODO(scottmg) remove this when we've fixed printing.
 win_pdf_metafile_for_printing = true

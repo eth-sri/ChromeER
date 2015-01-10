@@ -393,6 +393,8 @@ TEST(StringUtilTest, IsStringASCII) {
       '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'A',
       'B', 'C', 'D', 'E', 'F', '0', '1', '2', '3', '4', '5', '6',
       '7', '8', '9', '0', 'A', 'B', 'C', 'D', 'E', 'F', 0 };
+  static std::wstring wchar_ascii(
+      L"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
 
   // Test a variety of the fragment start positions and lengths in order to make
   // sure that bit masking in IsStringASCII works correctly.
@@ -433,10 +435,33 @@ TEST(StringUtilTest, IsStringASCII) {
       }
     }
   }
+
+  {
+    const size_t string_length = wchar_ascii.length();
+    for (size_t len = 0; len < string_length; ++len) {
+      EXPECT_TRUE(IsStringASCII(wchar_ascii.substr(0, len)));
+      for (size_t char_pos = 0; char_pos < len; ++char_pos) {
+        wchar_ascii[char_pos] |= 0x80;
+        EXPECT_FALSE(
+            IsStringASCII(wchar_ascii.substr(0, len)));
+        wchar_ascii[char_pos] &= ~0x80;
+        wchar_ascii[char_pos] |= 0x100;
+        EXPECT_FALSE(
+            IsStringASCII(wchar_ascii.substr(0, len)));
+        wchar_ascii[char_pos] &= ~0x100;
+#if defined(WCHAR_T_IS_UTF32)
+        wchar_ascii[char_pos] |= 0x10000;
+        EXPECT_FALSE(
+            IsStringASCII(wchar_ascii.substr(0, len)));
+        wchar_ascii[char_pos] &= ~0x10000;
+#endif  // WCHAR_T_IS_UTF32
+      }
+    }
+  }
 }
 
 TEST(StringUtilTest, ConvertASCII) {
-  static const char* char_cases[] = {
+  static const char* const char_cases[] = {
     "Google Video",
     "Hello, world\n",
     "0123ABCDwxyz \a\b\t\r\n!+,.~"
@@ -514,7 +539,7 @@ TEST(StringUtilTest, LowerCaseEqualsASCII) {
     { "FOO", "foo" },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(lowercase_cases); ++i) {
+  for (size_t i = 0; i < arraysize(lowercase_cases); ++i) {
     EXPECT_TRUE(LowerCaseEqualsASCII(ASCIIToUTF16(lowercase_cases[i].src_a),
                                      lowercase_cases[i].dst));
     EXPECT_TRUE(LowerCaseEqualsASCII(lowercase_cases[i].src_a,
@@ -541,7 +566,7 @@ TEST(StringUtilTest, FormatBytesUnlocalized) {
     {99LL*1024*1024*1024, "99.0 GB"},
     {105LL*1024*1024*1024, "105 GB"},
     {105LL*1024*1024*1024 + 500LL*1024*1024, "105 GB"},
-    {~(1LL<<63), "8192 PB"},
+    {~(1LL << 63), "8192 PB"},
 
     {99*1024 + 103, "99.1 kB"},
     {1024*1024 + 103, "1.0 MB"},
@@ -551,7 +576,7 @@ TEST(StringUtilTest, FormatBytesUnlocalized) {
     {100LL*1024*1024*1024, "100 GB"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     EXPECT_EQ(ASCIIToUTF16(cases[i].expected),
               FormatBytesUnlocalized(cases[i].bytes));
   }
@@ -578,7 +603,7 @@ TEST(StringUtilTest, ReplaceSubstringsAfterOffset) {
     {"abababab", 2, "ab", "c", "abccc"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
+  for (size_t i = 0; i < arraysize(cases); i++) {
     string16 str = ASCIIToUTF16(cases[i].str);
     ReplaceSubstringsAfterOffset(&str, cases[i].start_offset,
                                  ASCIIToUTF16(cases[i].find_this),
@@ -608,7 +633,7 @@ TEST(StringUtilTest, ReplaceFirstSubstringAfterOffset) {
     {"abababab", 2, "ab", "c", "abcabab"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
+  for (size_t i = 0; i < arraysize(cases); i++) {
     string16 str = ASCIIToUTF16(cases[i].str);
     ReplaceFirstSubstringAfterOffset(&str, cases[i].start_offset,
                                      ASCIIToUTF16(cases[i].find_this),
@@ -1123,12 +1148,12 @@ TEST(StringUtilTest, WprintfFormatPortabilityTest) {
     { L"% 10s", false },
     { L"% 10ls", true }
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i)
+  for (size_t i = 0; i < arraysize(cases); ++i)
     EXPECT_EQ(cases[i].portable, base::IsWprintfFormatPortable(cases[i].input));
 }
 
 TEST(StringUtilTest, RemoveChars) {
-  const char* kRemoveChars = "-/+*";
+  const char kRemoveChars[] = "-/+*";
   std::string input = "A-+bc/d!*";
   EXPECT_TRUE(RemoveChars(input, kRemoveChars, &input));
   EXPECT_EQ("Abcd!", input);
@@ -1166,7 +1191,7 @@ TEST(StringUtilTest, ReplaceChars) {
     { "test", "t", "test", "testestest", true },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     std::string output;
     bool result = ReplaceChars(cases[i].input,
                                cases[i].replace_chars,

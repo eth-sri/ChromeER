@@ -712,22 +712,6 @@ GLuint GLES2GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
   return gles2::GetGLContext()->GetMaxValueInBufferCHROMIUM(
       buffer_id, count, type, offset);
 }
-void GLES2GenSharedIdsCHROMIUM(GLuint namespace_id,
-                               GLuint id_offset,
-                               GLsizei n,
-                               GLuint* ids) {
-  gles2::GetGLContext()->GenSharedIdsCHROMIUM(namespace_id, id_offset, n, ids);
-}
-void GLES2DeleteSharedIdsCHROMIUM(GLuint namespace_id,
-                                  GLsizei n,
-                                  const GLuint* ids) {
-  gles2::GetGLContext()->DeleteSharedIdsCHROMIUM(namespace_id, n, ids);
-}
-void GLES2RegisterSharedIdsCHROMIUM(GLuint namespace_id,
-                                    GLsizei n,
-                                    const GLuint* ids) {
-  gles2::GetGLContext()->RegisterSharedIdsCHROMIUM(namespace_id, n, ids);
-}
 GLboolean GLES2EnableFeatureCHROMIUM(const char* feature) {
   return gles2::GetGLContext()->EnableFeatureCHROMIUM(feature);
 }
@@ -736,12 +720,6 @@ void* GLES2MapBufferCHROMIUM(GLuint target, GLenum access) {
 }
 GLboolean GLES2UnmapBufferCHROMIUM(GLuint target) {
   return gles2::GetGLContext()->UnmapBufferCHROMIUM(target);
-}
-void* GLES2MapImageCHROMIUM(GLuint image_id) {
-  return gles2::GetGLContext()->MapImageCHROMIUM(image_id);
-}
-void GLES2UnmapImageCHROMIUM(GLuint image_id) {
-  gles2::GetGLContext()->UnmapImageCHROMIUM(image_id);
 }
 void* GLES2MapBufferSubDataCHROMIUM(GLuint target,
                                     GLintptr offset,
@@ -796,20 +774,22 @@ void GLES2GetProgramInfoCHROMIUM(GLuint program,
 GLuint GLES2CreateStreamTextureCHROMIUM(GLuint texture) {
   return gles2::GetGLContext()->CreateStreamTextureCHROMIUM(texture);
 }
-GLuint GLES2CreateImageCHROMIUM(GLsizei width,
+GLuint GLES2CreateImageCHROMIUM(ClientBuffer buffer,
+                                GLsizei width,
                                 GLsizei height,
-                                GLenum internalformat,
-                                GLenum usage) {
+                                GLenum internalformat) {
   return gles2::GetGLContext()->CreateImageCHROMIUM(
-      width, height, internalformat, usage);
+      buffer, width, height, internalformat);
 }
 void GLES2DestroyImageCHROMIUM(GLuint image_id) {
   gles2::GetGLContext()->DestroyImageCHROMIUM(image_id);
 }
-void GLES2GetImageParameterivCHROMIUM(GLuint image_id,
-                                      GLenum pname,
-                                      GLint* params) {
-  gles2::GetGLContext()->GetImageParameterivCHROMIUM(image_id, pname, params);
+GLuint GLES2CreateGpuMemoryBufferImageCHROMIUM(GLsizei width,
+                                               GLsizei height,
+                                               GLenum internalformat,
+                                               GLenum usage) {
+  return gles2::GetGLContext()->CreateGpuMemoryBufferImageCHROMIUM(
+      width, height, internalformat, usage);
 }
 void GLES2GetTranslatedShaderSourceANGLE(GLuint shader,
                                          GLsizei bufsize,
@@ -977,6 +957,9 @@ void GLES2MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) {
 }
 void GLES2MatrixLoadIdentityCHROMIUM(GLenum matrixMode) {
   gles2::GetGLContext()->MatrixLoadIdentityCHROMIUM(matrixMode);
+}
+void GLES2BlendBarrierKHR() {
+  gles2::GetGLContext()->BlendBarrierKHR();
 }
 
 namespace gles2 {
@@ -1647,18 +1630,6 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetMaxValueInBufferCHROMIUM),
     },
     {
-     "glGenSharedIdsCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glGenSharedIdsCHROMIUM),
-    },
-    {
-     "glDeleteSharedIdsCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glDeleteSharedIdsCHROMIUM),
-    },
-    {
-     "glRegisterSharedIdsCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glRegisterSharedIdsCHROMIUM),
-    },
-    {
      "glEnableFeatureCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glEnableFeatureCHROMIUM),
     },
@@ -1669,14 +1640,6 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
      "glUnmapBufferCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glUnmapBufferCHROMIUM),
-    },
-    {
-     "glMapImageCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glMapImageCHROMIUM),
-    },
-    {
-     "glUnmapImageCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glUnmapImageCHROMIUM),
     },
     {
      "glMapBufferSubDataCHROMIUM",
@@ -1732,8 +1695,9 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glDestroyImageCHROMIUM),
     },
     {
-     "glGetImageParameterivCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glGetImageParameterivCHROMIUM),
+     "glCreateGpuMemoryBufferImageCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(
+         glCreateGpuMemoryBufferImageCHROMIUM),
     },
     {
      "glGetTranslatedShaderSourceANGLE",
@@ -1854,6 +1818,10 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
      "glMatrixLoadIdentityCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glMatrixLoadIdentityCHROMIUM),
+    },
+    {
+     "glBlendBarrierKHR",
+     reinterpret_cast<GLES2FunctionPointer>(glBlendBarrierKHR),
     },
     {
      NULL,

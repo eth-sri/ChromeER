@@ -17,9 +17,6 @@
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/dom_distiller/tab_utils.h"
-#include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/platform_util.h"
@@ -53,14 +50,11 @@
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/browser/upgrade_detector.h"
-#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/content_restriction.h"
-#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
@@ -76,6 +70,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/page_state.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -88,6 +83,12 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/api/commands/command_service.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
+#include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
+#include "chrome/browser/web_applications/web_app.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -130,12 +131,12 @@ bool CanBookmarkCurrentPageInternal(const Browser* browser,
            !chrome::ShouldRemoveBookmarkThisPageUI(browser->profile()));
 }
 
+#if defined(ENABLE_EXTENSIONS)
 bool GetBookmarkOverrideCommand(
     Profile* profile,
     const extensions::Extension** extension,
     extensions::Command* command,
     extensions::CommandService::ExtensionCommandType* command_type) {
-#if defined(ENABLE_EXTENSIONS)
   DCHECK(extension);
   DCHECK(command);
   DCHECK(command_type);
@@ -164,10 +165,9 @@ bool GetBookmarkOverrideCommand(
       return true;
     }
   }
-#endif
-
   return false;
 }
+#endif
 
 void BookmarkCurrentPageInternal(Browser* browser) {
   content::RecordAction(UserMetricsAction("Star"));
@@ -745,6 +745,7 @@ void Exit() {
 void BookmarkCurrentPage(Browser* browser) {
   DCHECK(!chrome::ShouldRemoveBookmarkThisPageUI(browser->profile()));
 
+#if defined(ENABLE_EXTENSIONS)
   const extensions::Extension* extension = NULL;
   extensions::Command command;
   extensions::CommandService::ExtensionCommandType command_type;
@@ -766,6 +767,7 @@ void BookmarkCurrentPage(Browser* browser) {
     }
     return;
   }
+#endif
 
   BookmarkCurrentPageInternal(browser);
 }
@@ -813,13 +815,13 @@ void ManagePasswordsForPage(Browser* browser) {
   chrome::ShowManagePasswordsBubble(web_contents);
 }
 
-void TogglePagePinnedToStartScreen(Browser* browser) {
 #if defined(OS_WIN)
+void TogglePagePinnedToStartScreen(Browser* browser) {
   MetroPinTabHelper::FromWebContents(
       browser->tab_strip_model()->GetActiveWebContents())->
           TogglePinnedToStartScreen();
-#endif
 }
+#endif
 
 void SavePage(Browser* browser) {
   content::RecordAction(UserMetricsAction("SavePage"));
@@ -1131,9 +1133,7 @@ void ToggleRequestTabletSite(Browser* browser) {
   } else {
     entry->SetIsOverridingUserAgent(true);
     chrome::VersionInfo version_info;
-    std::string product;
-    if (version_info.is_valid())
-      product = version_info.ProductNameAndVersionForUserAgent();
+    std::string product = version_info.ProductNameAndVersionForUserAgent();
     current_tab->SetUserAgentOverride(content::BuildUserAgentFromOSAndProduct(
         kOsOverrideForTabletSite, product));
   }
@@ -1244,6 +1244,7 @@ bool CanViewSource(const Browser* browser) {
           CanViewSource();
 }
 
+#if defined(ENABLE_EXTENSIONS)
 void CreateApplicationShortcuts(Browser* browser) {
   content::RecordAction(UserMetricsAction("CreateShortcut"));
   extensions::TabHelper::FromWebContents(
@@ -1291,5 +1292,6 @@ void ConvertTabToAppWindow(Browser* browser,
   contents->GetRenderViewHost()->SyncRendererPrefs();
   app_browser->window()->Show();
 }
+#endif  // defined(ENABLE_EXTENSIONS)
 
 }  // namespace chrome

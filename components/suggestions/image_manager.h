@@ -40,7 +40,7 @@ class ImageManager : public ImageFetcherDelegate {
   ImageManager(scoped_ptr<ImageFetcher> image_fetcher,
                scoped_ptr<leveldb_proto::ProtoDatabase<ImageData> > database,
                const base::FilePath& database_dir);
-  virtual ~ImageManager();
+  ~ImageManager() override;
 
   virtual void Initialize(const SuggestionsProfile& suggestions);
 
@@ -51,7 +51,7 @@ class ImageManager : public ImageFetcherDelegate {
 
  protected:
   // Perform additional tasks when an image has been fetched.
-  virtual void OnImageFetched(const GURL& url, const SkBitmap* bitmap) OVERRIDE;
+  void OnImageFetched(const GURL& url, const SkBitmap* bitmap) override;
 
  private:
   friend class MockImageManager;
@@ -118,11 +118,6 @@ class ImageManager : public ImageFetcherDelegate {
   void LoadEntriesInCache(scoped_ptr<ImageDataVector> entries);
 
   void ServePendingCacheRequests();
-
-  // From SkBitmap to the vector of JPEG-encoded bytes, |dst|. Visible only for
-  // testing.
-  static bool EncodeImage(const SkBitmap& bitmap,
-                          std::vector<unsigned char>* dest);
 
   // Map from URL to image URL. Should be kept up to date when a new
   // SuggestionsProfile is available.

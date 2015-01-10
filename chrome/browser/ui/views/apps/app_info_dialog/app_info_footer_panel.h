@@ -37,7 +37,7 @@ class AppInfoFooterPanel
   AppInfoFooterPanel(gfx::NativeWindow parent_window,
                      Profile* profile,
                      const extensions::Extension* app);
-  virtual ~AppInfoFooterPanel();
+  ~AppInfoFooterPanel() override;
 
  private:
   void CreateButtons();
@@ -48,12 +48,11 @@ class AppInfoFooterPanel
   void UpdatePinButtons();
 
   // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // Overridden from ExtensionUninstallDialog::Delegate:
-  virtual void ExtensionUninstallAccepted() OVERRIDE;
-  virtual void ExtensionUninstallCanceled() OVERRIDE;
+  void ExtensionUninstallAccepted() override;
+  void ExtensionUninstallCanceled() override;
 
   // Create Shortcuts for the app. Must only be called if CanCreateShortcuts()
   // returns true.

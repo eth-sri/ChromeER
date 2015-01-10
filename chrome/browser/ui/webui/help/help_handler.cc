@@ -10,8 +10,11 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/files/file_util.h"
+#include "base/location.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -48,6 +51,7 @@
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chromeos/image_source.h"
 #include "chrome/browser/ui/webui/help/help_utils_chromeos.h"
 #include "chrome/browser/ui/webui/help/version_updater_chromeos.h"
 #include "chromeos/chromeos_switches.h"
@@ -62,6 +66,8 @@ using content::BrowserThread;
 namespace {
 
 #if defined(OS_CHROMEOS)
+
+const char kFCCLabelTextPath[] = "fcc/label.txt";
 
 // Returns message that informs user that for update it's better to
 // connect to a network of one of the allowed types.
@@ -197,7 +203,7 @@ void HelpHandler::GetLocalizedValues(base::DictionaryValue* localized_strings) {
 #endif
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(resources); ++i) {
+  for (size_t i = 0; i < arraysize(resources); ++i) {
     localized_strings->SetString(resources[i].name,
                                  l10n_util::GetStringUTF16(resources[i].ids));
   }
@@ -293,6 +299,12 @@ void HelpHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("promoteUpdater",
       base::Bind(&HelpHandler::PromoteUpdater, base::Unretained(this)));
 #endif
+
+#if defined(OS_CHROMEOS)
+  // Handler for the product label image, which will be shown if available.
+  content::URLDataSource::Add(Profile::FromWebUI(web_ui()),
+                              new chromeos::ImageSource());
+#endif
 }
 
 void HelpHandler::Observe(int type, const content::NotificationSource& source,
@@ -312,7 +324,6 @@ void HelpHandler::Observe(int type, const content::NotificationSource& source,
 // static
 base::string16 HelpHandler::BuildBrowserVersionString() {
   chrome::VersionInfo version_info;
-  DCHECK(version_info.is_valid());
 
   std::string version = version_info.Version();
 
@@ -378,6 +389,10 @@ void HelpHandler::OnPageLoaded(const base::ListValue* args) {
       base::Bind(&HelpHandler::OnCurrentChannel, weak_factory_.GetWeakPtr()));
   version_updater_->GetChannel(false,
       base::Bind(&HelpHandler::OnTargetChannel, weak_factory_.GetWeakPtr()));
+
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&HelpHandler::LoadFCCLabelText, weak_factory_.GetWeakPtr()));
 #endif
 }
 
@@ -557,6 +572,18 @@ void HelpHandler::OnCurrentChannel(const std::string& channel) {
 void HelpHandler::OnTargetChannel(const std::string& channel) {
   web_ui()->CallJavascriptFunction(
       "help.HelpPage.updateTargetChannel", base::StringValue(channel));
+}
+
+void HelpHandler::LoadFCCLabelText() {
+  base::FilePath path(std::string(chrome::kChromeOSAssetPath) +
+                      kFCCLabelTextPath);
+  std::string contents;
+  if (base::ReadFileToString(path, &contents)) {
+    // Remove unnecessary whitespace.
+    base::StringValue label(base::CollapseWhitespaceASCII(contents, true));
+    web_ui()->CallJavascriptFunction("help.HelpPage.setProductLabelText",
+                                     label);
+  }
 }
 
 #endif // defined(OS_CHROMEOS)

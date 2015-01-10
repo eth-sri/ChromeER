@@ -43,10 +43,10 @@ const char kManifestSource[] =
 class LocationBarBrowserTest : public ExtensionBrowserTest {
  public:
   LocationBarBrowserTest() {}
-  virtual ~LocationBarBrowserTest() {}
+  ~LocationBarBrowserTest() override {}
 
  protected:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 
   // Load an extension with a PageAction that sends a message when clicked.
   const extensions::Extension* LoadPageActionExtension(
@@ -167,10 +167,10 @@ IN_PROC_BROWSER_TEST_F(LocationBarBrowserTest,
 class LocationBarBrowserTestWithRedesign : public LocationBarBrowserTest {
  public:
   LocationBarBrowserTestWithRedesign() {}
-  virtual ~LocationBarBrowserTestWithRedesign() {}
+  ~LocationBarBrowserTestWithRedesign() override {}
 
  private:
-  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  void SetUpCommandLine(base::CommandLine* command_line) override;
 
   scoped_ptr<extensions::FeatureSwitch::ScopedOverride> enable_redesign_;
 

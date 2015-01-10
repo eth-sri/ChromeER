@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/auto_enrollment_check_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/controller_pairing_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/device_disabled_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/eula_screen_handler.h"
@@ -72,6 +73,8 @@ const char kLoginJSPath[] = "login.js";
 const char kOobeJSPath[] = "oobe.js";
 const char kKeyboardUtilsJSPath[] = "keyboard_utils.js";
 const char kDemoUserLoginJSPath[] = "demo_user_login.js";
+const char kCustomElementsHTMLPath[] = "custom_elements.html";
+const char kCustomElementsJSPath[] = "custom_elements.js";
 
 // Paths for deferred resource loading.
 const char kEnrollmentHTMLPath[] = "enrollment.html";
@@ -117,8 +120,13 @@ content::WebUIDataSource* CreateOobeUIDataSource(
 
   if (display_type == OobeUI::kOobeDisplay) {
     AddPolymerResourcesPaths(source);
+    source->AddResourcePath(kCustomElementsHTMLPath, IDR_CUSTOM_ELEMENTS_HTML);
+    source->AddResourcePath(kCustomElementsJSPath, IDR_CUSTOM_ELEMENTS_JS);
+
     source->AddResourcePath("Roboto-Thin.ttf", IDR_FONT_ROBOTO_THIN);
     source->AddResourcePath("Roboto-Light.ttf", IDR_FONT_ROBOTO_LIGHT);
+    source->AddResourcePath("Roboto-Regular.ttf", IDR_FONT_ROBOTO_REGULAR);
+    source->AddResourcePath("Roboto-Medium.ttf", IDR_FONT_ROBOTO_MEDIUM);
     source->AddResourcePath("Roboto-Bold.ttf", IDR_FONT_ROBOTO_BOLD);
   }
 
@@ -171,6 +179,7 @@ const char OobeUI::kScreenConfirmPassword[] = "confirm-password";
 const char OobeUI::kScreenFatalError[] = "fatal-error";
 const char OobeUI::kScreenControllerPairing[] = "controller-pairing";
 const char OobeUI::kScreenHostPairing[] = "host-pairing";
+const char OobeUI::kScreenDeviceDisabled[] = "device-disabled";
 
 OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
     : WebUIController(web_ui),
@@ -186,6 +195,10 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
       wrong_hwid_screen_actor_(NULL),
       auto_enrollment_check_screen_actor_(NULL),
       supervised_user_creation_screen_actor_(NULL),
+      app_launch_splash_screen_actor_(NULL),
+      controller_pairing_screen_actor_(NULL),
+      host_pairing_screen_actor_(NULL),
+      device_disabled_screen_actor_(NULL),
       error_screen_handler_(NULL),
       signin_screen_handler_(NULL),
       terms_of_service_screen_actor_(NULL),
@@ -309,6 +322,11 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
     AddScreenHandler(handler);
   }
 
+  DeviceDisabledScreenHandler* device_disabled_screen_handler =
+      new DeviceDisabledScreenHandler;
+  device_disabled_screen_actor_ = device_disabled_screen_handler;
+  AddScreenHandler(device_disabled_screen_handler);
+
   // Initialize KioskAppMenuHandler. Note that it is NOT a screen handler.
   kiosk_app_menu_handler_ = new KioskAppMenuHandler(network_state_informer_);
   web_ui->AddMessageHandler(kiosk_app_menu_handler_);
@@ -398,6 +416,10 @@ HostPairingScreenActor* OobeUI::GetHostPairingScreenActor() {
   return host_pairing_screen_actor_;
 }
 
+DeviceDisabledScreenActor* OobeUI::GetDeviceDisabledScreenActor() {
+  return device_disabled_screen_actor_;
+}
+
 UserImageScreenActor* OobeUI::GetUserImageScreenActor() {
   return user_image_screen_actor_;
 }
@@ -473,6 +495,7 @@ void OobeUI::InitializeScreenMaps() {
   screen_names_[SCREEN_FATAL_ERROR] = kScreenFatalError;
   screen_names_[SCREEN_OOBE_CONTROLLER_PAIRING] = kScreenControllerPairing;
   screen_names_[SCREEN_OOBE_HOST_PAIRING] = kScreenHostPairing;
+  screen_names_[SCREEN_DEVICE_DISABLED] = kScreenDeviceDisabled;
 
   screen_ids_.clear();
   for (size_t i = 0; i < screen_names_.size(); ++i)

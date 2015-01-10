@@ -47,15 +47,21 @@ class MostVisitedSites : public ProfileSyncServiceObserver,
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+                       const content::NotificationDetails& details) override;
 
   // ProfileSyncServiceObserver implementation.
-  virtual void OnStateChanged() OVERRIDE;
+  virtual void OnStateChanged() override;
 
   // Registers JNI methods.
   static bool Register(JNIEnv* env);
 
  private:
+  // The source of the Most Visited sites.
+  enum MostVisitedSource {
+    TOP_SITES,
+    SUGGESTIONS_SERVICE
+  };
+
   virtual ~MostVisitedSites();
   void QueryMostVisitedURLs();
 
@@ -119,17 +125,12 @@ class MostVisitedSites : public ProfileSyncServiceObserver,
   // Copy of the server suggestions (if enabled). Used for logging.
   suggestions::SuggestionsProfile server_suggestions_;
 
-  // For callbacks may be run after destruction.
-  base::WeakPtrFactory<MostVisitedSites> weak_ptr_factory_;
-
   content::NotificationRegistrar registrar_;
 
-  // The source of the Most Visited sites.
-  enum MostVisitedSource {
-    TOP_SITES,
-    SUGGESTIONS_SERVICE
-  };
   MostVisitedSource mv_source_;
+
+  // For callbacks may be run after destruction.
+  base::WeakPtrFactory<MostVisitedSites> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MostVisitedSites);
 };

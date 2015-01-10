@@ -68,7 +68,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/base/android/window_android.h"
 #include "ui/base/android/window_android_compositor.h"
-#include "ui/events/gesture_detection/gesture_config_helper.h"
+#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 #include "ui/events/gesture_detection/motion_event.h"
 #include "ui/gfx/android/device_display_info.h"
 #include "ui/gfx/android/java_bitmap.h"
@@ -310,6 +310,8 @@ bool RenderWidgetHostViewAndroid::OnMessageReceived(
                         OnDidChangeBodyBackgroundColor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetNeedsBeginFrame,
                         OnSetNeedsBeginFrame)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
+                        OnTextInputStateChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SmartClipDataExtracted,
                         OnSmartClipDataExtracted)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -418,7 +420,7 @@ void RenderWidgetHostViewAndroid::GetScaledContentBitmap(
 
 scoped_refptr<cc::DelegatedRendererLayer>
 RenderWidgetHostViewAndroid::CreateDelegatedLayerForFrameProvider() const {
-  DCHECK(frame_provider_);
+  DCHECK(frame_provider_.get());
 
   scoped_refptr<cc::DelegatedRendererLayer> delegated_layer =
       cc::DelegatedRendererLayer::Create(frame_provider_);
@@ -432,7 +434,7 @@ RenderWidgetHostViewAndroid::CreateDelegatedLayerForFrameProvider() const {
 bool RenderWidgetHostViewAndroid::HasValidFrame() const {
   if (!content_view_core_)
     return false;
-  if (!layer_)
+  if (!layer_.get())
     return false;
 
   if (texture_size_in_layer_.IsEmpty())
@@ -504,7 +506,7 @@ void RenderWidgetHostViewAndroid::Show() {
     return;
 
   is_showing_ = true;
-  if (layer_)
+  if (layer_.get())
     layer_->SetHideLayerAndSubtree(false);
 
   frame_evictor_->SetVisible(true);
@@ -516,7 +518,7 @@ void RenderWidgetHostViewAndroid::Hide() {
     return;
 
   is_showing_ = false;
-  if (layer_ && locks_on_frame_count_ == 0)
+  if (layer_.get() && locks_on_frame_count_ == 0)
     layer_->SetHideLayerAndSubtree(true);
 
   frame_evictor_->SetVisible(false);
@@ -556,7 +558,7 @@ void RenderWidgetHostViewAndroid::UnlockCompositingSurface() {
       last_frame_info_.reset();
     }
 
-    if (!is_showing_ && layer_)
+    if (!is_showing_ && layer_.get())
       layer_->SetHideLayerAndSubtree(true);
   }
 }
@@ -620,11 +622,19 @@ void RenderWidgetHostViewAndroid::SetIsLoading(bool is_loading) {
   // is TabContentsDelegate.
 }
 
+void RenderWidgetHostViewAndroid::TextInputTypeChanged(
+    ui::TextInputType type,
+    ui::TextInputMode input_mode,
+    bool can_compose_inline,
+    int flags) {
+  // Unused on Android, which uses OnTextInputChanged instead.
+}
+
 long RenderWidgetHostViewAndroid::GetNativeImeAdapter() {
   return reinterpret_cast<intptr_t>(&ime_adapter_android_);
 }
 
-void RenderWidgetHostViewAndroid::TextInputStateChanged(
+void RenderWidgetHostViewAndroid::OnTextInputStateChanged(
     const ViewHostMsg_TextInputState_Params& params) {
   if (selection_controller_) {
     // This call is semi-redundant with that in |OnFocusedNodeChanged|. The
@@ -696,13 +706,11 @@ bool RenderWidgetHostViewAndroid::OnTouchEvent(
       selection_controller_->WillHandleTouchEvent(event))
     return true;
 
+  if (gesture_text_selector_.OnTouchEvent(event))
+    return true;
+
   if (!gesture_provider_.OnTouchEvent(event))
     return false;
-
-  if (gesture_text_selector_.OnTouchEvent(event)) {
-    gesture_provider_.OnTouchEventAck(false);
-    return true;
-  }
 
   if (host_->ShouldForwardTouchEvent()) {
     blink::WebTouchEvent web_event = CreateWebTouchEventFromMotionEvent(event);
@@ -750,6 +758,12 @@ void RenderWidgetHostViewAndroid::SetMultiTouchZoomSupportEnabled(
 
 void RenderWidgetHostViewAndroid::ImeCancelComposition() {
   ime_adapter_android_.CancelComposition();
+}
+
+void RenderWidgetHostViewAndroid::ImeCompositionRangeChanged(
+    const gfx::Range& range,
+    const std::vector<gfx::Rect>& character_bounds) {
+  ime_adapter_android_.SetCharacterBounds(character_bounds);
 }
 
 void RenderWidgetHostViewAndroid::FocusedNodeChanged(bool is_editable_node) {
@@ -813,9 +827,10 @@ void RenderWidgetHostViewAndroid::SelectionBoundsChanged(
   NOTREACHED() << "Selection bounds should be routed through the compositor.";
 }
 
-void RenderWidgetHostViewAndroid::SetBackgroundOpaque(bool opaque) {
-  RenderWidgetHostViewBase::SetBackgroundOpaque(opaque);
-  host_->SetBackgroundOpaque(opaque);
+void RenderWidgetHostViewAndroid::SetBackgroundColor(SkColor color) {
+  RenderWidgetHostViewBase::SetBackgroundColor(color);
+  host_->SetBackgroundOpaque(GetBackgroundOpaque());
+  OnDidChangeBodyBackgroundColor(color);
 }
 
 void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
@@ -857,7 +872,7 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
   ui::WindowAndroidCompositor* compositor =
       content_view_core_->GetWindowAndroid()->GetCompositor();
   DCHECK(compositor);
-  DCHECK(frame_provider_);
+  DCHECK(frame_provider_.get());
   scoped_refptr<cc::DelegatedRendererLayer> delegated_layer =
       CreateDelegatedLayerForFrameProvider();
   delegated_layer->SetHideLayerAndSubtree(true);
@@ -916,7 +931,7 @@ void RenderWidgetHostViewAndroid::SendDelegatedFrameAck(
 
 void RenderWidgetHostViewAndroid::SendReturnedDelegatedResources(
     uint32 output_surface_id) {
-  DCHECK(resource_collection_);
+  DCHECK(resource_collection_.get());
 
   cc::CompositorFrameAck ack;
   resource_collection_->TakeUnusedResourcesForChildCompositor(&ack.resources);
@@ -978,7 +993,7 @@ void RenderWidgetHostViewAndroid::SwapDelegatedFrame(
       resource_collection_ = new cc::DelegatedFrameResourceCollection;
       resource_collection_->SetClient(this);
     }
-    if (!frame_provider_ ||
+    if (!frame_provider_.get() ||
         texture_size_in_layer_ != frame_provider_->frame_size()) {
       RemoveLayers();
       frame_provider_ = new cc::DelegatedFrameProvider(
@@ -1038,7 +1053,7 @@ void RenderWidgetHostViewAndroid::InternalSwapCompositorFrame(
     return;
   }
 
-  if (layer_ && layer_->layer_tree_host()) {
+  if (layer_.get() && layer_->layer_tree_host()) {
     for (size_t i = 0; i < frame->metadata.latency_info.size(); i++) {
       scoped_ptr<cc::SwapPromise> swap_promise(
           new cc::LatencyInfoSwapPromise(frame->metadata.latency_info[i]));
@@ -1102,6 +1117,9 @@ void RenderWidgetHostViewAndroid::RetainFrame(
 
 void RenderWidgetHostViewAndroid::SynchronousFrameMetadata(
     const cc::CompositorFrameMetadata& frame_metadata) {
+  if (!content_view_core_)
+    return;
+
   // This is a subset of OnSwapCompositorFrame() used in the synchronous
   // compositor flow.
   OnFrameMetadataUpdated(frame_metadata);
@@ -1122,7 +1140,7 @@ void RenderWidgetHostViewAndroid::SynchronousFrameMetadata(
 }
 
 void RenderWidgetHostViewAndroid::SetOverlayVideoMode(bool enabled) {
-  if (layer_)
+  if (layer_.get())
     layer_->SetContentsOpaque(!enabled);
 }
 
@@ -1162,9 +1180,11 @@ scoped_ptr<TouchHandleDrawable> RenderWidgetHostViewAndroid::CreateDrawable() {
     return content_view_core_->CreatePopupTouchHandleDrawable();
 
   return scoped_ptr<TouchHandleDrawable>(new CompositedTouchHandleDrawable(
-      content_view_core_->GetLayer(),
+      content_view_core_->GetLayer().get(),
       content_view_core_->GetDpiScale(),
-      base::android::GetApplicationContext()));
+      // Use the activity context (instead of the application context) to ensure
+      // proper handle theming.
+      content_view_core_->GetContext().obj()));
 }
 
 void RenderWidgetHostViewAndroid::SynchronousCopyContents(
@@ -1208,9 +1228,10 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   if (!content_view_core_)
     return;
 
-  DCHECK(selection_controller_);
-  selection_controller_->OnSelectionBoundsChanged(
-      frame_metadata.selection_start, frame_metadata.selection_end);
+  if (selection_controller_) {
+    selection_controller_->OnSelectionBoundsChanged(
+        frame_metadata.selection_start, frame_metadata.selection_end);
+  }
 
   // All offsets and sizes are in CSS pixels.
   content_view_core_->UpdateFrameInfo(
@@ -1307,12 +1328,8 @@ void RenderWidgetHostViewAndroid::SendBeginFrame(base::TimeTicks frame_time,
                "frame_time_us", frame_time.ToInternalValue());
   base::TimeTicks display_time = frame_time + vsync_period;
 
-  // TODO(brianderson): Use adaptive draw-time estimation.
-  base::TimeDelta estimated_browser_composite_time =
-      base::TimeDelta::FromMicroseconds(
-          (1.0f * base::Time::kMicrosecondsPerSecond) / (3.0f * 60));
-
-  base::TimeTicks deadline = display_time - estimated_browser_composite_time;
+  base::TimeTicks deadline =
+      display_time - host_->GetEstimatedBrowserCompositeTime();
 
   host_->Send(new ViewMsg_BeginFrame(
       host_->GetRoutingID(),
@@ -1431,6 +1448,16 @@ void RenderWidgetHostViewAndroid::OnSetNeedsFlushInput() {
 BrowserAccessibilityManager*
     RenderWidgetHostViewAndroid::CreateBrowserAccessibilityManager(
         BrowserAccessibilityDelegate* delegate) {
+  // TODO(dmazzoni): Currently there can only be one
+  // BrowserAccessibilityManager per ContentViewCore, so return NULL
+  // if there's already a BrowserAccessibilityManager for the main
+  // frame.  Eventually, in order to support cross-process iframes on
+  // Android we'll need to add support for a
+  // BrowserAccessibilityManager for a child frame.
+  // http://crbug.com/423846
+  if (!host_ || host_->GetRootBrowserAccessibilityManager())
+    return NULL;
+
   base::android::ScopedJavaLocalRef<jobject> obj;
   if (content_view_core_)
     obj = content_view_core_->GetJavaObject();
@@ -1517,14 +1544,14 @@ SkColor RenderWidgetHostViewAndroid::GetCachedBackgroundColor() const {
 
 void RenderWidgetHostViewAndroid::DidOverscroll(
     const DidOverscrollParams& params) {
-  if (!content_view_core_ || !layer_ || !is_showing_)
+  if (!content_view_core_ || !layer_.get() || !is_showing_)
     return;
 
   const float device_scale_factor = content_view_core_->GetDpiScale();
 
   if (overscroll_effect_ &&
       overscroll_effect_->OnOverscrolled(
-          content_view_core_->GetLayer(),
+          content_view_core_->GetLayer().get(),
           base::TimeTicks::Now(),
           gfx::ScaleVector2d(params.accumulated_overscroll,
                              device_scale_factor),
@@ -1596,16 +1623,12 @@ void RenderWidgetHostViewAndroid::RunAckCallbacks() {
 
 void RenderWidgetHostViewAndroid::OnGestureEvent(
     const ui::GestureEventData& gesture) {
-  if (gesture_text_selector_.OnGestureEvent(gesture))
-    return;
-
   SendGestureEvent(CreateWebGestureEventFromGestureEventData(gesture));
 }
 
 void RenderWidgetHostViewAndroid::OnCompositingDidCommit() {
   RunAckCallbacks();
 }
-
 
 void RenderWidgetHostViewAndroid::OnAttachCompositor() {
   DCHECK(content_view_core_);
@@ -1760,11 +1783,6 @@ void RenderWidgetHostViewAndroid::SelectRange(
   if (content_view_core_)
     static_cast<WebContentsImpl*>(content_view_core_->GetWebContents())->
         SelectRange(gfx::Point(x1, y1), gfx::Point(x2, y2));
-}
-
-void RenderWidgetHostViewAndroid::Unselect() {
-  if (content_view_core_)
-    content_view_core_->GetWebContents()->Unselect();
 }
 
 void RenderWidgetHostViewAndroid::LongPress(

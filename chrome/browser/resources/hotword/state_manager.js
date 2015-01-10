@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,42 @@ cr.define('hotword', function() {
   'use strict';
 
   /**
+   * Trivial container class for session information.
+   * @param {!hotword.constants.SessionSource} source Source of the hotword
+   *     session.
+   * @param {!function()} triggerCb Callback invoked when the hotword has
+   *     triggered.
+   * @param {!function()} startedCb Callback invoked when the session has
+   *     been started successfully.
+   * @constructor
+   * @struct
+   * @private
+   */
+  function Session_(source, triggerCb, startedCb) {
+    /**
+     * Source of the hotword session request.
+     * @private {!hotword.constants.SessionSource}
+     */
+    this.source_ = source;
+
+     /**
+      * Callback invoked when the hotword has triggered.
+      * @private {!function()}
+      */
+    this.triggerCb_ = triggerCb;
+
+    /**
+     * Callback invoked when the session has been started successfully.
+     * @private {?function()}
+     */
+    this.startedCb_ = startedCb;
+  }
+
+  /**
    * Class to manage hotwording state. Starts/stops the hotword detector based
    * on user settings, session requests, and any other factors that play into
    * whether or not hotwording should be running.
    * @constructor
-   * @struct
    */
   function StateManager() {
     /**
@@ -32,22 +63,23 @@ cr.define('hotword', function() {
     this.pluginManager_ = null;
 
     /**
-     * Source of the current hotword session.
-     * @private {?hotword.constants.SessionSource}
+     * Currently active hotwording sessions.
+     * @private {!Array.<Session_>}
      */
-    this.sessionSource_ = null;
+    this.sessions_ = [];
 
     /**
-     * Callback to run when the hotword detector has successfully started.
-     * @private {!function()}
+     * Event that fires when the hotwording status has changed.
+     * @type {!ChromeEvent}
      */
-    this.sessionStartedCb_ = null;
+    this.onStatusChanged = new chrome.Event();
 
     /**
      * Hotword trigger audio notification... a.k.a The Chime (tm).
-     * @private {!Audio}
+     * @private {!HTMLAudioElement}
      */
-    this.chime_ = document.createElement('audio');
+    this.chime_ =
+        /** @type {!HTMLAudioElement} */(document.createElement('audio'));
 
     // Get the initial status.
     chrome.hotwordPrivate.getStatus(this.handleStatus_.bind(this));
@@ -70,6 +102,34 @@ cr.define('hotword', function() {
   };
   var State_ = StateManager.State_;
 
+  var UmaMediaStreamOpenResults_ = {
+    // These first error are defined by the MediaStream spec:
+    // http://w3c.github.io/mediacapture-main/getusermedia.html#idl-def-MediaStreamError
+    'NotSupportedError':
+        hotword.constants.UmaMediaStreamOpenResult.NOT_SUPPORTED,
+    'PermissionDeniedError':
+        hotword.constants.UmaMediaStreamOpenResult.PERMISSION_DENIED,
+    'ConstraintNotSatisfiedError':
+        hotword.constants.UmaMediaStreamOpenResult.CONSTRAINT_NOT_SATISFIED,
+    'OverconstrainedError':
+        hotword.constants.UmaMediaStreamOpenResult.OVERCONSTRAINED,
+    'NotFoundError': hotword.constants.UmaMediaStreamOpenResult.NOT_FOUND,
+    'AbortError': hotword.constants.UmaMediaStreamOpenResult.ABORT,
+    'SourceUnavailableError':
+        hotword.constants.UmaMediaStreamOpenResult.SOURCE_UNAVAILABLE,
+    // The next few errors are chrome-specific. See:
+    // content/renderer/media/user_media_client_impl.cc
+    // (UserMediaClientImpl::GetUserMediaRequestFailed)
+    'PermissionDismissedError':
+        hotword.constants.UmaMediaStreamOpenResult.PERMISSION_DISMISSED,
+    'InvalidStateError':
+        hotword.constants.UmaMediaStreamOpenResult.INVALID_STATE,
+    'DevicesNotFoundError':
+        hotword.constants.UmaMediaStreamOpenResult.DEVICES_NOT_FOUND,
+    'InvalidSecurityOriginError':
+        hotword.constants.UmaMediaStreamOpenResult.INVALID_SECURITY_ORIGIN
+  };
+
   StateManager.prototype = {
     /**
      * Request status details update. Intended to be called from the
@@ -77,6 +137,23 @@ cr.define('hotword', function() {
      */
     updateStatus: function() {
       chrome.hotwordPrivate.getStatus(this.handleStatus_.bind(this));
+    },
+
+    /**
+     * @return {boolean} True if hotwording is enabled.
+     */
+    isEnabled: function() {
+      assert(this.hotwordStatus_, 'No hotwording status (isEnabled)');
+      return this.hotwordStatus_.enabled;
+    },
+
+    /**
+     * @return {boolean} True if always-on hotwording is enabled.
+     */
+    isAlwaysOnEnabled: function() {
+      assert(this.hotwordStatus_, 'No hotword status (isAlwaysOnEnabled)');
+      return this.hotwordStatus_.enabled &&
+          this.hotwordStatus_.alwaysOnEnabled;
     },
 
     /**
@@ -89,6 +166,8 @@ cr.define('hotword', function() {
       hotword.debug('New hotword status', status);
       this.hotwordStatus_ = status;
       this.updateStateFromStatus_();
+
+      this.onStatusChanged.dispatch();
     },
 
     /**
@@ -102,17 +181,12 @@ cr.define('hotword', function() {
       if (this.hotwordStatus_.enabled) {
         // Start the detector if there's a session, and shut it down if there
         // isn't.
-        // TODO(amistry): Support stacking sessions. This can happen when the
-        // user opens google.com or the NTP, then opens the launcher. Opening
-        // google.com will create one session, and opening the launcher will
-        // create the second. Closing the launcher should re-activate the
-        // google.com session.
         // NOTE(amistry): With always-on, we want a different behaviour with
         // sessions since the detector should always be running. The exception
         // being when the user triggers by saying 'Ok Google'. In that case, the
         // detector stops, so starting/stopping the launcher session should
         // restart the detector.
-        if (this.sessionSource_)
+        if (this.sessions_.length)
           this.startDetector_();
         else
           this.shutdownDetector_();
@@ -153,12 +227,26 @@ cr.define('hotword', function() {
           navigator.webkitGetUserMedia(
               /** @type {MediaStreamConstraints} */ (constraints),
               function(stream) {
+                hotword.metrics.recordEnum(
+                    hotword.constants.UmaMetrics.MEDIA_STREAM_RESULT,
+                    hotword.constants.UmaMediaStreamOpenResult.SUCCESS,
+                    hotword.constants.UmaMediaStreamOpenResult.MAX);
                 if (!this.pluginManager_.initialize(naclArch, stream)) {
                   this.state_ = State_.ERROR;
                   this.shutdownPluginManager_();
                 }
               }.bind(this),
               function(error) {
+                if (error.name in UmaMediaStreamOpenResults_) {
+                  var metricValue = UmaMediaStreamOpenResults_[error.name];
+                } else {
+                  var metricValue =
+                      hotword.constants.UmaMediaStreamOpenResult.UNKNOWN;
+                }
+                hotword.metrics.recordEnum(
+                    hotword.constants.UmaMetrics.MEDIA_STREAM_RESULT,
+                    metricValue,
+                    hotword.constants.UmaMediaStreamOpenResult.MAX);
                 this.state_ = State_.ERROR;
                 this.pluginManager_ = null;
               }.bind(this));
@@ -175,14 +263,17 @@ cr.define('hotword', function() {
      * @private
      */
     startRecognizer_: function() {
-      assert(this.pluginManager_);
+      assert(this.pluginManager_, 'No NaCl plugin loaded');
       if (this.state_ != State_.RUNNING) {
         this.state_ = State_.RUNNING;
         this.pluginManager_.startRecognizer();
       }
-      if (this.sessionStartedCb_) {
-        this.sessionStartedCb_();
-        this.sessionStartedCb_ = null;
+      for (var i = 0; i < this.sessions_.length; i++) {
+        var session = this.sessions_[i];
+        if (session.startedCb_) {
+          session.startedCb_();
+          session.startedCb_ = null;
+        }
       }
     },
 
@@ -214,7 +305,7 @@ cr.define('hotword', function() {
       if (this.state_ != State_.STARTING) {
         // At this point, we should not be in the RUNNING state. Doing so would
         // imply the hotword detector was started without being ready.
-        assert(this.state_ != State_.RUNNING);
+        assert(this.state_ != State_.RUNNING, 'Unexpected RUNNING state');
         this.shutdownPluginManager_();
         return;
       }
@@ -236,19 +327,37 @@ cr.define('hotword', function() {
      */
     onTrigger_: function() {
       hotword.debug('Hotword triggered!');
-      assert(this.pluginManager_);
+      chrome.metricsPrivate.recordUserAction(
+          hotword.constants.UmaMetrics.TRIGGER);
+      assert(this.pluginManager_, 'No NaCl plugin loaded on trigger');
       // Detector implicitly stops when the hotword is detected.
       this.state_ = State_.STOPPED;
 
       // Play the chime.
       this.chime_.play();
 
-      chrome.hotwordPrivate.notifyHotwordRecognition('search', function() {});
+      // Implicitly clear the top session. A session needs to be started in
+      // order to restart the detector.
+      if (this.sessions_.length) {
+        var session = this.sessions_.pop();
+        if (session.triggerCb_)
+          session.triggerCb_();
+      }
+    },
 
-      // Implicitly clear the session. A session needs to be started in order to
-      // restart the detector.
-      this.sessionSource_ = null;
-      this.sessionStartedCb_ = null;
+    /**
+     * Remove a hotwording session from the given source.
+     * @param {!hotword.constants.SessionSource} source Source of the hotword
+     *     session request.
+     * @private
+     */
+    removeSession_: function(source) {
+      for (var i = 0; i < this.sessions_.length; i++) {
+        if (this.sessions_[i].source_ == source) {
+          this.sessions_.splice(i, 1);
+          break;
+        }
+      }
     },
 
     /**
@@ -257,11 +366,13 @@ cr.define('hotword', function() {
      *     session request.
      * @param {!function()} startedCb Callback invoked when the session has
      *     been started successfully.
+     * @param {!function()} triggerCb Callback invoked when the hotword has
+     *     triggered.
      */
-    startSession: function(source, startedCb) {
+    startSession: function(source, startedCb, triggerCb) {
       hotword.debug('Starting session for source: ' + source);
-      this.sessionSource_ = source;
-      this.sessionStartedCb_ = startedCb;
+      this.removeSession_(source);
+      this.sessions_.push(new Session_(source, triggerCb, startedCb));
       this.updateStateFromStatus_();
     },
 
@@ -272,8 +383,7 @@ cr.define('hotword', function() {
      */
     stopSession: function(source) {
       hotword.debug('Stopping session for source: ' + source);
-      this.sessionSource_ = null;
-      this.sessionStartedCb_ = null;
+      this.removeSession_(source);
       this.updateStateFromStatus_();
     }
   };

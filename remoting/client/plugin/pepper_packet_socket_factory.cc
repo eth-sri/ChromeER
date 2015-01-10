@@ -86,7 +86,7 @@ int PepperErrorToNetError(int error) {
 class UdpPacketSocket : public rtc::AsyncPacketSocket {
  public:
   explicit UdpPacketSocket(const pp::InstanceHandle& instance);
-  virtual ~UdpPacketSocket();
+  ~UdpPacketSocket() override;
 
   // |min_port| and |max_port| are set to zero if the port number
   // should be assigned by the OS.
@@ -95,20 +95,21 @@ class UdpPacketSocket : public rtc::AsyncPacketSocket {
             int max_port);
 
   // rtc::AsyncPacketSocket interface.
-  virtual rtc::SocketAddress GetLocalAddress() const OVERRIDE;
-  virtual rtc::SocketAddress GetRemoteAddress() const OVERRIDE;
-  virtual int Send(const void* data, size_t data_size,
-                   const rtc::PacketOptions& options) OVERRIDE;
-  virtual int SendTo(const void* data,
-                     size_t data_size,
-                     const rtc::SocketAddress& address,
-                     const rtc::PacketOptions& options) OVERRIDE;
-  virtual int Close() OVERRIDE;
-  virtual State GetState() const OVERRIDE;
-  virtual int GetOption(rtc::Socket::Option opt, int* value) OVERRIDE;
-  virtual int SetOption(rtc::Socket::Option opt, int value) OVERRIDE;
-  virtual int GetError() const OVERRIDE;
-  virtual void SetError(int error) OVERRIDE;
+  rtc::SocketAddress GetLocalAddress() const override;
+  rtc::SocketAddress GetRemoteAddress() const override;
+  int Send(const void* data,
+           size_t data_size,
+           const rtc::PacketOptions& options) override;
+  int SendTo(const void* data,
+             size_t data_size,
+             const rtc::SocketAddress& address,
+             const rtc::PacketOptions& options) override;
+  int Close() override;
+  State GetState() const override;
+  int GetOption(rtc::Socket::Option opt, int* value) override;
+  int SetOption(rtc::Socket::Option opt, int value) override;
+  int GetError() const override;
+  void SetError(int error) override;
 
  private:
   struct PendingPacket {

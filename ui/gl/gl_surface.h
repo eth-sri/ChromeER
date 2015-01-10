@@ -158,37 +158,37 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
  public:
   explicit GLSurfaceAdapter(GLSurface* surface);
 
-  virtual bool Initialize() OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool Resize(const gfx::Size& size) OVERRIDE;
-  virtual bool Recreate() OVERRIDE;
-  virtual bool DeferDraws() OVERRIDE;
-  virtual bool IsOffscreen() OVERRIDE;
-  virtual bool SwapBuffers() OVERRIDE;
-  virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
-  virtual bool SupportsPostSubBuffer() OVERRIDE;
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual void* GetHandle() OVERRIDE;
-  virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
-  virtual bool OnMakeCurrent(GLContext* context) OVERRIDE;
-  virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
-  virtual void SetFrontbufferAllocation(bool allocated) OVERRIDE;
-  virtual void* GetShareHandle() OVERRIDE;
-  virtual void* GetDisplay() OVERRIDE;
-  virtual void* GetConfig() OVERRIDE;
-  virtual unsigned GetFormat() OVERRIDE;
-  virtual VSyncProvider* GetVSyncProvider() OVERRIDE;
-  virtual bool ScheduleOverlayPlane(int z_order,
-                                    OverlayTransform transform,
-                                    GLImage* image,
-                                    const Rect& bounds_rect,
-                                    const RectF& crop_rect) OVERRIDE;
-  virtual bool IsSurfaceless() const OVERRIDE;
+  bool Initialize() override;
+  void Destroy() override;
+  bool Resize(const gfx::Size& size) override;
+  bool Recreate() override;
+  bool DeferDraws() override;
+  bool IsOffscreen() override;
+  bool SwapBuffers() override;
+  bool PostSubBuffer(int x, int y, int width, int height) override;
+  bool SupportsPostSubBuffer() override;
+  gfx::Size GetSize() override;
+  void* GetHandle() override;
+  unsigned int GetBackingFrameBufferObject() override;
+  bool OnMakeCurrent(GLContext* context) override;
+  bool SetBackbufferAllocation(bool allocated) override;
+  void SetFrontbufferAllocation(bool allocated) override;
+  void* GetShareHandle() override;
+  void* GetDisplay() override;
+  void* GetConfig() override;
+  unsigned GetFormat() override;
+  VSyncProvider* GetVSyncProvider() override;
+  bool ScheduleOverlayPlane(int z_order,
+                            OverlayTransform transform,
+                            GLImage* image,
+                            const Rect& bounds_rect,
+                            const RectF& crop_rect) override;
+  bool IsSurfaceless() const override;
 
   GLSurface* surface() const { return surface_.get(); }
 
  protected:
-  virtual ~GLSurfaceAdapter();
+  ~GLSurfaceAdapter() override;
 
  private:
   scoped_refptr<GLSurface> surface_;

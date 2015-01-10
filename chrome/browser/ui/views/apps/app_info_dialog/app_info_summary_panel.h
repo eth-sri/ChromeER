@@ -31,31 +31,22 @@ class AppInfoSummaryPanel : public AppInfoPanel,
  public:
   AppInfoSummaryPanel(Profile* profile, const extensions::Extension* app);
 
-  virtual ~AppInfoSummaryPanel();
+  ~AppInfoSummaryPanel() override;
 
  private:
   // Internal initialisation methods.
-  void CreateDescriptionControl();
-  void CreateDetailsControl();
-  void CreateLaunchOptionControl();
-
-  void LayoutDescriptionControl();
-  void LayoutDetailsControl();
+  void AddDescriptionControl(views::View* vertical_stack);
+  void AddDetailsControl(views::View* vertical_stack);
+  void AddLaunchOptionControl(views::View* vertical_stack);
+  void AddSubviews();
 
   // Overridden from views::ComboboxListener:
-  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
+  void OnPerformAction(views::Combobox* combobox) override;
 
   // Called asynchronously to calculate and update the size of the app displayed
   // in the dialog.
   void StartCalculatingAppSize();
   void OnAppSizeCalculated(int64 app_size_in_bytes);
-
-  // Returns the time this app was installed.
-  base::Time GetInstalledTime() const;
-
-  // Returns the time the app was last launched, or base::Time() if it's never
-  // been launched.
-  base::Time GetLastLaunchedTime() const;
 
   // Returns the launch type of the app (e.g. pinned tab, fullscreen, etc).
   extensions::LaunchType GetLaunchType() const;
@@ -66,18 +57,7 @@ class AppInfoSummaryPanel : public AppInfoPanel,
   bool CanSetLaunchType() const;
 
   // UI elements on the dialog.
-  views::Label* description_heading_;
-  views::Label* description_label_;
-
-  views::Label* details_heading_;
-  views::Label* size_title_;
   views::Label* size_value_;
-  views::Label* version_title_;
-  views::Label* version_value_;
-  views::Label* installed_time_title_;
-  views::Label* installed_time_value_;
-  views::Label* last_run_time_title_;
-  views::Label* last_run_time_value_;
 
   scoped_ptr<LaunchOptionsComboboxModel> launch_options_combobox_model_;
   views::Combobox* launch_options_combobox_;

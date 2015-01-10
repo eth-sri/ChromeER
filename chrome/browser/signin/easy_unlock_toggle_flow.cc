@@ -12,11 +12,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/manifest_handlers/oauth2_manifest_handler.h"
 #include "google_apis/gaia/oauth2_api_call_flow.h"
 #include "net/url_request/url_fetcher.h"
 
@@ -52,21 +52,16 @@ std::string GetEasyUnlockAppClientId(Profile * profile) {
 class EasyUnlockToggleFlow::ToggleApiCall : public OAuth2ApiCallFlow {
  public:
   ToggleApiCall(EasyUnlockToggleFlow* flow,
-                net::URLRequestContextGetter* context,
-                const std::string& access_token,
                 const std::string& phone_public_key,
                 bool toggle_enable);
-  virtual ~ToggleApiCall();
+  ~ToggleApiCall() override;
 
   // OAuth2ApiCallFlow
-  virtual GURL CreateApiCallUrl() OVERRIDE;
-  virtual std::string CreateApiCallBody() OVERRIDE;
-  virtual std::string CreateApiCallBodyContentType() OVERRIDE;
-  virtual void ProcessApiCallSuccess(const net::URLFetcher* source) OVERRIDE;
-  virtual void ProcessApiCallFailure(const net::URLFetcher* source) OVERRIDE;
-  virtual void ProcessNewAccessToken(const std::string& access_token) OVERRIDE;
-  virtual void ProcessMintAccessTokenFailure(
-      const GoogleServiceAuthError& error) OVERRIDE;
+  GURL CreateApiCallUrl() override;
+  std::string CreateApiCallBody() override;
+  std::string CreateApiCallBodyContentType() override;
+  void ProcessApiCallSuccess(const net::URLFetcher* source) override;
+  void ProcessApiCallFailure(const net::URLFetcher* source) override;
 
  private:
   EasyUnlockToggleFlow* flow_;
@@ -78,15 +73,9 @@ class EasyUnlockToggleFlow::ToggleApiCall : public OAuth2ApiCallFlow {
 
 EasyUnlockToggleFlow::ToggleApiCall::ToggleApiCall(
     EasyUnlockToggleFlow* flow,
-    net::URLRequestContextGetter* context,
-    const std::string& access_token,
     const std::string& phone_public_key,
     bool toggle_enable)
-    : OAuth2ApiCallFlow(context,
-                        std::string(),
-                        access_token,
-                        GetScopes()),
-      flow_(flow),
+    : flow_(flow),
       phone_public_key_(phone_public_key),
       toggle_enable_(toggle_enable) {
 }
@@ -119,16 +108,6 @@ void EasyUnlockToggleFlow::ToggleApiCall::ProcessApiCallSuccess(
 void EasyUnlockToggleFlow::ToggleApiCall::ProcessApiCallFailure(
     const net::URLFetcher* source) {
   flow_->ReportToggleApiCallResult(false);
-}
-
-void EasyUnlockToggleFlow::ToggleApiCall::ProcessNewAccessToken(
-    const std::string& access_token) {
-  NOTREACHED();
-}
-
-void EasyUnlockToggleFlow::ToggleApiCall::ProcessMintAccessTokenFailure(
-    const GoogleServiceAuthError& error) {
-  NOTREACHED();
 }
 
 EasyUnlockToggleFlow::EasyUnlockToggleFlow(Profile* profile,
@@ -164,15 +143,13 @@ void EasyUnlockToggleFlow::OnGetTokenSuccess(
   token_request_.reset();
 
   mint_token_flow_.reset(
-      new OAuth2MintTokenFlow(profile_->GetRequestContext(),
-                              this,
+      new OAuth2MintTokenFlow(this,
                               OAuth2MintTokenFlow::Parameters(
-                                  access_token,
                                   extension_misc::kEasyUnlockAppId,
                                   GetEasyUnlockAppClientId(profile_),
                                   GetScopes(),
                                   OAuth2MintTokenFlow::MODE_MINT_TOKEN_FORCE)));
-  mint_token_flow_->Start();
+  mint_token_flow_->Start(profile_->GetRequestContext(), access_token);
 }
 
 void EasyUnlockToggleFlow::OnGetTokenFailure(
@@ -189,11 +166,9 @@ void EasyUnlockToggleFlow::OnGetTokenFailure(
 void EasyUnlockToggleFlow::OnMintTokenSuccess(const std::string& access_token,
                                               int time_to_live) {
   toggle_api_call_.reset(new ToggleApiCall(this,
-                                           profile_->GetRequestContext(),
-                                           access_token,
                                            phone_public_key_,
                                            toggle_enable_));
-  toggle_api_call_->Start();
+  toggle_api_call_->Start(profile_->GetRequestContext(), access_token);
 }
 
 void EasyUnlockToggleFlow::OnMintTokenFailure(

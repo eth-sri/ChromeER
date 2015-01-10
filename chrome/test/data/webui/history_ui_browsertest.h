@@ -14,9 +14,9 @@ class HistoryService;
 class HistoryUIBrowserTest : public WebUIBrowserTest {
  public:
   HistoryUIBrowserTest();
-  virtual ~HistoryUIBrowserTest();
+  ~HistoryUIBrowserTest() override;
 
-  virtual void SetUpOnMainThread() OVERRIDE;
+  void SetUpOnMainThread() override;
 
  protected:
   // Sets the pref to allow or prohibit deleting history entries.

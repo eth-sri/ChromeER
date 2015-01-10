@@ -149,11 +149,11 @@ class VisitedLinkMaster::TableBuilder
   void DisownMaster();
 
   // VisitedLinkDelegate::URLEnumerator
-  virtual void OnURL(const GURL& url) OVERRIDE;
-  virtual void OnComplete(bool succeed) OVERRIDE;
+  void OnURL(const GURL& url) override;
+  void OnComplete(bool succeed) override;
 
  private:
-  virtual ~TableBuilder() {}
+  ~TableBuilder() override {}
 
   // OnComplete mashals to this function on the main thread to do the
   // notification.

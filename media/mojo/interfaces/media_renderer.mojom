@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import "media/mojo/interfaces/demuxer_stream.mojom"
-import "media/mojo/interfaces/media_types.mojom"
+import "media/mojo/interfaces/demuxer_stream.mojom";
+import "media/mojo/interfaces/media_types.mojom";
 
 module mojo {
 
@@ -24,7 +24,7 @@ interface MediaRenderer {
 
   // Updates the current playback rate. The default playback rate should be 1.
   SetPlaybackRate(float playback_rate);
-  
+
   // Sets the output volume. The default volume should be 1.
   SetVolume(float volume);
 };

@@ -127,18 +127,18 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
   bool HasPendingConnectRequest();
 
   // NetworkStateHandlerObserver
-  virtual void NetworkListChanged() OVERRIDE;
-  virtual void NetworkPropertiesUpdated(const NetworkState* network) OVERRIDE;
+  virtual void NetworkListChanged() override;
+  virtual void NetworkPropertiesUpdated(const NetworkState* network) override;
 
   // LoginState::Observer
-  virtual void LoggedInStateChanged() OVERRIDE;
+  virtual void LoggedInStateChanged() override;
 
   // CertLoader::Observer
   virtual void OnCertificatesLoaded(const net::CertificateList& cert_list,
-                                    bool initial_load) OVERRIDE;
+                                    bool initial_load) override;
 
   // NetworkPolicyObserver
-  virtual void PolicyChanged(const std::string& userhash) OVERRIDE;
+  virtual void PolicyChanged(const std::string& userhash) override;
 
  private:
   friend class NetworkHandler;
@@ -214,6 +214,10 @@ class CHROMEOS_EXPORT NetworkConnectionHandler
   // the new user. Therefore, this function is called on startup, at login and
   // when the device policy is changed.
   void DisconnectIfPolicyRequires();
+
+  // Disconnects from all unmanaged and shared WiFi networks that are currently
+  // connected or connecting.
+  void DisconnectFromUnmanagedSharedWiFiNetworks();
 
   // Requests a connect to the 'best' available network once after login and
   // after any disconnect required by policy is executed (see

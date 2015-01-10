@@ -73,16 +73,6 @@
 //
 //   scoped_ptr<Foo> foo(new Foo());
 //   scoped_ptr<FooParent> parent(foo.Pass());
-//
-// PassAs<>() should be used to upcast return value in return statement:
-//
-//   scoped_ptr<Foo> CreateFoo() {
-//     scoped_ptr<FooChild> result(new FooChild());
-//     return result.PassAs<Foo>();
-//   }
-//
-// Note that PassAs<>() is implemented only for scoped_ptr<T>, but not for
-// scoped_ptr<T[]>. This is because casting array pointers may not be safe.
 
 #ifndef BASE_MEMORY_SCOPED_PTR_H_
 #define BASE_MEMORY_SCOPED_PTR_H_
@@ -184,6 +174,17 @@ template <typename T> struct IsNotRefCounted {
   };
 };
 
+template <typename T>
+struct ShouldAbortOnSelfReset {
+  template <typename U>
+  static NoType Test(const typename U::AllowSelfReset*);
+
+  template <typename U>
+  static YesType Test(...);
+
+  static const bool value = sizeof(Test<T>(0)) == sizeof(YesType);
+};
+
 // Minimal implementation of the core logic of scoped_ptr, suitable for
 // reuse in both scoped_ptr and its specializations.
 template <class T, class D>
@@ -222,9 +223,9 @@ class scoped_ptr_impl {
   }
 
   void reset(T* p) {
-    // This is a self-reset, which is no longer allowed: http://crbug.com/162971
-    if (p != nullptr && p == data_.ptr)
-      abort();
+    // This is a self-reset, which is no longer allowed for default deleters:
+    // https://crbug.com/162971
+    assert(!ShouldAbortOnSelfReset<D>::value || p == nullptr || p != data_.ptr);
 
     // Note that running data_.ptr = p can lead to undefined behavior if
     // get_deleter()(get()) deletes this. In order to prevent this, reset()
@@ -308,7 +309,7 @@ class scoped_ptr_impl {
 // types.
 template <class T, class D = base::DefaultDeleter<T> >
 class scoped_ptr {
-  MOVE_ONLY_TYPE_FOR_CPP_03(scoped_ptr, RValue)
+  MOVE_ONLY_TYPE_WITH_MOVE_CONSTRUCTOR_FOR_CPP_03(scoped_ptr)
 
   COMPILE_ASSERT(base::internal::IsNotRefCounted<T>::value,
                  T_is_refcounted_type_and_needs_scoped_refptr);
@@ -345,9 +346,6 @@ class scoped_ptr {
       : impl_(&other.impl_) {
     COMPILE_ASSERT(!base::is_array<U>::value, U_cannot_be_an_array);
   }
-
-  // Constructor.  Move constructor for C++03 move emulation of this type.
-  scoped_ptr(RValue rvalue) : impl_(&rvalue.object->impl_) {}
 
   // operator=.  Allows assignment from a scoped_ptr rvalue for a convertible
   // type and deleter.
@@ -428,17 +426,6 @@ class scoped_ptr {
     return impl_.release();
   }
 
-  // C++98 doesn't support functions templates with default parameters which
-  // makes it hard to write a PassAs() that understands converting the deleter
-  // while preserving simple calling semantics.
-  //
-  // Until there is a use case for PassAs() with custom deleters, just ignore
-  // the custom deleter.
-  template <typename PassAsType>
-  scoped_ptr<PassAsType> PassAs() {
-    return scoped_ptr<PassAsType>(Pass());
-  }
-
  private:
   // Needed to reach into |impl_| in the constructor.
   template <typename U, typename V> friend class scoped_ptr;
@@ -457,7 +444,7 @@ class scoped_ptr {
 
 template <class T, class D>
 class scoped_ptr<T[], D> {
-  MOVE_ONLY_TYPE_FOR_CPP_03(scoped_ptr, RValue)
+  MOVE_ONLY_TYPE_WITH_MOVE_CONSTRUCTOR_FOR_CPP_03(scoped_ptr)
 
  public:
   // The element and deleter types.
@@ -488,18 +475,9 @@ class scoped_ptr<T[], D> {
   // Constructor.  Allows construction from a scoped_ptr rvalue.
   scoped_ptr(scoped_ptr&& other) : impl_(&other.impl_) {}
 
-  // Constructor.  Move constructor for C++03 move emulation of this type.
-  scoped_ptr(RValue rvalue) : impl_(&rvalue.object->impl_) {}
-
   // operator=.  Allows assignment from a scoped_ptr rvalue.
   scoped_ptr& operator=(scoped_ptr&& rhs) {
     impl_.TakeState(&rhs.impl_);
-    return *this;
-  }
-
-  // operator=.  Move operator= for C++03 move emulation of this type.
-  scoped_ptr& operator=(RValue rhs) {
-    impl_.TakeState(&rhs.object->impl_);
     return *this;
   }
 

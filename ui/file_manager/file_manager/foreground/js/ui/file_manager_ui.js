@@ -1,17 +1,16 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-'use strict';
 
 /**
  * The root of the file manager's view managing the DOM of Files.app.
  *
  * @param {HTMLElement} element Top level element of Files.app.
  * @param {DialogType} dialogType Dialog type.
- * @constructor.
+ * @constructor
+ * @struct
  */
-var FileManagerUI = function(element, dialogType) {
+function FileManagerUI(element, dialogType) {
   /**
    * Top level element of Files.app.
    * @type {HTMLElement}
@@ -70,7 +69,7 @@ var FileManagerUI = function(element, dialogType) {
 
   /**
    * Default task picker.
-   * @type {DefaultActionDialog}
+   * @type {cr.filebrowser.DefaultActionDialog}
    */
   this.defaultTaskPicker = null;
 
@@ -87,22 +86,10 @@ var FileManagerUI = function(element, dialogType) {
   this.conflictDialog = null;
 
   /**
-   * Volume icon of location information on the toolbar.
-   * @type {HTMLElement}
+   * Location line.
+   * @type {LocationLine}
    */
-  this.locationVolumeIcon = null;
-
-  /**
-   * Breadcrumbs of location information on the toolbar.
-   * @type {BreadcrumbsController}
-   */
-  this.locationBreadcrumbs = null;
-
-  /**
-   * Search button.
-   * @type {HTMLElement}
-   */
-  this.searchButton = null;
+  this.locationLine = null;
 
   /**
    * Search box.
@@ -112,27 +99,15 @@ var FileManagerUI = function(element, dialogType) {
 
   /**
    * Toggle-view button.
-   * @type {HTMLElement}
+   * @type {Element}
    */
   this.toggleViewButton = null;
 
   /**
-   * File type selector in the footer.
-   * @type {HTMLElement}
+   * Dialog footer.
+   * @type {DialogFooter}
    */
-  this.fileTypeSelector = null;
-
-  /**
-   * OK button in the footer.
-   * @type {HTMLElement}
-   */
-  this.okButton = null;
-
-  /**
-   * Cancel button in the footer.
-   * @type {HTMLElement}
-   */
-  this.cancelButton = null;
+  this.dialogFooter = null;
 
   Object.seal(this);
 
@@ -145,7 +120,7 @@ var FileManagerUI = function(element, dialogType) {
 
   // Pre-populate the static localized strings.
   i18nTemplate.process(this.element_.ownerDocument, loadTimeData);
-};
+}
 
 /**
  * Tweak the UI to become a particular kind of dialog, as determined by the
@@ -155,41 +130,10 @@ var FileManagerUI = function(element, dialogType) {
  */
 FileManagerUI.prototype.initDialogType_ = function() {
   // Obtain elements.
-  var hasFooterPanel =
-      this.dialogType_ == DialogType.SELECT_SAVEAS_FILE;
-
-  // If the footer panel exists, the buttons are placed there. Otherwise,
-  // the buttons are on the preview panel.
-  var parentPanelOfButtons = this.element_.ownerDocument.querySelector(
-      !hasFooterPanel ? '.preview-panel' : '.dialog-footer');
-  parentPanelOfButtons.classList.add('button-panel');
-  this.fileTypeSelector = parentPanelOfButtons.querySelector('.file-type');
-  this.okButton = parentPanelOfButtons.querySelector('.ok');
-  this.cancelButton = parentPanelOfButtons.querySelector('.cancel');
+  this.dialogFooter = DialogFooter.findDialogFooter(
+      this.dialogType_, /** @type {!Document} */(this.element_.ownerDocument));
 
   // Set attributes.
-  var okLabel = str('OPEN_LABEL');
-
-  switch (this.dialogType_) {
-    case DialogType.SELECT_UPLOAD_FOLDER:
-      okLabel = str('UPLOAD_LABEL');
-      break;
-
-    case DialogType.SELECT_SAVEAS_FILE:
-      okLabel = str('SAVE_LABEL');
-      break;
-
-    case DialogType.SELECT_FOLDER:
-    case DialogType.SELECT_OPEN_FILE:
-    case DialogType.SELECT_OPEN_MULTI_FILE:
-    case DialogType.FULL_PAGE:
-      break;
-
-    default:
-      throw new Error('Unknown dialog type: ' + this.dialogType);
-  }
-
-  this.okButton.textContent = okLabel;
   this.element_.setAttribute('type', this.dialogType_);
 };
 
@@ -224,23 +168,10 @@ FileManagerUI.prototype.initDialogs = function() {
  * or hidden in the beginning.
  */
 FileManagerUI.prototype.initAdditionalUI = function() {
-  this.locationVolumeIcon =
-      this.element_.querySelector('#location-volume-icon');
-
-  this.searchButton = this.element_.querySelector('#search-button');
-  this.searchButton.addEventListener('click',
-      this.onSearchButtonClick_.bind(this));
-  this.searchBox = new SearchBox(this.element_.querySelector('#search-box'));
+  this.searchBox = new SearchBox(
+      this.element_.querySelector('#search-box'),
+      this.element_.querySelector('#search-button'),
+      this.element_.querySelector('#no-search-results'));
 
   this.toggleViewButton = this.element_.querySelector('#view-button');
 };
-
-/**
- * Handles click event on the search button.
- * @param {Event} event Click event.
- * @private
- */
-FileManagerUI.prototype.onSearchButtonClick_ = function(event) {
-  this.searchBox.inputElement.focus();
-};
-

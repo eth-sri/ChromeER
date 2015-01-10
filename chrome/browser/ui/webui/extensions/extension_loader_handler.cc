@@ -51,7 +51,7 @@ class ExtensionLoaderHandler::FileHelper
     : public ui::SelectFileDialog::Listener {
  public:
   explicit FileHelper(ExtensionLoaderHandler* loader_handler);
-  virtual ~FileHelper();
+  ~FileHelper() override;
 
   // Create a FileDialog for the user to select the unpacked extension
   // directory.
@@ -59,11 +59,11 @@ class ExtensionLoaderHandler::FileHelper
 
  private:
   // ui::SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const base::FilePath& path,
-                            int index,
-                            void* params) OVERRIDE;
-  virtual void MultiFilesSelected(
-      const std::vector<base::FilePath>& files, void* params) OVERRIDE;
+  void FileSelected(const base::FilePath& path,
+                    int index,
+                    void* params) override;
+  void MultiFilesSelected(const std::vector<base::FilePath>& files,
+                          void* params) override;
 
   // The associated ExtensionLoaderHandler. Weak, but guaranteed to be alive,
   // as it owns this object.
@@ -219,27 +219,14 @@ void ExtensionLoaderHandler::HandleDisplayFailures(
 
 void ExtensionLoaderHandler::LoadUnpackedExtensionImpl(
     const base::FilePath& file_path) {
-  if (EndsWith(file_path.AsUTF16Unsafe(),
-               base::ASCIIToUTF16(".zip"),
-               false /* case insensitive */)) {
-    scoped_refptr<ZipFileInstaller> installer = ZipFileInstaller::Create(
-        ExtensionSystem::Get(profile_)->extension_service());
+  scoped_refptr<UnpackedInstaller> installer = UnpackedInstaller::Create(
+      ExtensionSystem::Get(profile_)->extension_service());
 
-    // We do our own error handling, so we don't want a load failure to trigger
-    // a dialog.
-    installer->set_be_noisy_on_failure(false);
+  // We do our own error handling, so we don't want a load failure to trigger
+  // a dialog.
+  installer->set_be_noisy_on_failure(false);
 
-    installer->LoadFromZipFile(file_path);
-  } else {
-    scoped_refptr<UnpackedInstaller> installer = UnpackedInstaller::Create(
-        ExtensionSystem::Get(profile_)->extension_service());
-
-    // We do our own error handling, so we don't want a load failure to trigger
-    // a dialog.
-    installer->set_be_noisy_on_failure(false);
-
-    installer->Load(file_path);
-  }
+  installer->Load(file_path);
 }
 
 void ExtensionLoaderHandler::OnLoadFailure(

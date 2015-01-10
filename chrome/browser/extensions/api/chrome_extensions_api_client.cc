@@ -5,6 +5,7 @@
 #include "chrome/browser/extensions/api/chrome_extensions_api_client.h"
 
 #include "base/files/file_path.h"
+#include "chrome/browser/extensions/api/chrome_device_permissions_prompt.h"
 #include "chrome/browser/extensions/api/declarative_content/chrome_content_rules_registry.h"
 #include "chrome/browser/extensions/api/storage/sync_value_store_cache.h"
 #include "chrome/browser/extensions/api/web_request/chrome_extension_web_request_event_router_delegate.h"
@@ -15,12 +16,16 @@
 #include "chrome/browser/guest_view/web_view/chrome_web_view_permission_helper_delegate.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "extensions/browser/api/declarative/rules_registry_service.h"
+#include "extensions/browser/api/virtual_keyboard_private/virtual_keyboard_delegate.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 #include "extensions/browser/guest_view/web_view/web_view_permission_helper.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/extensions/api/storage/managed_value_store_cache.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/extensions/api/virtual_keyboard_private/chrome_virtual_keyboard_delegate.h"
 #endif
 
 namespace extensions {
@@ -59,9 +64,7 @@ ChromeExtensionsAPIClient::CreateExtensionOptionsGuestDelegate(
 scoped_ptr<MimeHandlerViewGuestDelegate>
 ChromeExtensionsAPIClient::CreateMimeHandlerViewGuestDelegate(
     MimeHandlerViewGuest* guest) const {
-  return scoped_ptr<ChromeMimeHandlerViewGuestDelegate>(
-             new ChromeMimeHandlerViewGuestDelegate(guest))
-      .PassAs<MimeHandlerViewGuestDelegate>();
+  return make_scoped_ptr(new ChromeMimeHandlerViewGuestDelegate(guest));
 }
 
 WebViewGuestDelegate* ChromeExtensionsAPIClient::CreateWebViewGuestDelegate(
@@ -75,14 +78,6 @@ WebViewPermissionHelperDelegate* ChromeExtensionsAPIClient::
   return new ChromeWebViewPermissionHelperDelegate(web_view_permission_helper);
 }
 
-scoped_refptr<RulesRegistry> ChromeExtensionsAPIClient::GetRulesRegistry(
-    content::BrowserContext* browser_context,
-    const RulesRegistry::WebViewKey& webview_key,
-    const std::string& event_name) {
-  return RulesRegistryService::Get(browser_context)->
-      GetRulesRegistry(webview_key, event_name);
-}
-
 WebRequestEventRouterDelegate*
 ChromeExtensionsAPIClient::CreateWebRequestEventRouterDelegate() const {
   return new ChromeExtensionWebRequestEventRouterDelegate();
@@ -94,6 +89,21 @@ ChromeExtensionsAPIClient::CreateContentRulesRegistry(
     RulesCacheDelegate* cache_delegate) const {
   return scoped_refptr<ContentRulesRegistry>(
       new ChromeContentRulesRegistry(browser_context, cache_delegate));
+}
+
+scoped_ptr<DevicePermissionsPrompt>
+ChromeExtensionsAPIClient::CreateDevicePermissionsPrompt(
+    content::WebContents* web_contents) const {
+  return make_scoped_ptr(new ChromeDevicePermissionsPrompt(web_contents));
+}
+
+scoped_ptr<VirtualKeyboardDelegate>
+ChromeExtensionsAPIClient::CreateVirtualKeyboardDelegate() const {
+#if defined(OS_CHROMEOS)
+  return make_scoped_ptr(new ChromeVirtualKeyboardDelegate());
+#else
+  return nullptr;
+#endif
 }
 
 }  // namespace extensions

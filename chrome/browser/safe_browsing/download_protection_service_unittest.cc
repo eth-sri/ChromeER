@@ -90,14 +90,14 @@ class FakeSafeBrowsingService : public SafeBrowsingService {
   }
 
  protected:
-  virtual ~FakeSafeBrowsingService() { }
+  ~FakeSafeBrowsingService() override {}
 
-  virtual SafeBrowsingDatabaseManager* CreateDatabaseManager() OVERRIDE {
+  SafeBrowsingDatabaseManager* CreateDatabaseManager() override {
     mock_database_manager_ = new MockSafeBrowsingDatabaseManager(this);
     return mock_database_manager_;
   }
 
-  virtual void RegisterAllDelayedAnalysis() OVERRIDE { }
+  void RegisterAllDelayedAnalysis() override {}
 
  private:
   MockSafeBrowsingDatabaseManager* mock_database_manager_;
@@ -131,12 +131,12 @@ class TestURLFetcherWatcher : public net::TestURLFetcherDelegateForTests {
   }
 
   // TestURLFetcherDelegateForTests impl:
-  virtual void OnRequestStart(int fetcher_id) OVERRIDE {
+  void OnRequestStart(int fetcher_id) override {
     fetcher_id_ = fetcher_id;
     run_loop_.Quit();
   }
-  virtual void OnChunkUpload(int fetcher_id) OVERRIDE {}
-  virtual void OnRequestEnd(int fetcher_id) OVERRIDE {}
+  void OnChunkUpload(int fetcher_id) override {}
+  void OnRequestEnd(int fetcher_id) override {}
 
   int WaitForRequest() {
     run_loop_.Run();
@@ -201,7 +201,7 @@ class DownloadProtectionServiceTest : public testing::Test {
       : test_browser_thread_bundle_(
             content::TestBrowserThreadBundle::IO_MAINLOOP) {
   }
-  virtual void SetUp() {
+  void SetUp() override {
 #if defined(OS_MACOSX)
     field_trial_list_.reset(new base::FieldTrialList(
           new metrics::SHA1EntropyProvider("42")));
@@ -230,7 +230,7 @@ class DownloadProtectionServiceTest : public testing::Test {
         .AppendASCII("download_protection");
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     sb_service_->ShutDown();
     // Flush all of the thread message loops to ensure that there are no
     // tasks currently running.

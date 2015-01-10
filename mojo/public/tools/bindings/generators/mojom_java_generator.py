@@ -151,7 +151,7 @@ def GetArrayNullabilityFlags(kind):
     nullability information about both the array itself, as well as the array
     element type there.
     """
-    assert mojom.IsAnyArrayKind(kind)
+    assert mojom.IsArrayKind(kind)
     ARRAY_NULLABLE   = \
         'org.chromium.mojo.bindings.BindingsHelper.ARRAY_NULLABLE'
     ELEMENT_NULLABLE = \
@@ -176,19 +176,15 @@ def AppendEncodeDecodeParams(initial_params, context, kind, bit):
   if (kind == mojom.BOOL):
     params.append(str(bit))
   if mojom.IsReferenceKind(kind):
-    if mojom.IsAnyArrayKind(kind):
+    if mojom.IsArrayKind(kind):
       params.append(GetArrayNullabilityFlags(kind))
     else:
       params.append(GetJavaTrueFalse(mojom.IsNullableKind(kind)))
-  if mojom.IsAnyArrayKind(kind):
-    if mojom.IsFixedArrayKind(kind):
-      params.append(str(kind.length))
-    else:
-      params.append(
-        'org.chromium.mojo.bindings.BindingsHelper.UNSPECIFIED_ARRAY_LENGTH');
+  if mojom.IsArrayKind(kind):
+    params.append(GetArrayExpectedLength(kind))
   if mojom.IsInterfaceKind(kind):
     params.append('%s.MANAGER' % GetJavaType(context, kind))
-  if mojom.IsAnyArrayKind(kind) and mojom.IsInterfaceKind(kind.kind):
+  if mojom.IsArrayKind(kind) and mojom.IsInterfaceKind(kind.kind):
     params.append('%s.MANAGER' % GetJavaType(context, kind.kind))
   return params
 
@@ -196,7 +192,7 @@ def AppendEncodeDecodeParams(initial_params, context, kind, bit):
 @contextfilter
 def DecodeMethod(context, kind, offset, bit):
   def _DecodeMethodName(kind):
-    if mojom.IsAnyArrayKind(kind):
+    if mojom.IsArrayKind(kind):
       return _DecodeMethodName(kind.kind) + 's'
     if mojom.IsEnumKind(kind):
       return _DecodeMethodName(mojom.INT32)
@@ -253,7 +249,11 @@ def GetJavaType(context, kind, boxed=False):
   if mojom.IsInterfaceRequestKind(kind):
     return ('org.chromium.mojo.bindings.InterfaceRequest<%s>' %
             GetNameForKind(context, kind.kind))
-  if mojom.IsAnyArrayKind(kind):
+  if mojom.IsMapKind(kind):
+    return 'java.util.Map<%s, %s>' % (
+        GetBoxedJavaType(context, kind.key_kind),
+        GetBoxedJavaType(context, kind.value_kind))
+  if mojom.IsArrayKind(kind):
     return '%s[]' % GetJavaType(context, kind.kind)
   if mojom.IsEnumKind(kind):
     return 'int'
@@ -277,7 +277,7 @@ def ConstantValue(context, constant):
 
 @contextfilter
 def NewArray(context, kind, size):
-  if mojom.IsAnyArrayKind(kind.kind):
+  if mojom.IsArrayKind(kind.kind):
     return NewArray(context, kind.kind, size) + '[]'
   return 'new %s[%s]' % (GetJavaType(context, kind.kind), size)
 
@@ -323,8 +323,22 @@ def ExpressionToText(context, token, kind_spec=''):
       return 'java.lang.Float.NaN'
   return token
 
+def GetArrayKind(kind, size = None):
+  if size is None:
+    return mojom.Array(kind)
+  else:
+    array = mojom.Array(kind, 0)
+    array.java_map_size = size
+    return array
+
+def GetArrayExpectedLength(kind):
+  if mojom.IsArrayKind(kind) and kind.length is not None:
+    return getattr(kind, 'java_map_size', str(kind.length))
+  else:
+    return 'org.chromium.mojo.bindings.BindingsHelper.UNSPECIFIED_ARRAY_LENGTH'
+
 def IsPointerArrayKind(kind):
-  if not mojom.IsAnyArrayKind(kind):
+  if not mojom.IsArrayKind(kind):
     return False
   sub_kind = kind.kind
   return mojom.IsObjectKind(sub_kind)
@@ -379,21 +393,25 @@ def ZipContentInto(root, zip_filename):
 class Generator(generator.Generator):
 
   java_filters = {
-    'interface_response_name': GetInterfaceResponseName,
+    'array_expected_length': GetArrayExpectedLength,
+    'array': GetArrayKind,
     'constant_value': ConstantValue,
-    'default_value': DefaultValue,
     'decode_method': DecodeMethod,
-    'expression_to_text': ExpressionToText,
+    'default_value': DefaultValue,
     'encode_method': EncodeMethod,
-    'has_method_with_response': HasMethodWithResponse,
+    'expression_to_text': ExpressionToText,
     'has_method_without_response': HasMethodWithoutResponse,
-    'is_fixed_array_kind': mojom.IsFixedArrayKind,
+    'has_method_with_response': HasMethodWithResponse,
+    'interface_response_name': GetInterfaceResponseName,
+    'is_array_kind': mojom.IsArrayKind,
     'is_handle': mojom.IsNonInterfaceHandleKind,
+    'is_map_kind': mojom.IsMapKind,
     'is_nullable_kind': mojom.IsNullableKind,
     'is_pointer_array_kind': IsPointerArrayKind,
+    'is_reference_kind': mojom.IsReferenceKind,
     'is_struct_kind': mojom.IsStructKind,
-    'java_type': GetJavaType,
     'java_true_false': GetJavaTrueFalse,
+    'java_type': GetJavaType,
     'method_ordinal_name': GetMethodOrdinalName,
     'name': GetNameForElement,
     'new_array': NewArray,
@@ -479,8 +497,8 @@ class Generator(generator.Generator):
 
     # Generate the java files in a temporary directory and place a single
     # srcjar in the output directory.
-    zip_filename = os.path.join(self.output_dir,
-                                "%s.srcjar" % self.module.name)
+    basename = self.MatchMojomFilePath("%s.srcjar" % self.module.name)
+    zip_filename = os.path.join(self.output_dir, basename)
     with TempDir() as temp_java_root:
       self.output_dir = os.path.join(temp_java_root, package_path)
       self.DoGenerateFiles();

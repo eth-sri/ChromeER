@@ -352,11 +352,8 @@ void ServiceWorkerRegisterJob::OnStartWorkerFinished(
       case net::ERR_ABORTED:
         status = SERVICE_WORKER_ERROR_ABORT;
         break;
-      case net::ERR_FAILED:
-        status = SERVICE_WORKER_ERROR_NETWORK;
-        break;
       default:
-        NOTREACHED();
+        status = SERVICE_WORKER_ERROR_NETWORK;
     }
   }
   Complete(status);
@@ -366,21 +363,21 @@ void ServiceWorkerRegisterJob::OnStartWorkerFinished(
 void ServiceWorkerRegisterJob::InstallAndContinue() {
   SetPhase(INSTALL);
 
-  // "2. Set registration.installingWorker to worker."
+  // "Set registration.installingWorker to worker."
   DCHECK(!registration()->installing_version());
   registration()->SetInstallingVersion(new_version());
 
-  // "3. Resolve promise with registration."
-  ResolvePromise(SERVICE_WORKER_OK, registration());
-
-  // "4. Run the [[UpdateState]] algorithm passing registration.installingWorker
-  // and "installing" as the arguments."
+  // "Run the Update State algorithm passing registration's installing worker
+  // and installing as the arguments."
   new_version()->SetStatus(ServiceWorkerVersion::INSTALLING);
 
-  // "5. Fire a simple event named updatefound..."
+  // "Resolve registrationPromise with registration."
+  ResolvePromise(SERVICE_WORKER_OK, registration());
+
+  // "Fire a simple event named updatefound..."
   registration()->NotifyUpdateFound();
 
-  // "6. Fire an event named install..."
+  // "Fire an event named install..."
   new_version()->DispatchInstallEvent(
       -1,
       base::Bind(&ServiceWorkerRegisterJob::OnInstallFinished,
@@ -496,9 +493,9 @@ void ServiceWorkerRegisterJob::OnPausedAfterDownload() {
           registration()->active_version();
   DCHECK(most_recent_version.get());
   int64 most_recent_script_id =
-      most_recent_version->script_cache_map()->Lookup(script_url_);
+      most_recent_version->script_cache_map()->LookupResourceId(script_url_);
   int64 new_script_id =
-      new_version()->script_cache_map()->Lookup(script_url_);
+      new_version()->script_cache_map()->LookupResourceId(script_url_);
 
   // TODO(michaeln): It would be better to compare as the new resource
   // is being downloaded and to avoid writing it to disk until we know

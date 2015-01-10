@@ -103,6 +103,9 @@ void TestInterfaces::SetTestIsRunning(bool running) {
 void TestInterfaces::ConfigureForTestWithURL(const blink::WebURL& test_url,
                                              bool generate_pixels) {
   std::string spec = GURL(test_url).spec();
+  size_t path_start = spec.rfind("LayoutTests/");
+  if (path_start != std::string::npos)
+    spec = spec.substr(path_start);
   test_runner_->setShouldGeneratePixelResults(generate_pixels);
   if (spec.find("loading/") != std::string::npos)
     test_runner_->setShouldDumpFrameLoadCallbacks(true);
@@ -180,13 +183,8 @@ const std::vector<WebTestProxyBase*>& TestInterfaces::GetWindowList() {
 blink::WebThemeEngine* TestInterfaces::GetThemeEngine() {
   if (!test_runner_->UseMockTheme())
     return 0;
-#if defined(OS_MACOSX)
-  if (!theme_engine_.get())
-    theme_engine_.reset(new MockWebThemeEngineMac());
-#else
   if (!theme_engine_.get())
     theme_engine_.reset(new MockWebThemeEngine());
-#endif
   return theme_engine_.get();
 }
 

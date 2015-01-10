@@ -33,8 +33,8 @@ class ErrorScreensHistogramHelper {
   std::string screen_name_;
   bool was_shown_;
   ErrorScreen::ErrorState last_error_shown_;
-  base::Time error_screen_start_time;
-  base::TimeDelta time_on_error_screens;
+  base::Time error_screen_start_time_;
+  base::TimeDelta time_on_error_screens_;
 };
 
 }  // namespace chromeos

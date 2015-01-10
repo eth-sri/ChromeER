@@ -82,10 +82,14 @@ class MediaCodecBridge {
         }
 
         @CalledByNative("DequeueInputResult")
-        private int status() { return mStatus; }
+        private int status() {
+            return mStatus;
+        }
 
         @CalledByNative("DequeueInputResult")
-        private int index() { return mIndex; }
+        private int index() {
+            return mIndex;
+        }
     }
 
     /**
@@ -104,13 +108,19 @@ class MediaCodecBridge {
         }
 
         @CalledByNative("CodecInfo")
-        private String codecType() { return mCodecType; }
+        private String codecType() {
+            return mCodecType;
+        }
 
         @CalledByNative("CodecInfo")
-        private String codecName() { return mCodecName; }
+        private String codecName() {
+            return mCodecName;
+        }
 
         @CalledByNative("CodecInfo")
-        private int direction() { return mDirection; }
+        private int direction() {
+            return mDirection;
+        }
     }
 
     private static class DequeueOutputResult {
@@ -132,22 +142,34 @@ class MediaCodecBridge {
         }
 
         @CalledByNative("DequeueOutputResult")
-        private int status() { return mStatus; }
+        private int status() {
+            return mStatus;
+        }
 
         @CalledByNative("DequeueOutputResult")
-        private int index() { return mIndex; }
+        private int index() {
+            return mIndex;
+        }
 
         @CalledByNative("DequeueOutputResult")
-        private int flags() { return mFlags; }
+        private int flags() {
+            return mFlags;
+        }
 
         @CalledByNative("DequeueOutputResult")
-        private int offset() { return mOffset; }
+        private int offset() {
+            return mOffset;
+        }
 
         @CalledByNative("DequeueOutputResult")
-        private long presentationTimeMicroseconds() { return mPresentationTimeMicroseconds; }
+        private long presentationTimeMicroseconds() {
+            return mPresentationTimeMicroseconds;
+        }
 
         @CalledByNative("DequeueOutputResult")
-        private int numBytes() { return mNumBytes; }
+        private int numBytes() {
+            return mNumBytes;
+        }
     }
 
     /**
@@ -163,22 +185,71 @@ class MediaCodecBridge {
         for (int i = 0; i < count; ++i) {
             MediaCodecInfo info = MediaCodecList.getCodecInfoAt(i);
             int direction =
-                info.isEncoder() ? MEDIA_CODEC_ENCODER : MEDIA_CODEC_DECODER;
+                    info.isEncoder() ? MEDIA_CODEC_ENCODER : MEDIA_CODEC_DECODER;
             String codecString = info.getName();
             String[] supportedTypes = info.getSupportedTypes();
             for (int j = 0; j < supportedTypes.length; ++j) {
                 Map<String, CodecInfo> map = info.isEncoder() ? encoderInfoMap : decoderInfoMap;
                 if (!map.containsKey(supportedTypes[j])) {
                     map.put(supportedTypes[j], new CodecInfo(
-                        supportedTypes[j], codecString, direction));
+                            supportedTypes[j], codecString, direction));
                 }
             }
         }
         ArrayList<CodecInfo> codecInfos = new ArrayList<CodecInfo>(
-            decoderInfoMap.size() + encoderInfoMap.size());
+                decoderInfoMap.size() + encoderInfoMap.size());
         codecInfos.addAll(encoderInfoMap.values());
         codecInfos.addAll(decoderInfoMap.values());
         return codecInfos.toArray(new CodecInfo[codecInfos.size()]);
+    }
+
+    /**
+     * Get a name of default android codec.
+     */
+    @SuppressWarnings("deprecation")
+    @CalledByNative
+    private static String getDefaultCodecName(String mime, int direction) {
+        String codecName = "";
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            try {
+                MediaCodec mediaCodec = null;
+                if (direction == MEDIA_CODEC_ENCODER) {
+                    mediaCodec = MediaCodec.createEncoderByType(mime);
+                } else {
+                    mediaCodec = MediaCodec.createDecoderByType(mime);
+                }
+                codecName = mediaCodec.getName();
+                mediaCodec.release();
+            } catch (Exception e) {
+                Log.w(TAG, "getDefaultCodecName: Failed to create MediaCodec: " +
+                        mime + ", direction: " + direction, e);
+            }
+        }
+        return codecName;
+    }
+
+    /**
+     * Get a list of encoder supported color formats for specified mime type.
+     */
+    @CalledByNative
+    private static int[] getEncoderColorFormatsForMime(String mime) {
+        int count = MediaCodecList.getCodecCount();
+        for (int i = 0; i < count; ++i) {
+            MediaCodecInfo info = MediaCodecList.getCodecInfoAt(i);
+            if (!info.isEncoder())
+                continue;
+
+            String[] supportedTypes = info.getSupportedTypes();
+            for (int j = 0; j < supportedTypes.length; ++j) {
+                if (!supportedTypes[j].equalsIgnoreCase(mime))
+                    continue;
+
+                MediaCodecInfo.CodecCapabilities capabilities =
+                    info.getCapabilitiesForType(mime);
+                return capabilities.colorFormats;
+            }
+        }
+        return null;
     }
 
     @SuppressWarnings("deprecation")
@@ -533,7 +604,7 @@ class MediaCodecBridge {
             return (capabilities != null) && capabilities.isFeatureSupported(
                     MediaCodecInfo.CodecCapabilities.FEATURE_AdaptivePlayback);
         } catch (IllegalArgumentException e) {
-              Log.e(TAG, "Cannot retrieve codec information", e);
+            Log.e(TAG, "Cannot retrieve codec information", e);
         }
         return false;
     }

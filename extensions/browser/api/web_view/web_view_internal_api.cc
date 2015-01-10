@@ -65,7 +65,7 @@ bool WebViewInternalNavigateFunction::RunAsyncSafe(WebViewGuest* guest) {
       webview::Navigate::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   std::string src = params->src;
-  guest->NavigateGuest(src);
+  guest->NavigateGuest(src, true /* force_navigation */);
   return true;
 }
 
@@ -115,6 +115,8 @@ bool WebViewInternalExecuteCodeFunction::CanExecuteScriptOnPage() {
 
 extensions::ScriptExecutor*
 WebViewInternalExecuteCodeFunction::GetScriptExecutor() {
+  if (!render_view_host() || !render_view_host()->GetProcess())
+    return NULL;
   WebViewGuest* guest = WebViewGuest::From(
       render_view_host()->GetProcess()->GetID(), guest_instance_id_);
   if (!guest)
@@ -266,7 +268,7 @@ bool WebViewInternalFindFunction::RunAsyncSafe(WebViewGuest* guest) {
         params->options->match_case ? *params->options->match_case : false;
   }
 
-  guest->Find(search_text, options, this);
+  guest->StartFinding(search_text, options, this);
   return true;
 }
 
@@ -336,7 +338,9 @@ bool WebViewInternalGoFunction::RunAsyncSafe(WebViewGuest* guest) {
   scoped_ptr<webview::Go::Params> params(webview::Go::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  guest->Go(params->relative_index);
+  bool successful = guest->Go(params->relative_index);
+  SetResult(new base::FundamentalValue(successful));
+  SendResponse(true);
   return true;
 }
 

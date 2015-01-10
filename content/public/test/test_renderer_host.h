@@ -48,11 +48,32 @@ class RenderFrameHostTester {
   // RenderViewHostTestEnabler instance (see below) to do this.
   static RenderFrameHostTester* For(RenderFrameHost* host);
 
+  // If the given NavigationController has a pending main frame, returns it,
+  // otherwise NULL. This is an alternative to
+  // WebContentsTester::GetPendingMainFrame() when your WebContents was not
+  // created via a TestWebContents.
+  static RenderFrameHost* GetPendingForController(
+      NavigationController* controller);
+
+  // This removes the need to expose
+  // RenderFrameHostImpl::is_swapped_out() outside of content.
+  //
+  // This is safe to call on any RenderFrameHost, not just ones
+  // constructed while a RenderViewHostTestEnabler is in play.
+  static bool IsRenderFrameHostSwappedOut(RenderFrameHost* rfh);
+
   virtual ~RenderFrameHostTester() {}
 
   // Gives tests access to RenderFrameHostImpl::OnCreateChild. The returned
   // RenderFrameHost is owned by the parent RenderFrameHost.
   virtual RenderFrameHost* AppendChild(const std::string& frame_name) = 0;
+
+  // Calls OnDidCommitProvisionalLoad on the RenderFrameHost with the given
+  // information. Sets the rest of the parameters in the message to the
+  // "typical" values. This is a helper function for simulating the most common
+  // types of loads.
+  virtual void SendNavigate(int page_id, const GURL& url) = 0;
+  virtual void SendFailedNavigate(int page_id, const GURL& url) = 0;
 
   // Calls OnDidCommitProvisionalLoad on the RenderFrameHost with the given
   // information, including a custom PageTransition.  Sets the rest of the
@@ -61,6 +82,10 @@ class RenderFrameHostTester {
   virtual void SendNavigateWithTransition(int page_id,
                                           const GURL& url,
                                           ui::PageTransition transition) = 0;
+
+  // If set, future loads will have |mime_type| set as the mime type.
+  // If not set, the mime type will default to "text/html".
+  virtual void SetContentsMimeType(const std::string& mime_type) = 0;
 
   // Calls OnBeforeUnloadACK on this RenderFrameHost with the given parameter.
   virtual void SendBeforeUnloadACK(bool proceed) = 0;
@@ -79,17 +104,6 @@ class RenderViewHostTester {
   // RenderViewHostTestEnabler instance (see below) to do this.
   static RenderViewHostTester* For(RenderViewHost* host);
 
-  // If the given WebContentsImpl has a pending RVH, returns it, otherwise NULL.
-  static RenderViewHost* GetPendingForController(
-      NavigationController* controller);
-
-  // This removes the need to expose
-  // RenderViewHostImpl::is_swapped_out() outside of content.
-  //
-  // This is safe to call on any RenderViewHost, not just ones
-  // constructed while a RenderViewHostTestEnabler is in play.
-  static bool IsRenderViewHostSwappedOut(RenderViewHost* rvh);
-
   // Calls the RenderViewHosts' private OnMessageReceived function with the
   // given message.
   static bool TestOnMessageReceived(RenderViewHost* rvh,
@@ -106,23 +120,6 @@ class RenderViewHostTester {
                                 int proxy_routing_id,
                                 int32 max_page_id,
                                 bool created_with_opener) = 0;
-
-  // Calls OnMsgNavigate on the RenderViewHost with the given information,
-  // setting the rest of the parameters in the message to the "typical" values.
-  // This is a helper function for simulating the most common types of loads.
-  virtual void SendNavigate(int page_id, const GURL& url) = 0;
-  virtual void SendFailedNavigate(int page_id, const GURL& url) = 0;
-
-  // Calls OnMsgNavigate on the RenderViewHost with the given information,
-  // including a custom PageTransition.  Sets the rest of the
-  // parameters in the message to the "typical" values. This is a helper
-  // function for simulating the most common types of loads.
-  virtual void SendNavigateWithTransition(int page_id, const GURL& url,
-                                          ui::PageTransition transition) = 0;
-
-  // If set, future loads will have |mime_type| set as the mime type.
-  // If not set, the mime type will default to "text/html".
-  virtual void SetContentsMimeType(const std::string& mime_type) = 0;
 
   // Makes the WasHidden/WasShown calls to the RenderWidget that
   // tell it it has been hidden or restored from having been hidden.
@@ -151,7 +148,7 @@ class RenderViewHostTestEnabler {
 class RenderViewHostTestHarness : public testing::Test {
  public:
   RenderViewHostTestHarness();
-  virtual ~RenderViewHostTestHarness();
+  ~RenderViewHostTestHarness() override;
 
   NavigationController& controller();
 
@@ -203,8 +200,8 @@ class RenderViewHostTestHarness : public testing::Test {
 
  protected:
   // testing::Test
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   // Derived classes should override this method to use a custom BrowserContext.
   // It is invoked by SetUp after threads were started.

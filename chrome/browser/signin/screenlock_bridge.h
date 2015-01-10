@@ -37,6 +37,15 @@ class ScreenlockBridge {
     virtual ~Observer() {}
   };
 
+  // User pod icons supported by lock screen / signin screen UI.
+  enum UserPodCustomIcon {
+    USER_POD_CUSTOM_ICON_NONE,
+    USER_POD_CUSTOM_ICON_HARDLOCKED,
+    USER_POD_CUSTOM_ICON_LOCKED,
+    USER_POD_CUSTOM_ICON_UNLOCKED,
+    USER_POD_CUSTOM_ICON_SPINNER
+  };
+
   // Class containing parameters describing the custom icon that should be
   // shown on a user's screen lock pod next to the input field.
   class UserPodCustomIconOptions {
@@ -48,49 +57,28 @@ class ScreenlockBridge {
     // screenlock web UI.
     scoped_ptr<base::DictionaryValue> ToDictionaryValue() const;
 
-    // Sets the icon as chrome://theme resource URL.
-    void SetIconAsResourceURL(const std::string& url);
-
-    // Sets the icon size. If not called, the icon will not be visible.
-    // For animated icon, this should be set to a single frame size, not the
-    // animation resource size.
-    void SetSize(size_t icon_width, size_t icon_height);
-
-    // If the icon is supposed to be animated, sets the animation parameters.
-    // If set, it expects that the resource set using |SetIconAsResourceURL|
-    // method contains horizontally arranged ordered list of animation frames.
-    // Note that the icon size set in |SetSize| should be a single frame size.
-    // |resource_width|: Total animation resource width.
-    // |frame_length_ms|: Time for which a single animation frame is shown.
-    void SetAnimation(size_t resource_width, size_t frame_length_ms);
-
-    // Sets the icon opacity. The values should be in <0, 100] interval, which
-    // will get scaled into <0, 1] interval. The default value is 100.
-    void SetOpacity(size_t opacity);
+    // Sets the icon that should be shown in the UI.
+    void SetIcon(UserPodCustomIcon icon);
 
     // Sets the icon tooltip. If |autoshow| is set the tooltip is automatically
     // shown with the icon.
     void SetTooltip(const base::string16& tooltip, bool autoshow);
+
+    // Sets the accessiblity label of the icon. If this attribute is not
+    // provided, then the tooltip will be used.
+    void SetAriaLabel(const base::string16& aria_label);
 
     // If hardlock on click is set, clicking the icon in the screenlock will
     // go to state where password is required for unlock.
     void SetHardlockOnClick();
 
    private:
-    std::string icon_resource_url_;
-
-    size_t width_;
-    size_t height_;
-
-    bool animation_set_;
-    size_t animation_resource_width_;
-    size_t animation_frame_length_ms_;
-
-    // The opacity should be in <0, 100] range.
-    size_t opacity_;
+    UserPodCustomIcon icon_;
 
     base::string16 tooltip_;
     bool autoshow_tooltip_;
+
+    base::string16 aria_label_;
 
     bool hardlock_on_click_;
 

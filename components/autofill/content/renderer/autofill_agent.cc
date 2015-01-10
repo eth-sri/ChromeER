@@ -632,8 +632,14 @@ void AutofillAgent::QueryAutofillSuggestions(
   // warning.  Otherwise, we want to ignore fields that disable autocomplete, so
   // that the suggestions list does not include suggestions for these form
   // fields -- see comment 1 on http://crbug.com/69914
-  const RequirementsMask requirements =
+  RequirementsMask requirements =
       element.autoComplete() ? REQUIRE_AUTOCOMPLETE : REQUIRE_NONE;
+
+  // If we're ignoring autocomplete="off", always extract everything.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kIgnoreAutocompleteOffForAutofill)) {
+    requirements = REQUIRE_NONE;
+  }
 
   FormData form;
   FormFieldData field;
@@ -730,6 +736,8 @@ void AutofillAgent::didAssociateFormControls(const WebVector<WebNode>& nodes) {
     if (frame && !frame->parent() && !frame->isLoading()) {
       ProcessForms(*frame);
       password_autofill_agent_->OnDynamicFormsSeen(frame);
+      if (password_generation_agent_)
+        password_generation_agent_->OnDynamicFormsSeen(frame);
       return;
     }
   }

@@ -133,7 +133,7 @@ KeyedService* ProfileInvalidationProviderFactory::BuildServiceInstanceFor(
   service->Init(scoped_ptr<syncer::InvalidationStateTracker>(
       new InvalidatorStorage(profile->GetPrefs())));
 
-  return new ProfileInvalidationProvider(service.PassAs<InvalidationService>());
+  return new ProfileInvalidationProvider(service.Pass());
 #endif
 }
 
@@ -141,7 +141,7 @@ void ProfileInvalidationProviderFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kInvalidationServiceUseGCMChannel,
-      false,
+      true,  // if no value in prefs, use GCM channel.
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   InvalidatorStorage::RegisterProfilePrefs(registry);
 }

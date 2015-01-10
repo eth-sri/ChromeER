@@ -144,8 +144,7 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
   // Step 1: Intro.
   strings->SetString(
       "setupIntroHeaderTitle",
-      l10n_util::GetStringFUTF16(
-          IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TITLE, device_type));
+      l10n_util::GetStringUTF16(IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TITLE));
   strings->SetString(
       "setupIntroHeaderText",
       l10n_util::GetStringFUTF16(IDS_EASY_UNLOCK_SETUP_INTRO_HEADER_TEXT,
@@ -389,8 +388,7 @@ EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
 void EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
     ConnectToService(device::BluetoothDevice* device,
                      const device::BluetoothUUID& uuid) {
-  proximity_auth::bluetooth_util::ConnectToServiceInsecurely(
-      device,
+  device->ConnectToServiceInsecurely(
       uuid,
       base::Bind(&EasyUnlockPrivateConnectToBluetoothServiceInsecurelyFunction::
                      OnConnect,

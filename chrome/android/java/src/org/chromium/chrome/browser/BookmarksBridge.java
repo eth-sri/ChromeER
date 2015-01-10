@@ -266,6 +266,46 @@ public class BookmarksBridge {
     }
 
     /**
+     * Calls {@link #getAllFoldersWithDepths(List, List)} and remove all folders and children
+     * in bookmarksToMove. This method is useful when finding a list of possible parent folers when
+     * moving some folders (a folder cannot be moved to its own children).
+     */
+    public void getMoveDestinations(List<BookmarkId> folderList,
+            List<Integer> depthList, List<BookmarkId> bookmarksToMove) {
+        assert mIsNativeBookmarkModelLoaded;
+        nativeGetAllFoldersWithDepths(mNativeBookmarksBridge, folderList, depthList);
+        if (bookmarksToMove == null || bookmarksToMove.size() == 0) return;
+
+        boolean shouldTrim = false;
+        int trimThreshold = -1;
+        for (int i = 0; i < folderList.size(); i++) {
+            int depth = depthList.get(i);
+            if (shouldTrim) {
+                if (depth <= trimThreshold) {
+                    shouldTrim = false;
+                    trimThreshold = -1;
+                } else {
+                    folderList.remove(i);
+                    depthList.remove(i);
+                    i--;
+                }
+            }
+            // Do not use else here because shouldTrim could be set true after if (shouldTrim)
+            // statement.
+            if (!shouldTrim) {
+                BookmarkId folder = folderList.get(i);
+                if (bookmarksToMove.contains(folder)) {
+                    shouldTrim = true;
+                    trimThreshold = depth;
+                    folderList.remove(i);
+                    depthList.remove(i);
+                    i--;
+                }
+            }
+        }
+    }
+
+    /**
      * @return The BookmarkId for Mobile folder node
      */
     public BookmarkId getMobileFolderId() {
@@ -276,7 +316,6 @@ public class BookmarksBridge {
     /**
      * @return Id representing the special "other" folder from bookmark model.
      */
-    @VisibleForTesting
     public BookmarkId getOtherFolderId() {
         assert mIsNativeBookmarkModelLoaded;
         return nativeGetOtherFolderId(mNativeBookmarksBridge);
@@ -308,6 +347,19 @@ public class BookmarksBridge {
                 getBookmarks,
                 result);
         return result;
+    }
+
+    /**
+     * Gets the child of a folder at the specific position.
+     * @param folderId Id of the parent folder
+     * @param index Posision of child among all children in folder
+     * @return BookmarkId of the child, which will be null if folderId does not point to a folder or
+     *         index is invalid.
+     */
+    public BookmarkId getChildAt(BookmarkId folderId, int index) {
+        assert mIsNativeBookmarkModelLoaded;
+        return nativeGetChildAt(mNativeBookmarksBridge, folderId.getId(), folderId.getType(),
+                index);
     }
 
     /**
@@ -422,7 +474,7 @@ public class BookmarksBridge {
      *         not editable), returns null.
      */
     public BookmarkId addFolder(BookmarkId parent, int index, String title) {
-        assert parent.getType() == BookmarkType.BOOKMARK_TYPE_NORMAL;
+        assert parent.getType() == BookmarkType.NORMAL;
         assert index >= 0;
         assert title != null;
 
@@ -442,7 +494,7 @@ public class BookmarksBridge {
      *         not editable), returns null.
      */
     public BookmarkId addBookmark(BookmarkId parent, int index, String title, String url) {
-        assert parent.getType() == BookmarkType.BOOKMARK_TYPE_NORMAL;
+        assert parent.getType() == BookmarkType.NORMAL;
         assert index >= 0;
         assert title != null;
         assert url != null;
@@ -592,11 +644,6 @@ public class BookmarksBridge {
         depthList.add(depth);
     }
 
-    @CalledByNative
-    private static BookmarkId createBookmarkId(long id, int type) {
-        return new BookmarkId(id, type);
-    }
-
     private native BookmarkItem nativeGetBookmarkByID(long nativeBookmarksBridge, long id,
             int type);
     private native void nativeGetPermanentNodeIDs(long nativeBookmarksBridge,
@@ -614,6 +661,8 @@ public class BookmarksBridge {
     private native BookmarkId nativeGetDesktopFolderId(long nativeBookmarksBridge);
     private native void nativeGetChildIDs(long nativeBookmarksBridge, long id, int type,
             boolean getFolders, boolean getBookmarks, List<BookmarkId> bookmarksList);
+    private native BookmarkId nativeGetChildAt(long nativeBookmarksBridge, long id, int type,
+            int index);
     private native void nativeGetAllBookmarkIDsOrderedByCreationDate(long nativeBookmarksBridge,
             List<BookmarkId> result);
     private native void nativeSetBookmarkTitle(long nativeBookmarksBridge, long id, int type,

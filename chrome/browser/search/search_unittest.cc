@@ -41,7 +41,7 @@ namespace chrome {
 
 class SearchTest : public BrowserWithTestWindowTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
     field_trial_list_.reset(new base::FieldTrialList(
         new metrics::SHA1EntropyProvider("42")));
@@ -759,8 +759,7 @@ TEST_F(SearchTest, IsQueryExtractionAllowedForURL) {
 
 class SearchURLTest : public SearchTest {
  protected:
-  virtual void SetSearchProvider(bool set_ntp_url, bool insecure_ntp_url)
-      OVERRIDE {
+  void SetSearchProvider(bool set_ntp_url, bool insecure_ntp_url) override {
     TemplateURLService* template_url_service =
         TemplateURLServiceFactory::GetForProfile(profile());
     TemplateURLData data;

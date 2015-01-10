@@ -69,19 +69,19 @@ class AutomationWebContentsObserver
     : public content::WebContentsObserver,
       public content::WebContentsUserData<AutomationWebContentsObserver> {
  public:
-  virtual ~AutomationWebContentsObserver() {}
+  ~AutomationWebContentsObserver() override {}
 
   // content::WebContentsObserver overrides.
-  virtual void AccessibilityEventReceived(
+  void AccessibilityEventReceived(
       const std::vector<content::AXEventNotificationDetails>& details)
-      OVERRIDE {
+      override {
     automation_util::DispatchAccessibilityEventsToAutomation(
         details, browser_context_,
         web_contents()->GetContainerBounds().OffsetFromOrigin());
   }
 
-  virtual void RenderFrameDeleted(
-      content::RenderFrameHost* render_frame_host) OVERRIDE {
+  void RenderFrameDeleted(
+      content::RenderFrameHost* render_frame_host) override {
     automation_util::DispatchTreeDestroyedEventToAutomation(
         render_frame_host->GetProcess()->GetID(),
         render_frame_host->GetRoutingID(),
@@ -110,19 +110,15 @@ class RenderFrameHostActionAdapter : public AutomationActionAdapter {
   virtual ~RenderFrameHostActionAdapter() {}
 
   // AutomationActionAdapter implementation.
-  virtual void DoDefault(int32 id) OVERRIDE {
-    rfh_->AccessibilityDoDefaultAction(id);
-  }
+  void DoDefault(int32 id) override { rfh_->AccessibilityDoDefaultAction(id); }
 
-  virtual void Focus(int32 id) OVERRIDE {
-    rfh_->AccessibilitySetFocus(id);
-  }
+  void Focus(int32 id) override { rfh_->AccessibilitySetFocus(id); }
 
-  virtual void MakeVisible(int32 id) OVERRIDE {
+  void MakeVisible(int32 id) override {
     rfh_->AccessibilityScrollToMakeVisible(id, gfx::Rect());
   }
 
-  virtual void SetSelection(int32 id, int32 start, int32 end) OVERRIDE {
+  void SetSelection(int32 id, int32 start, int32 end) override {
     rfh_->AccessibilitySetTextSelection(id, start, end);
   }
 

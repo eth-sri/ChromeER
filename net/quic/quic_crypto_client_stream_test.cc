@@ -31,11 +31,9 @@ class QuicCryptoClientStreamTest : public ::testing::Test {
       : connection_(new PacketSavingConnection(false)),
         session_(new TestClientSession(connection_, DefaultQuicConfig())),
         server_id_(kServerHostname, kServerPort, false, PRIVACY_MODE_DISABLED),
-        stream_(new QuicCryptoClientStream(
-            server_id_, session_.get(), NULL, &crypto_config_)) {
+        stream_(new QuicCryptoClientStream(server_id_, session_.get(), nullptr,
+                                           &crypto_config_)) {
     session_->SetCryptoStream(stream_.get());
-    session_->config()->SetDefaults();
-    crypto_config_.SetDefaults();
   }
 
   void CompleteCryptoHandshake() {
@@ -108,7 +106,7 @@ TEST_F(QuicCryptoClientStreamTest, NegotiatedParameters) {
 
 TEST_F(QuicCryptoClientStreamTest, InvalidHostname) {
   QuicServerId server_id("invalid", 80, false, PRIVACY_MODE_DISABLED);
-  stream_.reset(new QuicCryptoClientStream(server_id, session_.get(), NULL,
+  stream_.reset(new QuicCryptoClientStream(server_id, session_.get(), nullptr,
                                            &crypto_config_));
   session_->SetCryptoStream(stream_.get());
 
@@ -123,11 +121,10 @@ TEST_F(QuicCryptoClientStreamTest, ExpiredServerConfig) {
 
   connection_ = new PacketSavingConnection(true);
   session_.reset(new TestClientSession(connection_, DefaultQuicConfig()));
-  stream_.reset(new QuicCryptoClientStream(server_id_, session_.get(), NULL,
+  stream_.reset(new QuicCryptoClientStream(server_id_, session_.get(), nullptr,
                                            &crypto_config_));
 
   session_->SetCryptoStream(stream_.get());
-  session_->config()->SetDefaults();
 
   // Advance time 5 years to ensure that we pass the expiry time of the cached
   // server config.

@@ -49,8 +49,6 @@
         'android/surface_texture.h',
         'android/surface_texture_listener.cc',
         'android/surface_texture_listener.h',
-        'android/surface_texture_tracker.cc',
-        'android/surface_texture_tracker.h',
         'gl_bindings.h',
         'gl_bindings_skia_in_process.cc',
         'gl_bindings_skia_in_process.h',
@@ -115,6 +113,7 @@
         'gl_version_info.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
+        'gpu_switching_observer.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
@@ -197,6 +196,12 @@
           'sources': [
             'gl_implementation_osmesa.cc',
             'gl_implementation_osmesa.h',
+          ],
+        }],
+        ['OS=="linux"', {
+          'sources': [
+            'gl_image_linux_dma_buffer.cc',
+            'gl_image_linux_dma_buffer.h',
           ],
         }],
         ['use_x11 == 1', {
@@ -305,6 +310,14 @@
         ['OS=="android" and android_webview_build==0', {
           'dependencies': [
             '../android/ui_android.gyp:ui_java',
+          ],
+        }],
+        ['ubsan==1', {
+          # Due to a bug in LLVM (http://llvm.org/bugs/show_bug.cgi?id=21349),
+          # compilation hangs for some GL source files. Disable -O2 temporarily
+          # until http://crbug.com/426271 is fixed.
+          'cflags!': [
+            '-O2',
           ],
         }],
       ],

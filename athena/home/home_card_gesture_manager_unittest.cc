@@ -6,7 +6,7 @@
 
 #include "athena/home/home_card_constants.h"
 #include "athena/home/public/home_card.h"
-#include "athena/test/athena_test_base.h"
+#include "athena/test/base/athena_test_base.h"
 #include "base/time/time.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
@@ -25,10 +25,10 @@ class HomeCardGestureManagerTest : public test::AthenaTestBase,
         last_y_(0),
         progress_count_(0),
         end_count_(0) {}
-  virtual ~HomeCardGestureManagerTest() {}
+  ~HomeCardGestureManagerTest() override {}
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     test::AthenaTestBase::SetUp();
     gesture_manager_.reset(new HomeCardGestureManager(this, screen_bounds()));
   }
@@ -96,16 +96,15 @@ class HomeCardGestureManagerTest : public test::AthenaTestBase,
   }
 
   // HomeCardGestureManager::Delegate:
-  virtual void OnGestureEnded(HomeCard::State final_state,
-                              bool is_fling) OVERRIDE {
+  void OnGestureEnded(HomeCard::State final_state, bool is_fling) override {
     final_state_ = final_state;
     was_fling_ = is_fling;
     ++end_count_;
   }
 
-  virtual void OnGestureProgressed(HomeCard::State from_state,
-                                   HomeCard::State to_state,
-                                   float progress) OVERRIDE {
+  void OnGestureProgressed(HomeCard::State from_state,
+                           HomeCard::State to_state,
+                           float progress) override {
     last_from_state_ = from_state;
     last_to_state_ = to_state;
     last_progress_ = progress;

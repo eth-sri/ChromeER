@@ -37,11 +37,11 @@ CONTENT_EXPORT extern const char kDisableLayerSquashing[];
 CONTENT_EXPORT extern const char kDisableAcceleratedVideoDecode[];
 CONTENT_EXPORT extern const char kDisableApplicationCache[];
 extern const char kDisableBackingStoreLimit[];
+CONTENT_EXPORT extern const char kDisableBlinkScheduler[];
 CONTENT_EXPORT extern const char kDisablePreferCompositingToLCDText[];
 CONTENT_EXPORT extern const char kDisableCompositingForTransition[];
 CONTENT_EXPORT extern const char kDisableDatabases[];
 CONTENT_EXPORT extern const char kDisableDelegatedRenderer[];
-extern const char kDisableDesktopNotifications[];
 extern const char kDisableDirectNPAPIRequests[];
 CONTENT_EXPORT extern const char kDisableDistanceFieldText[];
 CONTENT_EXPORT extern const char kDisableDisplayList2dCanvas[];
@@ -81,6 +81,7 @@ CONTENT_EXPORT extern const char kDisableSharedWorkers[];
 CONTENT_EXPORT extern const char kDisableSingleThreadProxyScheduler[];
 CONTENT_EXPORT extern const char kDisableSmoothScrolling[];
 CONTENT_EXPORT extern const char kDisableSoftwareRasterizer[];
+CONTENT_EXPORT extern const char kDisableSVG1DOM[];
 CONTENT_EXPORT extern const char kDisableThreadedCompositing[];
 CONTENT_EXPORT extern const char kDisableThreadedScrolling[];
 extern const char kDisableV8IdleNotificationAfterCommit[];
@@ -89,10 +90,12 @@ extern const char kDisableXSLT[];
 extern const char kDisableXSSAuditor[];
 CONTENT_EXPORT extern const char kDisableZeroCopy[];
 CONTENT_EXPORT extern const char kDomAutomationController[];
+extern const char kEnable2dCanvasClipAntialiasing[];
+CONTENT_EXPORT extern const char kEnableAcceleratedJpegDecoding[];
 CONTENT_EXPORT extern const char kEnableBleedingEdgeRenderingFastPaths[];
-CONTENT_EXPORT extern const char kDisableDeferredFilters[];
 CONTENT_EXPORT extern const char kEnableLayerSquashing[];
 CONTENT_EXPORT extern const char kEnableContainerCulling[];
+CONTENT_EXPORT extern const char kEnableCredentialManagerAPI[];
 CONTENT_EXPORT extern const char kEnableBeginFrameScheduling[];
 CONTENT_EXPORT extern const char kEnablePreferCompositingToLCDText[];
 CONTENT_EXPORT extern const char kEnableBrowserSideNavigation[];
@@ -124,12 +127,14 @@ CONTENT_EXPORT extern const char kEnableRendererMojoChannel[];
 CONTENT_EXPORT extern const char kEnableSandboxLogging[];
 extern const char kEnableSeccompFilterSandbox[];
 extern const char kEnableSkiaBenchmarking[];
+extern const char kEnableSlimmingPaint[];
 CONTENT_EXPORT extern const char kEnableSmoothScrolling[];
 CONTENT_EXPORT extern const char kEnableSpatialNavigation[];
 CONTENT_EXPORT extern const char kEnableStatsTable[];
 CONTENT_EXPORT extern const char kEnableStrictSiteIsolation[];
 CONTENT_EXPORT extern const char kEnableServiceWorkerSync[];
 CONTENT_EXPORT extern const char kEnableTcpFastOpen[];
+CONTENT_EXPORT extern const char kEnableTextBlobs[];
 CONTENT_EXPORT extern const char kEnableThreadedCompositing[];
 CONTENT_EXPORT extern const char kEnableTracing[];
 CONTENT_EXPORT extern const char kEnableTracingOutput[];
@@ -251,7 +256,6 @@ CONTENT_EXPORT extern const char kDisableGestureRequirementForMediaPlayback[];
 CONTENT_EXPORT extern const char kDisableClickDelay[];
 CONTENT_EXPORT extern const char kDisableOverscrollEdgeEffect[];
 CONTENT_EXPORT extern const char kDisableWebRTC[];
-CONTENT_EXPORT extern const char kEnableContentVideoViewPowerSaveBlocker[];
 CONTENT_EXPORT extern const char kEnableSpeechRecognition[];
 CONTENT_EXPORT extern const char kForceUseOverlayEmbeddedVideo[];
 CONTENT_EXPORT extern const char kHideScrollbars[];
@@ -273,17 +277,21 @@ CONTENT_EXPORT extern const char kEnableSpeechDispatcher[];
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 extern const char kDisableCoreAnimationPlugins[];
+extern const char kEnableThreadedEventHandlingMac[];
 #endif
 
 #if defined(OS_WIN)
 // This switch contains the device scale factor passed to certain processes
 // like renderers, etc.
 CONTENT_EXPORT extern const char kDeviceScaleFactor[];
-CONTENT_EXPORT extern const char kDisableDirectWrite[];
 CONTENT_EXPORT extern const char kDisableLegacyIntermediateWindow[];
 // This switch will be removed when we enable the win32K lockdown process
 // mitigation.
 CONTENT_EXPORT extern const char kEnableWin32kRendererLockDown[];
+#endif
+
+#if defined(ENABLE_PLUGINS)
+CONTENT_EXPORT extern const char kEnablePluginPowerSaver[];
 #endif
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in

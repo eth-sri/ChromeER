@@ -41,9 +41,9 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
           config_service);
 
   // net::URLRequestContextGetter implementation.
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
+  virtual net::URLRequestContext* GetURLRequestContext() override;
   virtual scoped_refptr<base::SingleThreadTaskRunner>
-      GetNetworkTaskRunner() const OVERRIDE;
+      GetNetworkTaskRunner() const override;
 
   data_reduction_proxy::DataReductionProxyAuthRequestHandler*
       GetDataReductionProxyAuthRequestHandler() const;
@@ -51,6 +51,10 @@ class AwURLRequestContextGetter : public net::URLRequestContextGetter {
   // NetLog is thread-safe, so clients can call this method from arbitrary
   // threads (UI and IO).
   net::NetLog* GetNetLog();
+
+  // This should be called before the network stack is ever used. It can be
+  // called again afterwards if the key updates.
+  void SetKeyOnIO(const std::string& key);
 
  private:
   friend class AwBrowserContext;

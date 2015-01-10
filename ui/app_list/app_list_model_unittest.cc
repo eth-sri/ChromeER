@@ -29,25 +29,18 @@ class TestObserver : public AppListModelObserver {
         items_removed_(0),
         items_updated_(0) {
   }
-  virtual ~TestObserver() {
-  }
+  ~TestObserver() override {}
 
   // AppListModelObserver
-  virtual void OnAppListModelStatusChanged() OVERRIDE {
-    ++status_changed_count_;
-  }
+  void OnAppListModelStatusChanged() override { ++status_changed_count_; }
 
-  virtual void OnAppListItemAdded(AppListItem* item) OVERRIDE {
-    items_added_++;
-  }
+  void OnAppListItemAdded(AppListItem* item) override { items_added_++; }
 
-  virtual void OnAppListItemWillBeDeleted(AppListItem* item) OVERRIDE {
+  void OnAppListItemWillBeDeleted(AppListItem* item) override {
     items_removed_++;
   }
 
-  virtual void OnAppListItemUpdated(AppListItem* item) OVERRIDE {
-    items_updated_++;
-  }
+  void OnAppListItemUpdated(AppListItem* item) override { items_updated_++; }
 
   int status_changed_count() const { return status_changed_count_; }
   size_t items_added() { return items_added_; }
@@ -75,15 +68,11 @@ class TestObserver : public AppListModelObserver {
 class AppListModelTest : public testing::Test {
  public:
   AppListModelTest() {}
-  virtual ~AppListModelTest() {}
+  ~AppListModelTest() override {}
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
-    model_.AddObserver(&observer_);
-  }
-  virtual void TearDown() OVERRIDE {
-    model_.RemoveObserver(&observer_);
-  }
+  void SetUp() override { model_.AddObserver(&observer_); }
+  void TearDown() override { model_.RemoveObserver(&observer_); }
 
  protected:
   bool ItemObservedByFolder(AppListFolderItem* folder,
@@ -234,15 +223,11 @@ class AppListModelFolderTest : public AppListModelTest {
   AppListModelFolderTest() {
     model_.SetFoldersEnabled(true);
   }
-  virtual ~AppListModelFolderTest() {}
+  ~AppListModelFolderTest() override {}
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
-    AppListModelTest::SetUp();
-  }
-  virtual void TearDown() OVERRIDE {
-    AppListModelTest::TearDown();
-  }
+  void SetUp() override { AppListModelTest::SetUp(); }
+  void TearDown() override { AppListModelTest::TearDown(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AppListModelFolderTest);

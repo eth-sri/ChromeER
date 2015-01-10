@@ -29,7 +29,7 @@ class MediaBrowserTest : public InProcessBrowserTest,
   static const char kPluginCrashed[];
 
   MediaBrowserTest();
-  virtual ~MediaBrowserTest();
+  ~MediaBrowserTest() override;
 
   // Runs a html page with a list of URL query parameters.
   // If http is true, the test starts a local http test server to load the test
@@ -48,8 +48,8 @@ class MediaBrowserTest : public InProcessBrowserTest,
 
   // Fails test and sets document title to kPluginCrashed when a plugin crashes.
   // If IgnorePluginCrash(true) is called then plugin crash is ignored.
-  virtual void PluginCrashed(const base::FilePath& plugin_path,
-                             base::ProcessId plugin_pid) OVERRIDE;
+  void PluginCrashed(const base::FilePath& plugin_path,
+                     base::ProcessId plugin_pid) override;
 
   // When called, the test will ignore any plugin crashes and not fail the test.
   void IgnorePluginCrash();

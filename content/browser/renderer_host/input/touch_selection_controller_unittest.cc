@@ -5,7 +5,7 @@
 #include "content/browser/renderer_host/input/touch_selection_controller.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/events/test/mock_motion_event.h"
+#include "ui/events/test/motion_event_test_utils.h"
 
 using ui::test::MockMotionEvent;
 
@@ -19,13 +19,13 @@ class MockTouchHandleDrawable : public TouchHandleDrawable {
  public:
   explicit MockTouchHandleDrawable(bool* contains_point)
       : intersects_rect_(contains_point) {}
-  virtual ~MockTouchHandleDrawable() {}
-  virtual void SetEnabled(bool enabled) OVERRIDE {}
-  virtual void SetOrientation(TouchHandleOrientation orientation) OVERRIDE {}
-  virtual void SetAlpha(float alpha) OVERRIDE {}
-  virtual void SetFocus(const gfx::PointF& position) OVERRIDE {}
-  virtual void SetVisible(bool visible) OVERRIDE {}
-  virtual bool IntersectsWith(const gfx::RectF& rect) const OVERRIDE {
+  ~MockTouchHandleDrawable() override {}
+  void SetEnabled(bool enabled) override {}
+  void SetOrientation(TouchHandleOrientation orientation) override {}
+  void SetAlpha(float alpha) override {}
+  void SetFocus(const gfx::PointF& position) override {}
+  void SetVisible(bool visible) override {}
+  bool IntersectsWith(const gfx::RectF& rect) const override {
     return *intersects_rect_;
   }
 
@@ -46,43 +46,43 @@ class TouchSelectionControllerTest : public testing::Test,
         animation_enabled_(true),
         dragging_enabled_(false) {}
 
-  virtual ~TouchSelectionControllerTest() {}
+  ~TouchSelectionControllerTest() override {}
 
   // testing::Test implementation.
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     controller_.reset(new TouchSelectionController(
         this,
         base::TimeDelta::FromMilliseconds(kDefaultTapTimeoutMs),
         kDefaulTapSlop));
   }
 
-  virtual void TearDown() OVERRIDE { controller_.reset(); }
+  void TearDown() override { controller_.reset(); }
 
   // TouchSelectionControllerClient implementation.
 
-  virtual bool SupportsAnimation() const OVERRIDE { return animation_enabled_; }
+  bool SupportsAnimation() const override { return animation_enabled_; }
 
-  virtual void SetNeedsAnimate() OVERRIDE { needs_animate_ = true; }
+  void SetNeedsAnimate() override { needs_animate_ = true; }
 
-  virtual void MoveCaret(const gfx::PointF& position) OVERRIDE {
+  void MoveCaret(const gfx::PointF& position) override {
     caret_moved_ = true;
     caret_position_ = position;
   }
 
-  virtual void SelectBetweenCoordinates(const gfx::PointF& start,
-                                        const gfx::PointF& end) OVERRIDE {
+  void SelectBetweenCoordinates(const gfx::PointF& start,
+                                const gfx::PointF& end) override {
     selection_moved_ = true;
     selection_start_ = start;
     selection_end_ = end;
   }
 
-  virtual void OnSelectionEvent(SelectionEventType event,
-                                const gfx::PointF& end_position) OVERRIDE {
+  void OnSelectionEvent(SelectionEventType event,
+                        const gfx::PointF& end_position) override {
     last_event_ = event;
     last_event_start_ = end_position;
   }
 
-  virtual scoped_ptr<TouchHandleDrawable> CreateDrawable() OVERRIDE {
+  scoped_ptr<TouchHandleDrawable> CreateDrawable() override {
     return scoped_ptr<TouchHandleDrawable>(
         new MockTouchHandleDrawable(&dragging_enabled_));
   }

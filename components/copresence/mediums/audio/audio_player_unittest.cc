@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
+#include "components/copresence/mediums/audio/audio_player_impl.h"
 #include "components/copresence/public/copresence_constants.h"
 #include "components/copresence/test/audio_test_support.h"
 #include "media/audio/audio_manager.h"
@@ -25,21 +26,21 @@ class TestAudioOutputStream : public media::AudioOutputStream {
       : default_frame_count_(default_frame_count),
         max_frame_count_(max_frame_count),
         gather_callback_(gather_callback),
-        callback_(NULL) {
+        callback_(nullptr) {
     caller_loop_ = base::MessageLoop::current();
   }
 
-  virtual ~TestAudioOutputStream() {}
+  ~TestAudioOutputStream() override {}
 
-  virtual bool Open() OVERRIDE { return true; }
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE {
+  bool Open() override { return true; }
+  void Start(AudioSourceCallback* callback) override {
     callback_ = callback;
     GatherPlayedSamples();
   }
-  virtual void Stop() OVERRIDE {}
-  virtual void SetVolume(double volume) OVERRIDE {}
-  virtual void GetVolume(double* volume) OVERRIDE {}
-  virtual void Close() OVERRIDE {}
+  void Stop() override {}
+  void SetVolume(double volume) override {}
+  void GetVolume(double* volume) override {}
+  void Close() override {}
 
  private:
   void GatherPlayedSamples() {
@@ -72,16 +73,16 @@ namespace copresence {
 class AudioPlayerTest : public testing::Test,
                         public base::SupportsWeakPtr<AudioPlayerTest> {
  public:
-  AudioPlayerTest() : buffer_index_(0), player_(NULL) {
+  AudioPlayerTest() : buffer_index_(0), player_(nullptr) {
     if (!media::AudioManager::Get())
       media::AudioManager::CreateForTesting();
   }
 
-  virtual ~AudioPlayerTest() { DeletePlayer(); }
+  ~AudioPlayerTest() override { DeletePlayer(); }
 
   void CreatePlayer() {
     DeletePlayer();
-    player_ = new AudioPlayer();
+    player_ = new AudioPlayerImpl();
     player_->set_output_stream_for_testing(new TestAudioOutputStream(
         kDefaultFrameCount,
         kMaxFrameCount,
@@ -93,7 +94,7 @@ class AudioPlayerTest : public testing::Test,
     if (!player_)
       return;
     player_->Finalize();
-    player_ = NULL;
+    player_ = nullptr;
   }
 
   void PlayAndVerifySamples(
@@ -129,7 +130,8 @@ class AudioPlayerTest : public testing::Test,
   scoped_ptr<media::AudioBus> buffer_;
   int buffer_index_;
 
-  AudioPlayer* player_;
+  // Deleted by calling Finalize() on the object.
+  AudioPlayerImpl* player_;
   base::MessageLoop message_loop_;
 };
 

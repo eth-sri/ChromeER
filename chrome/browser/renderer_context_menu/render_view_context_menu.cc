@@ -341,6 +341,7 @@ RenderViewContextMenu::~RenderViewContextMenu() {
 
 // Menu construction functions -------------------------------------------------
 
+#if defined(ENABLE_EXTENSIONS)
 // static
 bool RenderViewContextMenu::ExtensionContextAndPatternMatch(
     const content::ContextMenuParams& params,
@@ -474,6 +475,7 @@ void RenderViewContextMenu::AppendCurrentExtensionItems() {
                                           false);  // is_action_menu
   }
 }
+#endif  // defined(ENABLE_EXTENSIONS)
 
 void RenderViewContextMenu::InitMenu() {
   RenderViewContextMenuBase::InitMenu();
@@ -542,6 +544,11 @@ void RenderViewContextMenu::InitMenu() {
 
   if (content_type_->SupportsGroup(ContextMenuContentType::ITEM_GROUP_PRINT))
     AppendPrintItem();
+
+  if (content_type_->SupportsGroup(
+          ContextMenuContentType::ITEM_GROUP_MEDIA_PLUGIN)) {
+    AppendRotationItems();
+  }
 
   if (content_type_->SupportsGroup(
           ContextMenuContentType::ITEM_GROUP_ALL_EXTENSION)) {
@@ -620,14 +627,9 @@ void RenderViewContextMenu::AppendPrintPreviewItems() {
 }
 
 const Extension* RenderViewContextMenu::GetExtension() const {
-  extensions::ExtensionSystem* system =
-      extensions::ExtensionSystem::Get(browser_context_);
-  // There is no process manager in some tests.
-  if (!system->process_manager())
-    return NULL;
-
-  return system->process_manager()->GetExtensionForRenderViewHost(
-      source_web_contents_->GetRenderViewHost());
+  return extensions::ProcessManager::Get(browser_context_)
+      ->GetExtensionForRenderViewHost(
+          source_web_contents_->GetRenderViewHost());
 }
 
 void RenderViewContextMenu::AppendDeveloperItems() {
@@ -769,15 +771,12 @@ void RenderViewContextMenu::AppendPluginItems() {
   } else {
     menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_SAVEAVAS,
                                     IDS_CONTENT_CONTEXT_SAVEPAGEAS);
-    menu_model_.AddItemWithStringId(IDC_PRINT, IDS_CONTENT_CONTEXT_PRINT);
-  }
-
-  if (params_.media_flags & WebContextMenuData::MediaCanRotate) {
-    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
-    menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_ROTATECW,
-                                    IDS_CONTENT_CONTEXT_ROTATECW);
-    menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_ROTATECCW,
-                                    IDS_CONTENT_CONTEXT_ROTATECCW);
+    // The "Print" menu item should always be included for plugins. If
+    // content_type_->SupportsGroup(ContextMenuContentType::ITEM_GROUP_PRINT)
+    // is true the item will be added inside AppendPrintItem(). Otherwise we
+    // add "Print" here.
+    if (!content_type_->SupportsGroup(ContextMenuContentType::ITEM_GROUP_PRINT))
+      menu_model_.AddItemWithStringId(IDC_PRINT, IDS_CONTENT_CONTEXT_PRINT);
   }
 }
 
@@ -829,6 +828,16 @@ void RenderViewContextMenu::AppendPrintItem() {
       (params_.media_type == WebContextMenuData::MediaTypeNone ||
        params_.media_flags & WebContextMenuData::MediaCanPrint)) {
     menu_model_.AddItemWithStringId(IDC_PRINT, IDS_CONTENT_CONTEXT_PRINT);
+  }
+}
+
+void RenderViewContextMenu::AppendRotationItems() {
+  if (params_.media_flags & WebContextMenuData::MediaCanRotate) {
+    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
+    menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_ROTATECW,
+                                    IDS_CONTENT_CONTEXT_ROTATECW);
+    menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_ROTATECCW,
+                                    IDS_CONTENT_CONTEXT_ROTATECCW);
   }
 }
 

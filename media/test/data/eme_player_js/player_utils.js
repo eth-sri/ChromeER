@@ -15,7 +15,6 @@ PlayerUtils.registerDefaultEventListeners = function(player) {
   // Map from event name to event listener function name.  It is common for
   // event listeners to be named onEventName.
   var eventListenerMap = {
-    'needkey': 'onNeedKey',
     'encrypted': 'onEncrypted',
     'webkitneedkey': 'onWebkitNeedKey',
     'webkitkeymessage': 'onWebkitKeyMessage',
@@ -38,7 +37,7 @@ PlayerUtils.registerDefaultEventListeners = function(player) {
 };
 
 PlayerUtils.registerEMEEventListeners = function(player) {
-  var encrypted_handler = function(message) {
+  player.video.addEventListener('encrypted', function(message) {
 
     function addMediaKeySessionListeners(mediaKeySession) {
       mediaKeySession.addEventListener('message', function(message) {
@@ -54,51 +53,44 @@ PlayerUtils.registerEMEEventListeners = function(player) {
       });
     }
 
-    // TODO(sandersd): Stop checking contentType once we complete the switch to
-    // using the 'encrypted' event.
-    var init_data_type = message.initDataType || message.contentType;
-    Utils.timeLog('Creating new media key session for initDataType: ' +
-                  init_data_type + ', initData: ' +
-                  Utils.getHexString(new Uint8Array(message.initData)));
     try {
-      if (message.target.mediaKeys.createSession.length == 0) {
-        // FIXME(jrummell): Remove this test (and else branch) once blink
-        // uses the new API.
+      if (player.testConfig.sessionToLoad) {
+        Utils.timeLog('Loading session: ' + player.testConfig.sessionToLoad);
+        var session = message.target.mediaKeys.createSession('persistent');
+        addMediaKeySessionListeners(session);
+        session.load(player.testConfig.sessionToLoad)
+            .catch(function(error) { Utils.failTest(error, KEY_ERROR); });
+      } else {
+        Utils.timeLog('Creating new media key session for initDataType: ' +
+                      message.initDataType + ', initData: ' +
+                      Utils.getHexString(new Uint8Array(message.initData)));
         var session = message.target.mediaKeys.createSession();
         addMediaKeySessionListeners(session);
-        session.generateRequest(init_data_type, message.initData)
+        session.generateRequest(message.initDataType, message.initData)
           .catch(function(error) {
             Utils.failTest(error, KEY_ERROR);
           });
-      } else {
-        var session = message.target.mediaKeys.createSession(
-            init_data_type, message.initData);
-        session.then(addMediaKeySessionListeners)
-            .catch(function(error) {
-              Utils.failTest(error, KEY_ERROR);
-            });
       }
     } catch (e) {
       Utils.failTest(e);
     }
-  }
-
-  // TODO(sandersd): Stop registering 'needkey' after it is renamed to
-  // 'encrypted'.
-  if (player.video.onencrypted) {
-    player.video.addEventListener('encrypted', encrypted_handler);
-  } else {
-    player.video.addEventListener('needkey', encrypted_handler);
-  }
+  });
 
   this.registerDefaultEventListeners(player);
   try {
     Utils.timeLog('Setting video media keys: ' + player.testConfig.keySystem);
-    MediaKeys.create(player.testConfig.keySystem).then(function(mediaKeys) {
-      player.video.setMediaKeys(mediaKeys);
-    }).catch(function(error) {
-      Utils.failTest(error, NOTSUPPORTEDERROR);
-    });
+    if (typeof navigator.requestMediaKeySystemAccess == 'function') {
+      navigator.requestMediaKeySystemAccess(player.testConfig.keySystem)
+          .then(function(access) { return access.createMediaKeys(); })
+          .then(function(mediaKeys) { player.video.setMediaKeys(mediaKeys); })
+          .catch(function(error) { Utils.failTest(error, NOTSUPPORTEDERROR); });
+    } else {
+      // TODO(jrummell): Remove this once the blink change for
+      // requestMediaKeySystemAccess lands.
+      MediaKeys.create(player.testConfig.keySystem)
+          .then(function(mediaKeys) { player.video.setMediaKeys(mediaKeys); })
+          .catch(function(error) { Utils.failTest(error, NOTSUPPORTEDERROR); });
+    }
   } catch (e) {
     Utils.failTest(e);
   }

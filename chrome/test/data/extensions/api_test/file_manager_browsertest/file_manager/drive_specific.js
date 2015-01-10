@@ -19,13 +19,13 @@ testcase.openSidebarRecent = function() {
     // Click the icon of the Recent volume.
     function(inAppId) {
       appId = inAppId;
-      callRemoteTestUtil(
+      remoteCall.callRemoteTestUtil(
         'selectVolume', appId, ['drive_recent'], this.next);
     },
     // Wait until the file list is updated.
     function(result) {
       chrome.test.assertFalse(!result);
-      waitForFileListChange(appId, BASIC_DRIVE_ENTRY_SET.length).
+      remoteCall.waitForFileListChange(appId, BASIC_DRIVE_ENTRY_SET.length).
           then(this.next);
     },
     // Verify the file list.
@@ -53,13 +53,13 @@ testcase.openSidebarOffline = function() {
     // Click the icon of the Offline volume.
     function(inAppId) {
       appId = inAppId;
-      callRemoteTestUtil(
+      remoteCall.callRemoteTestUtil(
         'selectVolume', appId, ['drive_offline'], this.next);
     },
     // Wait until the file list is updated.
     function(result) {
       chrome.test.assertFalse(!result);
-      waitForFileListChange(appId, BASIC_DRIVE_ENTRY_SET.length).
+      remoteCall.waitForFileListChange(appId, BASIC_DRIVE_ENTRY_SET.length).
           then(this.next);
     },
     // Verify the file list.
@@ -87,14 +87,14 @@ testcase.openSidebarSharedWithMe = function() {
     function(inAppId) {
       appId = inAppId;
       // Use the icon for a click target.
-      callRemoteTestUtil('selectVolume',
-                         appId,
-                         ['drive_shared_with_me'], this.next);
+      remoteCall.callRemoteTestUtil('selectVolume',
+                                    appId,
+                                    ['drive_shared_with_me'], this.next);
     },
     // Wait until the file list is updated.
     function(result) {
       chrome.test.assertFalse(!result);
-      waitForFileListChange(appId, BASIC_DRIVE_ENTRY_SET.length).
+      remoteCall.waitForFileListChange(appId, BASIC_DRIVE_ENTRY_SET.length).
           then(this.next);
     },
     // Verify the file list.
@@ -125,33 +125,33 @@ testcase.autocomplete = function() {
     // Focus the search box.
     function(inAppId, list) {
       appId = inAppId;
-      callRemoteTestUtil('fakeEvent',
-                         appId,
-                         ['#search-box input', 'focus'],
-                         this.next);
+      remoteCall.callRemoteTestUtil('fakeEvent',
+                                    appId,
+                                    ['#search-box input', 'focus'],
+                                    this.next);
     },
     // Input a text.
     function(result) {
       chrome.test.assertTrue(result);
-      callRemoteTestUtil('inputText',
-                         appId,
-                         ['#search-box input', 'hello'],
-                         this.next);
+      remoteCall.callRemoteTestUtil('inputText',
+                                    appId,
+                                    ['#search-box input', 'hello'],
+                                    this.next);
     },
     // Notify the element of the input.
     function() {
-      callRemoteTestUtil('fakeEvent',
-                         appId,
-                         ['#search-box input', 'input'],
-                         this.next);
+      remoteCall.callRemoteTestUtil('fakeEvent',
+                                    appId,
+                                    ['#search-box input', 'input'],
+                                    this.next);
     },
     // Wait for the auto complete list getting the expected contents.
     function(result) {
       chrome.test.assertTrue(result);
       repeatUntil(function() {
-        return callRemoteTestUtil('queryAllElements',
-                                  appId,
-                                  ['#autocomplete-list li']).
+        return remoteCall.callRemoteTestUtil('queryAllElements',
+                                             appId,
+                                             ['#autocomplete-list li']).
             then(function(elements) {
               var list = elements.map(
                   function(element) { return element.text; });
@@ -166,4 +166,68 @@ testcase.autocomplete = function() {
       checkIfNoErrorsOccured(this.next);
     }
   ]);
+};
+
+/**
+ * Tests pinning a file on mobile network.
+ */
+testcase.pinFileOnMobileNetwork = function() {
+  testPromise(setupAndWaitUntilReady(null, RootPath.DRIVE).then(
+      function(windowId) {
+        return sendTestMessage(
+            {name: 'useCellularNetwork'}).then(function(result) {
+          return remoteCall.callRemoteTestUtil(
+              'selectFile', windowId, ['hello.txt']);
+        }).then(function() {
+          return repeatUntil(function() {
+            return navigator.connection.type != 'cellular' ?
+                pending('Network state is not changed to cellular.') : null;
+          });
+        }).then(function() {
+          return remoteCall.waitForElement(windowId, ['.table-row[selected]']);
+        }).then(function() {
+          return remoteCall.callRemoteTestUtil(
+              'fakeMouseRightClick', windowId, ['.table-row[selected]']);
+        }).then(function(result) {
+          chrome.test.assertTrue(result);
+          return remoteCall.waitForElement(
+              windowId, '#file-context-menu:not([hidden])');
+        }).then(function() {
+          return remoteCall.callRemoteTestUtil(
+              'fakeMouseClick', windowId, ['[command="#toggle-pinned"]']);
+        }).then(function(result) {
+          return remoteCall.waitForElement(
+              windowId, '#file-context-menu[hidden]');
+        }).then(function() {
+          return remoteCall.callRemoteTestUtil(
+              'fakeEvent', windowId, ['#file-list', 'contextmenu']);
+        }).then(function(result) {
+          chrome.test.assertTrue(result);
+          return remoteCall.waitForElement(
+              windowId, '[command="#toggle-pinned"][checked]');
+        }).then(function() {
+          return repeatUntil(function() {
+            return remoteCall.callRemoteTestUtil(
+                'getNotificationIDs', null, []).then(function(idSet) {
+              return !idSet['disabled-mobile-sync'] ?
+                  pending('Sync disable notification is not found.') : null;
+            });
+          });
+        }).then(function() {
+          return sendTestMessage({
+            name: 'clickNotificationButton',
+            extensionId: FILE_MANAGER_EXTENSIONS_ID,
+            notificationId: 'disabled-mobile-sync',
+            index: 0
+          });
+        }).then(function() {
+          return repeatUntil(function() {
+            return remoteCall.callRemoteTestUtil(
+                'getPreferences', null, []).then(function(preferences) {
+              return preferences.cellularDisabled ?
+                  pending('Drive sync is still disabled.') : null;
+            });
+          });
+        });
+      }));
 };

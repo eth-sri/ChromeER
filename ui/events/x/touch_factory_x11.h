@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/timer/timer.h"
 #include "ui/events/events_base_export.h"
 #include "ui/gfx/sequential_id_generator.h"
 
@@ -120,9 +119,6 @@ class EVENTS_BASE_EXPORT TouchFactory {
 
   // A quick lookup table for determining if a device is a touch device.
   std::bitset<kMaxDeviceNum> touch_device_lookup_;
-
-  // Indicates whether a touch device is currently available or not.
-  bool touch_device_available_;
 
   // Indicates whether touch events are explicitly disabled.
   bool touch_events_disabled_;

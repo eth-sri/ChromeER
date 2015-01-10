@@ -57,7 +57,7 @@ CYGTAR = os.path.join(BUILD_DIR, 'cygtar.py')
 PKGVER = os.path.join(BUILD_DIR, 'package_version', 'package_version.py')
 
 NACLPORTS_URL = 'https://chromium.googlesource.com/external/naclports.git'
-NACLPORTS_REV = '99f2417'
+NACLPORTS_REV = '873ca4910a5f9d4206306aacb4ed79c587c6a5f3'
 
 GYPBUILD_DIR = 'gypbuild'
 
@@ -138,10 +138,10 @@ def GetOutputToolchainLib(pepperdir, tcname, xarch):
   return GetToolchainNaClLib(tcname, tcpath, xarch)
 
 
-def GetPNaClNativeLib(tcpath, arch):
+def GetPNaClTranslatorLib(tcpath, arch):
   if arch not in ['arm', 'x86-32', 'x86-64']:
     buildbot_common.ErrorExit('Unknown architecture %s.' % arch)
-  return os.path.join(tcpath, 'lib-' + arch)
+  return os.path.join(tcpath, 'translator', arch, 'lib')
 
 
 def BuildStepDownloadToolchains(toolchains):
@@ -242,6 +242,7 @@ NACL_HEADER_MAP = {
       ('native_client/src/include/nacl/nacl_minidump.h', 'nacl/'),
       ('native_client/src/untrusted/irt/irt.h', ''),
       ('native_client/src/untrusted/irt/irt_dev.h', ''),
+      ('native_client/src/untrusted/irt/irt_extension.h', ''),
       ('native_client/src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
       ('native_client/src/untrusted/nacl/nacl_startup.h', 'nacl/'),
       ('native_client/src/untrusted/pthread/pthread.h', ''),
@@ -399,6 +400,8 @@ def GypNinjaInstall(pepperdir, toolchains):
                         'nacl_helper_bootstrap_x86_32'])
     tools_files.append(['nacl_helper_bootstrap64',
                         'nacl_helper_bootstrap_x86_64'])
+    tools_files.append(['nonsfi_loader_newlib_x32_nonsfi.nexe',
+                        'nonsfi_loader_x86_32'])
 
   buildbot_common.MakeDir(os.path.join(pepperdir, 'tools'))
 
@@ -612,9 +615,14 @@ def BuildStepBuildToolchains(pepperdir, toolchains):
                                          'gen', 'tc_pnacl_translate',
                                          'lib-' + nacl_arch)
 
+        pnacl_translator_lib_dir = GetPNaClTranslatorLib(pnacldir, nacl_arch)
+        if not os.path.isdir(pnacl_translator_lib_dir):
+          buildbot_common.ErrorExit('Expected %s directory to exist.' %
+                                    pnacl_translator_lib_dir)
+
         buildbot_common.CopyFile(
             os.path.join(release_build_dir, 'libpnacl_irt_shim.a'),
-            GetPNaClNativeLib(pnacldir, nacl_arch))
+            pnacl_translator_lib_dir)
 
     InstallNaClHeaders(GetToolchainNaClInclude('pnacl', pnacldir, 'x86'),
                        'newlib')
@@ -658,6 +666,7 @@ def BuildStepUpdateUserProjects(pepperdir, toolchains,
   filters['DEST'] = [
     'getting_started',
     'examples/api',
+    'examples/benchmarks',
     'examples/demo',
     'examples/tutorial',
     'src'

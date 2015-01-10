@@ -24,13 +24,13 @@
 #include "crypto/scoped_openssl_types.h"
 #include "net/base/net_errors.h"
 #include "net/cert/cert_verifier.h"
+#include "net/cert/ct_ev_whitelist.h"
 #include "net/cert/ct_verifier.h"
 #include "net/cert/single_request_cert_verifier.h"
 #include "net/cert/x509_certificate_net_log_param.h"
 #include "net/cert/x509_util_openssl.h"
 #include "net/http/transport_security_state.h"
 #include "net/socket/ssl_session_cache_openssl.h"
-#include "net/ssl/openssl_ssl_util.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
@@ -339,6 +339,7 @@ SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
     : transport_send_busy_(false),
       transport_recv_busy_(false),
       pending_read_error_(kNoPendingReadResult),
+      pending_read_ssl_error_(SSL_ERROR_NONE),
       transport_read_error_(OK),
       transport_write_error_(OK),
       server_cert_chain_(new PeerCertificateChain(NULL)),
@@ -497,6 +498,9 @@ void SSLClientSocketOpenSSL::Disconnect() {
   user_write_buf_len_    = 0;
 
   pending_read_error_ = kNoPendingReadResult;
+  pending_read_ssl_error_ = SSL_ERROR_NONE;
+  pending_read_error_info_ = OpenSSLErrorInfo();
+
   transport_read_error_ = OK;
   transport_write_error_ = OK;
 
@@ -632,7 +636,7 @@ int SSLClientSocketOpenSSL::Read(IOBuffer* buf,
   user_read_buf_ = buf;
   user_read_buf_len_ = buf_len;
 
-  int rv = DoReadLoop(OK);
+  int rv = DoReadLoop();
 
   if (rv == ERR_IO_PENDING) {
     user_read_callback_ = callback;
@@ -657,7 +661,7 @@ int SSLClientSocketOpenSSL::Write(IOBuffer* buf,
   user_write_buf_ = buf;
   user_write_buf_len_ = buf_len;
 
-  int rv = DoWriteLoop(OK);
+  int rv = DoWriteLoop();
 
   if (rv == ERR_IO_PENDING) {
     user_write_callback_ = callback;
@@ -907,6 +911,11 @@ int SSLClientSocketOpenSSL::DoHandshake() {
                << " is: " << (SSL_session_reused(ssl_) ? "Success" : "Fail");
     }
 
+    if (ssl_config_.version_fallback &&
+        ssl_config_.version_max < ssl_config_.version_fallback_min) {
+      return ERR_SSL_FALLBACK_BEYOND_MINIMUM_VERSION;
+    }
+
     // SSL handshake is completed. If NPN wasn't negotiated, see if ALPN was.
     if (npn_status_ == kNextProtoUnsupported) {
       const uint8_t* alpn_proto = NULL;
@@ -915,6 +924,7 @@ int SSLClientSocketOpenSSL::DoHandshake() {
       if (alpn_len > 0) {
         npn_proto_.assign(reinterpret_cast<const char*>(alpn_proto), alpn_len);
         npn_status_ = kNextProtoNegotiated;
+        set_negotiation_extension(kExtensionALPN);
       }
     }
 
@@ -1097,6 +1107,21 @@ int SSLClientSocketOpenSSL::DoVerifyCertComplete(int result) {
     result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
   }
 
+  scoped_refptr<ct::EVCertsWhitelist> ev_whitelist =
+      SSLConfigService::GetEVCertsWhitelist();
+  if (server_cert_verify_result_.cert_status & CERT_STATUS_IS_EV) {
+    if (ev_whitelist.get() && ev_whitelist->IsValid()) {
+      const SHA256HashValue fingerprint(
+          X509Certificate::CalculateFingerprint256(
+              server_cert_verify_result_.verified_cert->os_cert_handle()));
+
+      UMA_HISTOGRAM_BOOLEAN(
+          "Net.SSL_EVCertificateInWhitelist",
+          ev_whitelist->ContainsCertificateHash(
+              std::string(reinterpret_cast<const char*>(fingerprint.data), 8)));
+    }
+  }
+
   if (result == OK) {
     // Only check Certificate Transparency if there were no other errors with
     // the connection.
@@ -1230,7 +1255,7 @@ void SSLClientSocketOpenSSL::OnRecvComplete(int result) {
   if (!user_read_buf_.get())
     return;
 
-  int rv = DoReadLoop(result);
+  int rv = DoReadLoop();
   if (rv != ERR_IO_PENDING)
     DoReadCallback(rv);
 }
@@ -1282,10 +1307,7 @@ int SSLClientSocketOpenSSL::DoHandshakeLoop(int last_io_result) {
   return rv;
 }
 
-int SSLClientSocketOpenSSL::DoReadLoop(int result) {
-  if (result < 0)
-    return result;
-
+int SSLClientSocketOpenSSL::DoReadLoop() {
   bool network_moved;
   int rv;
   do {
@@ -1296,10 +1318,7 @@ int SSLClientSocketOpenSSL::DoReadLoop(int result) {
   return rv;
 }
 
-int SSLClientSocketOpenSSL::DoWriteLoop(int result) {
-  if (result < 0)
-    return result;
-
+int SSLClientSocketOpenSSL::DoWriteLoop() {
   bool network_moved;
   int rv;
   do {
@@ -1320,7 +1339,14 @@ int SSLClientSocketOpenSSL::DoPayloadRead() {
     if (rv == 0) {
       net_log_.AddByteTransferEvent(NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED,
                                     rv, user_read_buf_->data());
+    } else {
+      net_log_.AddEvent(
+          NetLog::TYPE_SSL_READ_ERROR,
+          CreateNetLogOpenSSLErrorCallback(rv, pending_read_ssl_error_,
+                                           pending_read_error_info_));
     }
+    pending_read_ssl_error_ = SSL_ERROR_NONE;
+    pending_read_error_info_ = OpenSSLErrorInfo();
     return rv;
   }
 
@@ -1355,8 +1381,19 @@ int SSLClientSocketOpenSSL::DoPayloadRead() {
     if (client_auth_cert_needed_) {
       *next_result = ERR_SSL_CLIENT_AUTH_CERT_NEEDED;
     } else if (*next_result < 0) {
-      int err = SSL_get_error(ssl_, *next_result);
-      *next_result = MapOpenSSLError(err, err_tracer);
+      pending_read_ssl_error_ = SSL_get_error(ssl_, *next_result);
+      *next_result = MapOpenSSLErrorWithDetails(pending_read_ssl_error_,
+                                                err_tracer,
+                                                &pending_read_error_info_);
+
+      // Many servers do not reliably send a close_notify alert when shutting
+      // down a connection, and instead terminate the TCP connection. This is
+      // reported as ERR_CONNECTION_CLOSED. Because of this, map the unclean
+      // shutdown to a graceful EOF, instead of treating it as an error as it
+      // should be.
+      if (*next_result == ERR_CONNECTION_CLOSED)
+        *next_result = 0;
+
       if (rv > 0 && *next_result == ERR_IO_PENDING) {
           // If at least some data was read from SSL_read(), do not treat
           // insufficient data as an error to return in the next call to
@@ -1373,6 +1410,13 @@ int SSLClientSocketOpenSSL::DoPayloadRead() {
   if (rv >= 0) {
     net_log_.AddByteTransferEvent(NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED, rv,
                                   user_read_buf_->data());
+  } else if (rv != ERR_IO_PENDING) {
+    net_log_.AddEvent(
+        NetLog::TYPE_SSL_READ_ERROR,
+        CreateNetLogOpenSSLErrorCallback(rv, pending_read_ssl_error_,
+                                         pending_read_error_info_));
+    pending_read_ssl_error_ = SSL_ERROR_NONE;
+    pending_read_error_info_ = OpenSSLErrorInfo();
   }
   return rv;
 }
@@ -1386,8 +1430,17 @@ int SSLClientSocketOpenSSL::DoPayloadWrite() {
     return rv;
   }
 
-  int err = SSL_get_error(ssl_, rv);
-  return MapOpenSSLError(err, err_tracer);
+  int ssl_error = SSL_get_error(ssl_, rv);
+  OpenSSLErrorInfo error_info;
+  int net_error = MapOpenSSLErrorWithDetails(ssl_error, err_tracer,
+                                             &error_info);
+
+  if (net_error != ERR_IO_PENDING) {
+    net_log_.AddEvent(
+        NetLog::TYPE_SSL_WRITE_ERROR,
+        CreateNetLogOpenSSLErrorCallback(net_error, ssl_error, error_info));
+  }
+  return net_error;
 }
 
 int SSLClientSocketOpenSSL::BufferSend(void) {
@@ -1669,6 +1722,7 @@ int SSLClientSocketOpenSSL::SelectNextProtoCallback(unsigned char** out,
 
   npn_proto_.assign(reinterpret_cast<const char*>(*out), *outlen);
   DVLOG(2) << "next protocol: '" << npn_proto_ << "' status: " << npn_status_;
+  set_negotiation_extension(kExtensionNPN);
   return SSL_TLSEXT_ERR_OK;
 }
 

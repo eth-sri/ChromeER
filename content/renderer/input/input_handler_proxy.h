@@ -42,13 +42,12 @@ class CONTENT_EXPORT InputHandlerProxy
   EventDisposition HandleInputEvent(const blink::WebInputEvent& event);
 
   // cc::InputHandlerClient implementation.
-  virtual void WillShutdown() OVERRIDE;
-  virtual void Animate(base::TimeTicks time) OVERRIDE;
-  virtual void MainThreadHasStoppedFlinging() OVERRIDE;
-  virtual void DidOverscroll(
-      const gfx::PointF& causal_event_viewport_point,
-      const gfx::Vector2dF& accumulated_overscroll,
-      const gfx::Vector2dF& latest_overscroll_delta) OVERRIDE;
+  void WillShutdown() override;
+  void Animate(base::TimeTicks time) override;
+  void MainThreadHasStoppedFlinging() override;
+  void DidOverscroll(const gfx::PointF& causal_event_viewport_point,
+                     const gfx::Vector2dF& accumulated_overscroll,
+                     const gfx::Vector2dF& latest_overscroll_delta) override;
 
   // blink::WebGestureCurveTarget implementation.
   virtual bool scrollBy(const blink::WebFloatSize& offset,

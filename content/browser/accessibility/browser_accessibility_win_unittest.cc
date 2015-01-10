@@ -11,7 +11,6 @@
 #include "content/browser/accessibility/browser_accessibility_manager_win.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
-#include "content/browser/renderer_host/legacy_render_widget_host_win.h"
 #include "content/common/accessibility_messages.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/win/atl_module.h"
@@ -59,7 +58,7 @@ class CountedBrowserAccessibilityFactory : public BrowserAccessibilityFactory {
  private:
   virtual ~CountedBrowserAccessibilityFactory();
 
-  virtual BrowserAccessibility* Create() OVERRIDE;
+  virtual BrowserAccessibility* Create() override;
 
   DISALLOW_COPY_AND_ASSIGN(CountedBrowserAccessibilityFactory);
 };
@@ -90,7 +89,7 @@ class BrowserAccessibilityTest : public testing::Test {
   virtual ~BrowserAccessibilityTest();
 
  private:
-  virtual void SetUp() OVERRIDE;
+  virtual void SetUp() override;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityTest);
 };
@@ -677,6 +676,31 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   // Ensure we properly cleaned up.
   manager.reset();
   ASSERT_EQ(0, CountedBrowserAccessibility::num_instances());
+}
+
+// This is a regression test for a bug where the initial empty document
+// loaded by a BrowserAccessibilityManagerWin couldn't be looked up by
+// its UniqueIDWin, because the AX Tree was loaded in
+// BrowserAccessibilityManager code before BrowserAccessibilityManagerWin
+// was initialized.
+TEST_F(BrowserAccessibilityTest, EmptyDocHasUniqueIdWin) {
+  scoped_ptr<BrowserAccessibilityManagerWin> manager(
+      new BrowserAccessibilityManagerWin(
+          BrowserAccessibilityManagerWin::GetEmptyDocument(),
+          NULL,
+          new CountedBrowserAccessibilityFactory()));
+
+  // Verify the root is as we expect by default.
+  BrowserAccessibility* root = manager->GetRoot();
+  EXPECT_EQ(0, root->GetId());
+  EXPECT_EQ(ui::AX_ROLE_ROOT_WEB_AREA, root->GetRole());
+  EXPECT_EQ(1 << ui::AX_STATE_BUSY |
+            1 << ui::AX_STATE_READ_ONLY |
+            1 << ui::AX_STATE_ENABLED,
+            root->GetState());
+
+  LONG unique_id_win = root->ToBrowserAccessibilityWin()->unique_id_win();
+  ASSERT_EQ(root, manager->GetFromUniqueIdWin(unique_id_win));
 }
 
 }  // namespace content

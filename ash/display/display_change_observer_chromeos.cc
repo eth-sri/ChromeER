@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "ash/ash_switches.h"
@@ -85,10 +87,12 @@ std::vector<DisplayMode> DisplayChangeObserver::GetInternalDisplayModeList(
   native_mode.device_scale_factor = display_info.device_scale_factor();
   std::vector<float> ui_scales =
       DisplayManager::GetScalesForDisplay(display_info);
+  float native_ui_scale = (display_info.device_scale_factor() == 1.25f) ?
+      1.0f : display_info.device_scale_factor();
   for (size_t i = 0; i < ui_scales.size(); ++i) {
     DisplayMode mode = native_mode;
     mode.ui_scale = ui_scales[i];
-    mode.native = (ui_scales[i] == display_info.device_scale_factor());
+    mode.native = (ui_scales[i] == native_ui_scale);
     display_mode_list.push_back(mode);
   }
 
@@ -132,6 +136,18 @@ std::vector<DisplayMode> DisplayChangeObserver::GetExternalDisplayModeList(
        iter != display_mode_map.end();
        ++iter) {
     display_mode_list.push_back(iter->second);
+  }
+
+  if (output.display->native_mode()) {
+    const std::pair<int, int> size(native_mode.size.width(),
+                                   native_mode.size.height());
+    DisplayModeMap::iterator it = display_mode_map.find(size);
+    DCHECK(it != display_mode_map.end())
+        << "Native mode must be part of the mode list.";
+
+    // If the native mode was replaced re-add it.
+    if (!it->second.native)
+      display_mode_list.push_back(native_mode);
   }
 
   if (native_mode.size.width() >= kMinimumWidthFor4K) {
@@ -273,27 +289,12 @@ float DisplayChangeObserver::FindDeviceScaleFactor(float dpi) {
   return 1.0f;
 }
 
-void DisplayChangeObserver::OnInputDeviceConfigurationChanged() {
-  std::vector<DisplayInfo> display_infos;
-  DisplayManager* display_manager =
-      ash::Shell::GetInstance()->display_manager();
-  const std::vector<gfx::Display>& displays = display_manager->displays();
-  // Reuse the current state in DisplayManager and re-associate the displays
-  // with the touchscreens.
-  for (size_t i = 0; i < displays.size(); ++i) {
-    DisplayInfo display = display_manager->GetDisplayInfo(displays[i].id());
-    // Unset the touchscreen configuration since we'll be rematching them from
-    // scratch.
-    display.set_touch_device_id(ui::TouchscreenDevice::kInvalidId);
-    display.set_touch_support(gfx::Display::TOUCH_SUPPORT_UNKNOWN);
+void DisplayChangeObserver::OnTouchscreenDeviceConfigurationChanged() {
+  OnDisplayModeChanged(
+      Shell::GetInstance()->display_configurator()->cached_displays());
+}
 
-    display_infos.push_back(display);
-  }
-
-  AssociateTouchscreens(
-      &display_infos,
-      ui::DeviceDataManager::GetInstance()->touchscreen_devices());
-  display_manager->OnNativeDisplaysChanged(display_infos);
+void DisplayChangeObserver::OnKeyboardDeviceConfigurationChanged() {
 }
 
 }  // namespace ash

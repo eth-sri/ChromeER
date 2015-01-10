@@ -16,17 +16,15 @@
 #include "build/build_config.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/dom_distiller/profile_utils.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_url_request_context_getter.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_configurator.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -40,6 +38,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
@@ -72,6 +71,8 @@
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/guest_view/guest_view_manager.h"
@@ -131,9 +132,8 @@ void OffTheRecordProfileImpl::Init() {
          IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
              IncognitoModePrefs::DISABLED);
 
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  UseSystemProxy();
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
+  // Clear the proxy pref if and only if the data reduction proxy is specified.
+  DataReductionProxyChromeConfigurator::DisableInProxyConfigPref(prefs_);
 
   // TODO(oshima): Remove the need to eagerly initialize the request context
   // getter. chromeos::OnlineAttempt is illegally trying to access this
@@ -210,22 +210,6 @@ void OffTheRecordProfileImpl::InitHostZoomMap() {
       base::Bind(&OffTheRecordProfileImpl::OnZoomLevelChanged,
                  base::Unretained(this)));
 }
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-void OffTheRecordProfileImpl::UseSystemProxy() {
-  // Force the use of the system-assigned proxy when off the record.
-  const char kProxyMode[] = "mode";
-  const char kProxyServer[] = "server";
-  const char kProxyBypassList[] = "bypass_list";
-  const char kProxyPacUrl[] = "pac_url";
-  DictionaryPrefUpdate update(prefs_, prefs::kProxy);
-  base::DictionaryValue* dict = update.Get();
-  dict->SetString(kProxyMode, ProxyModeToString(ProxyPrefs::MODE_SYSTEM));
-  dict->SetString(kProxyPacUrl, "");
-  dict->SetString(kProxyServer, "");
-  dict->SetString(kProxyBypassList, "");
-}
-#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
 std::string OffTheRecordProfileImpl::GetProfileName() {
   // Incognito profile should not return the profile name.
@@ -355,6 +339,7 @@ net::SSLConfigService* OffTheRecordProfileImpl::GetSSLConfigService() {
 }
 
 HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Retrieve the host content settings map of the parent profile in order to
   // ensure the preferences have been migrated.
   profile_->GetHostContentSettingsMap();
@@ -382,7 +367,11 @@ content::BrowserPluginGuestManager* OffTheRecordProfileImpl::GetGuestManager() {
 
 storage::SpecialStoragePolicy*
 OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
+#if defined(ENABLE_EXTENSIONS)
   return GetExtensionSpecialStoragePolicy();
+#else
+  return NULL;
+#endif
 }
 
 content::PushMessagingService*
@@ -493,11 +482,11 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
       : OffTheRecordProfileImpl(real_profile) {
   }
 
-  virtual ProfileType GetProfileType() const OVERRIDE {
+  virtual ProfileType GetProfileType() const override {
     return GUEST_PROFILE;
   }
 
-  virtual void InitChromeOSPreferences() OVERRIDE {
+  virtual void InitChromeOSPreferences() override {
     chromeos_preferences_.reset(new chromeos::Preferences());
     chromeos_preferences_->Init(
         this, user_manager::UserManager::Get()->GetActiveUser());

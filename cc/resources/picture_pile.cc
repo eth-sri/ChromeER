@@ -10,9 +10,8 @@
 
 #include "cc/base/region.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
-#include "cc/resources/picture_pile_impl.h"
 #include "cc/resources/raster_worker_pool.h"
-#include "cc/resources/tile_priority.h"
+#include "skia/ext/analysis_canvas.h"
 
 namespace {
 // Layout pixel buffer around the visible layer rect to record.  Any base
@@ -149,7 +148,9 @@ float ClusterTiles(const std::vector<gfx::Rect>& invalid_tiles,
 
 namespace cc {
 
-PicturePile::PicturePile() : is_suitable_for_gpu_rasterization_(true) {
+PicturePile::PicturePile()
+    : is_suitable_for_gpu_rasterization_(true),
+      pixel_record_distance_(kPixelDistanceToRecord) {
 }
 
 PicturePile::~PicturePile() {
@@ -180,11 +181,7 @@ bool PicturePile::UpdateAndExpandInvalidation(
   }
 
   gfx::Rect interest_rect = visible_layer_rect;
-  interest_rect.Inset(
-      -kPixelDistanceToRecord,
-      -kPixelDistanceToRecord,
-      -kPixelDistanceToRecord,
-      -kPixelDistanceToRecord);
+  interest_rect.Inset(-pixel_record_distance_, -pixel_record_distance_);
   recorded_viewport_ = interest_rect;
   recorded_viewport_.Intersect(gfx::Rect(tiling_size()));
 
@@ -378,46 +375,64 @@ bool PicturePile::UpdateAndExpandInvalidation(
     }
   }
 
-  Region invalidation_expanded_to_full_tiles;
-  for (Region::Iterator i(*invalidation); i.has_rect(); i.next()) {
-    gfx::Rect invalid_rect = i.rect();
+  // Detect cases where the full pile is invalidated, in this situation we
+  // can just drop/invalidate everything.
+  if (invalidation->Contains(gfx::Rect(old_tiling_size)) ||
+      invalidation->Contains(gfx::Rect(tiling_size()))) {
+    for (auto& it : picture_map_)
+      updated = it.second.Invalidate(frame_number) || updated;
+  } else {
+    // Expand invalidation that is on tiles that aren't in the interest rect and
+    // will not be re-recorded below. These tiles are no longer valid and should
+    // be considerered fully invalid, so we can know to not keep around raster
+    // tiles that intersect with these recording tiles.
+    Region invalidation_expanded_to_full_tiles;
 
-    // Expand invalidation that is outside tiles that intersect the interest
-    // rect. These tiles are no longer valid and should be considerered fully
-    // invalid, so we can know to not keep around raster tiles that intersect
-    // with these recording tiles.
-    gfx::Rect invalid_rect_outside_interest_rect_tiles = invalid_rect;
-    // TODO(danakj): We should have a Rect-subtract-Rect-to-2-rects operator
-    // instead of using Rect::Subtract which gives you the bounding box of the
-    // subtraction.
-    invalid_rect_outside_interest_rect_tiles.Subtract(interest_rect_over_tiles);
-    invalidation_expanded_to_full_tiles.Union(tiling_.ExpandRectToTileBounds(
-        invalid_rect_outside_interest_rect_tiles));
+    for (Region::Iterator i(*invalidation); i.has_rect(); i.next()) {
+      gfx::Rect invalid_rect = i.rect();
 
-    // Split this inflated invalidation across tile boundaries and apply it
-    // to all tiles that it touches.
-    bool include_borders = true;
-    for (TilingData::Iterator iter(&tiling_, invalid_rect, include_borders);
-         iter;
-         ++iter) {
-      const PictureMapKey& key = iter.index();
+      // This rect covers the bounds (excluding borders) of all tiles whose
+      // bounds (including borders) touch the |interest_rect|. This matches
+      // the iteration of the |invalid_rect| below which includes borders when
+      // calling Invalidate() on pictures.
+      gfx::Rect invalid_rect_outside_interest_rect_tiles =
+          tiling_.ExpandRectToTileBounds(invalid_rect);
+      // We subtract the |interest_rect_over_tiles| which represents the bounds
+      // of tiles that will be re-recorded below. This matches the iteration of
+      // |interest_rect| below which includes borders.
+      // TODO(danakj): We should have a Rect-subtract-Rect-to-2-rects operator
+      // instead of using Rect::Subtract which gives you the bounding box of the
+      // subtraction.
+      invalid_rect_outside_interest_rect_tiles.Subtract(
+          interest_rect_over_tiles);
+      invalidation_expanded_to_full_tiles.Union(
+          invalid_rect_outside_interest_rect_tiles);
 
-      PictureMap::iterator picture_it = picture_map_.find(key);
-      if (picture_it == picture_map_.end())
-        continue;
+      // Split this inflated invalidation across tile boundaries and apply it
+      // to all tiles that it touches.
+      bool include_borders = true;
+      for (TilingData::Iterator iter(&tiling_, invalid_rect, include_borders);
+           iter;
+           ++iter) {
+        const PictureMapKey& key = iter.index();
 
-      // Inform the grid cell that it has been invalidated in this frame.
-      updated = picture_it->second.Invalidate(frame_number) || updated;
-      // Invalidate drops the picture so the whole tile better be invalidated if
-      // it won't be re-recorded below.
-      DCHECK(
-          tiling_.TileBounds(key.first, key.second).Intersects(interest_rect) ||
-          invalidation_expanded_to_full_tiles.Contains(
-              tiling_.TileBounds(key.first, key.second)));
+        PictureMap::iterator picture_it = picture_map_.find(key);
+        if (picture_it == picture_map_.end())
+          continue;
+
+        // Inform the grid cell that it has been invalidated in this frame.
+        updated = picture_it->second.Invalidate(frame_number) || updated;
+        // Invalidate drops the picture so the whole tile better be invalidated
+        // if it won't be re-recorded below.
+        DCHECK_IMPLIES(!tiling_.TileBounds(key.first, key.second)
+                            .Intersects(interest_rect_over_tiles),
+                       invalidation_expanded_to_full_tiles.Contains(
+                           tiling_.TileBounds(key.first, key.second)));
+      }
     }
+    invalidation->Union(invalidation_expanded_to_full_tiles);
   }
 
-  invalidation->Union(invalidation_expanded_to_full_tiles);
   invalidation->Union(resize_invalidation);
 
   // Make a list of all invalid tiles; we will attempt to
@@ -490,7 +505,6 @@ bool PicturePile::UpdateAndExpandInvalidation(
         // the pile after each invalidation.
         is_suitable_for_gpu_rasterization_ &=
             picture->IsSuitableForGpuRasterization();
-        has_text_ |= picture->HasText();
         base::TimeDelta duration =
             stats_instrumentation->EndRecording(start_time);
         best_duration = std::min(duration, best_duration);
@@ -556,7 +570,8 @@ void PicturePile::DetermineIfSolidColor() {
   }
   skia::AnalysisCanvas canvas(recorded_viewport_.width(),
                               recorded_viewport_.height());
-  picture->Raster(&canvas, NULL, Region(), 1.0f);
+  canvas.translate(-recorded_viewport_.x(), -recorded_viewport_.y());
+  picture->Raster(&canvas, nullptr, Region(), 1.0f);
   is_solid_color_ = canvas.GetColorIfSolid(&solid_color_);
 }
 

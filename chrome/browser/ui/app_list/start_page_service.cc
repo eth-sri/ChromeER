@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/user_metrics.h"
@@ -56,13 +57,13 @@ class StartPageService::ProfileDestroyObserver
                    chrome::NOTIFICATION_PROFILE_DESTROYED,
                    content::Source<Profile>(service_->profile()));
   }
-  virtual ~ProfileDestroyObserver() {}
+  ~ProfileDestroyObserver() override {}
 
  private:
   // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override {
     DCHECK_EQ(chrome::NOTIFICATION_PROFILE_DESTROYED, type);
     DCHECK_EQ(service_->profile(), content::Source<Profile>(source).ptr());
     service_->Shutdown();
@@ -78,20 +79,19 @@ class StartPageService::StartPageWebContentsDelegate
     : public content::WebContentsDelegate {
  public:
   StartPageWebContentsDelegate() {}
-  virtual ~StartPageWebContentsDelegate() {}
+  ~StartPageWebContentsDelegate() override {}
 
-  virtual void RequestMediaAccessPermission(
+  void RequestMediaAccessPermission(
       content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE {
+      const content::MediaResponseCallback& callback) override {
     if (MediaStreamInfoBarDelegate::Create(web_contents, request, callback))
       NOTREACHED() << "Media stream not allowed for WebUI";
   }
 
-  virtual bool CheckMediaAccessPermission(
-      content::WebContents* web_contents,
-      const GURL& security_origin,
-      content::MediaStreamType type) OVERRIDE {
+  bool CheckMediaAccessPermission(content::WebContents* web_contents,
+                                  const GURL& security_origin,
+                                  content::MediaStreamType type) override {
     return MediaCaptureDevicesDispatcher::GetInstance()
         ->CheckMediaAccessPermission(web_contents, security_origin, type);
   }
@@ -111,7 +111,8 @@ StartPageService::StartPageService(Profile* profile)
       recommended_apps_(new RecommendedApps(profile)),
       state_(app_list::SPEECH_RECOGNITION_OFF),
       speech_button_toggled_manually_(false),
-      speech_result_obtained_(false) {
+      speech_result_obtained_(false),
+      webui_finished_loading_(false) {
   // If experimental hotwording is enabled, then we're always "ready".
   // Transitioning into the "hotword recognizing" state is handled by the
   // hotword extension.
@@ -135,7 +136,7 @@ void StartPageService::RemoveObserver(StartPageObserver* observer) {
 void StartPageService::AppListShown() {
   if (!contents_) {
     LoadContents();
-  } else {
+  } else if (contents_->GetWebUI()) {
     // If experimental hotwording is enabled, don't enable hotwording in the
     // start page, since the hotword extension is taking care of this.
     bool hotword_enabled = HotwordEnabled() &&
@@ -147,16 +148,28 @@ void StartPageService::AppListShown() {
 }
 
 void StartPageService::AppListHidden() {
-  contents_->GetWebUI()->CallJavascriptFunction(
-      "appList.startPage.onAppListHidden");
+  if (contents_->GetWebUI()) {
+    contents_->GetWebUI()->CallJavascriptFunction(
+        "appList.startPage.onAppListHidden");
+  }
   if (!app_list::switches::IsExperimentalAppListEnabled())
     UnloadContents();
 }
 
 void StartPageService::ToggleSpeechRecognition() {
+  DCHECK(contents_);
   speech_button_toggled_manually_ = true;
-  contents_->GetWebUI()->CallJavascriptFunction(
-      "appList.startPage.toggleSpeechRecognition");
+  if (!contents_->GetWebUI())
+    return;
+
+  if (webui_finished_loading_) {
+    contents_->GetWebUI()->CallJavascriptFunction(
+        "appList.startPage.toggleSpeechRecognition");
+  } else {
+    pending_webui_callbacks_.push_back(
+        base::Bind(&StartPageService::ToggleSpeechRecognition,
+                   base::Unretained(this)));
+  }
 }
 
 bool StartPageService::HotwordEnabled() {
@@ -228,6 +241,18 @@ void StartPageService::Shutdown() {
   UnloadContents();
 }
 
+void StartPageService::WebUILoaded() {
+  // There's a race condition between the WebUI loading, and calling its JS
+  // functions. Specifically, calling LoadContents() doesn't mean that the page
+  // has loaded, but several code paths make this assumption. This function
+  // allows us to defer calling JS functions until after the page has finished
+  // loading.
+  webui_finished_loading_ = true;
+  for (const auto& cb : pending_webui_callbacks_)
+    cb.Run();
+  pending_webui_callbacks_.clear();
+}
+
 void StartPageService::LoadContents() {
   contents_.reset(content::WebContents::Create(
       content::WebContents::CreateParams(profile_)));
@@ -250,6 +275,7 @@ void StartPageService::LoadContents() {
 
 void StartPageService::UnloadContents() {
   contents_.reset();
+  webui_finished_loading_ = false;
 }
 
 }  // namespace app_list

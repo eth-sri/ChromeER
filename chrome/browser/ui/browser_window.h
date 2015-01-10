@@ -313,12 +313,13 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void Paste() = 0;
 
 #if defined(OS_MACOSX)
-  // Enters Mac specific fullscreen mode with chrome displayed (e.g. omnibox)
-  // on OSX 10.7+, a.k.a. Lion Fullscreen mode.
-  // Invalid to call on OSX earlier than 10.7.
-  // Enters either from non fullscreen, or from fullscreen without chrome.
-  // Exit to normal fullscreen with EnterFullscreen().
+  // The following two methods cause the browser window to enter AppKit
+  // Fullscreen. The methods are idempotent. The methods are invalid to call on
+  // OSX 10.6. One method displays chrome (e.g. omnibox, tabstrip), whereas the
+  // other method hides it.
   virtual void EnterFullscreenWithChrome() = 0;
+  virtual void EnterFullscreenWithoutChrome() = 0;
+
   virtual bool IsFullscreenWithChrome() = 0;
   virtual bool IsFullscreenWithoutChrome() = 0;
 #endif
@@ -375,10 +376,6 @@ class BrowserWindow : public ui::BaseWindow {
   };
   virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode,
       const signin::ManageAccountsParams& manage_accounts_params) = 0;
-
-  // Invoked when the amount of vertical overscroll changes. |delta_y| is the
-  // amount of overscroll that has occured in the y-direction.
-  virtual void OverscrollUpdate(int delta_y) {}
 
   // Returns the height inset for RenderView when detached bookmark bar is
   // shown.  Invoked when a new RenderHostView is created for a non-NTP

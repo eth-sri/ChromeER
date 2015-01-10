@@ -227,9 +227,9 @@ public class AwTestContainerView extends FrameLayout {
         return new HardwareView(context);
     }
 
-    public AwTestContainerView(Context context, boolean hardwareAccelerated) {
+    public AwTestContainerView(Context context, boolean allowHardwareAcceleration) {
         super(context);
-        if (hardwareAccelerated) {
+        if (allowHardwareAcceleration) {
             mHardwareView = createHardwareViewOnlyOnce(context);
         }
         if (mHardwareView != null) {
@@ -238,7 +238,7 @@ public class AwTestContainerView extends FrameLayout {
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT));
         } else {
-          setLayerType(LAYER_TYPE_SOFTWARE, null);
+            setLayerType(LAYER_TYPE_SOFTWARE, null);
         }
         mNativeGLDelegate = new NativeGLDelegate();
         mInternalAccessDelegate = new InternalAccessAdapter();
@@ -289,6 +289,7 @@ public class AwTestContainerView extends FrameLayout {
             mAttachedContents = true;
         } else {
             mHardwareView.setReadyToRenderCallback(new Runnable() {
+                @Override
                 public void run() {
                     assert !mAttachedContents;
                     mAwContents.onAttachedToWindow();
@@ -389,7 +390,7 @@ public class AwTestContainerView extends FrameLayout {
     @Override
     public AccessibilityNodeProvider getAccessibilityNodeProvider() {
         AccessibilityNodeProvider provider =
-            mAwContents.getAccessibilityNodeProvider();
+                mAwContents.getAccessibilityNodeProvider();
         return provider == null ? super.getAccessibilityNodeProvider() : provider;
     }
 

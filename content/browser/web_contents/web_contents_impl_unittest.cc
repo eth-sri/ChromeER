@@ -44,25 +44,25 @@ const char kTestWebUIUrl[] = "chrome://blah";
 class WebContentsImplTestWebUIControllerFactory
     : public WebUIControllerFactory {
  public:
-  virtual WebUIController* CreateWebUIControllerForURL(
-      WebUI* web_ui, const GURL& url) const OVERRIDE {
+  WebUIController* CreateWebUIControllerForURL(WebUI* web_ui,
+                                               const GURL& url) const override {
     if (!UseWebUI(url))
       return NULL;
     return new WebUIController(web_ui);
   }
 
-  virtual WebUI::TypeID GetWebUIType(BrowserContext* browser_context,
-      const GURL& url) const OVERRIDE {
+  WebUI::TypeID GetWebUIType(BrowserContext* browser_context,
+                             const GURL& url) const override {
     return WebUI::kNoWebUI;
   }
 
-  virtual bool UseWebUIForURL(BrowserContext* browser_context,
-                              const GURL& url) const OVERRIDE {
+  bool UseWebUIForURL(BrowserContext* browser_context,
+                      const GURL& url) const override {
     return UseWebUI(url);
   }
 
-  virtual bool UseWebUIBindingsForURL(BrowserContext* browser_context,
-                                      const GURL& url) const OVERRIDE {
+  bool UseWebUIBindingsForURL(BrowserContext* browser_context,
+                              const GURL& url) const override {
     return UseWebUI(url);
   }
 
@@ -78,10 +78,11 @@ class TestInterstitialPageDelegate : public InterstitialPageDelegate {
  public:
   explicit TestInterstitialPageDelegate(TestInterstitialPage* interstitial_page)
       : interstitial_page_(interstitial_page) {}
-  virtual void CommandReceived(const std::string& command) OVERRIDE;
-  virtual std::string GetHTMLContents() OVERRIDE { return std::string(); }
-  virtual void OnDontProceed() OVERRIDE;
-  virtual void OnProceed() OVERRIDE;
+  void CommandReceived(const std::string& command) override;
+  std::string GetHTMLContents() override { return std::string(); }
+  void OnDontProceed() override;
+  void OnProceed() override;
+
  private:
   TestInterstitialPage* interstitial_page_;
 };
@@ -130,7 +131,7 @@ class TestInterstitialPage : public InterstitialPageImpl {
     *deleted_ = false;
   }
 
-  virtual ~TestInterstitialPage() {
+  ~TestInterstitialPage() override {
     if (deleted_)
       *deleted_ = true;
     if (delegate_)
@@ -186,9 +187,7 @@ class TestInterstitialPage : public InterstitialPageImpl {
   }
 
  protected:
-  virtual WebContentsView* CreateWebContentsView() OVERRIDE {
-    return NULL;
-  }
+  WebContentsView* CreateWebContentsView() override { return NULL; }
 
  private:
   InterstitialState* state_;
@@ -217,13 +216,13 @@ class TestInterstitialPageStateGuard : public TestInterstitialPage::Delegate {
     DCHECK(interstitial_page_);
     interstitial_page_->set_delegate(this);
   }
-  virtual ~TestInterstitialPageStateGuard() {
+  ~TestInterstitialPageStateGuard() override {
     if (interstitial_page_)
       interstitial_page_->ClearStates();
   }
 
-  virtual void TestInterstitialPageDeleted(
-      TestInterstitialPage* interstitial) OVERRIDE {
+  void TestInterstitialPageDeleted(
+      TestInterstitialPage* interstitial) override {
     DCHECK(interstitial_page_ == interstitial);
     interstitial_page_ = NULL;
   }
@@ -237,9 +236,9 @@ class WebContentsImplTestBrowserClient : public TestContentBrowserClient {
   WebContentsImplTestBrowserClient()
       : assign_site_for_url_(false) {}
 
-  virtual ~WebContentsImplTestBrowserClient() {}
+  ~WebContentsImplTestBrowserClient() override {}
 
-  virtual bool ShouldAssignSiteForURL(const GURL& url) OVERRIDE {
+  bool ShouldAssignSiteForURL(const GURL& url) override {
     return assign_site_for_url_;
   }
 
@@ -253,12 +252,12 @@ class WebContentsImplTestBrowserClient : public TestContentBrowserClient {
 
 class WebContentsImplTest : public RenderViewHostImplTestHarness {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     RenderViewHostImplTestHarness::SetUp();
     WebUIControllerFactory::RegisterFactory(&factory_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     WebUIControllerFactory::UnregisterFactoryForTesting(&factory_);
     RenderViewHostImplTestHarness::TearDown();
   }
@@ -272,16 +271,16 @@ class TestWebContentsObserver : public WebContentsObserver {
   explicit TestWebContentsObserver(WebContents* contents)
       : WebContentsObserver(contents) {
   }
-  virtual ~TestWebContentsObserver() {}
+  ~TestWebContentsObserver() override {}
 
-  virtual void DidFinishLoad(RenderFrameHost* render_frame_host,
-                             const GURL& validated_url) OVERRIDE {
+  void DidFinishLoad(RenderFrameHost* render_frame_host,
+                     const GURL& validated_url) override {
     last_url_ = validated_url;
   }
-  virtual void DidFailLoad(RenderFrameHost* render_frame_host,
-                           const GURL& validated_url,
-                           int error_code,
-                           const base::string16& error_description) OVERRIDE {
+  void DidFailLoad(RenderFrameHost* render_frame_host,
+                   const GURL& validated_url,
+                   int error_code,
+                   const base::string16& error_description) override {
     last_url_ = validated_url;
   }
 
@@ -298,15 +297,15 @@ class TestWebContentsObserver : public WebContentsObserver {
 class FakeFullscreenDelegate : public WebContentsDelegate {
  public:
   FakeFullscreenDelegate() : fullscreened_contents_(NULL) {}
-  virtual ~FakeFullscreenDelegate() {}
+  ~FakeFullscreenDelegate() override {}
 
-  virtual void ToggleFullscreenModeForTab(WebContents* web_contents,
-                                          bool enter_fullscreen) OVERRIDE {
+  void ToggleFullscreenModeForTab(WebContents* web_contents,
+                                  bool enter_fullscreen) override {
     fullscreened_contents_ = enter_fullscreen ? web_contents : NULL;
   }
 
-  virtual bool IsFullscreenForTabOrPending(const WebContents* web_contents)
-      const OVERRIDE {
+  bool IsFullscreenForTabOrPending(
+      const WebContents* web_contents) const override {
     return fullscreened_contents_ && web_contents == fullscreened_contents_;
   }
 
@@ -320,9 +319,9 @@ class FakeValidationMessageDelegate : public WebContentsDelegate {
  public:
   FakeValidationMessageDelegate()
       : hide_validation_message_was_called_(false) {}
-  virtual ~FakeValidationMessageDelegate() {}
+  ~FakeValidationMessageDelegate() override {}
 
-  virtual void HideValidationMessage(WebContents* web_contents) OVERRIDE {
+  void HideValidationMessage(WebContents* web_contents) override {
     hide_validation_message_was_called_ = true;
   }
 
@@ -2453,7 +2452,7 @@ class ContentsZoomChangedDelegate : public WebContentsDelegate {
   }
 
   // WebContentsDelegate:
-  virtual void ContentsZoomChange(bool zoom_in) OVERRIDE {
+  void ContentsZoomChange(bool zoom_in) override {
     contents_zoom_changed_call_count_++;
     last_zoom_in_ = zoom_in;
   }
@@ -2701,6 +2700,7 @@ TEST_F(WebContentsImplTest, MediaPowerSaveBlocking) {
   const int kPlayerAudioVideoId = 15;
   const int kPlayerAudioOnlyId = -15;
   const int kPlayerVideoOnlyId = 30;
+  const int kPlayerRemoteId = -30;
 
   EXPECT_FALSE(contents()->has_audio_power_save_blocker_for_testing());
   EXPECT_FALSE(contents()->has_video_power_save_blocker_for_testing());
@@ -2728,7 +2728,7 @@ TEST_F(WebContentsImplTest, MediaPowerSaveBlocking) {
   // should be created.  If audio stream monitoring is available, an audio power
   // save blocker should be created too.
   rfh->OnMessageReceived(FrameHostMsg_MediaPlayingNotification(
-      0, kPlayerAudioVideoId, true, true));
+      0, kPlayerAudioVideoId, true, true, false));
   EXPECT_TRUE(contents()->has_video_power_save_blocker_for_testing());
   EXPECT_EQ(contents()->has_audio_power_save_blocker_for_testing(),
             !AudioStreamMonitor::monitoring_available());
@@ -2741,7 +2741,7 @@ TEST_F(WebContentsImplTest, MediaPowerSaveBlocking) {
   // the power save blockers.  The notification should take into account the
   // visibility state of the WebContents.
   rfh->OnMessageReceived(FrameHostMsg_MediaPlayingNotification(
-      0, kPlayerVideoOnlyId, true, false));
+      0, kPlayerVideoOnlyId, true, false, false));
   EXPECT_FALSE(contents()->has_video_power_save_blocker_for_testing());
   EXPECT_EQ(contents()->has_audio_power_save_blocker_for_testing(),
             !AudioStreamMonitor::monitoring_available());
@@ -2753,7 +2753,15 @@ TEST_F(WebContentsImplTest, MediaPowerSaveBlocking) {
   // Start another player that only has audio.  There should be no change in
   // the power save blockers.
   rfh->OnMessageReceived(FrameHostMsg_MediaPlayingNotification(
-      0, kPlayerAudioOnlyId, false, true));
+      0, kPlayerAudioOnlyId, false, true, false));
+  EXPECT_TRUE(contents()->has_video_power_save_blocker_for_testing());
+  EXPECT_EQ(contents()->has_audio_power_save_blocker_for_testing(),
+            !AudioStreamMonitor::monitoring_available());
+
+  // Start a remote player. There should be no change in the power save
+  // blockers.
+  rfh->OnMessageReceived(FrameHostMsg_MediaPlayingNotification(
+      0, kPlayerRemoteId, true, true, true));
   EXPECT_TRUE(contents()->has_video_power_save_blocker_for_testing());
   EXPECT_EQ(contents()->has_audio_power_save_blocker_for_testing(),
             !AudioStreamMonitor::monitoring_available());
@@ -2775,6 +2783,12 @@ TEST_F(WebContentsImplTest, MediaPowerSaveBlocking) {
   // Destroy the video only player.  No power save blockers should remain.
   rfh->OnMessageReceived(
       FrameHostMsg_MediaPausedNotification(0, kPlayerVideoOnlyId));
+  EXPECT_FALSE(contents()->has_video_power_save_blocker_for_testing());
+  EXPECT_FALSE(contents()->has_audio_power_save_blocker_for_testing());
+
+  // Destroy the remote player. No power save blockers should remain.
+  rfh->OnMessageReceived(
+      FrameHostMsg_MediaPausedNotification(0, kPlayerRemoteId));
   EXPECT_FALSE(contents()->has_video_power_save_blocker_for_testing());
   EXPECT_FALSE(contents()->has_audio_power_save_blocker_for_testing());
 }

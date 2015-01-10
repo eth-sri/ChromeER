@@ -31,19 +31,19 @@ class ResourceManagerImpl : public ResourceManager,
                             public WindowListProviderObserver {
  public:
   ResourceManagerImpl(ResourceManagerDelegate* delegate);
-  virtual ~ResourceManagerImpl();
+  ~ResourceManagerImpl() override;
 
   // ResourceManager:
   virtual void SetMemoryPressureAndStopMonitoring(
-      MemoryPressureObserver::MemoryPressure pressure) OVERRIDE;
-  virtual void SetWaitTimeBetweenResourceManageCalls(int time_in_ms) OVERRIDE {
+      MemoryPressure pressure) override;
+  virtual void SetWaitTimeBetweenResourceManageCalls(int time_in_ms) override {
     wait_time_for_resource_deallocation_ =
         base::TimeDelta::FromMilliseconds(time_in_ms);
     // Reset the timeout to force the next resource call to execute immediately.
     next_resource_management_time_ = base::Time::Now();
   }
 
-  virtual void Pause(bool pause) OVERRIDE {
+  virtual void Pause(bool pause) override {
     if (pause) {
       if (!pause_)
         queued_command_ = false;
@@ -59,24 +59,24 @@ class ResourceManagerImpl : public ResourceManager,
   }
 
   // ActivityManagerObserver:
-  virtual void OnActivityStarted(Activity* activity) OVERRIDE;
-  virtual void OnActivityEnding(Activity* activity) OVERRIDE;
+  virtual void OnActivityStarted(Activity* activity) override;
+  virtual void OnActivityEnding(Activity* activity) override;
 
   // WindowManagerObserver:
-  virtual void OnOverviewModeEnter() OVERRIDE;
-  virtual void OnOverviewModeExit() OVERRIDE;
-  virtual void OnSplitViewModeEnter() OVERRIDE;
-  virtual void OnSplitViewModeExit() OVERRIDE;
+  virtual void OnOverviewModeEnter() override;
+  virtual void OnOverviewModeExit() override;
+  virtual void OnSplitViewModeEnter() override;
+  virtual void OnSplitViewModeExit() override;
 
   // MemoryPressureObserver:
-  virtual void OnMemoryPressure(
-      MemoryPressureObserver::MemoryPressure pressure) OVERRIDE;
-  virtual ResourceManagerDelegate* GetDelegate() OVERRIDE;
+  virtual void OnMemoryPressure(MemoryPressure pressure) override;
+  virtual ResourceManagerDelegate* GetDelegate() override;
 
   // WindowListProviderObserver:
-  virtual void OnWindowStackingChanged() OVERRIDE;
-  virtual void OnWindowRemoved(aura::Window* removed_window,
-                               int index) OVERRIDE;
+  virtual void OnWindowStackingChangedInList() override;
+  virtual void OnWindowAddedToList(aura::Window* added_window) override {}
+  virtual void OnWindowRemovedFromList(aura::Window* removed_window,
+                                       int index) override {}
 
  private:
   // Manage the resources for our activities.
@@ -114,7 +114,7 @@ class ResourceManagerImpl : public ResourceManager,
   scoped_ptr<ResourceManagerDelegate> delegate_;
 
   // Keeping a reference to the current memory pressure.
-  MemoryPressureObserver::MemoryPressure current_memory_pressure_;
+  MemoryPressure current_memory_pressure_;
 
   // The memory pressure notifier.
   scoped_ptr<MemoryPressureNotifier> memory_pressure_notifier_;
@@ -148,7 +148,7 @@ class ResourceManagerImpl : public ResourceManager,
 };
 
 namespace {
-ResourceManagerImpl* instance = NULL;
+ResourceManagerImpl* instance = nullptr;
 
 // We allow this many activities to be visible. All others must be at state of
 // invisible or below.
@@ -158,7 +158,7 @@ const int kMaxVisibleActivities = 3;
 
 ResourceManagerImpl::ResourceManagerImpl(ResourceManagerDelegate* delegate)
     : delegate_(delegate),
-      current_memory_pressure_(MemoryPressureObserver::MEMORY_PRESSURE_UNKNOWN),
+      current_memory_pressure_(MEMORY_PRESSURE_UNKNOWN),
       memory_pressure_notifier_(new MemoryPressureNotifier(this)),
       pause_(false),
       queued_command_(false),
@@ -183,7 +183,7 @@ ResourceManagerImpl::~ResourceManagerImpl() {
 }
 
 void ResourceManagerImpl::SetMemoryPressureAndStopMonitoring(
-    MemoryPressureObserver::MemoryPressure pressure) {
+    MemoryPressure pressure) {
   memory_pressure_notifier_->StopObserving();
   OnMemoryPressure(pressure);
 }
@@ -235,7 +235,7 @@ void ResourceManagerImpl::OnSplitViewModeExit() {
   in_split_view_mode_ = false;
 }
 
-void ResourceManagerImpl::OnWindowStackingChanged() {
+void ResourceManagerImpl::OnWindowStackingChangedInList() {
   activity_order_changed_ = true;
   if (pause_) {
     queued_command_ = true;
@@ -254,12 +254,7 @@ void ResourceManagerImpl::OnWindowStackingChanged() {
   ManageResource();
 }
 
-void ResourceManagerImpl::OnWindowRemoved(aura::Window* removed_window,
-                                          int index) {
-}
-
-void ResourceManagerImpl::OnMemoryPressure(
-      MemoryPressureObserver::MemoryPressure pressure) {
+void ResourceManagerImpl::OnMemoryPressure(MemoryPressure pressure) {
   if (pressure > current_memory_pressure_)
     OnMemoryPressureIncreased();
   current_memory_pressure_ = pressure;
@@ -369,7 +364,7 @@ void ResourceManagerImpl::TryToUnloadAnActivity() {
   }
 
   // Check if / which activity we want to unload.
-  Activity* oldest_media_activity = NULL;
+  Activity* oldest_media_activity = nullptr;
   std::vector<Activity*> unloadable_activities;
   for (std::vector<Activity*>::iterator it = activity_list_.begin();
        it != activity_list_.end(); ++it) {
@@ -478,14 +473,14 @@ ResourceManager* ResourceManager::Get() {
 void ResourceManager::Shutdown() {
   DCHECK(instance);
   delete instance;
-  instance = NULL;
+  instance = nullptr;
 }
 
 ResourceManager::ResourceManager() {}
 
 ResourceManager::~ResourceManager() {
   DCHECK(instance);
-  instance = NULL;
+  instance = nullptr;
 }
 
 }  // namespace athena

@@ -25,7 +25,7 @@ from auto_bisect import math_utils
 CROS_BOARD_ENV = 'BISECT_CROS_BOARD'
 CROS_IP_ENV = 'BISECT_CROS_IP'
 
-SCRIPT_DIR = os.path.dirname(__file__)
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 SRC_DIR = os.path.join(SCRIPT_DIR, os.path.pardir)
 BISECT_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'auto_bisect', 'bisect.cfg')
 RUN_TEST_CONFIG_PATH = os.path.join(SCRIPT_DIR, 'run-perf-test.cfg')
@@ -207,6 +207,9 @@ def _CreateBisectOptionsFromConfig(config):
   if config.has_key('goma_dir'):
     opts_dict['goma_dir'] = config['goma_dir']
 
+  if config.has_key('improvement_direction'):
+    opts_dict['improvement_direction'] = int(config['improvement_direction'])
+
   opts_dict['build_preference'] = 'ninja'
   opts_dict['output_buildbot_annotations'] = True
 
@@ -245,7 +248,7 @@ def _RunPerformanceTest(config):
   bisect_utils.OutputAnnotationStepStart('Building With Patch')
 
   opts = _CreateBisectOptionsFromConfig(config)
-  b = bisect_perf_regression.BisectPerformanceMetrics(None, opts)
+  b = bisect_perf_regression.BisectPerformanceMetrics(opts)
 
   if bisect_utils.RunGClient(['runhooks']):
     raise RuntimeError('Failed to run gclient runhooks')
@@ -402,6 +405,9 @@ def _RunBisectionScript(
 
   if config.has_key('bisect_mode'):
     cmd.extend(['--bisect_mode', config['bisect_mode']])
+
+  if config.has_key('improvement_direction'):
+    cmd.extend(['-d', config['improvement_direction']])
 
   cmd.extend(['--build_preference', 'ninja'])
 

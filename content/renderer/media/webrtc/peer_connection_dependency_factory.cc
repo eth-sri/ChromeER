@@ -75,7 +75,7 @@ struct {
 void HarmonizeConstraintsAndEffects(RTCMediaConstraints* constraints,
                                     int* effects) {
   if (*effects != media::AudioParameters::NO_EFFECTS) {
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kConstraintEffectMap); ++i) {
+    for (size_t i = 0; i < arraysize(kConstraintEffectMap); ++i) {
       bool value;
       size_t is_mandatory = 0;
       if (!webrtc::FindConstraint(constraints,
@@ -117,25 +117,21 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
   P2PPortAllocatorFactory(
       P2PSocketDispatcher* socket_dispatcher,
       rtc::NetworkManager* network_manager,
-      rtc::PacketSocketFactory* socket_factory,
-      blink::WebFrame* web_frame)
+      rtc::PacketSocketFactory* socket_factory)
       : socket_dispatcher_(socket_dispatcher),
         network_manager_(network_manager),
-        socket_factory_(socket_factory),
-        web_frame_(web_frame) {
+        socket_factory_(socket_factory) {
   }
 
-  virtual cricket::PortAllocator* CreatePortAllocator(
+  cricket::PortAllocator* CreatePortAllocator(
       const std::vector<StunConfiguration>& stun_servers,
-      const std::vector<TurnConfiguration>& turn_configurations) OVERRIDE {
-    CHECK(web_frame_);
+      const std::vector<TurnConfiguration>& turn_configurations) override {
     P2PPortAllocator::Config config;
     for (size_t i = 0; i < stun_servers.size(); ++i) {
       config.stun_servers.insert(rtc::SocketAddress(
           stun_servers[i].server.hostname(),
           stun_servers[i].server.port()));
     }
-    config.legacy_relay = false;
     for (size_t i = 0; i < turn_configurations.size(); ++i) {
       P2PPortAllocator::Config::RelayServerConfig relay_config;
       relay_config.server_address = turn_configurations[i].server.hostname();
@@ -153,12 +149,11 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
     }
 
     return new P2PPortAllocator(
-        web_frame_, socket_dispatcher_.get(), network_manager_,
-        socket_factory_, config);
+        socket_dispatcher_.get(), network_manager_, socket_factory_, config);
   }
 
  protected:
-  virtual ~P2PPortAllocatorFactory() {}
+  ~P2PPortAllocatorFactory() override {}
 
  private:
   scoped_refptr<P2PSocketDispatcher> socket_dispatcher_;
@@ -166,8 +161,6 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
   // PeerConnectionDependencyFactory.
   rtc::NetworkManager* network_manager_;
   rtc::PacketSocketFactory* socket_factory_;
-  // Raw ptr to the WebFrame that created the P2PPortAllocatorFactory.
-  blink::WebFrame* web_frame_;
 };
 
 PeerConnectionDependencyFactory::PeerConnectionDependencyFactory(
@@ -391,8 +384,7 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
         new rtc::RefCountedObject<P2PPortAllocatorFactory>(
             p2p_socket_dispatcher_.get(),
             network_manager_,
-            socket_factory_.get(),
-            web_frame);
+            socket_factory_.get());
 
   PeerConnectionIdentityService* identity_service =
       new PeerConnectionIdentityService(
@@ -628,6 +620,12 @@ scoped_refptr<base::MessageLoopProxy>
 PeerConnectionDependencyFactory::GetWebRtcWorkerThread() const {
   DCHECK(CalledOnValidThread());
   return chrome_worker_thread_.message_loop_proxy();
+}
+
+scoped_refptr<base::MessageLoopProxy>
+PeerConnectionDependencyFactory::GetWebRtcSignalingThread() const {
+  DCHECK(CalledOnValidThread());
+  return RenderThreadImpl::current()->GetMessageLoop()->message_loop_proxy();
 }
 
 void PeerConnectionDependencyFactory::OnAecDumpFile(

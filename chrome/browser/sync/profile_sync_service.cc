@@ -19,6 +19,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string16.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
@@ -217,6 +218,7 @@ ProfileSyncService::ProfileSyncService(
       unrecoverable_error_reason_(ERROR_REASON_UNSET),
       expect_sync_configuration_aborted_(false),
       encrypted_types_(syncer::SyncEncryptionHandler::SensitiveTypes()),
+      encrypt_everything_allowed_(true),
       encrypt_everything_(false),
       encryption_pending_(false),
       configure_status_(DataTypeManager::UNKNOWN),
@@ -309,8 +311,6 @@ void ProfileSyncService::Initialize() {
 
   TrySyncDatatypePrefRecovery();
 
-  last_synced_time_ = sync_prefs_.GetLastSyncedTime();
-
 #if defined(OS_CHROMEOS)
   std::string bootstrap_token = sync_prefs_.GetEncryptionBootstrapToken();
   if (bootstrap_token.empty()) {
@@ -352,7 +352,7 @@ void ProfileSyncService::Initialize() {
 }
 
 void ProfileSyncService::TrySyncDatatypePrefRecovery() {
-  DCHECK(!sync_initialized());
+  DCHECK(!backend_initialized());
   if (!HasSyncSetupCompleted())
     return;
 
@@ -755,6 +755,11 @@ void ProfileSyncService::OnGetTokenFailure(
 
 void ProfileSyncService::OnRefreshTokenAvailable(
     const std::string& account_id) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422460 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422460 ProfileSyncService::OnRefreshTokenAvailable"));
+
   if (account_id == signin_->GetAccountIdToUse())
     OnRefreshTokensLoaded();
 }
@@ -897,8 +902,7 @@ void ProfileSyncService::SetSyncSetupCompleted() {
 }
 
 void ProfileSyncService::UpdateLastSyncedTime() {
-  last_synced_time_ = base::Time::Now();
-  sync_prefs_.SetLastSyncedTime(last_synced_time_);
+  sync_prefs_.SetLastSyncedTime(base::Time::Now());
 }
 
 void ProfileSyncService::NotifyObservers() {
@@ -1021,9 +1025,9 @@ void ProfileSyncService::PostBackendInitialization() {
   ConsumeCachedPassphraseIfPossible();
 
   // The very first time the backend initializes is effectively the first time
-  // we can say we successfully "synced".  last_synced_time_ will only be null
-  // in this case, because the pref wasn't restored on StartUp.
-  if (last_synced_time_.is_null()) {
+  // we can say we successfully "synced".  LastSyncedTime will only be null in
+  // this case, because the pref wasn't restored on StartUp.
+  if (sync_prefs_.GetLastSyncedTime().is_null()) {
     UpdateLastSyncedTime();
   }
 
@@ -1356,6 +1360,7 @@ void ProfileSyncService::OnEncryptedTypesChanged(
     bool encrypt_everything) {
   encrypted_types_ = encrypted_types;
   encrypt_everything_ = encrypt_everything;
+  DCHECK(encrypt_everything_allowed_ || !encrypt_everything_);
   DVLOG(1) << "Encrypted types changed to "
            << syncer::ModelTypeSetToString(encrypted_types_)
            << " (encrypt everything is set to "
@@ -1576,9 +1581,9 @@ ProfileSyncService::SyncStatusSummary
   } else if (
       backend_.get() && HasSyncSetupCompleted() &&
       directory_data_type_manager_.get() &&
-      directory_data_type_manager_->state() != DataTypeManager::CONFIGURED) {
+      directory_data_type_manager_->state() == DataTypeManager::STOPPED) {
     return DATATYPES_NOT_INITIALIZED;
-  } else if (ShouldPushChanges()) {
+  } else if (SyncActive()) {
     return INITIALIZED;
   }
   return UNKNOWN_ERROR;
@@ -1650,13 +1655,28 @@ void ProfileSyncService::SetSetupInProgress(bool setup_in_progress) {
     return;
 
   startup_controller_.set_setup_in_progress(setup_in_progress);
-  if (!setup_in_progress && sync_initialized())
+  if (!setup_in_progress && backend_initialized())
     ReconfigureDatatypeManager();
   NotifyObservers();
 }
 
-bool ProfileSyncService::sync_initialized() const {
+bool ProfileSyncService::SyncActive() const {
+  return backend_initialized_ && backend_mode_ == SYNC &&
+         directory_data_type_manager_ &&
+         directory_data_type_manager_->state() != DataTypeManager::STOPPED;
+}
+
+bool ProfileSyncService::backend_initialized() const {
   return backend_initialized_;
+}
+
+ProfileSyncService::BackendMode ProfileSyncService::backend_mode() const {
+  return backend_mode_;
+}
+
+bool ProfileSyncService::ConfigurationDone() const {
+  return directory_data_type_manager_ &&
+      directory_data_type_manager_->state() == DataTypeManager::CONFIGURED;
 }
 
 bool ProfileSyncService::waiting_for_auth() const {
@@ -1684,16 +1704,18 @@ bool ProfileSyncService::IsPassphraseRequiredForDecryption() const {
 }
 
 base::string16 ProfileSyncService::GetLastSyncedTimeString() const {
-  if (last_synced_time_.is_null())
+  const base::Time last_synced_time = sync_prefs_.GetLastSyncedTime();
+  if (last_synced_time.is_null())
     return l10n_util::GetStringUTF16(IDS_SYNC_TIME_NEVER);
 
-  base::TimeDelta last_synced = base::Time::Now() - last_synced_time_;
+  base::TimeDelta time_since_last_sync = base::Time::Now() - last_synced_time;
 
-  if (last_synced < base::TimeDelta::FromMinutes(1))
+  if (time_since_last_sync < base::TimeDelta::FromMinutes(1))
     return l10n_util::GetStringUTF16(IDS_SYNC_TIME_JUST_NOW);
 
   return ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_ELAPSED,
-                                ui::TimeFormat::LENGTH_SHORT, last_synced);
+                                ui::TimeFormat::LENGTH_SHORT,
+                                time_since_last_sync);
 }
 
 void ProfileSyncService::UpdateSelectedTypesHistogram(
@@ -1716,10 +1738,11 @@ void ProfileSyncService::UpdateSelectedTypesHistogram(
     sync_driver::user_selectable_type::TYPED_URLS,
     sync_driver::user_selectable_type::EXTENSIONS,
     sync_driver::user_selectable_type::APPS,
-    sync_driver::user_selectable_type::PROXY_TABS
+    sync_driver::user_selectable_type::WIFI_CREDENTIAL,
+    sync_driver::user_selectable_type::PROXY_TABS,
   };
 
-  COMPILE_ASSERT(32 == syncer::MODEL_TYPE_COUNT, UpdateCustomConfigHistogram);
+  COMPILE_ASSERT(33 == syncer::MODEL_TYPE_COUNT, UpdateCustomConfigHistogram);
 
   if (!sync_everything) {
     const syncer::ModelTypeSet current_types = GetPreferredDataTypes();
@@ -1797,6 +1820,8 @@ void ProfileSyncService::ChangePreferredDataTypes(
 }
 
 syncer::ModelTypeSet ProfileSyncService::GetActiveDataTypes() const {
+  if (!SyncActive() || !ConfigurationDone())
+    return syncer::ModelTypeSet();
   const syncer::ModelTypeSet preferred_types = GetPreferredDataTypes();
   const syncer::ModelTypeSet failed_types =
       data_type_status_table_.GetFailedTypes();
@@ -1953,9 +1978,8 @@ syncer::UserShare* ProfileSyncService::GetUserShare() const {
 
 syncer::sessions::SyncSessionSnapshot
 ProfileSyncService::GetLastSessionSnapshot() const {
-  if (HasSyncingBackend() && backend_initialized_) {
+  if (backend_)
     return backend_->GetLastSessionSnapshot();
-  }
   return syncer::sessions::SyncSessionSnapshot();
 }
 
@@ -2089,7 +2113,7 @@ void ProfileSyncService::ConsumeCachedPassphraseIfPossible() {
   // If no cached passphrase, or sync backend hasn't started up yet, just exit.
   // If the backend isn't running yet, OnBackendInitialized() will call this
   // method again after the backend starts up.
-  if (cached_passphrase_.empty() || !sync_initialized())
+  if (cached_passphrase_.empty() || !backend_initialized())
     return;
 
   // Backend is up and running, so we can consume the cached passphrase.
@@ -2139,7 +2163,7 @@ void ProfileSyncService::RequestAccessToken() {
 void ProfileSyncService::SetEncryptionPassphrase(const std::string& passphrase,
                                                  PassphraseType type) {
   // This should only be called when the backend has been initialized.
-  DCHECK(sync_initialized());
+  DCHECK(backend_initialized());
   DCHECK(!(type == IMPLICIT && IsUsingSecondaryPassphrase())) <<
       "Data is already encrypted using an explicit passphrase";
   DCHECK(!(type == EXPLICIT &&
@@ -2172,11 +2196,22 @@ bool ProfileSyncService::SetDecryptionPassphrase(
   }
 }
 
+bool ProfileSyncService::EncryptEverythingAllowed() const {
+  return encrypt_everything_allowed_;
+}
+
+void ProfileSyncService::SetEncryptEverythingAllowed(bool allowed) {
+  DCHECK(allowed || !backend_initialized() || !EncryptEverythingEnabled());
+  encrypt_everything_allowed_ = allowed;
+}
+
 void ProfileSyncService::EnableEncryptEverything() {
-  // Tests override sync_initialized() to always return true, so we
+  DCHECK(EncryptEverythingAllowed());
+
+  // Tests override backend_initialized() to always return true, so we
   // must check that instead of |backend_initialized_|.
   // TODO(akalin): Fix the above. :/
-  DCHECK(sync_initialized());
+  DCHECK(backend_initialized());
   // TODO(atwilson): Persist the encryption_pending_ flag to address the various
   // problems around cancelling encryption in the background (crbug.com/119649).
   if (!encrypt_everything_)
@@ -2224,7 +2259,7 @@ void ProfileSyncService::GoogleSigninSucceeded(const std::string& account_id,
 #if defined(OS_CHROMEOS)
   RefreshSpareBootstrapToken(password);
 #endif
-  if (!sync_initialized() || GetAuthError().state() != AuthError::NONE) {
+  if (!backend_initialized() || GetAuthError().state() != AuthError::NONE) {
     // Track the fact that we're still waiting for auth to complete.
     is_auth_in_progress_ = true;
   }
@@ -2425,19 +2460,6 @@ bool ProfileSyncService::IsSyncEnabled() {
 
 bool ProfileSyncService::IsManaged() const {
   return sync_prefs_.IsManaged() || sync_disabled_by_admin_;
-}
-
-bool ProfileSyncService::ShouldPushChanges() {
-  // True only after all bootstrapping has succeeded: the sync backend
-  // is initialized, all enabled data types are consistent with one
-  // another, and no unrecoverable error has transpired.
-  if (HasUnrecoverableError())
-    return false;
-
-  if (!directory_data_type_manager_)
-    return false;
-
-  return directory_data_type_manager_->state() == DataTypeManager::CONFIGURED;
 }
 
 void ProfileSyncService::StopAndSuppress() {
@@ -2651,10 +2673,11 @@ void ProfileSyncService::CheckSyncBackupIfNeeded() {
   DCHECK_EQ(backend_mode_, SYNC);
 
 #if defined(ENABLE_PRE_SYNC_BACKUP)
+  const base::Time last_synced_time = sync_prefs_.GetLastSyncedTime();
   // Check backup once a day.
   if (!last_backup_time_ &&
-      (last_synced_time_.is_null() ||
-          base::Time::Now() - last_synced_time_ >=
+      (last_synced_time.is_null() ||
+          base::Time::Now() - last_synced_time >=
               base::TimeDelta::FromDays(1))) {
     // If sync thread is set, need to serialize check on sync thread after
     // closing backup DB.
@@ -2706,4 +2729,11 @@ bool ProfileSyncService::NeedBackup() const {
 
 base::Time ProfileSyncService::GetDeviceBackupTimeForTesting() const {
   return device_info_sync_service_->GetLocalDeviceBackupTime();
+}
+
+void ProfileSyncService::FlushDirectory() const {
+  // backend_initialized_ implies backend_ isn't NULL and the manager exists.
+  // If sync is not initialized yet, we fail silently.
+  if (backend_initialized_)
+    backend_->FlushDirectory();
 }

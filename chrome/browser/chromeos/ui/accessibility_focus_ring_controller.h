@@ -5,6 +5,8 @@
 #ifndef CHROME_BROWSER_CHROMEOS_UI_ACCESSIBILITY_FOCUS_RING_CONTROLLER_H_
 #define CHROME_BROWSER_CHROMEOS_UI_ACCESSIBILITY_FOCUS_RING_CONTROLLER_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -48,10 +50,10 @@ class AccessibilityFocusRingController
 
  private:
   // FocusRingLayerDelegate.
-  virtual void OnDeviceScaleFactorChanged() OVERRIDE;
+  virtual void OnDeviceScaleFactorChanged() override;
 
   // CompositorAnimationObserver.
-  virtual void OnAnimationStep(base::TimeTicks timestamp) OVERRIDE;
+  virtual void OnAnimationStep(base::TimeTicks timestamp) override;
 
   void Update();
 

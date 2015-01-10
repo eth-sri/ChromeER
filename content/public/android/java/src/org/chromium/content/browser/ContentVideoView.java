@@ -29,16 +29,13 @@ import android.widget.TextView;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
-import org.chromium.ui.base.ViewAndroid;
-import org.chromium.ui.base.ViewAndroidDelegate;
-import org.chromium.ui.base.WindowAndroid;
 
 /**
  * This class implements accelerated fullscreen video playback using surface view.
  */
 @JNINamespace("content")
 public class ContentVideoView extends FrameLayout
-        implements SurfaceHolder.Callback, ViewAndroidDelegate {
+        implements SurfaceHolder.Callback {
 
     private static final String TAG = "ContentVideoView";
 
@@ -92,9 +89,6 @@ public class ContentVideoView extends FrameLayout
     // Progress view when the video is loading.
     private View mProgressView;
 
-    // The ViewAndroid is used to keep screen on during video playback.
-    private ViewAndroid mViewAndroid;
-
     private final ContentVideoViewClient mClient;
 
     private boolean mInitialOrientation;
@@ -128,17 +122,17 @@ public class ContentVideoView extends FrameLayout
                 // If we have never switched orientation, record the orientation
                 // time.
                 if (mPlaybackStartTime == mOrientationChangedTime) {
-                   if (isOrientationPortrait() != mInitialOrientation) {
-                       mOrientationChangedTime = System.currentTimeMillis();
-                   }
+                    if (isOrientationPortrait() != mInitialOrientation) {
+                        mOrientationChangedTime = System.currentTimeMillis();
+                    }
                 } else {
-                   // if user quickly switched the orientation back and force, don't
-                   // count it in UMA.
-                   if (!mPossibleAccidentalChange &&
-                           isOrientationPortrait() == mInitialOrientation &&
-                           System.currentTimeMillis() - mOrientationChangedTime < 5000) {
-                       mPossibleAccidentalChange = true;
-                   }
+                    // if user quickly switched the orientation back and force, don't
+                    // count it in UMA.
+                    if (!mPossibleAccidentalChange
+                            && isOrientationPortrait() == mInitialOrientation
+                            && System.currentTimeMillis() - mOrientationChangedTime < 5000) {
+                        mPossibleAccidentalChange = true;
+                    }
                 }
             }
             setMeasuredDimension(width, height);
@@ -175,7 +169,6 @@ public class ContentVideoView extends FrameLayout
             ContentVideoViewClient client) {
         super(context);
         mNativeContentVideoView = nativeContentVideoView;
-        mViewAndroid = new ViewAndroid(new WindowAndroid(context.getApplicationContext()), this);
         mClient = client;
         mUmaRecorded = false;
         mPossibleAccidentalChange = false;
@@ -238,6 +231,11 @@ public class ContentVideoView extends FrameLayout
 
         mCurrentState = STATE_ERROR;
 
+        if (!isActivityContext(getContext())) {
+            Log.w(TAG, "Unable to show alert dialog because it requires an activity context");
+            return;
+        }
+
         /* Pop up an error dialog so the user knows that
          * something bad has happened. Only try and pop up the dialog
          * if we're attached to a window. When we're going away and no
@@ -261,13 +259,12 @@ public class ContentVideoView extends FrameLayout
                     .setMessage(message)
                     .setPositiveButton(mErrorButton,
                             new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int whichButton) {
-                            /* Inform that the video is over.
-                             */
-                            onCompletion();
-                        }
-                    })
+                                @Override
+                                public void onClick(DialogInterface dialog, int whichButton) {
+                                    // Inform that the video is over.
+                                    onCompletion();
+                                }
+                            })
                     .setCancelable(false)
                     .show();
             } catch (RuntimeException e) {
@@ -418,18 +415,13 @@ public class ContentVideoView extends FrameLayout
 
     @CalledByNative
     private static ContentVideoView createContentVideoView(
-            Context context, long nativeContentVideoView, ContentVideoViewClient client) {
+            ContentViewCore contentViewCore, long nativeContentVideoView) {
         ThreadUtils.assertOnUiThread();
-        // The context needs be Activity to create the ContentVideoView correctly.
-        if (!isActivityContext(context)) {
-            Log.e(TAG, "Wrong type of context, can't create fullscreen video");
-            return null;
-        }
+        Context context = contentViewCore.getContext();
+        ContentVideoViewClient client = contentViewCore.getContentVideoViewClient();
         ContentVideoView videoView = new ContentVideoView(context, nativeContentVideoView, client);
-        if (videoView.getContentVideoViewClient().onShowCustomView(videoView)) {
-            return videoView;
-        }
-        return null;
+        client.enterFullscreenVideo(videoView);
+        return videoView;
     }
 
     private static boolean isActivityContext(Context context) {
@@ -437,6 +429,7 @@ public class ContentVideoView extends FrameLayout
         // an Activity, given that Activity is already a subclass of ContextWrapper.
         if (context instanceof ContextWrapper && !(context instanceof Activity)) {
             context = ((ContextWrapper) context).getBaseContext();
+            return isActivityContext(context);
         }
         return context instanceof Activity;
     }
@@ -483,7 +476,7 @@ public class ContentVideoView extends FrameLayout
             setVisibility(View.GONE);
 
             // To prevent re-entrance, call this after removeSurfaceView.
-            mClient.onDestroyContentVideoView();
+            mClient.exitFullscreenVideo();
         }
         if (nativeViewDestroyed) {
             mNativeContentVideoView = 0;
@@ -501,28 +494,6 @@ public class ContentVideoView extends FrameLayout
             return true;
         }
         return super.onKeyUp(keyCode, event);
-    }
-
-    @Override
-    public View acquireAnchorView() {
-        View anchorView = new View(getContext());
-        addView(anchorView);
-        return anchorView;
-    }
-
-    @Override
-    public void setAnchorViewPosition(View view, float x, float y, float width, float height) {
-        Log.e(TAG, "setAnchorViewPosition isn't implemented");
-    }
-
-    @Override
-    public void releaseAnchorView(View anchorView) {
-        removeView(anchorView);
-    }
-
-    @CalledByNative
-    private long getNativeViewAndroid() {
-        return mViewAndroid.getNativePointer();
     }
 
     private boolean isOrientationPortrait() {

@@ -2,9 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import os
+
 from telemetry import decorators
 from telemetry.core import platform
 from telemetry.core import web_contents
+from telemetry.core.backends import app_backend
 from telemetry.core.forwarders import do_nothing_forwarder
 
 
@@ -12,20 +15,19 @@ class ExtensionsNotSupportedException(Exception):
   pass
 
 
-class BrowserBackend(object):
+class BrowserBackend(app_backend.AppBackend):
   """A base class for browser backends."""
 
   def __init__(self, supports_extensions, browser_options, tab_list_backend):
     assert browser_options.browser_type
+    super(BrowserBackend, self).__init__()
     self.browser_type = browser_options.browser_type
     self._supports_extensions = supports_extensions
     self.browser_options = browser_options
     self._browser = None
     self._tab_list_backend_class = tab_list_backend
     self._forwarder_factory = None
-
-  def AddReplayServerOptions(self, extra_wpr_args):
-    pass
+    self._wpr_ca_cert_path = None
 
   def SetBrowser(self, browser):
     self._browser = browser
@@ -46,6 +48,16 @@ class BrowserBackend(object):
   @property
   def wpr_mode(self):
     return self.browser_options.wpr_mode
+
+  @property
+  def wpr_ca_cert_path(self):
+    """Path to root certificate installed on browser (or None).
+
+    If this is set, web page replay will use it to sign HTTPS responses.
+    """
+    if self._wpr_ca_cert_path:
+      assert os.path.isfile(self._wpr_ca_cert_path)
+    return self._wpr_ca_cert_path
 
   @property
   def supports_tab_control(self):

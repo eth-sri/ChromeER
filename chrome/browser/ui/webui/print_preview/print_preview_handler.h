@@ -49,24 +49,23 @@ class PrintPreviewHandler
       public MergeSessionHelper::Observer {
  public:
   PrintPreviewHandler();
-  virtual ~PrintPreviewHandler();
+  ~PrintPreviewHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const base::FilePath& path,
-                            int index,
-                            void* params) OVERRIDE;
-  virtual void FileSelectionCanceled(void* params) OVERRIDE;
+  void FileSelected(const base::FilePath& path,
+                    int index,
+                    void* params) override;
+  void FileSelectionCanceled(void* params) override;
 
   // PrintViewManagerObserver implementation.
-  virtual void OnPrintDialogShown() OVERRIDE;
+  void OnPrintDialogShown() override;
 
   // MergeSessionHelper::Observer implementation.
-  virtual void MergeSessionCompleted(
-      const std::string& account_id,
-      const GoogleServiceAuthError& error) OVERRIDE;
+  void MergeSessionCompleted(const std::string& account_id,
+                             const GoogleServiceAuthError& error) override;
 
   // Displays a modal dialog, prompting the user to select a file.
   void SelectFile(const base::FilePath& default_path);
@@ -87,21 +86,20 @@ class PrintPreviewHandler
 
 #if defined(ENABLE_SERVICE_DISCOVERY)
   // PrivetLocalPrinterLister::Delegate implementation.
-  virtual void LocalPrinterChanged(
+  void LocalPrinterChanged(
       bool added,
       const std::string& name,
       bool has_local_printing,
-      const local_discovery::DeviceDescription& description) OVERRIDE;
-  virtual void LocalPrinterRemoved(const std::string& name) OVERRIDE;
-  virtual void LocalPrinterCacheFlushed() OVERRIDE;
+      const local_discovery::DeviceDescription& description) override;
+  void LocalPrinterRemoved(const std::string& name) override;
+  void LocalPrinterCacheFlushed() override;
 
   // PrivetLocalPrintOperation::Delegate implementation.
-  virtual void OnPrivetPrintingDone(
-      const local_discovery::PrivetLocalPrintOperation*
-      print_operation) OVERRIDE;
-  virtual void OnPrivetPrintingError(
+  void OnPrivetPrintingDone(const local_discovery::PrivetLocalPrintOperation*
+                                print_operation) override;
+  void OnPrivetPrintingError(
       const local_discovery::PrivetLocalPrintOperation* print_operation,
-        int http_code) OVERRIDE;
+      int http_code) override;
 #endif  // ENABLE_SERVICE_DISCOVERY
   int regenerate_preview_request_count() const {
     return regenerate_preview_request_count_;
@@ -179,10 +177,6 @@ class PrintPreviewHandler
   // |args| is unused.
   void HandleManagePrinters(const base::ListValue* args);
 
-  // Asks the browser to show the cloud print dialog. |args| is signle int with
-  // page count.
-  void HandlePrintWithCloudPrintDialog(const base::ListValue* args);
-
   // Asks the browser for several settings that are needed before the first
   // preview is displayed.
   void HandleGetInitialSettings(const base::ListValue* args);
@@ -227,9 +221,6 @@ class PrintPreviewHandler
 
   // Handles printing to PDF.
   void PrintToPdf();
-
-  // Asks the browser to show the cloud print dialog.
-  void PrintWithCloudPrintDialog();
 
   // Gets the initiator for the print preview dialog.
   content::WebContents* GetInitiator() const;

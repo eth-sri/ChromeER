@@ -24,7 +24,6 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/default_tick_clock.h"
-#include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -60,7 +59,6 @@
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/status_icons/status_tray.h"
-#include "chrome/browser/ui/apps/chrome_app_window_client.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/user_manager.h"
@@ -91,7 +89,6 @@
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/extension_l10n_util.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -116,6 +113,10 @@
 #include "ui/aura/env.h"
 #endif
 
+#if defined(ENABLE_BACKGROUND)
+#include "chrome/browser/background/background_mode_manager.h"
+#endif
+
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "components/policy/core/browser/browser_policy_connector.h"
 #else
@@ -127,7 +128,9 @@
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
+#include "chrome/browser/ui/apps/chrome_app_window_client.h"
 #include "components/storage_monitor/storage_monitor.h"
+#include "extensions/common/extension_l10n_util.h"
 #endif
 
 #if !defined(DISABLE_NACL)
@@ -346,24 +349,12 @@ unsigned int BrowserProcessImpl::AddRefModule() {
   return module_ref_count_;
 }
 
-static void ShutdownServiceWorkerContext(content::StoragePartition* partition) {
-  partition->GetServiceWorkerContext()->Terminate();
-}
-
 unsigned int BrowserProcessImpl::ReleaseModule() {
   DCHECK(CalledOnValidThread());
   DCHECK_NE(0u, module_ref_count_);
   module_ref_count_--;
   if (0 == module_ref_count_) {
     release_last_reference_callstack_ = base::debug::StackTrace();
-
-    // Stop service workers
-    ProfileManager* pm = profile_manager();
-    std::vector<Profile*> profiles(pm->GetLoadedProfiles());
-    for (size_t i = 0; i < profiles.size(); ++i) {
-      content::BrowserContext::ForEachStoragePartition(
-          profiles[i], base::Bind(ShutdownServiceWorkerContext));
-    }
 
 #if defined(ENABLE_PRINTING)
     // Wait for the pending print jobs to finish. Don't do this later, since
@@ -727,7 +718,9 @@ const std::string& BrowserProcessImpl::GetApplicationLocale() {
 
 void BrowserProcessImpl::SetApplicationLocale(const std::string& locale) {
   locale_ = locale;
+#if defined(ENABLE_EXTENSIONS)
   extension_l10n_util::SetProcessLocale(locale);
+#endif
   chrome::ChromeContentBrowserClient::SetApplicationLocale(locale);
   translate::TranslateDownloadManager::GetInstance()->set_application_locale(
       locale);
@@ -841,7 +834,9 @@ BackgroundModeManager* BrowserProcessImpl::background_mode_manager() {
 
 void BrowserProcessImpl::set_background_mode_manager_for_test(
     scoped_ptr<BackgroundModeManager> manager) {
+#if defined(ENABLE_BACKGROUND)
   background_mode_manager_ = manager.Pass();
+#endif
 }
 
 StatusTray* BrowserProcessImpl::status_tray() {
@@ -1085,10 +1080,12 @@ void BrowserProcessImpl::CreateNotificationUIManager() {
 }
 
 void BrowserProcessImpl::CreateBackgroundModeManager() {
+#if defined(ENABLE_BACKGROUND)
   DCHECK(background_mode_manager_.get() == NULL);
   background_mode_manager_.reset(
       new BackgroundModeManager(CommandLine::ForCurrentProcess(),
                                 &profile_manager()->GetProfileInfoCache()));
+#endif
 }
 
 void BrowserProcessImpl::CreateStatusTray() {

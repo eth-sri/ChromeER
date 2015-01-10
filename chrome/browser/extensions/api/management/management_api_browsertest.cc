@@ -33,8 +33,8 @@ class ExtensionManagementApiBrowserTest : public ExtensionBrowserTest {
  protected:
   bool CrashEnabledExtension(const std::string& extension_id) {
     ExtensionHost* background_host =
-        ExtensionSystem::Get(browser()->profile())->
-            process_manager()->GetBackgroundHostForExtension(extension_id);
+        ProcessManager::Get(browser()->profile())
+            ->GetBackgroundHostForExtension(extension_id);
     if (!background_host)
       return false;
     content::CrashTab(background_host->host_contents());
@@ -215,7 +215,7 @@ class ExtensionManagementApiEscalationTest :
   // The id of the permissions escalation test extension we use.
   static const char kId[];
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     EXPECT_TRUE(scoped_temp_dir_.CreateUniqueTempDir());
     base::FilePath pem_path = test_data_dir_.
         AppendASCII("permissions_increase").AppendASCII("permissions.pem");
@@ -249,7 +249,7 @@ class ExtensionManagementApiEscalationTest :
                   const std::string& expected_error) {
     scoped_refptr<ManagementSetEnabledFunction> function(
         new ManagementSetEnabledFunction);
-    const char* enabled_string = enabled ? "true" : "false";
+    const char* const enabled_string = enabled ? "true" : "false";
     if (user_gesture)
       function->set_user_gesture(true);
     bool response = util::RunFunction(

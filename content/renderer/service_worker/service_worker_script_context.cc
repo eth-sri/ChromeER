@@ -39,6 +39,23 @@ blink::WebURLRequest::FetchRequestMode GetBlinkFetchRequestMode(
   return static_cast<blink::WebURLRequest::FetchRequestMode>(mode);
 }
 
+blink::WebURLRequest::FetchCredentialsMode GetBlinkFetchCredentialsMode(
+    FetchCredentialsMode credentials_mode) {
+  return static_cast<blink::WebURLRequest::FetchCredentialsMode>(
+      credentials_mode);
+}
+
+blink::WebURLRequest::RequestContext GetBlinkRequestContext(
+    RequestContextType request_context_type) {
+  return static_cast<blink::WebURLRequest::RequestContext>(
+      request_context_type);
+}
+
+blink::WebURLRequest::FrameType GetBlinkFrameType(
+    RequestContextFrameType frame_type) {
+  return static_cast<blink::WebURLRequest::FrameType>(frame_type);
+}
+
 }  // namespace
 
 ServiceWorkerScriptContext::ServiceWorkerScriptContext(
@@ -60,6 +77,7 @@ void ServiceWorkerScriptContext::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_InstallEvent, OnInstallEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SyncEvent, OnSyncEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_PushEvent, OnPushEvent)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_GeofencingEvent, OnGeofencingEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_MessageToWorker, OnPostMessage)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_DidGetClientDocuments,
                         OnDidGetClientDocuments)
@@ -183,6 +201,11 @@ void ServiceWorkerScriptContext::OnFetchEvent(
   webRequest.setReferrer(blink::WebString::fromUTF8(request.referrer.spec()),
                          blink::WebReferrerPolicyDefault);
   webRequest.setMode(GetBlinkFetchRequestMode(request.mode));
+  webRequest.setCredentialsMode(
+      GetBlinkFetchCredentialsMode(request.credentials_mode));
+  webRequest.setRequestContext(
+      GetBlinkRequestContext(request.request_context_type));
+  webRequest.setFrameType(GetBlinkFrameType(request.frame_type));
   webRequest.setIsReload(request.is_reload);
   fetch_start_timings_[request_id] = base::TimeTicks::Now();
   proxy_->dispatchFetchEvent(request_id, webRequest);
@@ -203,6 +226,19 @@ void ServiceWorkerScriptContext::OnPushEvent(int request_id,
       GetRoutingID(), request_id));
 }
 
+void ServiceWorkerScriptContext::OnGeofencingEvent(
+    int request_id,
+    blink::WebGeofencingEventType event_type,
+    const std::string& region_id,
+    const blink::WebCircularGeofencingRegion& region) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerScriptContext::OnGeofencingEvent");
+  proxy_->dispatchGeofencingEvent(
+      request_id, event_type, blink::WebString::fromUTF8(region_id), region);
+  Send(new ServiceWorkerHostMsg_GeofencingEventFinished(GetRoutingID(),
+                                                        request_id));
+}
+
 void ServiceWorkerScriptContext::OnPostMessage(
     const base::string16& message,
     const std::vector<int>& sent_message_port_ids,
@@ -219,7 +255,13 @@ void ServiceWorkerScriptContext::OnPostMessage(
     }
   }
 
+  // dispatchMessageEvent is expected to execute onmessage function
+  // synchronously.
+  base::TimeTicks before = base::TimeTicks::Now();
   proxy_->dispatchMessageEvent(message, ports);
+  UMA_HISTOGRAM_TIMES(
+      "ServiceWorker.MessageEventExecutionTime",
+      base::TimeTicks::Now() - before);
 }
 
 void ServiceWorkerScriptContext::OnDidGetClientDocuments(

@@ -620,6 +620,10 @@ void BrowserWindowCocoa::EnterFullscreenWithChrome() {
   [controller_ enterFullscreenWithChrome];
 }
 
+void BrowserWindowCocoa::EnterFullscreenWithoutChrome() {
+  [controller_ enterPresentationMode];
+}
+
 bool BrowserWindowCocoa::IsFullscreenWithChrome() {
   return IsFullscreen() && ![controller_ inPresentationMode];
 }

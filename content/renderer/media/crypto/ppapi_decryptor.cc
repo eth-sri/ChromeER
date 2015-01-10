@@ -28,25 +28,23 @@ namespace content {
 // This class is needed so that resolving an Update() promise triggers playback
 // of the stream. It intercepts the resolve() call to invoke an additional
 // callback.
-class SessionUpdatedPromise : public media::SimpleCdmPromise {
+class SessionUpdatedPromise : public media::CdmPromiseTemplate<> {
  public:
   SessionUpdatedPromise(scoped_ptr<media::SimpleCdmPromise> caller_promise,
-                        base::Closure additional_resolve_cb)
+                        const base::Closure& additional_resolve_cb)
       : caller_promise_(caller_promise.Pass()),
         additional_resolve_cb_(additional_resolve_cb) {}
 
-  virtual void resolve() OVERRIDE {
-    DCHECK(is_pending_);
-    is_pending_ = false;
+  void resolve() override {
+    MarkPromiseSettled();
     additional_resolve_cb_.Run();
     caller_promise_->resolve();
   }
 
-  virtual void reject(media::MediaKeys::Exception exception_code,
-                      uint32 system_code,
-                      const std::string& error_message) OVERRIDE {
-    DCHECK(is_pending_);
-    is_pending_ = false;
+  void reject(media::MediaKeys::Exception exception_code,
+              uint32 system_code,
+              const std::string& error_message) override {
+    MarkPromiseSettled();
     caller_promise_->reject(exception_code, system_code, error_message);
   }
 
@@ -59,25 +57,23 @@ class SessionUpdatedPromise : public media::SimpleCdmPromise {
 // playback of the stream. It intercepts the resolve() call to invoke an
 // additional callback. This is only needed until KeysChange event gets passed
 // through Pepper.
-class SessionLoadedPromise : public media::NewSessionCdmPromise {
+class SessionLoadedPromise : public media::CdmPromiseTemplate<std::string> {
  public:
   SessionLoadedPromise(scoped_ptr<media::NewSessionCdmPromise> caller_promise,
-                       base::Closure additional_resolve_cb)
+                       const base::Closure& additional_resolve_cb)
       : caller_promise_(caller_promise.Pass()),
         additional_resolve_cb_(additional_resolve_cb) {}
 
-  virtual void resolve(const std::string& web_session_id) OVERRIDE {
-    DCHECK(is_pending_);
-    is_pending_ = false;
+  void resolve(const std::string& web_session_id) override {
+    MarkPromiseSettled();
     additional_resolve_cb_.Run();
     caller_promise_->resolve(web_session_id);
   }
 
-  virtual void reject(media::MediaKeys::Exception exception_code,
-                      uint32 system_code,
-                      const std::string& error_message) OVERRIDE {
-    DCHECK(is_pending_);
-    is_pending_ = false;
+  void reject(media::MediaKeys::Exception exception_code,
+              uint32 system_code,
+              const std::string& error_message) override {
+    MarkPromiseSettled();
     caller_promise_->reject(exception_code, system_code, error_message);
   }
 
@@ -213,9 +209,7 @@ void PpapiDecryptor::LoadSession(
                                base::Bind(&PpapiDecryptor::ResumePlayback,
                                           weak_ptr_factory_.GetWeakPtr())));
 
-  CdmDelegate()->LoadSession(
-      web_session_id,
-      session_loaded_promise.PassAs<media::NewSessionCdmPromise>());
+  CdmDelegate()->LoadSession(web_session_id, session_loaded_promise.Pass());
 }
 
 void PpapiDecryptor::UpdateSession(
@@ -236,11 +230,10 @@ void PpapiDecryptor::UpdateSession(
       new SessionUpdatedPromise(promise.Pass(),
                                 base::Bind(&PpapiDecryptor::ResumePlayback,
                                            weak_ptr_factory_.GetWeakPtr())));
-  CdmDelegate()->UpdateSession(
-      web_session_id,
-      response,
-      response_length,
-      session_updated_promise.PassAs<media::SimpleCdmPromise>());
+  CdmDelegate()->UpdateSession(web_session_id,
+                               response,
+                               response_length,
+                               session_updated_promise.Pass());
 }
 
 void PpapiDecryptor::CloseSession(const std::string& web_session_id,

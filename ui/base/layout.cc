@@ -84,10 +84,10 @@ ScaleFactor GetSupportedScaleFactor(float scale) {
 
 float GetImageScale(ScaleFactor scale_factor) {
 #if defined(OS_WIN)
-  if (gfx::IsHighDPIEnabled())
-    return gfx::win::GetDeviceScaleFactor();
-#endif
+  return gfx::GetDPIScale();
+#else
   return GetScaleForScaleFactor(scale_factor);
+#endif
 }
 
 float GetScaleForScaleFactor(ScaleFactor scale_factor) {
@@ -122,11 +122,8 @@ ScopedSetSupportedScaleFactors::~ScopedSetSupportedScaleFactors() {
 #if !defined(OS_MACOSX)
 float GetScaleFactorForNativeView(gfx::NativeView view) {
   gfx::Screen* screen = gfx::Screen::GetScreenFor(view);
-  if (screen->IsDIPEnabled()) {
-    gfx::Display display = screen->GetDisplayNearestWindow(view);
-    return display.device_scale_factor();
-  }
-  return 1.0f;
+  gfx::Display display = screen->GetDisplayNearestWindow(view);
+  return display.device_scale_factor();
 }
 #endif  // !defined(OS_MACOSX)
 

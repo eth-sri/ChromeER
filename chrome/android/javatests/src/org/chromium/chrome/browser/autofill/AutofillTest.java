@@ -52,10 +52,10 @@ public class AutofillTest extends ChromeShellTestBase {
                 mAutofillPopup = new AutofillPopup(mWindowAndroid.getActivity().get(),
                         viewDelegate,
                         mMockAutofillCallback);
+                mAutofillPopup.filterAndShow(new AutofillSuggestion[0], false);
                 mAutofillPopup.setAnchorRect(50, 500, 500, 50);
             }
         });
-
     }
 
     private static final long CALLBACK_TIMEOUT_MS = scaleTimeout(4000);
@@ -136,8 +136,7 @@ public class AutofillTest extends ChromeShellTestBase {
         assertTrue(openAutofillPopupAndWaitUntilReady(suggestions));
         assertEquals(2, mAutofillPopup.getListView().getCount());
 
-        TouchCommon touchCommon = new TouchCommon(this);
-        touchCommon.singleClickViewRelative(mAutofillPopup.getListView(), 10, 10);
+        TouchCommon.singleClickViewRelative(mAutofillPopup.getListView(), 10, 10);
         assertTrue(mMockAutofillCallback.waitForCallback());
 
         assertEquals(0, mMockAutofillCallback.mListIndex);

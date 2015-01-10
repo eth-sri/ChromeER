@@ -12,6 +12,10 @@
 class PrefService;
 class PrefRegistrySimple;
 
+namespace metrics {
+class ChromeUserMetricsExtension;
+}
+
 // AndroidMetricsProvider provides Android-specific stability metrics.
 class AndroidMetricsProvider : public metrics::MetricsProvider {
  public:
@@ -19,13 +23,15 @@ class AndroidMetricsProvider : public metrics::MetricsProvider {
   explicit AndroidMetricsProvider(PrefService* local_state);
   virtual ~AndroidMetricsProvider();
 
+  // metrics::MetricsProvider:
+  virtual void ProvideStabilityMetrics(
+      metrics::SystemProfileProto* system_profile_proto) override;
+  virtual void ProvideGeneralMetrics(
+      metrics::ChromeUserMetricsExtension* uma_proto) override;
+
   // Called when the Activity that the user interacts with is swapped out.
   // TODO(asvitkine): Expose a way for Android code to actually invoke this.
   void OnForegroundActivityChanged(ActivityTypeIds::Type type);
-
-  // metrics::MetricsDataProvider:
-  virtual void ProvideStabilityMetrics(
-      metrics::SystemProfileProto* system_profile_proto) OVERRIDE;
 
   // Registers local state prefs used by this class.
   static void RegisterPrefs(PrefRegistrySimple* registry);

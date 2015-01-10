@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * This object encapsulates everything related to tasks execution.
  *
@@ -58,8 +56,8 @@ FileTasks.VIDEO_PLAYER_ID = 'jcgeabjmjgoblfofpppfkcoakmfobdko';
  * Returns URL of the Chrome Web Store which show apps supporting the given
  * file-extension and mime-type.
  *
- * @param {string} extension Extension of the file (with the first dot).
- * @param {string} mimeType Mime type of the file.
+ * @param {?string} extension Extension of the file (with the first dot).
+ * @param {?string} mimeType Mime type of the file.
  * @return {string} URL
  */
 FileTasks.createWebStoreLink = function(extension, mimeType) {
@@ -290,7 +288,7 @@ FileTasks.prototype.processTasks_ = function(tasks) {
 /**
  * Executes default task.
  *
- * @param {function(boolean, Array.<string>)=} opt_callback Called when the
+ * @param {function(boolean, Array.<Entry>)=} opt_callback Called when the
  *     default task is executed, or the error is occurred.
  * @private
  */
@@ -378,7 +376,7 @@ FileTasks.prototype.executeDefaultInternal_ = function(entries, opt_callback) {
   var onViewFiles = function(result) {
     switch (result) {
       case 'opened':
-        callback(success, entries);
+        callback(true, entries);
         break;
       case 'message_sent':
         util.isTeleported(window).then(function(teleported) {
@@ -387,10 +385,10 @@ FileTasks.prototype.executeDefaultInternal_ = function(entries, opt_callback) {
                 this.fileManager_.ui.alertDialog, entries);
           }
         }.bind(this));
-        callback(success, entries);
+        callback(true, entries);
         break;
       case 'empty':
-        callback(success, entries);
+        callback(true, entries);
         break;
       case 'failed':
         onViewFilesFailure();
@@ -454,7 +452,7 @@ FileTasks.prototype.executeInternal_ = function(taskId, entries) {
 /**
  * Checks whether the remote files are available right now.
  *
- * @param {function} callback The callback.
+ * @param {function()} callback The callback.
  * @private
  */
 FileTasks.prototype.checkAvailability_ = function(callback) {
@@ -535,25 +533,6 @@ FileTasks.prototype.checkAvailability_ = function(callback) {
  */
 FileTasks.prototype.executeInternalTask_ = function(id, entries) {
   var fm = this.fileManager_;
-
-  if (id === 'play') {
-    var selectedEntry = entries[0];
-    if (entries.length === 1) {
-      // If just a single audio file is selected pass along every audio file
-      // in the directory.
-      entries = fm.getAllEntriesInCurrentDirectory().filter(FileType.isAudio);
-    }
-    // TODO(mtomasz): Move conversion from entry to url to custom bindings.
-    // crbug.com/345527.
-    var urls = util.entriesToURLs(entries);
-    var position = urls.indexOf(selectedEntry.toURL());
-    chrome.fileManagerPrivate.getProfiles(
-        function(profiles, currentId, displayedId) {
-          fm.backgroundPage.launchAudioPlayer(
-              {items: urls, position: position}, displayedId);
-        });
-    return;
-  }
 
   if (id === 'mount-archive') {
     this.mountArchivesInternal_(entries);
@@ -710,7 +689,8 @@ FileTasks.prototype.createCombobuttonItem_ = function(task, opt_title,
 /**
  * Shows modal action picker dialog with currently available list of tasks.
  *
- * @param {DefaultActionDialog} actionDialog Action dialog to show and update.
+ * @param {cr.filebrowser.DefaultActionDialog} actionDialog Action dialog to
+ *     show and update.
  * @param {string} title Title to use.
  * @param {string} message Message to use.
  * @param {function(Object)} onSuccess Callback to pass selected task.

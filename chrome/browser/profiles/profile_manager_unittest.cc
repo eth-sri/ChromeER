@@ -71,8 +71,7 @@ class UnittestProfileManager : public ::ProfileManagerWithoutInit {
       : ::ProfileManagerWithoutInit(user_data_dir) {}
 
  protected:
-  virtual Profile* CreateProfileHelper(
-      const base::FilePath& file_path) OVERRIDE {
+  Profile* CreateProfileHelper(const base::FilePath& file_path) override {
     if (!base::PathExists(file_path)) {
       if (!base::CreateDirectory(file_path))
         return NULL;
@@ -80,8 +79,8 @@ class UnittestProfileManager : public ::ProfileManagerWithoutInit {
     return new TestingProfile(file_path, NULL);
   }
 
-  virtual Profile* CreateProfileAsyncHelper(const base::FilePath& path,
-                                            Delegate* delegate) OVERRIDE {
+  Profile* CreateProfileAsyncHelper(const base::FilePath& path,
+                                    Delegate* delegate) override {
     // This is safe while all file operations are done on the FILE thread.
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
@@ -105,7 +104,7 @@ class ProfileManagerTest : public testing::Test {
       : local_state_(TestingBrowserProcess::GetGlobal()) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     // Create a new temporary directory, and store the path
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     TestingBrowserProcess::GetGlobal()->SetProfileManager(
@@ -117,7 +116,7 @@ class ProfileManagerTest : public testing::Test {
 #endif
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     TestingBrowserProcess::GetGlobal()->SetProfileManager(NULL);
     base::RunLoop().RunUntilIdle();
   }
@@ -392,8 +391,7 @@ class UnittestGuestProfileManager : public UnittestProfileManager {
       : UnittestProfileManager(user_data_dir) {}
 
  protected:
-  virtual Profile* CreateProfileHelper(
-      const base::FilePath& file_path) OVERRIDE {
+  Profile* CreateProfileHelper(const base::FilePath& file_path) override {
     TestingProfile::Builder builder;
     builder.SetGuestSession();
     builder.SetPath(file_path);
@@ -404,7 +402,7 @@ class UnittestGuestProfileManager : public UnittestProfileManager {
 
 class ProfileManagerGuestTest : public ProfileManagerTest  {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     // Create a new temporary directory, and store the path
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     TestingBrowserProcess::GetGlobal()->SetProfileManager(

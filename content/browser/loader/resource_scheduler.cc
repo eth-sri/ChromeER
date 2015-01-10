@@ -6,6 +6,7 @@
 
 #include "content/browser/loader/resource_scheduler.h"
 
+#include "base/metrics/field_trial.h"
 #include "base/stl_util.h"
 #include "content/common/resource_messages.h"
 #include "content/browser/loader/resource_message_delegate.h"
@@ -133,9 +134,7 @@ class ResourceScheduler::ScheduledResourceRequest
                              "url", request->url().spec());
   }
 
-  virtual ~ScheduledResourceRequest() {
-    scheduler_->RemoveRequest(this);
-  }
+  ~ScheduledResourceRequest() override { scheduler_->RemoveRequest(this); }
 
   void Start() {
     TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request_, "Queued");
@@ -168,7 +167,7 @@ class ResourceScheduler::ScheduledResourceRequest
 
  private:
   // ResourceMessageDelegate interface:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(ScheduledResourceRequest, message)
       IPC_MESSAGE_HANDLER(ResourceHostMsg_DidChangePriority, DidChangePriority)
@@ -178,13 +177,9 @@ class ResourceScheduler::ScheduledResourceRequest
   }
 
   // ResourceThrottle interface:
-  virtual void WillStartRequest(bool* defer) OVERRIDE {
-    deferred_ = *defer = !ready_;
-  }
+  void WillStartRequest(bool* defer) override { deferred_ = *defer = !ready_; }
 
-  virtual const char* GetNameForLogging() const OVERRIDE {
-    return "ResourceScheduler";
-  }
+  const char* GetNameForLogging() const override { return "ResourceScheduler"; }
 
   void DidChangePriority(int request_id, net::RequestPriority new_priority,
                          int intra_priority_value) {
@@ -229,8 +224,10 @@ void ResourceScheduler::RequestQueue::Insert(
 // Each client represents a tab.
 class ResourceScheduler::Client {
  public:
-  explicit Client(ResourceScheduler* scheduler, bool is_visible)
-      : is_audible_(false),
+  explicit Client(ResourceScheduler* scheduler,
+                  bool is_visible,
+                  bool is_audible)
+      : is_audible_(is_audible),
         is_visible_(is_visible),
         is_loaded_(false),
         is_paused_(false),
@@ -508,11 +505,11 @@ class ResourceScheduler::Client {
     // If a request is already marked as layout-blocking make sure to keep the
     // classification across redirects unless the priority was lowered.
     if (request->classification() == LAYOUT_BLOCKING_REQUEST &&
-        request->url_request()->priority() >= net::LOW) {
+        request->url_request()->priority() > net::LOW) {
       return LAYOUT_BLOCKING_REQUEST;
     }
 
-    if (!has_body_ && request->url_request()->priority() >= net::LOW)
+    if (!has_body_ && request->url_request()->priority() > net::LOW)
       return LAYOUT_BLOCKING_REQUEST;
 
     if (request->url_request()->priority() < net::LOW) {
@@ -563,7 +560,8 @@ class ResourceScheduler::Client {
   //   * Higher priority requests (>= net::LOW).
   //
   // 4. Layout-blocking requests:
-  //   * High-priority requests initiated before the renderer has a <body>.
+  //   * High-priority requests (> net::LOW) initiated before the renderer has
+  //     a <body>.
   //
   // 5. Low priority requests
   //
@@ -574,7 +572,7 @@ class ResourceScheduler::Client {
   //     immediately.
   //   * Low priority requests are delayable.
   //   * Allow one delayable request to load at a time while layout-blocking
-  //     requests are loading.
+  //     requests are loading or the body tag has not yet been parsed.
   //   * If no high priority or layout-blocking requests are in flight, start
   //     loading delayable requests.
   //   * Never exceed 10 delayable requests in flight per client.
@@ -653,7 +651,7 @@ class ResourceScheduler::Client {
     bool have_immediate_requests_in_flight =
         in_flight_requests_.size() > in_flight_delayable_count_;
     if (have_immediate_requests_in_flight &&
-        total_layout_blocking_count_ != 0 &&
+        (!has_body_ || total_layout_blocking_count_ != 0) &&
         in_flight_delayable_count_ != 0) {
       return DO_NOT_START_REQUEST_AND_STOP_SEARCHING;
     }
@@ -721,6 +719,14 @@ ResourceScheduler::ResourceScheduler()
       coalesced_clients_(0),
       coalescing_timer_(new base::Timer(true /* retain_user_task */,
                                         true /* is_repeating */)) {
+  std::string throttling_trial_group =
+      base::FieldTrialList::FindFullName("RequestThrottlingAndCoalescing");
+  if (throttling_trial_group == "Throttle") {
+    should_throttle_ = true;
+  } else if (throttling_trial_group == "Coalesce") {
+    should_coalesce_ = true;
+    should_throttle_ = true;
+  }
 }
 
 ResourceScheduler::~ResourceScheduler() {
@@ -760,12 +766,12 @@ scoped_ptr<ResourceThrottle> ResourceScheduler::ScheduleRequest(
     // 3. The tab is closed while a RequestResource IPC is in flight.
     unowned_requests_.insert(request.get());
     request->Start();
-    return request.PassAs<ResourceThrottle>();
+    return request.Pass();
   }
 
   Client* client = it->second;
   client->ScheduleRequest(url_request, request.get());
-  return request.PassAs<ResourceThrottle>();
+  return request.Pass();
 }
 
 void ResourceScheduler::RemoveRequest(ScheduledResourceRequest* request) {
@@ -786,12 +792,13 @@ void ResourceScheduler::RemoveRequest(ScheduledResourceRequest* request) {
 
 void ResourceScheduler::OnClientCreated(int child_id,
                                         int route_id,
-                                        bool is_visible) {
+                                        bool is_visible,
+                                        bool is_audible) {
   DCHECK(CalledOnValidThread());
   ClientId client_id = MakeClientId(child_id, route_id);
   DCHECK(!ContainsKey(client_map_, client_id));
 
-  Client* client = new Client(this, is_visible);
+  Client* client = new Client(this, is_visible, is_audible);
   client_map_[client_id] = client;
 
   // TODO(aiolos): set Client visibility/audibility when signals are added
@@ -821,6 +828,14 @@ void ResourceScheduler::OnClientDeleted(int child_id, int route_id) {
   client_map_.erase(it);
 }
 
+void ResourceScheduler::OnLoadingStateChanged(int child_id,
+                                              int route_id,
+                                              bool is_loaded) {
+  Client* client = GetClient(child_id, route_id);
+  DCHECK(client);
+  client->OnLoadingStateChanged(is_loaded);
+}
+
 void ResourceScheduler::OnVisibilityChanged(int child_id,
                                             int route_id,
                                             bool is_visible) {
@@ -829,12 +844,13 @@ void ResourceScheduler::OnVisibilityChanged(int child_id,
   client->OnVisibilityChanged(is_visible);
 }
 
-void ResourceScheduler::OnLoadingStateChanged(int child_id,
-                                              int route_id,
-                                              bool is_loaded) {
+void ResourceScheduler::OnAudibilityChanged(int child_id,
+                                            int route_id,
+                                            bool is_audible) {
   Client* client = GetClient(child_id, route_id);
-  DCHECK(client);
-  client->OnLoadingStateChanged(is_loaded);
+  // We might get this call after the client has been deleted.
+  if (client)
+    client->OnAudibilityChanged(is_audible);
 }
 
 void ResourceScheduler::OnNavigate(int child_id, int route_id) {
@@ -878,14 +894,6 @@ void ResourceScheduler::OnReceivedSpdyProxiedHttpResponse(
 
   Client* client = client_it->second;
   client->OnReceivedSpdyProxiedHttpResponse();
-}
-
-void ResourceScheduler::OnAudibilityChanged(int child_id,
-                                            int route_id,
-                                            bool is_audible) {
-  Client* client = GetClient(child_id, route_id);
-  DCHECK(client);
-  client->OnAudibilityChanged(is_audible);
 }
 
 bool ResourceScheduler::IsClientVisibleForTesting(int child_id, int route_id) {

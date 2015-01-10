@@ -24,6 +24,7 @@
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF8ToJavaString;
+using base::android::JavaIntArrayToIntVector;
 using base::android::ScopedJavaLocalRef;
 
 namespace media {
@@ -122,6 +123,12 @@ bool MediaCodecBridge::SupportsSetParameters() {
 }
 
 // static
+bool MediaCodecBridge::SupportsGetName() {
+  // MediaCodec.getName() is only available on JB MR2 and greater.
+  return base::android::BuildInfo::GetInstance()->sdk_int() >= 18;
+}
+
+// static
 std::vector<MediaCodecBridge::CodecsInfo> MediaCodecBridge::GetCodecsInfo() {
   std::vector<CodecsInfo> codecs_info;
   if (!IsAvailable())
@@ -151,6 +158,41 @@ std::vector<MediaCodecBridge::CodecsInfo> MediaCodecBridge::GetCodecsInfo() {
 }
 
 // static
+std::string MediaCodecBridge::GetDefaultCodecName(
+    const std::string& mime_type,
+    MediaCodecDirection direction) {
+  if (!IsAvailable())
+    return std::string();
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> j_mime = ConvertUTF8ToJavaString(env, mime_type);
+  ScopedJavaLocalRef<jstring> j_codec_name =
+      Java_MediaCodecBridge_getDefaultCodecName(env, j_mime.obj(), direction);
+  return ConvertJavaStringToUTF8(env, j_codec_name.obj());
+}
+
+// static
+std::set<int> MediaCodecBridge::GetEncoderColorFormats(
+    const std::string& mime_type) {
+  std::set<int> color_formats;
+  if (!IsAvailable())
+    return color_formats;
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> j_mime = ConvertUTF8ToJavaString(env, mime_type);
+  ScopedJavaLocalRef<jintArray> j_color_format_array =
+      Java_MediaCodecBridge_getEncoderColorFormatsForMime(env, j_mime.obj());
+
+  if (j_color_format_array.obj()) {
+    std::vector<int> formats;
+    JavaIntArrayToIntVector(env, j_color_format_array.obj(), &formats);
+    color_formats = std::set<int>(formats.begin(), formats.end());
+  }
+
+  return color_formats;
+}
+
+// static
 bool MediaCodecBridge::CanDecode(const std::string& codec, bool is_secure) {
   if (!IsAvailable())
     return false;
@@ -175,18 +217,31 @@ bool MediaCodecBridge::IsKnownUnaccelerated(const std::string& mime_type,
   if (!IsAvailable())
     return true;
 
-  std::string codec_type = AndroidMimeTypeToCodecType(mime_type);
-  std::vector<media::MediaCodecBridge::CodecsInfo> codecs_info =
-      MediaCodecBridge::GetCodecsInfo();
-  for (size_t i = 0; i < codecs_info.size(); ++i) {
-    if (codecs_info[i].codecs == codec_type &&
-        codecs_info[i].direction == direction) {
-      // It would be nice if MediaCodecInfo externalized some notion of
-      // HW-acceleration but it doesn't. Android Media guidance is that the
-      // prefix below is always used for SW decoders, so that's what we use.
-      if (!StartsWithASCII(codecs_info[i].name, "OMX.google.", true))
-        return false;
+  std::string codec_name;
+  if (SupportsGetName()) {
+    codec_name = GetDefaultCodecName(mime_type, direction);
+  } else {
+    std::string codec_type = AndroidMimeTypeToCodecType(mime_type);
+    std::vector<media::MediaCodecBridge::CodecsInfo> codecs_info =
+        MediaCodecBridge::GetCodecsInfo();
+    for (size_t i = 0; i < codecs_info.size(); ++i) {
+      if (codecs_info[i].codecs == codec_type &&
+          codecs_info[i].direction == direction) {
+        codec_name = codecs_info[i].name;
+        break;
+      }
     }
+  }
+  DVLOG(1) << __PRETTY_FUNCTION__ << "Default codec for " << mime_type <<
+      " : " << codec_name;
+  // It would be nice if MediaCodecInfo externalized some notion of
+  // HW-acceleration but it doesn't. Android Media guidance is that the
+  // "OMX.google" prefix is always used for SW decoders, so that's what we
+  // use. "OMX.SEC.*" codec is Samsung software implementation - report it
+  // as unaccelerated as well.
+  if (codec_name.length() > 0) {
+    return (StartsWithASCII(codec_name, "OMX.google.", true) ||
+        StartsWithASCII(codec_name, "OMX.SEC.", true));
   }
   return true;
 }

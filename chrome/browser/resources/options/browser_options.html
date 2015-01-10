@@ -73,8 +73,8 @@
         <span id="home-page-ntp" class="home-page-label"
             i18n-content="homePageNtp"></span>
         <span id="home-page-url" class="home-page-label"></span>
-        <button id="change-home-page" class="link-button"
-            i18n-content="changeHomePage"></button>
+        <a is="action-link" id="change-home-page" i18n-content="changeHomePage">
+        </a>
         <div id="extension-controlled-container"></div>
       </div>
     </div>
@@ -105,6 +105,12 @@
     <h3 i18n-content="sectionTitleDevice"></h3>
     <div>
       <span i18n-content="deviceGroupDescription"></span>
+      <div class="settings-row" id="battery" hidden>
+        <div id="battery-icon" hidden></div>
+        <span id="battery-status"></span>
+        <a is="action-link" id="power-settings-button"
+            i18n-content="powerSettingsButton"></a>
+      </div>
       <div class="settings-row">
         <button id="battery-button" i18n-content="batteryButton"></button>
         <button id="stored-data-button" i18n-content="storageButton"></button>
@@ -151,29 +157,51 @@
               i18n-content="defaultSearchManageEngines">
           </button>
         </div>
-      </div>
-  </section>
-  <section>
-    <h3 id="voice-section-title" i18n-content="sectionTitleVoice" hidden></h3>
-    <div id="voice-section-content">
-      <div id="hotword-always-on-search" hidden>
-        <div class="checkbox controlled-setting-with-label">
-          <label>
-            <input id="hotword-always-on-search-checkbox"
-                pref="hotword.always_on_search_enabled" type="checkbox">
-            <span i18n-content="hotwordAlwaysOnSearchEnable"></span>
-          </label>
+        <div id="hotword-always-on-search" hidden>
+          <div class="checkbox controlled-setting-with-label">
+            <label>
+              <input id="hotword-always-on-search-checkbox"
+                  pref="hotword.always_on_search_enabled" type="checkbox">
+              <span i18n-content="hotwordSearchEnable"></span>
+            </label>
+            <a target="_blank" class="hotword-learn-more-link"
+                i18n-content="learnMore"
+                i18n-values="href:hotwordLearnMoreURL">
+            </a>
+            <div>
+              <span class="hotword-description"
+                  i18n-content="hotwordAlwaysOnDesc">
+              </span>
+            </div>
+          </div>
+        </div>
+        <div id="hotword-no-dsp-search" hidden>
+          <div class="checkbox controlled-setting-with-label">
+            <label>
+              <input id="hotword-no-dsp-search-checkbox"
+                  pref="hotword.search_enabled_2" type="checkbox">
+              <span i18n-content="hotwordSearchEnable"></span>
+            </label>
+            <a target="_blank" class="hotword-learn-more-link"
+                i18n-content="learnMore"
+                i18n-values="href:hotwordLearnMoreURL">
+            </a>
+            <div>
+              <span class="hotword-description"
+                  i18n-content="hotwordNoDSPDesc">
+              </span>
+            </div>
+          </div>
+        </div>
+        <div id="audio-logging" hidden>
+          <div class="checkbox controlled-setting-with-label">
+            <label>
+              <input pref="hotword.audio_logging_enabled" type="checkbox">
+              <span i18n-content="hotwordAudioHistoryEnable"></span>
+            </label>
+          </div>
         </div>
       </div>
-      <div id="audio-logging" hidden>
-        <div class="checkbox controlled-setting-with-label">
-          <label>
-            <input pref="hotword.audio_logging_enabled" type="checkbox">
-            <span i18n-content="hotwordAudioHistoryEnable"></span>
-          </label>
-        </div>
-      </div>
-    </div>
   </section>
   <section id="sync-users-section" guest-visibility="hidden">
     <h3 i18n-content="sectionTitleUsers"></h3>
@@ -394,8 +422,8 @@
         </label>
         <span id="metrics-reporting-reset-restart">
           <!-- Text filled by JavaScript -->
-          <span></span><button class=
-              "link-button standalone-link-button"></button><span></span>
+          <span></span><a is="action-link" role="button"
+              class="standalone-action-link"></a><span></span>
         </span>
 </if>
       </div>
@@ -479,9 +507,8 @@
           </span>
         </span>
       </label>
-      <button id="autofill-settings" class="link-button"
-          i18n-content="manageAutofillSettings">
-      </button>
+      <a is="action-link" id="autofill-settings"
+          i18n-content="manageAutofillSettings"></a>
     </div>
     <div class="checkbox controlled-setting-with-label">
       <label>
@@ -494,8 +521,8 @@
               pref="profile.password_manager_enabled"></span>
         </span>
       </label>
-      <button id="manage-passwords" class="link-button"
-          i18n-content="managePasswords"></button>
+      <a is="action-link" id="manage-passwords" i18n-content="managePasswords">
+      </a>
     </div>
 <if expr="is_macosx">
     <div id="mac-passwords-warning" i18n-content="macPasswordsWarning" hidden>
@@ -603,8 +630,8 @@
           </span>
         </span>
       </label>
-      <button id="manage-languages" class="link-button"
-          i18n-content="manageLanguages"></button>
+      <a is="action-link" id="manage-languages" i18n-content="manageLanguages">
+      </a>
     </div>
   </section>
   <section id="downloads-section">
@@ -929,11 +956,7 @@
   </div>  <!-- advanced-settings-container -->
   </div>  <!-- advanced-settings -->
   <footer>
-    <button id="advanced-settings-expander" class="link-button"
-        i18n-content="showAdvancedSettings">
-    </button>
-    <button id="version-button" class="link-button" hidden
-        i18n-content="browserVersion">
-    </button>
+    <a is="action-link" id="advanced-settings-expander"
+        i18n-content="showAdvancedSettings"></a>
   </footer>
 </div>

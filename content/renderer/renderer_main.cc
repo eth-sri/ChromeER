@@ -26,13 +26,13 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/browser_plugin/browser_plugin_manager_impl.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_ANDROID)
+#include "base/android/library_loader/library_loader_hooks.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #endif  // OS_ANDROID
 
@@ -80,13 +80,13 @@ class RendererMessageLoopObserver : public base::MessageLoop::TaskObserver {
       : process_times_(base::Histogram::FactoryGet(
             "Chrome.ProcMsgL RenderThread",
             1, 3600000, 50, base::Histogram::kUmaTargetedHistogramFlag)) {}
-  virtual ~RendererMessageLoopObserver() {}
+  ~RendererMessageLoopObserver() override {}
 
-  virtual void WillProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+  void WillProcessTask(const base::PendingTask& pending_task) override {
     begin_process_message_ = base::TimeTicks::Now();
   }
 
-  virtual void DidProcessTask(const base::PendingTask& pending_task) OVERRIDE {
+  void DidProcessTask(const base::PendingTask& pending_task) override {
     if (!begin_process_message_.is_null())
       process_times_->AddTime(base::TimeTicks::Now() - begin_process_message_);
   }
@@ -149,13 +149,12 @@ int RendererMain(const MainFunctionParams& parameters) {
   // needs to be backed by a Foundation-level loop to process NSTimers. See
   // http://crbug.com/306348#c24 for details.
   scoped_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
-  scoped_ptr<base::MessageLoop> main_message_loop(
-      new base::MessageLoop(pump.Pass()));
+  base::MessageLoop main_message_loop(pump.Pass());
 #else
   // The main message loop of the renderer services doesn't have IO or UI tasks.
-  scoped_ptr<base::MessageLoop> main_message_loop(new base::MessageLoop());
+  base::MessageLoop main_message_loop;
 #endif
-  main_message_loop->AddTaskObserver(&task_observer);
+  main_message_loop.AddTaskObserver(&task_observer);
 
   base::PlatformThread::SetName("CrRendererMain");
 
@@ -163,6 +162,11 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   // Initialize histogram statistics gathering system.
   base::StatisticsRecorder::Initialize();
+
+#if defined(OS_ANDROID)
+  // If we have a pending chromium android linker histogram, record it.
+  base::android::RecordChromiumAndroidLinkerRendererHistogram();
+#endif
 
   // Initialize statistical testing infrastructure.  We set the entropy provider
   // to NULL to disallow the renderer process from creating its own one-time
@@ -199,7 +203,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     // TODO(markus): Check if it is OK to unconditionally move this
     // instruction down.
     RenderProcessImpl render_process;
-    new RenderThreadImpl(main_message_loop.Pass());
+    new RenderThreadImpl();
 #endif
     bool run_loop = true;
     if (!no_sandbox) {
@@ -215,7 +219,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     }
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     RenderProcessImpl render_process;
-    new RenderThreadImpl(main_message_loop.Pass());
+    new RenderThreadImpl();
 #endif
 
     base::HighResolutionTimerManager hi_res_timer_manager;

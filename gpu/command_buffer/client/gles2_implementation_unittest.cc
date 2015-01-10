@@ -114,25 +114,23 @@ class MockTransferBuffer : public TransferBufferInterface {
     }
   }
 
-  virtual ~MockTransferBuffer() { }
+  ~MockTransferBuffer() override {}
 
-  virtual bool Initialize(
-      unsigned int starting_buffer_size,
-      unsigned int result_size,
-      unsigned int /* min_buffer_size */,
-      unsigned int /* max_buffer_size */,
-      unsigned int alignment,
-      unsigned int size_to_flush) OVERRIDE;
-  virtual int GetShmId() OVERRIDE;
-  virtual void* GetResultBuffer() OVERRIDE;
-  virtual int GetResultOffset() OVERRIDE;
-  virtual void Free() OVERRIDE;
-  virtual bool HaveBuffer() const OVERRIDE;
-  virtual void* AllocUpTo(
-      unsigned int size, unsigned int* size_allocated) OVERRIDE;
-  virtual void* Alloc(unsigned int size) OVERRIDE;
-  virtual RingBuffer::Offset GetOffset(void* pointer) const OVERRIDE;
-  virtual void FreePendingToken(void* p, unsigned int /* token */) OVERRIDE;
+  bool Initialize(unsigned int starting_buffer_size,
+                  unsigned int result_size,
+                  unsigned int /* min_buffer_size */,
+                  unsigned int /* max_buffer_size */,
+                  unsigned int alignment,
+                  unsigned int size_to_flush) override;
+  int GetShmId() override;
+  void* GetResultBuffer() override;
+  int GetResultOffset() override;
+  void Free() override;
+  bool HaveBuffer() const override;
+  void* AllocUpTo(unsigned int size, unsigned int* size_allocated) override;
+  void* Alloc(unsigned int size) override;
+  RingBuffer::Offset GetOffset(void* pointer) const override;
+  void FreePendingToken(void* p, unsigned int /* token */) override;
 
   size_t MaxTransferBufferSize() {
     return size_ - result_size_;
@@ -506,8 +504,8 @@ class GLES2ImplementationTest : public testing::Test {
 
   GLES2ImplementationTest() : commands_(NULL) {}
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   bool NoCommandsWritten() {
     scoped_refptr<Buffer> ring_buffer = helper_->get_ring_buffer();
@@ -630,12 +628,12 @@ void GLES2ImplementationTest::TearDown() {
 
 class GLES2ImplementationManualInitTest : public GLES2ImplementationTest {
  protected:
-  virtual void SetUp() OVERRIDE {}
+  void SetUp() override {}
 };
 
 class GLES2ImplementationStrictSharedTest : public GLES2ImplementationTest {
  protected:
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   template <class ResApi>
   void FlushGenerationTest() {
@@ -3369,9 +3367,9 @@ TEST_F(GLES2ImplementationManualInitTest, LoseContextOnOOM) {
   };
 
   GLsizei max = std::numeric_limits<GLsizei>::max();
-  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBuffer(max, max, _, _, _))
-      .WillOnce(Return(static_cast<gfx::GpuMemoryBuffer*>(NULL)));
-  gl_->CreateImageCHROMIUM(max, max, 0, GL_IMAGE_MAP_CHROMIUM);
+  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBufferImage(max, max, _, _))
+      .WillOnce(Return(-1));
+  gl_->CreateGpuMemoryBufferImageCHROMIUM(max, max, GL_RGBA, GL_MAP_CHROMIUM);
   // The context should be lost.
   Cmds expected;
   expected.cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_UNKNOWN_CONTEXT_RESET_ARB);
@@ -3387,9 +3385,9 @@ TEST_F(GLES2ImplementationManualInitTest, NoLoseContextOnOOM) {
   };
 
   GLsizei max = std::numeric_limits<GLsizei>::max();
-  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBuffer(max, max, _, _, _))
-      .WillOnce(Return(static_cast<gfx::GpuMemoryBuffer*>(NULL)));
-  gl_->CreateImageCHROMIUM(max, max, 0, GL_IMAGE_MAP_CHROMIUM);
+  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBufferImage(max, max, _, _))
+      .WillOnce(Return(-1));
+  gl_->CreateGpuMemoryBufferImageCHROMIUM(max, max, GL_RGBA, GL_MAP_CHROMIUM);
   // The context should not be lost.
   EXPECT_TRUE(NoCommandsWritten());
 }

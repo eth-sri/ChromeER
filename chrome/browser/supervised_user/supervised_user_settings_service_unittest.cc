@@ -20,12 +20,12 @@ namespace {
 class MockSyncErrorFactory : public syncer::SyncErrorFactory {
  public:
   explicit MockSyncErrorFactory(syncer::ModelType type);
-  virtual ~MockSyncErrorFactory();
+  ~MockSyncErrorFactory() override;
 
   // SyncErrorFactory implementation:
-  virtual syncer::SyncError CreateAndUploadError(
+  syncer::SyncError CreateAndUploadError(
       const tracked_objects::Location& location,
-      const std::string& message) OVERRIDE;
+      const std::string& message) override;
 
  private:
   syncer::ModelType type_;
@@ -57,7 +57,7 @@ const char kSplitItemName[] = "X-SuperMoosePowers";
 class SupervisedUserSettingsServiceTest : public ::testing::Test {
  protected:
   SupervisedUserSettingsServiceTest() {}
-  virtual ~SupervisedUserSettingsServiceTest() {}
+  ~SupervisedUserSettingsServiceTest() override {}
 
   scoped_ptr<syncer::SyncChangeProcessor> CreateSyncProcessor() {
     sync_processor_.reset(new syncer::FakeSyncChangeProcessor);
@@ -119,7 +119,7 @@ class SupervisedUserSettingsServiceTest : public ::testing::Test {
   }
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     TestingPrefStore* pref_store = new TestingPrefStore;
     settings_service_.Init(pref_store);
     settings_service_.Subscribe(
@@ -131,9 +131,7 @@ class SupervisedUserSettingsServiceTest : public ::testing::Test {
     ASSERT_TRUE(settings_);
   }
 
-  virtual void TearDown() OVERRIDE {
-    settings_service_.Shutdown();
-  }
+  void TearDown() override { settings_service_.Shutdown(); }
 
   base::DictionaryValue split_items_;
   scoped_ptr<base::Value> atomic_setting_value_;

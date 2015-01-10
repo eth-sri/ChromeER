@@ -19,6 +19,7 @@
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_state.h"
+#include "content/public/common/resource_response.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
 #include "url/gurl.h"
@@ -262,6 +263,15 @@ IPC_STRUCT_BEGIN(FrameMsg_Navigate_Params)
   IPC_STRUCT_MEMBER(std::string, frame_to_navigate)
 IPC_STRUCT_END()
 
+IPC_STRUCT_BEGIN(FrameHostMsg_AddNavigationTransitionData_Params)
+  IPC_STRUCT_MEMBER(int, render_frame_id)
+  IPC_STRUCT_MEMBER(std::string, allowed_destination_host_pattern)
+  IPC_STRUCT_MEMBER(std::string, selector)
+  IPC_STRUCT_MEMBER(std::string, markup)
+  IPC_STRUCT_MEMBER(std::vector<std::string>, names)
+  IPC_STRUCT_MEMBER(std::vector<gfx::Rect>, rects)
+IPC_STRUCT_END()
+
 IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(GURL, url)
   IPC_STRUCT_MEMBER(content::Referrer, referrer)
@@ -351,9 +361,12 @@ IPC_MESSAGE_ROUTED0(FrameMsg_DisownOpener)
 // Instructs the renderer to create a new RenderFrame object with |routing_id|.
 // The new frame should be created as a child of the object identified by
 // |parent_routing_id| or as top level if that is MSG_ROUTING_NONE.
-IPC_MESSAGE_CONTROL2(FrameMsg_NewFrame,
+// If a valid |proxy_routing_id| is provided, the new frame will be configured
+// to replace the proxy on commit.
+IPC_MESSAGE_CONTROL3(FrameMsg_NewFrame,
                      int /* routing_id */,
-                     int /* parent_routing_id */)
+                     int /* parent_routing_id */,
+                     int /* proxy_routing_id */)
 
 // Instructs the renderer to create a new RenderFrameProxy object with
 // |routing_id|. The new proxy should be created as a child of the object
@@ -466,10 +479,17 @@ IPC_MESSAGE_ROUTED1(FrameMsg_SelectPopupMenuItem,
 #endif
 
 // PlzNavigate
+// Tells the renderer that a navigation has been requested.
+IPC_MESSAGE_ROUTED2(FrameMsg_RequestNavigation,
+                    content::CommonNavigationParams, /* common_params */
+                    content::RequestNavigationParams /* request_params */)
+
+// PlzNavigate
 // Tells the renderer that a navigation is ready to commit.  The renderer should
 // request |stream_url| to get access to the stream containing the body of the
 // response.
-IPC_MESSAGE_ROUTED3(FrameMsg_CommitNavigation,
+IPC_MESSAGE_ROUTED4(FrameMsg_CommitNavigation,
+                    content::ResourceResponseHead, /* response */
                     GURL, /* stream_url */
                     content::CommonNavigationParams, /* common_params */
                     content::CommitNavigationParams /* commit_params */)
@@ -566,8 +586,7 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_DidAssignPageId,
 
 // Changes the title for the page in the UI when the page is navigated or the
 // title changes. Sent for top-level frames.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_UpdateTitle,
-                    int32 /* page_id */,
+IPC_MESSAGE_ROUTED2(FrameHostMsg_UpdateTitle,
                     base::string16 /* title */,
                     blink::WebTextDirection /* title direction */)
 
@@ -585,6 +604,7 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_DomOperationResponse,
                     std::string  /* json_string */,
                     int  /* automation_id */)
 
+#if defined(ENABLE_PLUGINS)
 // Sent to the browser when the renderer detects it is blocked on a pepper
 // plugin message for too long. This is also sent when it becomes unhung
 // (according to the value of is_hung). The browser can give the user the
@@ -615,6 +635,7 @@ IPC_SYNC_MESSAGE_CONTROL4_3(FrameHostMsg_GetPluginInfo,
                             bool /* found */,
                             content::WebPluginInfo /* plugin info */,
                             std::string /* actual_mime_type */)
+#endif  // defined(ENABLE_PLUGINS)
 
 // A renderer sends this to the browser process when it wants to
 // create a plugin.  The browser will create the plugin process if
@@ -709,10 +730,11 @@ IPC_MESSAGE_ROUTED2(FrameHostMsg_SetSelectedColorInColorChooser,
                     SkColor /* color */)
 
 // Notifies the browser that media has started/stopped playing.
-IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
+IPC_MESSAGE_ROUTED4(FrameHostMsg_MediaPlayingNotification,
                     int64 /* player_cookie, distinguishes instances */,
                     bool /* has_video */,
-                    bool /* has_audio */)
+                    bool /* has_audio */,
+                    bool /* is_remote */)
 
 IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
                     int64 /* player_cookie, distinguishes instances */)
@@ -730,11 +752,8 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_TextSurroundingSelectionResponse,
 
 // Notifies the browser that the renderer has a pending navigation transition.
 // The string parameters are all UTF8.
-IPC_MESSAGE_CONTROL4(FrameHostMsg_AddNavigationTransitionData,
-                     int /* render_frame_id */,
-                     std::string  /* allowed_destination_host_pattern */,
-                     std::string  /* selector */,
-                     std::string  /* markup */)
+IPC_MESSAGE_CONTROL1(FrameHostMsg_AddNavigationTransitionData,
+                     FrameHostMsg_AddNavigationTransitionData_Params)
 
 // PlzNavigate
 // Tells the browser to perform a navigation.

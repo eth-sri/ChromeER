@@ -40,7 +40,7 @@
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/thread_proxy.h"
 #include "cc/trees/tree_synchronizer.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 
 namespace {
 static base::StaticAtomicSequenceNumber s_layer_tree_host_sequence_number;
@@ -67,14 +67,15 @@ RendererCapabilities::~RendererCapabilities() {}
 
 scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
     LayerTreeHostClient* client,
-    SharedBitmapManager* manager,
+    SharedBitmapManager* shared_bitmap_manager,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     const LayerTreeSettings& settings,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
   DCHECK(main_task_runner.get());
   DCHECK(impl_task_runner.get());
-  scoped_ptr<LayerTreeHost> layer_tree_host(
-      new LayerTreeHost(client, manager, settings));
+  scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(
+      client, shared_bitmap_manager, gpu_memory_buffer_manager, settings));
   layer_tree_host->InitializeThreaded(main_task_runner, impl_task_runner);
   return layer_tree_host.Pass();
 }
@@ -82,19 +83,22 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
 scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
     LayerTreeHostClient* client,
     LayerTreeHostSingleThreadClient* single_thread_client,
-    SharedBitmapManager* manager,
+    SharedBitmapManager* shared_bitmap_manager,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     const LayerTreeSettings& settings,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
-  scoped_ptr<LayerTreeHost> layer_tree_host(
-      new LayerTreeHost(client, manager, settings));
+  scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(
+      client, shared_bitmap_manager, gpu_memory_buffer_manager, settings));
   layer_tree_host->InitializeSingleThreaded(single_thread_client,
                                             main_task_runner);
   return layer_tree_host.Pass();
 }
 
-LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
-                             SharedBitmapManager* manager,
-                             const LayerTreeSettings& settings)
+LayerTreeHost::LayerTreeHost(
+    LayerTreeHostClient* client,
+    SharedBitmapManager* shared_bitmap_manager,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    const LayerTreeSettings& settings)
     : micro_benchmark_controller_(this),
       next_ui_resource_id_(1),
       inside_begin_main_frame_(false),
@@ -123,7 +127,8 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       total_frames_used_for_lcd_text_metrics_(0),
       id_(s_layer_tree_host_sequence_number.GetNext() + 1),
       next_commit_forces_redraw_(false),
-      shared_bitmap_manager_(manager) {
+      shared_bitmap_manager_(shared_bitmap_manager),
+      gpu_memory_buffer_manager_(gpu_memory_buffer_manager) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
   rendering_stats_instrumentation_->set_record_rendering_stats(
@@ -361,7 +366,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   host_impl->SetDeviceScaleFactor(device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
   if (pending_page_scale_animation_) {
-    host_impl->StartPageScaleAnimation(
+    sync_tree->SetPageScaleAnimation(
         pending_page_scale_animation_->target_offset,
         pending_page_scale_animation_->use_anchor,
         pending_page_scale_animation_->scale,
@@ -430,9 +435,11 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
                                 proxy_.get(),
                                 rendering_stats_instrumentation_.get(),
                                 shared_bitmap_manager_,
+                                gpu_memory_buffer_manager_,
                                 id_);
   host_impl->SetUseGpuRasterization(UseGpuRasterization());
   shared_bitmap_manager_ = NULL;
+  gpu_memory_buffer_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
     top_controls_manager_weak_ptr_ =
@@ -722,14 +729,6 @@ void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
   SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
   SetLayerTreeHostClientReady();
-  if (output_surface_lost_) {
-    RequestNewOutputSurface();
-    // RequestNewOutputSurface could have synchronously created an output
-    // surface, so check again before returning.
-    if (output_surface_lost_)
-      return;
-  }
-
   proxy->CompositeImmediately(frame_begin_time);
 }
 
@@ -1059,9 +1058,6 @@ void LayerTreeHost::PaintLayerContents(
 }
 
 void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
-  if (!root_layer_.get())
-    return;
-
   ScopedPtrVector<SwapPromise>::iterator it = info->swap_promises.begin();
   for (; it != info->swap_promises.end(); ++it) {
     scoped_ptr<SwapPromise> swap_promise(info->swap_promises.take(it));
@@ -1075,18 +1071,21 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
   gfx::Vector2d inner_viewport_scroll_delta;
   gfx::Vector2d outer_viewport_scroll_delta;
 
-  for (size_t i = 0; i < info->scrolls.size(); ++i) {
-    Layer* layer = LayerTreeHostCommon::FindLayerInSubtree(
-        root_layer_.get(), info->scrolls[i].layer_id);
-    if (!layer)
-      continue;
-    if (layer == outer_viewport_scroll_layer_.get()) {
-      outer_viewport_scroll_delta += info->scrolls[i].scroll_delta;
-    } else if (layer == inner_viewport_scroll_layer_.get()) {
-      inner_viewport_scroll_delta += info->scrolls[i].scroll_delta;
-    } else {
-      layer->SetScrollOffsetFromImplSide(layer->scroll_offset() +
-                                         info->scrolls[i].scroll_delta);
+  if (root_layer_.get()) {
+    for (size_t i = 0; i < info->scrolls.size(); ++i) {
+      Layer* layer = LayerTreeHostCommon::FindLayerInSubtree(
+          root_layer_.get(), info->scrolls[i].layer_id);
+      if (!layer)
+        continue;
+      if (layer == outer_viewport_scroll_layer_.get()) {
+        outer_viewport_scroll_delta += info->scrolls[i].scroll_delta;
+      } else if (layer == inner_viewport_scroll_layer_.get()) {
+        inner_viewport_scroll_delta += info->scrolls[i].scroll_delta;
+      } else {
+        layer->SetScrollOffsetFromImplSide(
+            gfx::ScrollOffsetWithDelta(layer->scroll_offset(),
+                                       info->scrolls[i].scroll_delta));
+      }
     }
   }
 
@@ -1094,25 +1093,25 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
       !outer_viewport_scroll_delta.IsZero() ||
       info->page_scale_delta != 1.f ||
       info->top_controls_delta) {
-    // SetScrollOffsetFromImplSide above could have destroyed the tree,
-    // so re-get this layer before doing anything to it.
-
-    DCHECK(inner_viewport_scroll_layer_.get());  // We should always have this.
-
     // Preemptively apply the scroll offset and scale delta here before sending
     // it to the client.  If the client comes back and sets it to the same
     // value, then the layer can early out without needing a full commit.
-    inner_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
-        inner_viewport_scroll_layer_->scroll_offset() +
-        inner_viewport_scroll_delta);
+    if (inner_viewport_scroll_layer_.get()) {
+      inner_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
+          gfx::ScrollOffsetWithDelta(
+              inner_viewport_scroll_layer_->scroll_offset(),
+              inner_viewport_scroll_delta));
+    }
+
     if (outer_viewport_scroll_layer_.get()) {
       outer_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
-          outer_viewport_scroll_layer_->scroll_offset() +
-          outer_viewport_scroll_delta);
+          gfx::ScrollOffsetWithDelta(
+              outer_viewport_scroll_layer_->scroll_offset(),
+              outer_viewport_scroll_delta));
     }
 
     ApplyPageScaleDeltaFromImplSide(info->page_scale_delta);
-    if (!outer_viewport_scroll_layer_.get()) {
+    if (!settings_.use_pinch_virtual_viewport) {
       client_->ApplyViewportDeltas(
           inner_viewport_scroll_delta + outer_viewport_scroll_delta,
           info->page_scale_delta,

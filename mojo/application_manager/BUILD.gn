@@ -32,9 +32,9 @@ component("application_manager") {
     "//base/third_party/dynamic_annotations",
     "//net",
     "//url",
+    "//mojo/edk/system",
     "//mojo/environment:chromium",
     "//mojo/services/public/interfaces/content_handler:content_handler",
-    "//mojo/system",
   ]
 }
 
@@ -51,7 +51,7 @@ test("mojo_application_manager_unittests") {
     "//base",
     "//mojo/application",
     "//mojo/common",
-    "//mojo/common/test:run_all_unittests",
+    "//mojo/edk/test:run_all_unittests",
     "//mojo/environment:chromium",
     "//mojo/public/cpp/bindings",
     "//testing/gtest",

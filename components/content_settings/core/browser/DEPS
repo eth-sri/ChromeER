@@ -1,0 +1,5 @@
+include_rules = [
+  "+components/pref_registry",
+  "+net/base",
+  "+net/cookies",
+]

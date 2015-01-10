@@ -28,6 +28,7 @@
 #include "cc/output/copy_output_result.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/trees/layer_tree_host.h"
+#include "content/child/child_gpu_memory_buffer_manager.h"
 #include "content/child/child_shared_bitmap_manager.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
@@ -234,10 +235,6 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
     settings.use_one_copy = render_thread->is_one_copy_enabled();
   }
 
-  if (cmd->HasSwitch(switches::kEnableBleedingEdgeRenderingFastPaths)) {
-    settings.recording_mode = cc::LayerTreeSettings::RecordWithSkRecord;
-  }
-
   settings.calculate_top_controls_position =
       cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
   if (cmd->HasSwitch(cc::switches::kTopControlsHeight)) {
@@ -360,6 +357,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
   } else {
     settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
     settings.scrollbar_fade_delay_ms = 300;
+    settings.scrollbar_fade_resize_delay_ms = 2000;
     settings.scrollbar_fade_duration_ms = 300;
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   }
@@ -404,6 +402,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   }
   settings.scrollbar_fade_delay_ms = 500;
+  settings.scrollbar_fade_resize_delay_ms = 500;
   settings.scrollbar_fade_duration_ms = 300;
 #endif
 
@@ -525,11 +524,13 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
       main_thread_compositor_task_runner(base::MessageLoopProxy::current());
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
   cc::SharedBitmapManager* shared_bitmap_manager = NULL;
+  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager = NULL;
   // render_thread may be NULL in tests.
   if (render_thread) {
     compositor_message_loop_proxy =
         render_thread->compositor_message_loop_proxy();
     shared_bitmap_manager = render_thread->shared_bitmap_manager();
+    gpu_memory_buffer_manager = render_thread->gpu_memory_buffer_manager();
     main_thread_compositor_task_runner =
         render_thread->main_thread_compositor_task_runner();
   }
@@ -537,6 +538,7 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
     layer_tree_host_ =
         cc::LayerTreeHost::CreateThreaded(this,
                                           shared_bitmap_manager,
+                                          gpu_memory_buffer_manager,
                                           settings,
                                           main_thread_compositor_task_runner,
                                           compositor_message_loop_proxy);
@@ -545,6 +547,7 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
         this,
         this,
         shared_bitmap_manager,
+        gpu_memory_buffer_manager,
         settings,
         main_thread_compositor_task_runner);
   }
@@ -704,15 +707,18 @@ void CompositeAndReadbackAsyncCallback(
 
 void RenderWidgetCompositor::compositeAndReadbackAsync(
     blink::WebCompositeAndReadbackAsyncCallback* callback) {
-  DCHECK(layer_tree_host_->root_layer());
-  scoped_ptr<cc::CopyOutputRequest> request =
+  DCHECK(!temporary_copy_output_request_);
+  temporary_copy_output_request_ =
       cc::CopyOutputRequest::CreateBitmapRequest(
           base::Bind(&CompositeAndReadbackAsyncCallback, callback));
-  layer_tree_host_->root_layer()->RequestCopyOfOutput(request.Pass());
-
+  // Force a commit to happen. The temporary copy output request will
+  // be installed after layout which will happen as a part of the commit, when
+  // there is guaranteed to be a root layer.
   if (!threaded_ &&
       !layer_tree_host_->settings().single_thread_proxy_scheduler) {
     layer_tree_host_->Composite(gfx::FrameTime::Now());
+  } else {
+    layer_tree_host_->SetNeedsCommit();
   }
 }
 
@@ -782,6 +788,12 @@ void RenderWidgetCompositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
 
 void RenderWidgetCompositor::Layout() {
   widget_->webwidget()->layout();
+
+  if (temporary_copy_output_request_) {
+    DCHECK(layer_tree_host_->root_layer());
+    layer_tree_host_->root_layer()->RequestCopyOfOutput(
+        temporary_copy_output_request_.Pass());
+  }
 }
 
 void RenderWidgetCompositor::ApplyViewportDeltas(
@@ -818,6 +830,7 @@ void RenderWidgetCompositor::WillCommit() {
 }
 
 void RenderWidgetCompositor::DidCommit() {
+  DCHECK(!temporary_copy_output_request_);
   if (send_v8_idle_notification_after_commit_) {
     base::TimeDelta idle_time = begin_main_frame_time_ +
                                 begin_main_frame_interval_ -

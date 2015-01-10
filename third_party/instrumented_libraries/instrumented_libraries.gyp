@@ -8,6 +8,8 @@
     'instrumented_libraries_jobs%': 1,
   },
 
+  'ubuntu_release': '<!(lsb_release -cs)',
+
   'conditions': [
     ['asan==1', {
       'sanitizer_type': 'asan',
@@ -36,7 +38,8 @@
       '-gline-tables-only',
       '-fPIC',
       '-w',
-      '-U_FORITFY_SOURCE'
+      '-U_FORITFY_SOURCE',
+      '-fno-omit-frame-pointer'
     ],
     'package_ldflags': [
       '-Wl,-z,origin',
@@ -117,7 +120,6 @@
         '<(_sanitizer_type)-pango1.0',
         '<(_sanitizer_type)-libcap2',
         '<(_sanitizer_type)-udev',
-        '<(_sanitizer_type)-libtasn1-3',
         '<(_sanitizer_type)-libgnome-keyring0',
         '<(_sanitizer_type)-libgtk2.0-0',
         '<(_sanitizer_type)-libgdk-pixbuf2.0-0',
@@ -130,11 +132,16 @@
         '<(_sanitizer_type)-atk1.0',
         '<(_sanitizer_type)-libunity9',
         '<(_sanitizer_type)-dee',
+        '<(_sanitizer_type)-libpixman-1-0',
       ],
       'conditions': [
-        ['asan==1', {
+        ['"<(_ubuntu_release)"=="precise"', {
           'dependencies': [
-            '<(_sanitizer_type)-libpixman-1-0',
+            '<(_sanitizer_type)-libtasn1-3',
+          ],
+        }, {
+          'dependencies': [
+            '<(_sanitizer_type)-libtasn1-6',
           ],
         }],
         ['msan==1', {
@@ -158,7 +165,7 @@
             '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)/rpaths.fixed.txt',
           ],
           'action': [
-            '<(DEPTH)/third_party/instrumented_libraries/fix_rpaths.sh',
+            './fix_rpaths.sh',
             '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)'
           ],
         },
@@ -219,7 +226,13 @@
         # From debian/rules.
         '--with-add-fonts=/usr/X11R6/lib/X11/fonts,/usr/local/share/fonts',
       ],
-      'patch': 'patches/libfontconfig.diff',
+      'conditions': [
+        ['"<(_ubuntu_release)"=="precise"', {
+          'patch': 'patches/libfontconfig.precise.diff',
+        }, {
+          'patch': 'patches/libfontconfig.trusty.diff',
+        }],
+      ],
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -245,6 +258,7 @@
         '--disable-gtk-doc-pdf',
       ],
       'asan_blacklist': 'blacklists/asan/libglib2.0-0.txt',
+      'msan_blacklist': 'blacklists/msan/libglib2.0-0.txt',
       'run_before_build': 'scripts/autogen.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
@@ -283,6 +297,11 @@
     {
       'package_name': 'libpixman-1-0',
       'dependencies=': [],
+      'extra_configure_flags': [
+        # From debian/rules.
+        '--disable-gtk',
+        '--disable-silent-rules',
+      ],
       'patch': 'patches/libpixman-1-0.diff',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
@@ -399,7 +418,19 @@
     {
       'package_name': 'pulseaudio',
       'dependencies=': [],
-      'patch': 'patches/pulseaudio.diff',
+      'conditions': [
+        ['"<(_ubuntu_release)"=="precise"', {
+          'patch': 'patches/pulseaudio.precise.diff',
+        }],
+      ],
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--enable-x11',
+          '--disable-hal-compat',
+          # Disable some ARM-related code that fails compilation. No idea why
+          # this even impacts x86-64 builds.
+          '--disable-neon-opt'
+      ],
       'run_before_build': 'scripts/pulseaudio.sh',
       'jobs': 1,
       'includes': ['standard_instrumented_package_target.gypi'],
@@ -478,6 +509,19 @@
     {
       'package_name': 'libtasn1-3',
       'dependencies=': [],
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--enable-ld-version-script',
+      ],
+      'includes': ['standard_instrumented_package_target.gypi'],
+    },
+    {
+      'package_name': 'libtasn1-6',
+      'dependencies=': [],
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--enable-ld-version-script',
+      ],
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -505,7 +549,13 @@
           '--with-xinput=yes',
       ],
       'dependencies=': [],
-      'patch': 'patches/libgtk2.0-0.diff',
+      'conditions': [
+        ['"<(_ubuntu_release)"=="precise"', {
+          'patch': 'patches/libgtk2.0-0.precise.diff',
+        }, {
+          'patch': 'patches/libgtk2.0-0.trusty.diff',
+        }],
+      ],
       'run_before_build': 'scripts/libgtk2.0-0.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },

@@ -205,7 +205,7 @@ class SafeBrowsingDatabaseManager
   void StopOnIOThread(bool shutdown);
 
  protected:
-  virtual ~SafeBrowsingDatabaseManager();
+  ~SafeBrowsingDatabaseManager() override;
 
   // protected for tests.
   void NotifyDatabaseUpdateFinished(bool update_succeeded);
@@ -341,15 +341,15 @@ class SafeBrowsingDatabaseManager
                               const base::Closure& task);
 
   // SafeBrowsingProtocolManageDelegate override
-  virtual void ResetDatabase() OVERRIDE;
-  virtual void UpdateStarted() OVERRIDE;
-  virtual void UpdateFinished(bool success) OVERRIDE;
-  virtual void GetChunks(GetChunksCallback callback) OVERRIDE;
-  virtual void AddChunks(const std::string& list,
-                         scoped_ptr<ScopedVector<SBChunkData> > chunks,
-                         AddChunksCallback callback) OVERRIDE;
-  virtual void DeleteChunks(
-      scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes) OVERRIDE;
+  void ResetDatabase() override;
+  void UpdateStarted() override;
+  void UpdateFinished(bool success) override;
+  void GetChunks(GetChunksCallback callback) override;
+  void AddChunks(const std::string& list,
+                 scoped_ptr<ScopedVector<SBChunkData>> chunks,
+                 AddChunksCallback callback) override;
+  void DeleteChunks(
+      scoped_ptr<std::vector<SBChunkDelete>> chunk_deletes) override;
 
   scoped_refptr<SafeBrowsingService> sb_service_;
 

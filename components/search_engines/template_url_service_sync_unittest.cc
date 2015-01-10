@@ -86,15 +86,14 @@ syncer::SyncData CreateCustomSyncData(const TemplateURL& turl,
 class TestChangeProcessor : public syncer::SyncChangeProcessor {
  public:
   TestChangeProcessor();
-  virtual ~TestChangeProcessor();
+  ~TestChangeProcessor() override;
 
   // Store a copy of all the changes passed in so we can examine them later.
-  virtual syncer::SyncError ProcessSyncChanges(
+  syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE;
+      const syncer::SyncChangeList& change_list) override;
 
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
+  syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const override {
     return syncer::SyncDataList();
   }
 
@@ -154,8 +153,8 @@ class TemplateURLServiceSyncTest : public testing::Test {
 
   TemplateURLServiceSyncTest();
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   TemplateURLService* model() { return test_util_a_->model(); }
   // For readability, we redefine an accessor for Model A for use in tests that
@@ -245,7 +244,7 @@ void TemplateURLServiceSyncTest::TearDown() {
 
 scoped_ptr<syncer::SyncChangeProcessor>
 TemplateURLServiceSyncTest::PassProcessor() {
-  return sync_processor_wrapper_.PassAs<syncer::SyncChangeProcessor>();
+  return sync_processor_wrapper_.Pass();
 }
 
 scoped_ptr<syncer::SyncErrorFactory> TemplateURLServiceSyncTest::
@@ -482,7 +481,7 @@ TEST_F(TemplateURLServiceSyncTest, IsLocalTemplateURLBetter) {
     {100, 100, false, false, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     TemplateURL* local_turl = CreateTestTemplateURL(
         ASCIIToUTF16("localkey"), "www.local.com", "localguid",
         test_cases[i].local_time, true, test_cases[i].local_created_by_policy);
@@ -1286,9 +1285,10 @@ TEST_F(TemplateURLServiceSyncTest, MergeTwoClientsBasic) {
   // has no data.
   scoped_ptr<syncer::SyncChangeProcessorWrapperForTest> delegate_b(
       new syncer::SyncChangeProcessorWrapperForTest(model_b()));
-  model_a()->MergeDataAndStartSyncing(syncer::SEARCH_ENGINES,
+  model_a()->MergeDataAndStartSyncing(
+      syncer::SEARCH_ENGINES,
       model_b()->GetAllSyncData(syncer::SEARCH_ENGINES),
-      delegate_b.PassAs<syncer::SyncChangeProcessor>(),
+      delegate_b.Pass(),
       CreateAndPassSyncErrorFactory());
 
   // They should be consistent.
@@ -1315,9 +1315,10 @@ TEST_F(TemplateURLServiceSyncTest, MergeTwoClientsDupesAndConflicts) {
   // Merge A and B.
   scoped_ptr<syncer::SyncChangeProcessorWrapperForTest> delegate_b(
       new syncer::SyncChangeProcessorWrapperForTest(model_b()));
-  model_a()->MergeDataAndStartSyncing(syncer::SEARCH_ENGINES,
+  model_a()->MergeDataAndStartSyncing(
+      syncer::SEARCH_ENGINES,
       model_b()->GetAllSyncData(syncer::SEARCH_ENGINES),
-      delegate_b.PassAs<syncer::SyncChangeProcessor>(),
+      delegate_b.Pass(),
       CreateAndPassSyncErrorFactory());
 
   // They should be consistent.
@@ -1975,7 +1976,7 @@ TEST_F(TemplateURLServiceSyncTest, MergeInSyncTemplateURL) {
     {NEITHER, SYNC, NEITHER, NEITHER, BOTH, false, {1, 0, 0}},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     // Assert all the valid states of ExpectedTemplateURLs.
     ASSERT_FALSE(test_cases[i].conflict_winner == BOTH);
     ASSERT_FALSE(test_cases[i].synced_at_start == NEITHER);

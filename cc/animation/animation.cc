@@ -90,15 +90,14 @@ void Animation::SetRunState(RunState run_state,
   char name_buffer[256];
   base::snprintf(name_buffer,
                  sizeof(name_buffer),
-                 "%s-%d%s",
+                 "%s-%d",
                  s_targetPropertyNames[target_property_],
-                 group_,
-                 is_controlling_instance_ ? "(impl)" : "");
+                 group_);
 
   bool is_waiting_to_start = run_state_ == WaitingForTargetAvailability ||
                              run_state_ == Starting;
 
-  if (is_waiting_to_start && run_state == Running) {
+  if (is_controlling_instance_ && is_waiting_to_start && run_state == Running) {
     TRACE_EVENT_ASYNC_BEGIN1(
         "cc", "Animation", this, "Name", TRACE_STR_COPY(name_buffer));
   }
@@ -115,7 +114,7 @@ void Animation::SetRunState(RunState run_state,
 
   const char* new_run_state_name = s_runStateNames[run_state];
 
-  if (!was_finished && is_finished())
+  if (is_controlling_instance_ && !was_finished && is_finished())
     TRACE_EVENT_ASYNC_END0("cc", "Animation", this);
 
   char state_buffer[256];
@@ -192,10 +191,11 @@ double Animation::TrimTimeToCurrentIteration(
   DCHECK_GE(iteration_start_, 0);
 
   double active_time = ConvertToActiveTime(monotonic_time);
+  double start_offset = iteration_start_ * curve_->Duration();
 
-  // Return 0 if we are before the start of the animation
+  // Return start offset if we are before the start of the animation
   if (active_time < 0)
-    return 0;
+    return start_offset;
 
   // Always return zero if we have no iterations.
   if (!iterations_)
@@ -207,7 +207,6 @@ double Animation::TrimTimeToCurrentIteration(
 
   double repeated_duration = iterations_ * curve_->Duration();
   double active_duration = repeated_duration / std::abs(playback_rate_);
-  double start_offset = iteration_start_ * curve_->Duration();
 
   // Check if we are past active duration
   if (iterations_ > 0 && active_time >= active_duration)

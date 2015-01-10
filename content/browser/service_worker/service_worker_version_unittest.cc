@@ -36,11 +36,11 @@ class MessageReceiver : public EmbeddedWorkerTestHelper {
   MessageReceiver()
       : EmbeddedWorkerTestHelper(kRenderProcessId),
         current_embedded_worker_id_(0) {}
-  virtual ~MessageReceiver() {}
+  ~MessageReceiver() override {}
 
-  virtual bool OnMessageToWorker(int thread_id,
-                                 int embedded_worker_id,
-                                 const IPC::Message& message) OVERRIDE {
+  bool OnMessageToWorker(int thread_id,
+                         int embedded_worker_id,
+                         const IPC::Message& message) override {
     if (EmbeddedWorkerTestHelper::OnMessageToWorker(
             thread_id, embedded_worker_id, message)) {
       return true;
@@ -85,13 +85,11 @@ class MessageReceiverFromWorker : public EmbeddedWorkerInstance::Listener {
       : instance_(instance) {
     instance_->AddListener(this);
   }
-  virtual ~MessageReceiverFromWorker() {
-    instance_->RemoveListener(this);
-  }
+  ~MessageReceiverFromWorker() override { instance_->RemoveListener(this); }
 
-  virtual void OnStarted() OVERRIDE { NOTREACHED(); }
-  virtual void OnStopped() OVERRIDE { NOTREACHED(); }
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  void OnStarted() override { NOTREACHED(); }
+  void OnStopped() override { NOTREACHED(); }
+  bool OnMessageReceived(const IPC::Message& message) override {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(MessageReceiverFromWorker, message)
       IPC_MESSAGE_HANDLER(TestMsg_MessageFromWorker, OnMessageFromWorker)
@@ -116,7 +114,7 @@ class ServiceWorkerVersionTest : public testing::Test {
   ServiceWorkerVersionTest()
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     helper_.reset(new MessageReceiver());
 
     pattern_ = GURL("http://www.example.com/");
@@ -136,7 +134,7 @@ class ServiceWorkerVersionTest : public testing::Test {
         ->PatternHasProcessToRun(pattern_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     version_ = 0;
     registration_ = 0;
     helper_.reset();
@@ -367,6 +365,33 @@ TEST_F(ServiceWorkerVersionTest, ScheduleStopWorker) {
   // The timer should be running if the controllee is removed.
   version_->RemoveControllee(host.get());
   EXPECT_TRUE(version_->stop_worker_timer_.IsRunning());
+}
+
+TEST_F(ServiceWorkerVersionTest, ListenerAvailability) {
+  // Initially the worker is not running. There should be no cache_listener_.
+  EXPECT_FALSE(version_->cache_listener_.get());
+
+  ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
+  version_->StartWorker(
+      CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+
+  // A new cache listener should be available once the worker starts.
+  EXPECT_TRUE(version_->cache_listener_.get());
+
+  version_->StopWorker(
+      CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+
+  // Should be destroyed when the worker stops.
+  EXPECT_FALSE(version_->cache_listener_.get());
+
+  version_->StartWorker(
+      CreateReceiverOnCurrentThread(&status));
+  base::RunLoop().RunUntilIdle();
+
+  // Recreated when the worker starts again.
+  EXPECT_TRUE(version_->cache_listener_.get());
 }
 
 }  // namespace content

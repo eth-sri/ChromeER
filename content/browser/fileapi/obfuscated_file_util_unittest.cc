@@ -151,7 +151,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
         quota_status_(storage::kQuotaStatusUnknown),
         usage_(-1) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
 
     storage_policy_ = new MockSpecialStoragePolicy();
@@ -177,7 +177,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
         storage::MockFileChangeObserver::CreateList(&change_observer_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     quota_manager_ = NULL;
     sandbox_file_system_.TearDown();
   }
@@ -1784,7 +1784,7 @@ TEST_F(ObfuscatedFileUtilTest, TestIncompleteDirectoryReading) {
   const FileSystemURL empty_path = CreateURL(base::FilePath());
   scoped_ptr<FileSystemOperationContext> context;
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kPath); ++i) {
+  for (size_t i = 0; i < arraysize(kPath); ++i) {
     bool created = false;
     context.reset(NewContext(NULL));
     EXPECT_EQ(base::File::FILE_OK,
@@ -1807,7 +1807,7 @@ TEST_F(ObfuscatedFileUtilTest, TestIncompleteDirectoryReading) {
   EXPECT_EQ(base::File::FILE_OK,
             AsyncFileTestHelper::ReadDirectory(
                 file_system_context(), empty_path, &entries));
-  EXPECT_EQ(ARRAYSIZE_UNSAFE(kPath) - 1, entries.size());
+  EXPECT_EQ(arraysize(kPath) - 1, entries.size());
 }
 
 TEST_F(ObfuscatedFileUtilTest, TestDirectoryTimestampForCreation) {
@@ -2187,7 +2187,6 @@ TEST_F(ObfuscatedFileUtilTest, TestQuotaOnMoveFile) {
                 from_file, from_file_size));
   ASSERT_EQ(expected_total_file_size, ComputeTotalFileSize());
 
-  int64 to_file_size ALLOW_UNUSED = from_file_size;
   from_file_size = 0;
   ASSERT_EQ(base::File::FILE_OK,
             ofu()->CopyOrMoveFile(

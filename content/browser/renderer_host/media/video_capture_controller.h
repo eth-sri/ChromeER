@@ -96,7 +96,15 @@ class CONTENT_EXPORT VideoCaptureController {
   int RemoveClient(const VideoCaptureControllerID& id,
                    VideoCaptureControllerEventHandler* event_handler);
 
-  int GetClientCount();
+  // Pause or resume the video capture for specified client.
+  void PauseOrResumeClient(const VideoCaptureControllerID& id,
+                           VideoCaptureControllerEventHandler* event_handler,
+                           bool pause);
+
+  int GetClientCount() const;
+
+  // Return the number of clients that aren't paused.
+  int GetActiveClientCount() const;
 
   // API called directly by VideoCaptureManager in case the device is
   // prematurely closed.
@@ -113,6 +121,8 @@ class CONTENT_EXPORT VideoCaptureController {
                     uint32 sync_point);
 
   const media::VideoCaptureFormat& GetVideoCaptureFormat() const;
+
+  bool has_received_frames() const { return has_received_frames_; }
 
  private:
   class VideoCaptureDeviceClient;
@@ -152,7 +162,7 @@ class CONTENT_EXPORT VideoCaptureController {
   VideoCaptureState state_;
 
   // True if the controller has received a video frame from the device.
-  bool frame_received_;
+  bool has_received_frames_;
 
   media::VideoCaptureFormat video_capture_format_;
 

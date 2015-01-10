@@ -54,11 +54,13 @@ source_set("common") {
     "//build/util:webkit_version",
     "//components/tracing",
     "//gpu/command_buffer/client:gles2_interface",
+    "//gpu/command_buffer/client:gpu_memory_buffer_manager",
     "//net",
     "//skia",
     "//third_party/icu",
     "//ui/accessibility",
     "//ui/base",
+    "//ui/events/ipc",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gfx/ipc",
@@ -83,9 +85,9 @@ source_set("common") {
       "//gpu/skia_bindings",
       "//media",
       "//media:shared_memory_support",
+      "//mojo/edk/system",
       "//mojo/environment:chromium",
       "//mojo/public/interfaces/application",
-      "//mojo/system",
       "//sandbox",
       "//storage/browser",
       "//storage/common",
@@ -130,6 +132,8 @@ source_set("common") {
     sources += [
       "gpu/client/gpu_memory_buffer_impl_surface_texture.cc",
       "gpu/client/gpu_memory_buffer_impl_surface_texture.h",
+      "gpu/gpu_memory_buffer_factory_surface_texture.cc",
+      "gpu/gpu_memory_buffer_factory_surface_texture.h",
     ]
 
     deps += [
@@ -251,9 +255,11 @@ source_set("common") {
         "gpu/media/vaapi_h264_decoder.h",
         "gpu/media/vaapi_video_decode_accelerator.cc",
         "gpu/media/vaapi_video_decode_accelerator.h",
+        "gpu/media/vaapi_video_encode_accelerator.cc",
+        "gpu/media/vaapi_video_encode_accelerator.h",
         "gpu/media/vaapi_wrapper.cc",
         "gpu/media/vaapi_wrapper.h",
-      ]
+      ] + get_target_outputs(":libva_generate_stubs")
       configs += [
         "//third_party/libva:libva_config",
         "//third_party/libyuv:libyuv_config",
@@ -313,10 +319,12 @@ source_set("common") {
 
 mojom("mojo_bindings") {
   sources = [
+    "geolocation_service.mojom",
     "render_frame_setup.mojom",
   ]
 
   deps = [
+    "//content/public/common:mojo_bindings",
     "//mojo/public/interfaces/application:application",
   ]
 }

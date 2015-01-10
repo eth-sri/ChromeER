@@ -11,6 +11,7 @@
 #include "chrome/browser/sync/sessions/sessions_util.h"
 #include "chrome/browser/sync/sessions/synced_window_delegates_getter.h"
 #include "chrome/common/url_constants.h"
+#include "components/sessions/content/content_serialized_navigation_builder.h"
 #include "components/sync_driver/local_device_info_provider.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
@@ -24,6 +25,7 @@
 #include "sync/api/time.h"
 
 using content::NavigationEntry;
+using sessions::ContentSerializedNavigationBuilder;
 using sessions::SerializedNavigationEntry;
 using sync_driver::DeviceInfo;
 using sync_driver::LocalDeviceInfoProvider;
@@ -738,11 +740,13 @@ void SessionsSyncManager::BuildSyncedSessionFromSpecifics(
   if (specifics.has_selected_tab_index())
     session_window->selected_tab_index = specifics.selected_tab_index();
   if (specifics.has_browser_type()) {
+    // TODO(skuhne): Sync data writes |BrowserType| not
+    // |SessionWindow::WindowType|. This should get changed.
     if (specifics.browser_type() ==
         sync_pb::SessionWindow_BrowserType_TYPE_TABBED) {
-      session_window->type = 1;
+      session_window->type = SessionWindow::TYPE_TABBED;
     } else {
-      session_window->type = 2;
+      session_window->type = SessionWindow::TYPE_POPUP;
     }
   }
   session_window->timestamp = mtime;
@@ -975,7 +979,7 @@ void SessionsSyncManager::SetSessionTabFromDelegate(
       session_tab->current_navigation_index = session_tab->navigations.size();
 
     session_tab->navigations.push_back(
-        SerializedNavigationEntry::FromNavigationEntry(i, *entry));
+        ContentSerializedNavigationBuilder::FromNavigationEntry(i, *entry));
     if (is_supervised) {
       session_tab->navigations.back().set_blocked_state(
           SerializedNavigationEntry::STATE_ALLOWED);
@@ -995,7 +999,7 @@ void SessionsSyncManager::SetSessionTabFromDelegate(
     int offset = session_tab->navigations.size();
     for (size_t i = 0; i < blocked_navigations.size(); ++i) {
       session_tab->navigations.push_back(
-          SerializedNavigationEntry::FromNavigationEntry(
+          ContentSerializedNavigationBuilder::FromNavigationEntry(
               i + offset, *blocked_navigations[i]));
       session_tab->navigations.back().set_blocked_state(
           SerializedNavigationEntry::STATE_BLOCKED);

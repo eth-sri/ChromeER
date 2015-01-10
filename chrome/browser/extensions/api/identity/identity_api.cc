@@ -24,7 +24,6 @@
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/extensions/api/identity.h"
-#include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
@@ -34,6 +33,7 @@
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/manifest_handlers/oauth2_manifest_handler.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -765,8 +765,9 @@ void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
 void IdentityGetAuthTokenFunction::StartGaiaRequest(
     const std::string& login_access_token) {
   DCHECK(!login_access_token.empty());
-  mint_token_flow_.reset(CreateMintTokenFlow(login_access_token));
-  mint_token_flow_->Start();
+  mint_token_flow_.reset(CreateMintTokenFlow());
+  mint_token_flow_->Start(GetProfile()->GetRequestContext(),
+                          login_access_token);
 }
 
 void IdentityGetAuthTokenFunction::ShowLoginPopup() {
@@ -783,13 +784,10 @@ void IdentityGetAuthTokenFunction::ShowOAuthApprovalDialog(
   gaia_web_auth_flow_->Start();
 }
 
-OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
-    const std::string& login_access_token) {
+OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow() {
   OAuth2MintTokenFlow* mint_token_flow = new OAuth2MintTokenFlow(
-      GetProfile()->GetRequestContext(),
       this,
       OAuth2MintTokenFlow::Parameters(
-          login_access_token,
           extension()->id(),
           oauth2_client_id_,
           std::vector<std::string>(token_key_->scopes.begin(),

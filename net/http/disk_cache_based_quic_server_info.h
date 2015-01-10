@@ -10,6 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/quic/crypto/quic_server_info.h"
@@ -31,11 +32,12 @@ class NET_EXPORT_PRIVATE DiskCacheBasedQuicServerInfo
                                HttpCache* http_cache);
 
   // QuicServerInfo implementation.
-  virtual void Start() OVERRIDE;
-  virtual int WaitForDataReady(const CompletionCallback& callback) OVERRIDE;
-  virtual bool IsDataReady() OVERRIDE;
-  virtual bool IsReadyToPersist() OVERRIDE;
-  virtual void Persist() OVERRIDE;
+  void Start() override;
+  int WaitForDataReady(const CompletionCallback& callback) override;
+  void CancelWaitForDataReadyCallback() override;
+  bool IsDataReady() override;
+  bool IsReadyToPersist() override;
+  void Persist() override;
 
  private:
   struct CacheOperationDataShim;
@@ -55,7 +57,7 @@ class NET_EXPORT_PRIVATE DiskCacheBasedQuicServerInfo
     NONE,
   };
 
-  virtual ~DiskCacheBasedQuicServerInfo();
+  ~DiskCacheBasedQuicServerInfo() override;
 
   std::string key() const;
 
@@ -98,6 +100,7 @@ class NET_EXPORT_PRIVATE DiskCacheBasedQuicServerInfo
   scoped_refptr<IOBuffer> read_buffer_;
   scoped_refptr<IOBuffer> write_buffer_;
   std::string data_;
+  base::TimeTicks load_start_time_;
 
   base::WeakPtrFactory<DiskCacheBasedQuicServerInfo> weak_factory_;
 };

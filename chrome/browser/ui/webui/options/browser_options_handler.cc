@@ -100,12 +100,10 @@
 #if defined(OS_CHROMEOS)
 #include "ash/ash_switches.h"
 #include "ash/desktop_background/user_wallpaper_delegate.h"
-#include "ash/magnifier/magnifier_constants.h"
 #include "ash/shell.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/chromeos_utils.h"
-#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
@@ -122,8 +120,13 @@
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #include "policy/policy_constants.h"
+#include "ui/chromeos/accessibility_types.h"
 #include "ui/gfx/image/image_skia.h"
 #endif  // defined(OS_CHROMEOS)
+
+#if defined(OS_CHROMEOS) && !defined(USE_ATHENA)
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
+#endif
 
 #if defined(OS_WIN)
 #include "chrome/browser/extensions/settings_api_helpers.h"
@@ -268,12 +271,13 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "homePageShowHomeButton", IDS_OPTIONS_TOOLBAR_SHOW_HOME_BUTTON },
     { "homePageUseNewTab", IDS_OPTIONS_HOMEPAGE_USE_NEWTAB },
     { "homePageUseURL", IDS_OPTIONS_HOMEPAGE_USE_URL },
-    { "hotwordAlwaysOnSearchEnable", IDS_HOTWORD_ALWAYS_ON_SEARCH_PREF_CHKBOX },
     { "hotwordAudioHistoryEnable", IDS_HOTWORD_AUDIO_HISTORY_PREF_CHKBOX },
     { "hotwordSearchEnable", IDS_HOTWORD_SEARCH_PREF_CHKBOX },
     { "hotwordConfirmEnable", IDS_HOTWORD_CONFIRM_BUBBLE_ENABLE },
     { "hotwordConfirmDisable", IDS_HOTWORD_CONFIRM_BUBBLE_DISABLE },
     { "hotwordConfirmMessage", IDS_HOTWORD_SEARCH_PREF_DESCRIPTION },
+    { "hotwordNoDSPDesc", IDS_HOTWORD_SEARCH_NO_DSP_DESCRIPTION },
+    { "hotwordAlwaysOnDesc", IDS_HOTWORD_SEARCH_ALWAYS_ON_DESCRIPTION },
     { "hotwordAudioLoggingEnable", IDS_HOTWORD_AUDIO_LOGGING_ENABLE },
     { "importData", IDS_OPTIONS_IMPORT_DATA_BUTTON },
     { "improveBrowsingExperience", IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
@@ -322,7 +326,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "sectionTitleSearch", IDS_OPTIONS_DEFAULTSEARCH_GROUP_NAME },
     { "sectionTitleStartup", IDS_OPTIONS_STARTUP_GROUP_NAME },
     { "sectionTitleSync", IDS_SYNC_OPTIONS_GROUP_NAME },
-    { "sectionTitleVoice", IDS_OPTIONS_VOICE_GROUP_NAME },
     { "settingsTitle", IDS_SETTINGS_TITLE },
     { "showAdvancedSettings", IDS_SETTINGS_SHOW_ADVANCED_SETTINGS },
     { "spellingConfirmMessage", IDS_CONTENT_CONTEXT_SPELLING_BUBBLE_TEXT },
@@ -420,6 +423,8 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "changePictureCaption", IDS_OPTIONS_CHANGE_PICTURE_CAPTION },
     { "datetimeTitle", IDS_OPTIONS_SETTINGS_SECTION_TITLE_DATETIME },
     { "deviceGroupDescription", IDS_OPTIONS_DEVICE_GROUP_DESCRIPTION },
+    { "powerSettingsButton",
+      IDS_OPTIONS_DEVICE_GROUP_POWER_SETTINGS_BUTTON },
     { "deviceGroupPointer", IDS_OPTIONS_DEVICE_GROUP_POINTER_SECTION },
     { "mouseSpeed", IDS_OPTIONS_SETTINGS_MOUSE_SPEED_DESCRIPTION },
     { "touchpadSpeed", IDS_OPTIONS_SETTINGS_TOUCHPAD_SPEED_DESCRIPTION },
@@ -565,13 +570,13 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   scoped_ptr<base::ListValue> magnifier_list(new base::ListValue);
 
   scoped_ptr<base::ListValue> option_full(new base::ListValue);
-  option_full->AppendInteger(ash::MAGNIFIER_FULL);
+  option_full->AppendInteger(ui::MAGNIFIER_FULL);
   option_full->AppendString(l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_SCREEN_MAGNIFIER_FULL));
   magnifier_list->Append(option_full.release());
 
   scoped_ptr<base::ListValue> option_partial(new base::ListValue);
-  option_partial->AppendInteger(ash::MAGNIFIER_PARTIAL);
+  option_partial->AppendInteger(ui::MAGNIFIER_PARTIAL);
   option_partial->Append(new base::StringValue(l10n_util::GetStringUTF16(
       IDS_OPTIONS_SETTINGS_ACCESSIBILITY_SCREEN_MAGNIFIER_PARTIAL)));
   magnifier_list->Append(option_partial.release());
@@ -798,6 +803,18 @@ void BrowserOptionsHandler::PageLoadStarted() {
 void BrowserOptionsHandler::InitializeHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
   PrefService* prefs = profile->GetPrefs();
+  chrome::ChromeZoomLevelPrefs* zoom_level_prefs = profile->GetZoomLevelPrefs();
+  // Only regular profiles are able to edit default zoom level, or delete per-
+  // host zoom levels, via the settings menu. We only require a zoom_level_prefs
+  // if the profile is able to change these preference types.
+  DCHECK(zoom_level_prefs ||
+         profile->GetProfileType() != Profile::REGULAR_PROFILE);
+  if (zoom_level_prefs) {
+    default_zoom_level_subscription_ =
+        zoom_level_prefs->RegisterDefaultZoomLevelCallback(
+            base::Bind(&BrowserOptionsHandler::SetupPageZoomSelector,
+                       base::Unretained(this)));
+  }
 
   ProfileSyncService* sync_service(
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile));
@@ -853,10 +870,6 @@ void BrowserOptionsHandler::InitializeHandler() {
   auto_open_files_.Init(
       prefs::kDownloadExtensionsToOpen, prefs,
       base::Bind(&BrowserOptionsHandler::SetupAutoOpenFileTypes,
-                 base::Unretained(this)));
-  default_zoom_level_.Init(
-      prefs::kDefaultZoomLevel, prefs,
-      base::Bind(&BrowserOptionsHandler::SetupPageZoomSelector,
                  base::Unretained(this)));
   profile_pref_registrar_.Init(prefs);
   profile_pref_registrar_.Add(
@@ -958,9 +971,11 @@ void BrowserOptionsHandler::InitializePage() {
                                       std::string()))
              .Get(policy::key::kUserAvatarImage));
 
+#if !defined(USE_ATHENA)
   OnWallpaperManagedChanged(
       chromeos::WallpaperManager::Get()->IsPolicyControlled(
           user_manager::UserManager::Get()->GetActiveUser()->email()));
+#endif
 
   policy::ConsumerManagementService* consumer_management =
       g_browser_process->platform_part()->browser_policy_connector_chromeos()->
@@ -1031,8 +1046,6 @@ bool BrowserOptionsHandler::ShouldShowMultiProfilesUserList() {
   // On Chrome OS we use different UI for multi-profiles.
   return false;
 #else
-  if (helper::GetDesktopType(web_ui()) != chrome::HOST_DESKTOP_TYPE_NATIVE)
-    return false;
   Profile* profile = Profile::FromWebUI(web_ui());
   if (profile->IsGuestSession())
     return false;
@@ -1525,7 +1538,8 @@ void BrowserOptionsHandler::HandleDefaultZoomFactor(
     const base::ListValue* args) {
   double zoom_factor;
   if (ExtractDoubleValue(args, &zoom_factor)) {
-    default_zoom_level_.SetValue(content::ZoomFactorToZoomLevel(zoom_factor));
+    Profile::FromWebUI(web_ui())->GetZoomLevelPrefs()->SetDefaultZoomLevelPref(
+        content::ZoomFactorToZoomLevel(zoom_factor));
   }
 }
 
@@ -1614,7 +1628,16 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
     // Update the current error value.
     HotwordServiceFactory::IsServiceAvailable(profile);
     int error = HotwordServiceFactory::GetCurrentError(profile);
-    if (!error) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableExperimentalHotwording)) {
+      if (HotwordServiceFactory::IsHotwordHardwareAvailable()) {
+        web_ui()->CallJavascriptFunction(
+            "BrowserOptions.showHotwordAlwaysOnSection");
+      } else {
+        web_ui()->CallJavascriptFunction(
+            "BrowserOptions.showHotwordNoDSPSection");
+      }
+    } else if (!error) {
       web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
                                        enabled);
     } else {
@@ -1627,11 +1650,6 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
       }
       web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
                                        enabled, error_message);
-    }
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableExperimentalHotwording)) {
-      web_ui()->CallJavascriptFunction(
-          "BrowserOptions.showHotwordAlwaysOnSection");
     }
   }
 }
@@ -1782,8 +1800,9 @@ void BrowserOptionsHandler::SetupFontSizeSelector() {
 }
 
 void BrowserOptionsHandler::SetupPageZoomSelector() {
-  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
-  double default_zoom_level = pref_service->GetDouble(prefs::kDefaultZoomLevel);
+  double default_zoom_level =
+      content::HostZoomMap::GetDefaultForBrowserContext(
+          Profile::FromWebUI(web_ui()))->GetDefaultZoomLevel();
   double default_zoom_factor =
       content::ZoomLevelToZoomFactor(default_zoom_level);
 

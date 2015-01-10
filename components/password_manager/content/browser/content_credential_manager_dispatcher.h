@@ -22,6 +22,7 @@ class WebContents;
 
 namespace password_manager {
 
+class CredentialManagerPasswordFormManager;
 class PasswordManagerClient;
 class PasswordStore;
 struct CredentialInfo;
@@ -34,32 +35,32 @@ class ContentCredentialManagerDispatcher : public CredentialManagerDispatcher,
   // wiring this up as a subclass of PasswordStoreConsumer.
   ContentCredentialManagerDispatcher(content::WebContents* web_contents,
                                      PasswordManagerClient* client);
-  virtual ~ContentCredentialManagerDispatcher();
+  ~ContentCredentialManagerDispatcher() override;
+
+  void OnProvisionalSaveComplete();
 
   // CredentialManagerDispatcher implementation.
-  virtual void OnNotifyFailedSignIn(
-      int request_id,
-      const password_manager::CredentialInfo&) OVERRIDE;
-  virtual void OnNotifySignedIn(
-      int request_id,
-      const password_manager::CredentialInfo&) OVERRIDE;
-  virtual void OnNotifySignedOut(int request_id) OVERRIDE;
-  virtual void OnRequestCredential(
-      int request_id,
-      bool zero_click_only,
-      const std::vector<GURL>& federations) OVERRIDE;
+  void OnNotifyFailedSignIn(int request_id,
+                            const password_manager::CredentialInfo&) override;
+  void OnNotifySignedIn(int request_id,
+                        const password_manager::CredentialInfo&) override;
+  void OnNotifySignedOut(int request_id) override;
+  void OnRequestCredential(int request_id,
+                           bool zero_click_only,
+                           const std::vector<GURL>& federations) override;
 
   // content::WebContentsObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // PasswordStoreConsumer implementation.
-  virtual void OnGetPasswordStoreResults(
-      const std::vector<autofill::PasswordForm*>& results) OVERRIDE;
+  void OnGetPasswordStoreResults(
+      const std::vector<autofill::PasswordForm*>& results) override;
 
  private:
   PasswordStore* GetPasswordStore();
 
   PasswordManagerClient* client_;
+  scoped_ptr<CredentialManagerPasswordFormManager> form_manager_;
 
   // When 'OnRequestCredential' is called, it in turn calls out to the
   // PasswordStore; we store the request ID here in order to properly respond

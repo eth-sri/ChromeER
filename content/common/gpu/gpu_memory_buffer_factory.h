@@ -14,6 +14,10 @@ namespace gfx {
 class GLImage;
 }
 
+namespace gpu {
+class ImageFactory;
+}
+
 namespace content {
 
 class GpuMemoryBufferFactory {
@@ -30,21 +34,15 @@ class GpuMemoryBufferFactory {
   virtual gfx::GpuMemoryBufferHandle CreateGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat,
-      unsigned usage) = 0;
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage) = 0;
 
   // Destroys GPU memory buffer identified by |handle|.
   virtual void DestroyGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle) = 0;
 
-  // Creates a GLImage instance for GPU memory buffer identified by |handle|.
-  // |client_id| should be set to the client requesting the creation of instance
-  // and can be used by factory implementation to verify access rights.
-  virtual scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
-      const gfx::GpuMemoryBufferHandle& handle,
-      const gfx::Size& size,
-      unsigned internalformat,
-      int client_id) = 0;
+  // Type-checking downcast routine.
+  virtual gpu::ImageFactory* AsImageFactory() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GpuMemoryBufferFactory);

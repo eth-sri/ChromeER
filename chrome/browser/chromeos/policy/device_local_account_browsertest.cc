@@ -42,7 +42,7 @@
 #include "chrome/browser/chromeos/extensions/external_cache.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/screens/wizard_screen.h"
+#include "chrome/browser/chromeos/login/screens/base_screen.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
@@ -152,7 +152,7 @@ const char kAccountId1[] = "dla1@example.com";
 const char kAccountId2[] = "dla2@example.com";
 const char kDisplayName1[] = "display name 1";
 const char kDisplayName2[] = "display name 2";
-const char* kStartupURLs[] = {
+const char* const kStartupURLs[] = {
   "chrome://policy",
   "chrome://about",
 };
@@ -179,19 +179,19 @@ const char kPackagedAppCRXPath[] = "extensions/platform_apps/app_window_2.crx";
 const char kExternalData[] = "External data";
 const char kExternalDataURL[] = "http://localhost/external_data";
 
-const char* kSingleRecommendedLocale[] = {
+const char* const kSingleRecommendedLocale[] = {
   "el",
 };
-const char* kRecommendedLocales1[] = {
+const char* const kRecommendedLocales1[] = {
   "pl",
   "et",
   "en-US",
 };
-const char* kRecommendedLocales2[] = {
+const char* const kRecommendedLocales2[] = {
   "fr",
   "nl",
 };
-const char* kInvalidRecommendedLocale[] = {
+const char* const kInvalidRecommendedLocale[] = {
   "xx",
 };
 const char kPublicSessionLocale[] = "de";
@@ -314,7 +314,7 @@ scoped_ptr<net::test_server::HttpResponse>
   http_response->set_code(net::HTTP_OK);
   http_response->set_content(content);
   http_response->set_content_type("text/xml");
-  return http_response.PassAs<net::test_server::HttpResponse>();
+  return http_response.Pass();
 }
 
 DictionaryPrefValueWaiter::DictionaryPrefValueWaiter(
@@ -402,7 +402,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
 
   virtual ~DeviceLocalAccountTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     // Configure and start the test server.
     scoped_ptr<crypto::RSAPrivateKey> signing_key(
         PolicyBuilder::CreateTestSigningKey());
@@ -418,7 +418,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     DevicePolicyCrosBrowserTest::SetUp();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  virtual void SetUpCommandLine(CommandLine* command_line) override {
     DevicePolicyCrosBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(chromeos::switches::kLoginManager);
     command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
@@ -427,7 +427,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
                                     test_server_.GetServiceURL().spec());
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  virtual void SetUpInProcessBrowserTestFixture() override {
     DevicePolicyCrosBrowserTest::SetUpInProcessBrowserTestFixture();
 
     // Clear command-line arguments (but keep command-line switches) so the
@@ -444,7 +444,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     InitializePolicy();
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  virtual void SetUpOnMainThread() override {
     DevicePolicyCrosBrowserTest::SetUpOnMainThread();
 
     initial_locale_ = g_browser_process->GetApplicationLocale();
@@ -500,7 +500,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     wizard_controller->SkipToLoginForTesting(LoginScreenContext());
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  virtual void TearDownOnMainThread() override {
     BrowserList::RemoveObserver(this);
 
     // This shuts down the login UI.
@@ -510,22 +510,22 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   }
 
   virtual void LocalStateChanged(
-      user_manager::UserManager* user_manager) OVERRIDE {
+      user_manager::UserManager* user_manager) override {
     if (run_loop_)
       run_loop_->Quit();
   }
 
-  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE {
+  virtual void OnBrowserRemoved(Browser* browser) override {
     if (run_loop_)
       run_loop_->Quit();
   }
 
-  virtual void OnAppWindowAdded(extensions::AppWindow* app_window) OVERRIDE {
+  virtual void OnAppWindowAdded(extensions::AppWindow* app_window) override {
     if (run_loop_)
       run_loop_->Quit();
   }
 
-  virtual void OnAppWindowRemoved(extensions::AppWindow* app_window) OVERRIDE {
+  virtual void OnAppWindowRemoved(extensions::AppWindow* app_window) override {
     if (run_loop_)
       run_loop_->Quit();
   }
@@ -563,7 +563,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
         kAccountId1, device_local_account_policy_.GetBlob());
   }
 
-  void SetRecommendedLocales(const char* recommended_locales[],
+  void SetRecommendedLocales(const char* const recommended_locales[],
                              size_t array_size) {
     em::StringListPolicyProto* session_locales_proto =
         device_local_account_policy_.payload().mutable_sessionlocales();

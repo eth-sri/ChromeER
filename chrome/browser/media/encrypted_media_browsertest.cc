@@ -228,13 +228,13 @@ class EncryptedMediaTestBase : public MediaBrowserTest {
   scoped_ptr<TestLicenseServer> license_server_;
 
   // We want to fail quickly when a test fails because an error is encountered.
-  virtual void AddWaitForTitles(content::TitleWatcher* title_watcher) OVERRIDE {
+  void AddWaitForTitles(content::TitleWatcher* title_watcher) override {
     MediaBrowserTest::AddWaitForTitles(title_watcher);
     title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kEmeNotSupportedError));
     title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kEmeKeyError));
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
 #if defined(OS_ANDROID)
     command_line->AppendSwitch(
         switches::kDisableGestureRequirementForMediaPlayback);
@@ -326,8 +326,21 @@ class ECKEncryptedMediaTest : public EncryptedMediaTestBase {
   }
 
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     EncryptedMediaTestBase::SetUpCommandLine(command_line);
+    SetUpCommandLineForKeySystem(kExternalClearKeyKeySystem, command_line);
+  }
+};
+
+// Tests encrypted media playback using ExternalClearKey key system in
+// decrypt-and-decode mode for unprefixed EME.
+// TODO(jrummell): Merge with ECKEncryptedMediaTest once unprefixed is
+// enabled by default.
+class ECKUnprefixedEncryptedMediaTest : public EncryptedMediaTestBase {
+ protected:
+  void SetUpCommandLine(CommandLine* command_line) override {
+    EncryptedMediaTestBase::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableEncryptedMedia);
     SetUpCommandLineForKeySystem(kExternalClearKeyKeySystem, command_line);
   }
 };
@@ -336,7 +349,7 @@ class ECKEncryptedMediaTest : public EncryptedMediaTestBase {
 // Tests encrypted media playback using Widevine key system.
 class WVEncryptedMediaTest : public EncryptedMediaTestBase {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  virtual void SetUpCommandLine(CommandLine* command_line) override {
     EncryptedMediaTestBase::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kEnableEncryptedMedia);
     SetUpCommandLineForKeySystem(kWidevineKeySystem, command_line);
@@ -418,7 +431,7 @@ class EncryptedMediaTest
   }
 
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     EncryptedMediaTestBase::SetUpCommandLine(command_line);
     SetUpCommandLineForKeySystem(CurrentKeySystem(), command_line);
 
@@ -452,8 +465,7 @@ INSTANTIATE_TEST_CASE_P(MSE_ClearKey_Prefixed,
                         Combine(Values(kPrefixedClearKeyKeySystem),
                                 Values(MSE),
                                 Values(PREFIXED)));
-// http://crbug.com/402766
-INSTANTIATE_TEST_CASE_P(DISABLED_MSE_ClearKey,
+INSTANTIATE_TEST_CASE_P(MSE_ClearKey,
                         EncryptedMediaTest,
                         Combine(Values(kClearKeyKeySystem),
                                 Values(MSE),
@@ -662,6 +674,31 @@ IN_PROC_BROWSER_TEST_F(ECKEncryptedMediaTest, LoadUnknownSession) {
                         kExternalClearKeyKeySystem,
                         SRC,
                         PREFIXED,
+                        kUnknownSession,
+                        false,
+                        kEmeKeyError);
+}
+
+IN_PROC_BROWSER_TEST_F(ECKUnprefixedEncryptedMediaTest, LoadLoadableSession) {
+  RunEncryptedMediaTest(kDefaultEmePlayer,
+                        "bear-320x240-v_enc-v.webm",
+                        kWebMVideoOnly,
+                        kExternalClearKeyKeySystem,
+                        SRC,
+                        UNPREFIXED,
+                        kLoadableSession,
+                        false,
+                        kEnded);
+}
+
+IN_PROC_BROWSER_TEST_F(ECKUnprefixedEncryptedMediaTest, LoadUnknownSession) {
+  // TODO(xhwang): Add a specific error for this failure, e.g. kSessionNotFound.
+  RunEncryptedMediaTest(kDefaultEmePlayer,
+                        "bear-320x240-v_enc-v.webm",
+                        kWebMVideoOnly,
+                        kExternalClearKeyKeySystem,
+                        SRC,
+                        UNPREFIXED,
                         kUnknownSession,
                         false,
                         kEmeKeyError);

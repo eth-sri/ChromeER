@@ -33,6 +33,7 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/browser/process_manager_delegate.h"
+#include "extensions/browser/process_manager_factory.h"
 #include "extensions/browser/process_manager_observer.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
@@ -114,16 +115,13 @@ class IncognitoProcessManager : public ProcessManager {
  public:
   IncognitoProcessManager(BrowserContext* incognito_context,
                           BrowserContext* original_context,
-                          ProcessManager* original_manager,
                           ExtensionRegistry* extension_registry);
-  virtual ~IncognitoProcessManager() {}
-  virtual bool CreateBackgroundHost(const Extension* extension,
-                                    const GURL& url) OVERRIDE;
-  virtual SiteInstance* GetSiteInstanceForURL(const GURL& url) OVERRIDE;
+  ~IncognitoProcessManager() override {}
+  bool CreateBackgroundHost(const Extension* extension,
+                            const GURL& url) override;
+  SiteInstance* GetSiteInstanceForURL(const GURL& url) override;
 
  private:
-  ProcessManager* original_manager_;
-
   DISALLOW_COPY_AND_ASSIGN(IncognitoProcessManager);
 };
 
@@ -141,19 +139,19 @@ class RenderViewHostDestructionObserver
     : public content::WebContentsObserver,
       public content::WebContentsUserData<RenderViewHostDestructionObserver> {
  public:
-  virtual ~RenderViewHostDestructionObserver() {}
+  ~RenderViewHostDestructionObserver() override {}
 
  private:
   explicit RenderViewHostDestructionObserver(WebContents* web_contents)
       : WebContentsObserver(web_contents) {
     BrowserContext* context = web_contents->GetBrowserContext();
-    process_manager_ = ExtensionSystem::Get(context)->process_manager();
+    process_manager_ = ProcessManager::Get(context);
   }
 
   friend class content::WebContentsUserData<RenderViewHostDestructionObserver>;
 
   // content::WebContentsObserver overrides.
-  virtual void RenderViewDeleted(RenderViewHost* render_view_host) OVERRIDE {
+  void RenderViewDeleted(RenderViewHost* render_view_host) override {
     process_manager_->UnregisterRenderViewHost(render_view_host);
   }
 
@@ -199,6 +197,11 @@ struct ProcessManager::BackgroundPageData {
 //
 
 // static
+ProcessManager* ProcessManager::Get(BrowserContext* context) {
+  return ProcessManagerFactory::GetForBrowserContext(context);
+}
+
+// static
 ProcessManager* ProcessManager::Create(BrowserContext* context) {
   ExtensionRegistry* extension_registry = ExtensionRegistry::Get(context);
   ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
@@ -213,10 +216,8 @@ ProcessManager* ProcessManager::Create(BrowserContext* context) {
 
   if (context->IsOffTheRecord()) {
     BrowserContext* original_context = client->GetOriginalContext(context);
-    ProcessManager* original_manager =
-        ExtensionSystem::Get(original_context)->process_manager();
     return new IncognitoProcessManager(
-        context, original_context, original_manager, extension_registry);
+        context, original_context, extension_registry);
   }
 
   return new ProcessManager(context, context, extension_registry);
@@ -234,13 +235,11 @@ ProcessManager* ProcessManager::CreateForTesting(
 ProcessManager* ProcessManager::CreateIncognitoForTesting(
     BrowserContext* incognito_context,
     BrowserContext* original_context,
-    ProcessManager* original_manager,
     ExtensionRegistry* extension_registry) {
   DCHECK(incognito_context->IsOffTheRecord());
   DCHECK(!original_context->IsOffTheRecord());
   return new IncognitoProcessManager(incognito_context,
                                      original_context,
-                                     original_manager,
                                      extension_registry);
 }
 
@@ -517,11 +516,7 @@ void ProcessManager::OnKeepaliveFromPlugin(int render_process_id,
   if (!extension)
     return;
 
-  ProcessManager* pm = ExtensionSystem::Get(browser_context)->process_manager();
-  if (!pm)
-    return;
-
-  pm->KeepaliveImpulse(extension);
+  ProcessManager::Get(browser_context)->KeepaliveImpulse(extension);
 }
 
 // DecrementLazyKeepaliveCount is called when no calls to KeepaliveImpulse
@@ -873,11 +868,16 @@ void ProcessManager::OnBackgroundHostCreated(ExtensionHost* host) {
 }
 
 void ProcessManager::CloseBackgroundHost(ExtensionHost* host) {
+  ExtensionId extension_id = host->extension_id();
   CHECK(host->extension_host_type() ==
         VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
   delete host;
   // |host| should deregister itself from our structures.
   CHECK(background_hosts_.find(host) == background_hosts_.end());
+
+  FOR_EACH_OBSERVER(ProcessManagerObserver,
+                    observer_list_,
+                    OnBackgroundHostClose(extension_id));
 }
 
 void ProcessManager::UnregisterExtension(const std::string& extension_id) {
@@ -920,10 +920,8 @@ void ProcessManager::ClearBackgroundPageData(const std::string& extension_id) {
 IncognitoProcessManager::IncognitoProcessManager(
     BrowserContext* incognito_context,
     BrowserContext* original_context,
-    ProcessManager* original_manager,
     ExtensionRegistry* extension_registry)
-    : ProcessManager(incognito_context, original_context, extension_registry),
-      original_manager_(original_manager) {
+    : ProcessManager(incognito_context, original_context, extension_registry) {
   DCHECK(incognito_context->IsOffTheRecord());
 
   // The original profile will have its own ProcessManager to
@@ -951,8 +949,11 @@ bool IncognitoProcessManager::CreateBackgroundHost(const Extension* extension,
 SiteInstance* IncognitoProcessManager::GetSiteInstanceForURL(const GURL& url) {
   const Extension* extension =
       extension_registry_->enabled_extensions().GetExtensionOrAppByURL(url);
-  if (extension && !IncognitoInfo::IsSplitMode(extension))
-    return original_manager_->GetSiteInstanceForURL(url);
+  if (extension && !IncognitoInfo::IsSplitMode(extension)) {
+    BrowserContext* original_context =
+        ExtensionsBrowserClient::Get()->GetOriginalContext(GetBrowserContext());
+    return ProcessManager::Get(original_context)->GetSiteInstanceForURL(url);
+  }
 
   return ProcessManager::GetSiteInstanceForURL(url);
 }

@@ -27,7 +27,6 @@
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/resource_context.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/extension.h"
 #include "net/base/sdch_dictionary_fetcher.h"
 #include "net/base/sdch_manager.h"
 #include "net/ftp/ftp_network_layer.h"
@@ -38,6 +37,10 @@
 #include "net/ssl/default_channel_id_store.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "storage/browser/database/database_tracker.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "extensions/common/extension.h"
+#endif
 
 using content::BrowserThread;
 
@@ -163,13 +166,6 @@ void OffTheRecordProfileIOData::Handle::LazyInitialize() const {
   io_data_->safe_browsing_enabled()->MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 #endif
-  // TODO(kundaji): Remove data_reduction_proxy_enabled pref for incognito.
-  // Bug http://crbug/412873.
-  io_data_->data_reduction_proxy_enabled()->Init(
-      data_reduction_proxy::prefs::kDataReductionProxyEnabled,
-      profile_->GetPrefs());
-  io_data_->data_reduction_proxy_enabled()->MoveToThread(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   io_data_->InitializeOnUIThread(profile_);
 }
 
@@ -361,8 +357,7 @@ net::URLRequestContext* OffTheRecordProfileIOData::InitializeAppRequestContext(
   scoped_ptr<net::HttpCache> app_http_cache =
       CreateHttpFactory(main_network_session, app_backend);
 
-  context->SetHttpTransactionFactory(
-      app_http_cache.PassAs<net::HttpTransactionFactory>());
+  context->SetHttpTransactionFactory(app_http_cache.Pass());
 
   scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
       new net::URLRequestJobFactoryImpl());

@@ -16,12 +16,14 @@
 #include "cc/layers/render_surface_impl.h"
 #include "cc/trees/layer_sorter.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
 
-ScrollAndScaleSet::ScrollAndScaleSet() {}
+ScrollAndScaleSet::ScrollAndScaleSet()
+    : page_scale_delta(1.f), top_controls_delta(0.f) {
+}
 
 ScrollAndScaleSet::~ScrollAndScaleSet() {}
 
@@ -52,13 +54,13 @@ static gfx::Vector2dF GetEffectiveScrollDelta(LayerType* layer) {
 }
 
 template <typename LayerType>
-static gfx::Vector2dF GetEffectiveTotalScrollOffset(LayerType* layer) {
-  gfx::Vector2dF offset = layer->TotalScrollOffset();
+static gfx::ScrollOffset GetEffectiveTotalScrollOffset(LayerType* layer) {
+  gfx::ScrollOffset offset = layer->TotalScrollOffset();
   // The scroll parent's total scroll offset (scroll offset + scroll delta)
   // can't be used because its scroll offset has already been applied to the
   // scroll children's positions by the main thread layer positioning code.
   if (layer->scroll_parent())
-    offset += layer->scroll_parent()->ScrollDelta();
+    offset += gfx::ScrollOffset(layer->scroll_parent()->ScrollDelta());
   return offset;
 }
 
@@ -240,7 +242,7 @@ template <typename LayerType>
 void UpdateAccumulatedSurfaceState(
     LayerType* layer,
     const gfx::Rect& drawable_content_rect,
-    std::vector<AccumulatedSurfaceState<LayerType> >*
+    std::vector<AccumulatedSurfaceState<LayerType>>*
         accumulated_surface_state) {
   if (IsRootLayer(layer))
     return;
@@ -282,7 +284,7 @@ void UpdateAccumulatedSurfaceState(
   // We must have at least one entry in the vector for the root.
   DCHECK_LT(0ul, accumulated_surface_state->size());
 
-  typedef typename std::vector<AccumulatedSurfaceState<LayerType> >
+  typedef typename std::vector<AccumulatedSurfaceState<LayerType>>
       AccumulatedSurfaceStateVector;
   typedef typename AccumulatedSurfaceStateVector::reverse_iterator
       AccumulatedSurfaceStateIterator;
@@ -1094,7 +1096,7 @@ static inline void CalculateAnimationContentsScale(
   }
 
   float layer_maximum_animated_scale = 0.f;
-  if (!layer->layer_animation_controller()->MaximumScale(
+  if (!layer->layer_animation_controller()->MaximumTargetScale(
           &layer_maximum_animated_scale)) {
     *combined_maximum_animation_contents_scale = 0.f;
     return;
@@ -1449,7 +1451,7 @@ static void CalculateDrawPropertiesInternal(
     const DataForRecursion<LayerType>& data_from_ancestor,
     typename LayerType::RenderSurfaceListType* render_surface_layer_list,
     typename LayerType::LayerListType* layer_list,
-    std::vector<AccumulatedSurfaceState<LayerType> >* accumulated_surface_state,
+    std::vector<AccumulatedSurfaceState<LayerType>>* accumulated_surface_state,
     int current_render_surface_layer_list_id) {
   // This function computes the new matrix transformations recursively for this
   // layer and all its descendants. It also computes the appropriate render
@@ -1645,8 +1647,9 @@ static void CalculateDrawPropertiesInternal(
         layer->parent()->screen_space_transform_is_animating();
   }
   gfx::Point3F transform_origin = layer->transform_origin();
-  gfx::Vector2dF scroll_offset = GetEffectiveTotalScrollOffset(layer);
-  gfx::PointF position = layer->position() - scroll_offset;
+  gfx::ScrollOffset scroll_offset = GetEffectiveTotalScrollOffset(layer);
+  gfx::PointF position =
+      layer->position() - ScrollOffsetToVector2dF(scroll_offset);
   gfx::Transform combined_transform = data_from_ancestor.parent_matrix;
   if (!layer->transform().IsIdentity()) {
     // LT = Tr[origin] * Tr[origin2transformOrigin]
@@ -2395,7 +2398,7 @@ void LayerTreeHostCommon::CalculateDrawProperties(
 
   PreCalculateMetaInformationRecursiveData recursive_data;
   PreCalculateMetaInformation(inputs->root_layer, &recursive_data);
-  std::vector<AccumulatedSurfaceState<Layer> > accumulated_surface_state;
+  std::vector<AccumulatedSurfaceState<Layer>> accumulated_surface_state;
   CalculateDrawPropertiesInternal<Layer>(
       inputs->root_layer,
       globals,
@@ -2424,8 +2427,7 @@ void LayerTreeHostCommon::CalculateDrawProperties(
 
   PreCalculateMetaInformationRecursiveData recursive_data;
   PreCalculateMetaInformation(inputs->root_layer, &recursive_data);
-  std::vector<AccumulatedSurfaceState<LayerImpl> >
-      accumulated_surface_state;
+  std::vector<AccumulatedSurfaceState<LayerImpl>> accumulated_surface_state;
   CalculateDrawPropertiesInternal<LayerImpl>(
       inputs->root_layer,
       globals,

@@ -7,6 +7,7 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "google_apis/gaia/gaia_urls.h"
@@ -64,7 +65,7 @@ class GaiaOAuthClient::Core
                     Delegate* delegate);
 
   // net::URLFetcherDelegate implementation.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
  private:
   friend class base::RefCountedThreadSafe<Core>;
@@ -79,7 +80,7 @@ class GaiaOAuthClient::Core
     USER_INFO,
   };
 
-  virtual ~Core() {}
+  ~Core() override {}
 
   void GetUserInfoImpl(RequestType type,
                        const std::string& oauth_access_token,
@@ -226,6 +227,11 @@ void GaiaOAuthClient::Core::MakeGaiaRequest(
 // URLFetcher::Delegate implementation.
 void GaiaOAuthClient::Core::OnURLFetchComplete(
     const net::URLFetcher* source) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422577 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422577 GaiaOAuthClient::Core::OnURLFetchComplete"));
+
   bool should_retry = false;
   HandleResponse(source, &should_retry);
   if (should_retry) {

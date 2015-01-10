@@ -9,8 +9,11 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
+#include "third_party/webrtc/common.h"
+#include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/logging.h"
 
@@ -32,14 +35,40 @@ void AddTraceEvent(char phase,
                                   NULL, flags);
 }
 
-// Define webrtc:field_trial::FindFullName to provide webrtc with a field trial
-// implementation.
 namespace webrtc {
+// Define webrtc::field_trial::FindFullName to provide webrtc with a field trial
+// implementation.
 namespace field_trial {
 std::string FindFullName(const std::string& trial_name) {
   return base::FieldTrialList::FindFullName(trial_name);
 }
 }  // namespace field_trial
+
+// Define webrtc::metrics functions to provide webrtc with implementations.
+namespace metrics {
+Histogram* HistogramFactoryGetCounts(
+    const std::string& name, int min, int max, int bucket_count) {
+  return reinterpret_cast<Histogram*>(
+      base::Histogram::FactoryGet(name, min, max, bucket_count,
+          base::HistogramBase::kUmaTargetedHistogramFlag));
+}
+
+Histogram* HistogramFactoryGetEnumeration(
+    const std::string& name, int boundary) {
+  return reinterpret_cast<Histogram*>(
+      base::LinearHistogram::FactoryGet(name, 1, boundary, boundary + 1,
+          base::HistogramBase::kUmaTargetedHistogramFlag));
+}
+
+void HistogramAdd(
+    Histogram* histogram_pointer, const std::string& name, int sample) {
+  base::HistogramBase* ptr =
+      reinterpret_cast<base::HistogramBase*>(histogram_pointer);
+  // The name should not vary.
+  DCHECK(ptr->histogram_name() == name);
+  ptr->Add(sample);
+}
+}  // namespace metrics
 }  // namespace webrtc
 
 #if defined(LIBPEERCONNECTION_LIB)
@@ -53,6 +82,13 @@ bool InitializeWebRtcModule() {
   return true;
 }
 
+webrtc::AudioProcessing* CreateWebRtcAudioProcessing(
+    const webrtc::Config& config) {
+  // libpeerconnection is being compiled as a static lib, use
+  // webrtc::AudioProcessing directly.
+  return webrtc::AudioProcessing::Create(config);
+}
+
 #else  // !LIBPEERCONNECTION_LIB
 
 // When being compiled as a shared library, we need to bridge the gap between
@@ -62,6 +98,7 @@ bool InitializeWebRtcModule() {
 // Global function pointers to the factory functions in the shared library.
 CreateWebRtcMediaEngineFunction g_create_webrtc_media_engine = NULL;
 DestroyWebRtcMediaEngineFunction g_destroy_webrtc_media_engine = NULL;
+CreateWebRtcAudioProcessingFunction g_create_webrtc_audio_processing = NULL;
 
 // Returns the full or relative path to the libpeerconnection module depending
 // on what platform we're on.
@@ -126,17 +163,20 @@ bool InitializeWebRtcModule() {
   InitDiagnosticLoggingDelegateFunctionFunction init_diagnostic_logging = NULL;
   bool init_ok = initialize_module(*CommandLine::ForCurrentProcess(),
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-                                   &Allocate,
-                                   &Dellocate,
+      &Allocate,
+      &Dellocate,
 #endif
-                                   &webrtc::field_trial::FindFullName,
-                                   logging::GetLogMessageHandler(),
-                                   &GetCategoryGroupEnabled,
-                                   &AddTraceEvent,
-                                   &g_create_webrtc_media_engine,
-                                   &g_destroy_webrtc_media_engine,
-                                   &init_diagnostic_logging);
-
+      &webrtc::field_trial::FindFullName,
+      &webrtc::metrics::HistogramFactoryGetCounts,
+      &webrtc::metrics::HistogramFactoryGetEnumeration,
+      &webrtc::metrics::HistogramAdd,
+      logging::GetLogMessageHandler(),
+      &GetCategoryGroupEnabled,
+      &AddTraceEvent,
+      &g_create_webrtc_media_engine,
+      &g_destroy_webrtc_media_engine,
+      &init_diagnostic_logging,
+      &g_create_webrtc_audio_processing);
   if (init_ok)
     rtc::SetExtraLoggingInit(init_diagnostic_logging);
   return init_ok;
@@ -158,6 +198,14 @@ cricket::MediaEngineInterface* CreateWebRtcMediaEngine(
 
 void DestroyWebRtcMediaEngine(cricket::MediaEngineInterface* media_engine) {
   g_destroy_webrtc_media_engine(media_engine);
+}
+
+webrtc::AudioProcessing* CreateWebRtcAudioProcessing(
+    const webrtc::Config& config) {
+  // The same as CreateWebRtcMediaEngine(), we call InitializeWebRtcModule here
+  // for convenience of tests.
+  InitializeWebRtcModule();
+  return g_create_webrtc_audio_processing(config);
 }
 
 #endif  // LIBPEERCONNECTION_LIB

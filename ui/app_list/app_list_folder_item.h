@@ -12,13 +12,14 @@
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_item_list_observer.h"
 #include "ui/app_list/app_list_item_observer.h"
-#include "ui/gfx/geometry/rect.h"
+
+namespace gfx {
+class Rect;
+}
 
 namespace app_list {
 
 class AppListItemList;
-
-typedef std::vector<gfx::Rect> Rects;
 
 // AppListFolderItem implements the model/controller for folders.
 class APP_LIST_EXPORT AppListFolderItem : public AppListItem,
@@ -36,7 +37,7 @@ class APP_LIST_EXPORT AppListFolderItem : public AppListItem,
   static const char kItemType[];
 
   AppListFolderItem(const std::string& id, FolderType folder_type);
-  virtual ~AppListFolderItem();
+  ~AppListFolderItem() override;
 
   // Updates the folder's icon.
   void UpdateIcon();
@@ -59,33 +60,28 @@ class APP_LIST_EXPORT AppListFolderItem : public AppListItem,
   FolderType folder_type() const { return folder_type_; }
 
   // AppListItem
-  virtual void Activate(int event_flags) OVERRIDE;
-  virtual const char* GetItemType() const OVERRIDE;
-  virtual ui::MenuModel* GetContextMenuModel() OVERRIDE;
-  virtual AppListItem* FindChildItem(const std::string& id) OVERRIDE;
-  virtual size_t ChildItemCount() const OVERRIDE;
-  virtual void OnExtensionPreferenceChanged() OVERRIDE;
-  virtual bool CompareForTest(const AppListItem* other) const OVERRIDE;
-
-  // Calculates the top item icons' bounds inside |folder_icon_bounds|.
-  // Returns the bounds of top item icons in sequence of top left, top right,
-  // bottom left, bottom right.
-  static Rects GetTopIconsBounds(const gfx::Rect& folder_icon_bounds);
+  void Activate(int event_flags) override;
+  const char* GetItemType() const override;
+  ui::MenuModel* GetContextMenuModel() override;
+  AppListItem* FindChildItem(const std::string& id) override;
+  size_t ChildItemCount() const override;
+  void OnExtensionPreferenceChanged() override;
+  bool CompareForTest(const AppListItem* other) const override;
 
   // Returns an id for a new folder.
   static std::string GenerateId();
 
  private:
   // AppListItemObserver
-  virtual void ItemIconChanged() OVERRIDE;
+  void ItemIconChanged() override;
 
   // AppListItemListObserver
-  virtual void OnListItemAdded(size_t index, AppListItem* item) OVERRIDE;
-  virtual void OnListItemRemoved(size_t index,
-                                 AppListItem* item) OVERRIDE;;
-  virtual void OnListItemMoved(size_t from_index,
-                               size_t to_index,
-                               AppListItem* item) OVERRIDE;
+  void OnListItemAdded(size_t index, AppListItem* item) override;
+  void OnListItemRemoved(size_t index, AppListItem* item) override;
+  ;
+  void OnListItemMoved(size_t from_index,
+                       size_t to_index,
+                       AppListItem* item) override;
 
   void UpdateTopItems();
 

@@ -60,16 +60,16 @@ class MockRTCStatsResponse : public LocalRTCStatsResponse {
         statistic_count_(0) {
   }
 
-  virtual size_t addReport(blink::WebString type,
-                           blink::WebString id,
-                           double timestamp) OVERRIDE {
+  size_t addReport(blink::WebString type,
+                   blink::WebString id,
+                   double timestamp) override {
     ++report_count_;
     return report_count_;
   }
 
-  virtual void addStatistic(size_t report,
-                            blink::WebString name, blink::WebString value)
-      OVERRIDE {
+  void addStatistic(size_t report,
+                    blink::WebString name,
+                    blink::WebString value) override {
     ++statistic_count_;
   }
   int report_count() const { return report_count_; }
@@ -86,20 +86,15 @@ class MockRTCStatsRequest : public LocalRTCStatsRequest {
       : has_selector_(false),
         request_succeeded_called_(false) {}
 
-  virtual bool hasSelector() const OVERRIDE {
-    return has_selector_;
-  }
-  virtual blink::WebMediaStreamTrack component() const OVERRIDE {
-    return component_;
-  }
-  virtual scoped_refptr<LocalRTCStatsResponse> createResponse() OVERRIDE {
+  bool hasSelector() const override { return has_selector_; }
+  blink::WebMediaStreamTrack component() const override { return component_; }
+  scoped_refptr<LocalRTCStatsResponse> createResponse() override {
     DCHECK(!response_.get());
     response_ = new rtc::RefCountedObject<MockRTCStatsResponse>();
     return response_;
   }
 
-  virtual void requestSucceeded(const LocalRTCStatsResponse* response)
-      OVERRIDE {
+  void requestSucceeded(const LocalRTCStatsResponse* response) override {
     EXPECT_EQ(response, response_.get());
     request_succeeded_called_ = true;
   }
@@ -204,7 +199,7 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     child_process_.reset(new ChildProcess());
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     mock_client_.reset(new NiceMock<MockWebRTCPeerConnectionHandlerClient>());
     mock_dependency_factory_.reset(new MockPeerConnectionDependencyFactory());
     pc_handler_.reset(
@@ -220,7 +215,7 @@ class RTCPeerConnectionHandlerTest : public ::testing::Test {
     ASSERT_TRUE(mock_peer_connection_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     pc_handler_.reset();
     mock_tracker_.reset();
     mock_dependency_factory_.reset();

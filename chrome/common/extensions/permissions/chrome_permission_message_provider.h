@@ -23,22 +23,21 @@ namespace extensions {
 class ChromePermissionMessageProvider : public PermissionMessageProvider {
  public:
   ChromePermissionMessageProvider();
-  virtual ~ChromePermissionMessageProvider();
+  ~ChromePermissionMessageProvider() override;
 
   // PermissionMessageProvider implementation.
-  virtual PermissionMessages GetPermissionMessages(
+  PermissionMessages GetPermissionMessages(
       const PermissionSet* permissions,
-      Manifest::Type extension_type) const OVERRIDE;
-  virtual std::vector<base::string16> GetWarningMessages(
+      Manifest::Type extension_type) const override;
+  std::vector<base::string16> GetWarningMessages(
       const PermissionSet* permissions,
-      Manifest::Type extension_type) const OVERRIDE;
-  virtual std::vector<base::string16> GetWarningMessagesDetails(
+      Manifest::Type extension_type) const override;
+  std::vector<base::string16> GetWarningMessagesDetails(
       const PermissionSet* permissions,
-      Manifest::Type extension_type) const OVERRIDE;
-  virtual bool IsPrivilegeIncrease(
-      const PermissionSet* old_permissions,
-      const PermissionSet* new_permissions,
-      Manifest::Type extension_type) const OVERRIDE;
+      Manifest::Type extension_type) const override;
+  bool IsPrivilegeIncrease(const PermissionSet* old_permissions,
+                           const PermissionSet* new_permissions,
+                           Manifest::Type extension_type) const override;
 
  private:
   // Gets the permission messages for the API permissions.

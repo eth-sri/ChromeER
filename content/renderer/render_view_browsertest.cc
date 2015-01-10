@@ -30,8 +30,6 @@
 #include "content/public/test/render_view_test.h"
 #include "content/public/test/test_utils.h"
 #include "content/renderer/accessibility/renderer_accessibility.h"
-#include "content/renderer/accessibility/renderer_accessibility_complete.h"
-#include "content/renderer/accessibility/renderer_accessibility_focus_only.h"
 #include "content/renderer/history_controller.h"
 #include "content/renderer/history_serialization.h"
 #include "content/renderer/render_process.h"
@@ -104,7 +102,7 @@ int ConvertMockKeyboardModifier(MockKeyboard::Modifiers modifiers) {
     { MockKeyboard::RIGHT_ALT, ui::EF_ALT_DOWN },
   };
   int flags = 0;
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kModifierMap); ++i) {
+  for (size_t i = 0; i < arraysize(kModifierMap); ++i) {
     if (kModifierMap[i].src & modifiers) {
       flags |= kModifierMap[i].dst;
     }
@@ -115,20 +113,20 @@ int ConvertMockKeyboardModifier(MockKeyboard::Modifiers modifiers) {
 
 class WebUITestWebUIControllerFactory : public WebUIControllerFactory {
  public:
-  virtual WebUIController* CreateWebUIControllerForURL(
-      WebUI* web_ui, const GURL& url) const OVERRIDE {
+  WebUIController* CreateWebUIControllerForURL(WebUI* web_ui,
+                                               const GURL& url) const override {
     return NULL;
   }
-  virtual WebUI::TypeID GetWebUIType(BrowserContext* browser_context,
-                                     const GURL& url) const OVERRIDE {
+  WebUI::TypeID GetWebUIType(BrowserContext* browser_context,
+                             const GURL& url) const override {
     return WebUI::kNoWebUI;
   }
-  virtual bool UseWebUIForURL(BrowserContext* browser_context,
-                              const GURL& url) const OVERRIDE {
+  bool UseWebUIForURL(BrowserContext* browser_context,
+                      const GURL& url) const override {
     return HasWebUIScheme(url);
   }
-  virtual bool UseWebUIBindingsForURL(BrowserContext* browser_context,
-                                      const GURL& url) const OVERRIDE {
+  bool UseWebUIBindingsForURL(BrowserContext* browser_context,
+                              const GURL& url) const override {
     return HasWebUIScheme(url);
   }
 };
@@ -142,9 +140,9 @@ class RenderViewImplTest : public RenderViewTest {
     mock_keyboard_.reset(new MockKeyboard());
   }
 
-  virtual ~RenderViewImplTest() {}
+  ~RenderViewImplTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     RenderViewTest::SetUp();
     // Enable Blink's experimental and test only features so that test code
     // does not have to bother enabling each feature.
@@ -974,16 +972,17 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to activate IMEs.
-    view()->UpdateTextInputState(
-        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
+    view()->UpdateTextInputType();
     const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
-    ViewHostMsg_TextInputStateChanged::Param params;
-    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
-    ViewHostMsg_TextInputState_Params p = params.a;
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, p.type);
-    EXPECT_EQ(true, p.can_compose_inline);
+    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
+    ViewHostMsg_TextInputTypeChanged::Param params;
+    ViewHostMsg_TextInputTypeChanged::Read(msg, &params);
+    ui::TextInputType type = params.a;
+    ui::TextInputMode input_mode = params.b;
+    bool can_compose_inline = params.c;
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, type);
+    EXPECT_EQ(true, can_compose_inline);
 
     // Move the input focus to the second <input> element, where we should
     // de-activate IMEs.
@@ -993,34 +992,36 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to de-activate IMEs.
-    view()->UpdateTextInputState(
-        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
+    view()->UpdateTextInputType();
     msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
-    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, params.a.type);
+    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
+    ViewHostMsg_TextInputTypeChanged::Read(msg, & params);
+    type = params.a;
+    input_mode = params.b;
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, type);
 
-    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kInputModeTestCases); j++) {
-      const InputModeTestCase* test_case = &kInputModeTestCases[j];
+    for (size_t i = 0; i < arraysize(kInputModeTestCases); i++) {
+      const InputModeTestCase* test_case = &kInputModeTestCases[i];
       std::string javascript =
           base::StringPrintf("document.getElementById('%s').focus();",
                              test_case->input_id);
       // Move the input focus to the target <input> element, where we should
       // activate IMEs.
-      ExecuteJavaScript(javascript.c_str());
+      ExecuteJavaScriptAndReturnIntValue(base::ASCIIToUTF16(javascript), NULL);
       ProcessPendingMessages();
       render_thread_->sink().ClearMessages();
 
       // Update the IME status and verify if our IME backend sends an IPC
       // message to activate IMEs.
-      view()->UpdateTextInputState(
-        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
-      msg = render_thread_->sink().GetMessageAt(0);
+      view()->UpdateTextInputType();
+      const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
       EXPECT_TRUE(msg != NULL);
-      EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
-      ViewHostMsg_TextInputStateChanged::Read(msg, &params);
-      EXPECT_EQ(test_case->expected_mode, params.a.mode);
+      EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
+      ViewHostMsg_TextInputTypeChanged::Read(msg, & params);
+      type = params.a;
+      input_mode = params.b;
+      EXPECT_EQ(test_case->expected_mode, input_mode);
     }
   }
 }
@@ -1095,7 +1096,7 @@ TEST_F(RenderViewImplTest, ImeComposition) {
     {IME_CONFIRMCOMPOSITION, false, -1, -1, L"", L"\xC548\xB155"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kImeMessages); i++) {
+  for (size_t i = 0; i < arraysize(kImeMessages); i++) {
     const ImeMessage* ime_message = &kImeMessages[i];
     switch (ime_message->command) {
       case IME_INITIALIZE:
@@ -1149,8 +1150,7 @@ TEST_F(RenderViewImplTest, ImeComposition) {
 
     // Update the status of our IME back-end.
     // TODO(hbono): we should verify messages to be sent from the back-end.
-    view()->UpdateTextInputState(
-        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
+    view()->UpdateTextInputType();
     ProcessPendingMessages();
     render_thread_->sink().ClearMessages();
 
@@ -1190,7 +1190,7 @@ TEST_F(RenderViewImplTest, OnSetTextDirection) {
     { blink::WebTextDirectionRightToLeft, L"\x000A" L"rtl,rtl" },
     { blink::WebTextDirectionLeftToRight, L"\x000A" L"ltr,ltr" },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTextDirection); ++i) {
+  for (size_t i = 0; i < arraysize(kTextDirection); ++i) {
     // Set the text direction of the <textarea> element.
     ExecuteJavaScript("document.getElementById('test').focus();");
     view()->OnSetTextDirection(kTextDirection[i].direction);
@@ -1278,7 +1278,7 @@ TEST_F(RenderViewImplTest, MAYBE_OnHandleKeyboardEvent) {
     MockKeyboard::LAYOUT_UNITED_STATES,
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kLayouts); ++i) {
+  for (size_t i = 0; i < arraysize(kLayouts); ++i) {
     // For each key code, we send three keyboard events.
     //  * we press only the key;
     //  * we press the key and a left-shift key, and;
@@ -1297,7 +1297,7 @@ TEST_F(RenderViewImplTest, MAYBE_OnHandleKeyboardEvent) {
     };
 
     MockKeyboard::Layout layout = kLayouts[i];
-    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kModifierData); ++j) {
+    for (size_t j = 0; j < arraysize(kModifierData); ++j) {
       // Virtual key codes used for this test.
       static const int kKeyCodes[] = {
         '0', '1', '2', '3', '4', '5', '6', '7',
@@ -1323,7 +1323,7 @@ TEST_F(RenderViewImplTest, MAYBE_OnHandleKeyboardEvent) {
       };
 
       MockKeyboard::Modifiers modifiers = kModifierData[j].modifiers;
-      for (size_t k = 0; k < ARRAYSIZE_UNSAFE(kKeyCodes); ++k) {
+      for (size_t k = 0; k < arraysize(kKeyCodes); ++k) {
         // Send a keyboard event to the RenderView object.
         // We should test a keyboard event only when the given keyboard-layout
         // driver is installed in a PC and the driver can assign a Unicode
@@ -1513,7 +1513,7 @@ TEST_F(RenderViewImplTest, MAYBE_InsertCharacters) {
     },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kLayouts); ++i) {
+  for (size_t i = 0; i < arraysize(kLayouts); ++i) {
     // Load an HTML page consisting of one <div> element.
     // This <div> element is used by the EditorClientImpl class to insert
     // characters received through the RenderWidget::OnHandleInputEvent()
@@ -1544,7 +1544,7 @@ TEST_F(RenderViewImplTest, MAYBE_InsertCharacters) {
     };
 
     MockKeyboard::Layout layout = kLayouts[i].layout;
-    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kModifiers); ++j) {
+    for (size_t j = 0; j < arraysize(kModifiers); ++j) {
       // Virtual key codes used for this test.
       static const int kKeyCodes[] = {
         '0', '1', '2', '3', '4', '5', '6', '7',
@@ -1570,7 +1570,7 @@ TEST_F(RenderViewImplTest, MAYBE_InsertCharacters) {
       };
 
       MockKeyboard::Modifiers modifiers = kModifiers[j];
-      for (size_t k = 0; k < ARRAYSIZE_UNSAFE(kKeyCodes); ++k) {
+      for (size_t k = 0; k < arraysize(kKeyCodes); ++k) {
         // Send a keyboard event to the RenderView object.
         // We should test a keyboard event only when the given keyboard-layout
         // driver is installed in a PC and the driver can assign a Unicode
@@ -2151,7 +2151,7 @@ TEST_F(RenderViewImplTest, MessageOrderInDidChangeSelection) {
 
   for (size_t i = 0; i < render_thread_->sink().message_count(); ++i) {
     const uint32 type = render_thread_->sink().GetMessageAt(i)->type();
-    if (type == ViewHostMsg_TextInputStateChanged::ID) {
+    if (type == ViewHostMsg_TextInputTypeChanged::ID) {
       is_input_type_called = true;
       last_input_type = i;
     } else if (type == ViewHostMsg_SelectionChanged::ID) {
@@ -2169,7 +2169,7 @@ TEST_F(RenderViewImplTest, MessageOrderInDidChangeSelection) {
 
 class SuppressErrorPageTest : public RenderViewTest {
  public:
-  virtual ContentRendererClient* CreateContentRendererClient() OVERRIDE {
+  ContentRendererClient* CreateContentRendererClient() override {
     return new TestContentRendererClient;
   }
 
@@ -2184,18 +2184,17 @@ class SuppressErrorPageTest : public RenderViewTest {
  private:
   class TestContentRendererClient : public ContentRendererClient {
    public:
-    virtual bool ShouldSuppressErrorPage(RenderFrame* render_frame,
-                                         const GURL& url) OVERRIDE {
+    bool ShouldSuppressErrorPage(RenderFrame* render_frame,
+                                 const GURL& url) override {
       return url == GURL("http://example.com/suppress");
     }
 
-    virtual void GetNavigationErrorStrings(
-        content::RenderView* render_view,
-        blink::WebFrame* frame,
-        const blink::WebURLRequest& failed_request,
-        const blink::WebURLError& error,
-        std::string* error_html,
-        base::string16* error_description) OVERRIDE {
+    void GetNavigationErrorStrings(content::RenderView* render_view,
+                                   blink::WebFrame* frame,
+                                   const blink::WebURLRequest& failed_request,
+                                   const blink::WebURLError& error,
+                                   std::string* error_html,
+                                   base::string16* error_description) override {
       if (error_html)
         *error_html = "A suffusion of yellow.";
     }
@@ -2406,8 +2405,6 @@ TEST_F(RenderViewImplTest, OnSetAccessibilityMode) {
   frame()->OnSetAccessibilityMode(AccessibilityModeTreeOnly);
   ASSERT_EQ(AccessibilityModeTreeOnly, frame()->accessibility_mode());
   ASSERT_NE((RendererAccessibility*) NULL, frame()->renderer_accessibility());
-  ASSERT_EQ(RendererAccessibilityTypeComplete,
-            frame()->renderer_accessibility()->GetType());
 
   frame()->OnSetAccessibilityMode(AccessibilityModeOff);
   ASSERT_EQ(AccessibilityModeOff, frame()->accessibility_mode());
@@ -2416,14 +2413,6 @@ TEST_F(RenderViewImplTest, OnSetAccessibilityMode) {
   frame()->OnSetAccessibilityMode(AccessibilityModeComplete);
   ASSERT_EQ(AccessibilityModeComplete, frame()->accessibility_mode());
   ASSERT_NE((RendererAccessibility*) NULL, frame()->renderer_accessibility());
-  ASSERT_EQ(RendererAccessibilityTypeComplete,
-            frame()->renderer_accessibility()->GetType());
-
-  frame()->OnSetAccessibilityMode(AccessibilityModeEditableTextOnly);
-  ASSERT_EQ(AccessibilityModeEditableTextOnly, frame()->accessibility_mode());
-  ASSERT_NE((RendererAccessibility*) NULL, frame()->renderer_accessibility());
-  ASSERT_EQ(RendererAccessibilityTypeFocusOnly,
-            frame()->renderer_accessibility()->GetType());
 }
 
 TEST_F(RenderViewImplTest, ScreenMetricsEmulation) {

@@ -77,9 +77,9 @@ class RejectInstallTestHelper : public EmbeddedWorkerTestHelper {
   explicit RejectInstallTestHelper(int mock_render_process_id)
       : EmbeddedWorkerTestHelper(mock_render_process_id) {}
 
-  virtual void OnInstallEvent(int embedded_worker_id,
-                              int request_id,
-                              int active_version_id) OVERRIDE {
+  void OnInstallEvent(int embedded_worker_id,
+                      int request_id,
+                      int active_version_id) override {
     SimulateSend(
         new ServiceWorkerHostMsg_InstallEventFinished(
             embedded_worker_id, request_id,
@@ -92,8 +92,7 @@ class RejectActivateTestHelper : public EmbeddedWorkerTestHelper {
   explicit RejectActivateTestHelper(int mock_render_process_id)
       : EmbeddedWorkerTestHelper(mock_render_process_id) {}
 
-  virtual void OnActivateEvent(int embedded_worker_id,
-                               int request_id) OVERRIDE {
+  void OnActivateEvent(int embedded_worker_id, int request_id) override {
     SimulateSend(
         new ServiceWorkerHostMsg_ActivateEventFinished(
             embedded_worker_id, request_id,
@@ -109,13 +108,11 @@ class ServiceWorkerContextTest : public testing::Test {
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
         render_process_id_(99) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     helper_.reset(new EmbeddedWorkerTestHelper(render_process_id_));
   }
 
-  virtual void TearDown() OVERRIDE {
-    helper_.reset();
-  }
+  void TearDown() override { helper_.reset(); }
 
   ServiceWorkerContextCore* context() { return helper_->context(); }
 
@@ -273,6 +270,89 @@ TEST_F(ServiceWorkerContextTest, Unregister) {
   base::RunLoop().RunUntilIdle();
 }
 
+// Make sure registrations are cleaned up when they are unregistered in bulk.
+TEST_F(ServiceWorkerContextTest, UnregisterMultiple) {
+  GURL origin1_p1("http://www.example.com/test");
+  GURL origin1_p2("http://www.example.com/hello");
+  GURL origin2_p1("http://www.example.com:8080/again");
+  GURL origin3_p1("http://www.other.com/");
+
+  bool called = false;
+  int64 registration_id1 = kInvalidServiceWorkerRegistrationId;
+  int64 registration_id2 = kInvalidServiceWorkerRegistrationId;
+  int64 registration_id3 = kInvalidServiceWorkerRegistrationId;
+  int64 registration_id4 = kInvalidServiceWorkerRegistrationId;
+  context()->RegisterServiceWorker(
+      origin1_p1,
+      GURL("http://www.example.com/service_worker.js"),
+      NULL,
+      MakeRegisteredCallback(&called, &registration_id1));
+  context()->RegisterServiceWorker(
+      origin1_p2,
+      GURL("http://www.example.com/service_worker2.js"),
+      NULL,
+      MakeRegisteredCallback(&called, &registration_id2));
+  context()->RegisterServiceWorker(
+      origin2_p1,
+      GURL("http://www.example.com:8080/service_worker3.js"),
+      NULL,
+      MakeRegisteredCallback(&called, &registration_id3));
+  context()->RegisterServiceWorker(
+      origin3_p1,
+      GURL("http://www.other.com/service_worker4.js"),
+      NULL,
+      MakeRegisteredCallback(&called, &registration_id4));
+
+  ASSERT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_TRUE(called);
+
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id1);
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id2);
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id3);
+  EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id4);
+
+  called = false;
+  context()->UnregisterServiceWorkers(origin1_p1.GetOrigin(),
+                                      MakeUnregisteredCallback(&called));
+
+  ASSERT_FALSE(called);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_TRUE(called);
+
+  context()->storage()->FindRegistrationForId(
+      registration_id1,
+      origin1_p1.GetOrigin(),
+      base::Bind(&ExpectRegisteredWorkers,
+                 SERVICE_WORKER_ERROR_NOT_FOUND,
+                 false /* expect_waiting */,
+                 false /* expect_active */));
+  context()->storage()->FindRegistrationForId(
+      registration_id2,
+      origin1_p2.GetOrigin(),
+      base::Bind(&ExpectRegisteredWorkers,
+                 SERVICE_WORKER_ERROR_NOT_FOUND,
+                 false /* expect_waiting */,
+                 false /* expect_active */));
+  context()->storage()->FindRegistrationForId(
+      registration_id3,
+      origin2_p1.GetOrigin(),
+      base::Bind(&ExpectRegisteredWorkers,
+                 SERVICE_WORKER_OK,
+                 false /* expect_waiting */,
+                 true /* expect_active */));
+
+  context()->storage()->FindRegistrationForId(
+      registration_id4,
+      origin3_p1.GetOrigin(),
+      base::Bind(&ExpectRegisteredWorkers,
+                 SERVICE_WORKER_OK,
+                 false /* expect_waiting */,
+                 true /* expect_active */));
+
+  base::RunLoop().RunUntilIdle();
+}
+
 // Make sure registering a new script shares an existing registration.
 TEST_F(ServiceWorkerContextTest, RegisterNewScript) {
   GURL pattern("http://www.example.com/");
@@ -362,6 +442,10 @@ TEST_F(ServiceWorkerContextTest, DeleteAndStartOver) {
                  true /* expect_active */));
   base::RunLoop().RunUntilIdle();
 
+  // Next handle ids should be 0 (the next call should return 1).
+  EXPECT_EQ(0, context()->GetNewServiceWorkerHandleId());
+  EXPECT_EQ(0, context()->GetNewRegistrationHandleId());
+
   context()->ScheduleDeleteAndStartOver();
 
   // The storage is disabled while the recovery process is running, so the
@@ -405,6 +489,10 @@ TEST_F(ServiceWorkerContextTest, DeleteAndStartOver) {
                  false /* expect_waiting */,
                  true /* expect_active */));
   base::RunLoop().RunUntilIdle();
+
+  // The new context should take over next handle ids.
+  EXPECT_EQ(1, context()->GetNewServiceWorkerHandleId());
+  EXPECT_EQ(1, context()->GetNewRegistrationHandleId());
 }
 
 }  // namespace content

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * @fileoverview MediaControls class implements media playback controls
  * that exist outside of the audio/video HTML element.
@@ -361,6 +359,10 @@ MediaControls.prototype.attachMedia = function(mediaElement) {
   this.media_.addEventListener('timeupdate', this.onMediaProgressBound_);
   this.media_.addEventListener('error', this.onMediaError_);
 
+  // If the text banner is being displayed, hide it immediately, since it is
+  // related to the previous media.
+  this.textBanner_.removeAttribute('visible');
+
   // Reflect the media state in the UI.
   this.onMediaDuration_();
   this.onMediaPlay_(this.isPlaying());
@@ -487,15 +489,15 @@ MediaControls.prototype.onPlayStateChanged = function() {};
  * @private
  */
 MediaControls.prototype.updatePlayButtonState_ = function(playing) {
-  if (playing) {
-    this.playButton_.setAttribute('state',
-                                  MediaControls.ButtonStateType.PLAYING);
-  } else if (!this.media_.ended) {
-    this.playButton_.setAttribute('state',
-                                  MediaControls.ButtonStateType.DEFAULT);
-  } else {
+  if (this.media_.ended && this.progressSlider_.isAtEnd()) {
     this.playButton_.setAttribute('state',
                                   MediaControls.ButtonStateType.ENDED);
+  } else if (playing) {
+    this.playButton_.setAttribute('state',
+                                  MediaControls.ButtonStateType.PLAYING);
+  } else {
+    this.playButton_.setAttribute('state',
+                                  MediaControls.ButtonStateType.DEFAULT);
   }
 };
 
@@ -703,6 +705,14 @@ MediaControls.Slider.prototype.isDragging = function() {
 MediaControls.Slider.prototype.onInputDrag_ = function(on) {
   this.isDragging_ = on;
   this.onDrag_(on);
+};
+
+/**
+ * Check if the slider position is at the end of the control.
+ * @return {boolean} True if the slider position is at the end.
+ */
+MediaControls.Slider.prototype.isAtEnd = function() {
+  return this.input_.value === this.input_.max;
 };
 
 /**
@@ -1095,7 +1105,7 @@ VideoControls.prototype.toggleLoopedModeWithFeedback = function(on) {
   this.toggleLoopedMode(on);
   if (on) {
     // TODO(mtomasz): Simplify, crbug.com/254318.
-    this.showTextBanner_('GALLERY_VIDEO_LOOPED_MODE');
+    this.showTextBanner_('VIDEO_PLAYER_LOOPED_MODE');
   }
 };
 

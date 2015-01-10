@@ -64,6 +64,9 @@ IPC_ENUM_TRAITS_MIN_MAX_VALUE(media::VideoCodecProfile,
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(gpu::CollectInfoResult,
                               gpu::kCollectInfoNone,
                               gpu::kCollectInfoFatalFailure)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(gpu::VideoCodecProfile,
+                              gpu::VIDEO_CODEC_PROFILE_MIN,
+                              gpu::VIDEO_CODEC_PROFILE_MAX)
 
 IPC_STRUCT_BEGIN(GPUCreateCommandBufferConfig)
   IPC_STRUCT_MEMBER(int32, share_group_id)
@@ -81,9 +84,17 @@ IPC_STRUCT_BEGIN(GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params)
   IPC_STRUCT_MEMBER(std::vector<ui::LatencyInfo>, latency_info)
 IPC_STRUCT_END()
 
+#if defined(OS_MACOSX)
 IPC_STRUCT_BEGIN(AcceleratedSurfaceMsg_BufferPresented_Params)
+  // If the browser needs framerate throttling based on GPU back-pressure to be
+  // disabled (e.g, because the NSView isn't visible but tab capture is active),
+  // then this is set to true.
+  IPC_STRUCT_MEMBER(bool, disable_throttling)
+  // If the browser is drawing to the screen, this is the CGL renderer ID of
+  // the GL context that the brower is using.
   IPC_STRUCT_MEMBER(int32, renderer_id)
 IPC_STRUCT_END()
+#endif
 
 IPC_STRUCT_BEGIN(GPUCommandBufferConsoleMessage)
   IPC_STRUCT_MEMBER(int32, id)
@@ -130,7 +141,7 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo::GPUDevice)
   IPC_STRUCT_TRAITS_MEMBER(device_string)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(media::VideoEncodeAccelerator::SupportedProfile)
+IPC_STRUCT_TRAITS_BEGIN(gpu::VideoEncodeAcceleratorSupportedProfile)
   IPC_STRUCT_TRAITS_MEMBER(profile)
   IPC_STRUCT_TRAITS_MEMBER(max_resolution)
   IPC_STRUCT_TRAITS_MEMBER(max_framerate_numerator)
@@ -188,6 +199,8 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::Capabilities)
   IPC_STRUCT_TRAITS_MEMBER(discard_framebuffer)
   IPC_STRUCT_TRAITS_MEMBER(sync_query)
   IPC_STRUCT_TRAITS_MEMBER(image)
+  IPC_STRUCT_TRAITS_MEMBER(blend_equation_advanced)
+  IPC_STRUCT_TRAITS_MEMBER(blend_equation_advanced_coherent)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::GPUVideoMemoryUsageStats::ProcessStats)
@@ -257,8 +270,8 @@ IPC_MESSAGE_CONTROL5(GpuMsg_CreateViewCommandBuffer,
 IPC_MESSAGE_CONTROL4(GpuMsg_CreateGpuMemoryBuffer,
                      gfx::GpuMemoryBufferHandle, /* handle */
                      gfx::Size, /* size */
-                     unsigned, /* internalformat */
-                     unsigned /* usage */)
+                     gfx::GpuMemoryBuffer::Format, /* format */
+                     gfx::GpuMemoryBuffer::Usage /* usage */)
 
 // Tells the GPU process to destroy buffer.
 IPC_MESSAGE_CONTROL2(GpuMsg_DestroyGpuMemoryBuffer,
@@ -272,12 +285,12 @@ IPC_MESSAGE_CONTROL0(GpuMsg_CollectGraphicsInfo)
 // Tells the GPU process to report video_memory information for the task manager
 IPC_MESSAGE_CONTROL0(GpuMsg_GetVideoMemoryUsageStats)
 
+#if defined(OS_MACOSX)
 // Tells the GPU process that the browser process has handled the swap
-// buffers or post sub-buffer request. A non-zero sync point means
-// that we should wait for the sync point. The surface_handle identifies
-// that buffer that has finished presented, i.e. the buffer being returned.
+// buffers or post sub-buffer request.
 IPC_MESSAGE_ROUTED1(AcceleratedSurfaceMsg_BufferPresented,
                     AcceleratedSurfaceMsg_BufferPresented_Params)
+#endif
 
 // Tells the GPU process to wake up the GPU because we're about to draw.
 IPC_MESSAGE_ROUTED0(AcceleratedSurfaceMsg_WakeUpGpu)
@@ -293,6 +306,9 @@ IPC_MESSAGE_CONTROL0(GpuMsg_Hang)
 
 // Tells the GPU process to disable the watchdog thread.
 IPC_MESSAGE_CONTROL0(GpuMsg_DisableWatchdog)
+
+// Tells the GPU process that the browser has seen a GPU switch.
+IPC_MESSAGE_CONTROL0(GpuMsg_GpuSwitched)
 
 //------------------------------------------------------------------------------
 // GPU Host Messages
@@ -369,11 +385,6 @@ IPC_MESSAGE_CONTROL3(GpuHostMsg_OnLogMessage,
 IPC_MESSAGE_CONTROL2(GpuHostMsg_AcceleratedSurfaceInitialized,
                      int32 /* surface_id */,
                      int32 /* route_id */)
-
-// Tells the browser that a frame with the specific latency info was drawn to
-// the screen
-IPC_MESSAGE_CONTROL1(GpuHostMsg_FrameDrawn,
-                     std::vector<ui::LatencyInfo> /* latency_info */)
 
 // Same as above with a rect of the part of the surface that changed.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_AcceleratedSurfaceBuffersSwapped,
@@ -540,13 +551,9 @@ IPC_SYNC_MESSAGE_ROUTED5_1(GpuCommandBufferMsg_CreateVideoEncoder,
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_Destroyed,
                     gpu::error::ContextLostReason /* reason */)
 
-// Request that the GPU process reply with the given message. Reply may be
-// delayed.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_Echo,
-                    IPC::Message /* reply */)
-
-// Response to a GpuChannelMsg_Echo message.
-IPC_MESSAGE_ROUTED0(GpuCommandBufferMsg_EchoAck)
+// Tells the browser that SwapBuffers returned and passes latency info
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SwapBuffersCompleted,
+                    std::vector<ui::LatencyInfo> /* latency_info */)
 
 // Send to stub on surface visibility change.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetSurfaceVisible, bool /* visible */)
@@ -591,17 +598,17 @@ IPC_MESSAGE_ROUTED2(GpuCommandBufferMsg_SignalQuery,
                     uint32 /* query */,
                     uint32 /* signal_id */)
 
-// Register an existing gpu memory buffer. The id that can be
-// used to identify the gpu memory buffer from a command buffer.
-IPC_MESSAGE_ROUTED5(GpuCommandBufferMsg_RegisterGpuMemoryBuffer,
+// Create an image from an existing gpu memory buffer. The id that can be
+// used to identify the image from a command buffer.
+IPC_MESSAGE_ROUTED5(GpuCommandBufferMsg_CreateImage,
                     int32 /* id */,
                     gfx::GpuMemoryBufferHandle /* gpu_memory_buffer */,
-                    uint32 /* width */,
-                    uint32 /* height */,
+                    gfx::Size /* size */,
+                    gfx::GpuMemoryBuffer::Format /* format */,
                     uint32 /* internalformat */)
 
-// Unregister a previously registered gpu memory buffer.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_UnregisterGpuMemoryBuffer,
+// Destroy a previously created image.
+IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_DestroyImage,
                     int32 /* id */)
 
 // Attaches an external image stream to the client texture.

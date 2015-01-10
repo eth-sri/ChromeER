@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/login/supervised/supervised_user_login_flow.h"
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_registry_simple.h"
@@ -18,6 +19,7 @@
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/common/chrome_switches.h"
 #include "chromeos/login/auth/key.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -35,6 +37,14 @@ SupervisedUserLoginFlow::SupervisedUserLoginFlow(
 
 SupervisedUserLoginFlow::~SupervisedUserLoginFlow() {}
 
+void SupervisedUserLoginFlow::AppendAdditionalCommandLineSwitches() {
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
+  if (user_manager->IsCurrentUserNew()) {
+    // Supervised users should launch into empty desktop on first run.
+    CommandLine::ForCurrentProcess()->AppendSwitch(::switches::kSilentLaunch);
+  }
+}
+
 bool SupervisedUserLoginFlow::CanLockScreen() {
   return true;
 }
@@ -47,16 +57,16 @@ bool SupervisedUserLoginFlow::ShouldSkipPostLoginScreens() {
   return true;
 }
 
+bool SupervisedUserLoginFlow::SupportsEarlyRestartToApplyFlags() {
+  return false;
+}
+
 bool SupervisedUserLoginFlow::HandleLoginFailure(const AuthFailure& failure) {
   return false;
 }
 
 bool SupervisedUserLoginFlow::HandlePasswordChangeDetected() {
   return false;
-}
-
-void SupervisedUserLoginFlow::HandleOAuthTokenStatusChange(
-    user_manager::User::OAuthTokenStatus status) {
 }
 
 void SupervisedUserLoginFlow::OnSyncSetupDataLoaded(
@@ -135,7 +145,7 @@ void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
                                 kCryptohomeSupervisedUserKeyLabel,
                                 kCryptohomeSupervisedUserKeyPrivileges);
 
-  authenticator_ = new ExtendedAuthenticator(this);
+  authenticator_ = ExtendedAuthenticator::Create(this);
   SupervisedUserAuthentication::Schema current_schema =
       auth->GetPasswordSchema(user_id());
 

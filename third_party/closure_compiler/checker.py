@@ -32,7 +32,6 @@ class Checker(object):
     "--jscomp_error=externsValidation",
     "--jscomp_error=globalThis",
     "--jscomp_error=invalidCasts",
-    "--jscomp_error=misplacedTypeAnnotation",
     "--jscomp_error=missingProperties",
     "--jscomp_error=missingReturn",
     "--jscomp_error=nonStandardJsDocs",
@@ -44,6 +43,9 @@ class Checker(object):
     "--jscomp_error=visibility",
     # TODO(dbeam): happens when the same file is <include>d multiple times.
     "--jscomp_off=duplicate",
+    # TODO(fukino): happens when cr.defineProperty() has a type annotation.
+    # Avoiding parse-time warnings needs 2 pass compiling. crbug.com/421562.
+    "--jscomp_off=misplacedTypeAnnotation",
     "--language_in=ECMASCRIPT5_STRICT",
     "--summary_detail_level=3",
   ]
@@ -129,10 +131,10 @@ class Checker(object):
 
   def _fix_up_error(self, error):
     """Filter out irrelevant errors or fix line numbers.
-    
+
     Args:
         error: A Closure compiler error (2 line string with error and source).
-    
+
     Return:
         The fixed up erorr string (blank if it should be ignored).
     """
@@ -211,14 +213,14 @@ class Checker(object):
     self._debug("Summary: %s" % errors.pop())
 
     output = self._format_errors(map(self._fix_up_error, errors))
-    if runner_cmd.returncode:
+    if errors:
       self._error("Error in: %s%s" % (source_file, "\n" + output if output else ""))
     elif output:
       self._debug("Output: %s" % output)
 
     self._clean_up()
 
-    return runner_cmd.returncode, output
+    return bool(errors), output
 
 
 if __name__ == "__main__":

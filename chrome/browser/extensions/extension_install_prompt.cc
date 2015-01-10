@@ -14,20 +14,19 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/bundle_installer.h"
-#include "chrome/browser/extensions/extension_install_ui.h"
+#include "chrome/browser/extensions/extension_install_prompt_show_params.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/extension_install_ui_factory.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/image_loader.h"
+#include "extensions/browser/install/extension_install_ui.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
@@ -43,6 +42,7 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_types.h"
 #include "ui/gfx/image/image.h"
 
 using extensions::BundleInstaller;
@@ -174,13 +174,6 @@ Profile* ProfileForWebContents(content::WebContents* web_contents) {
   if (!web_contents)
     return NULL;
   return Profile::FromBrowserContext(web_contents->GetBrowserContext());
-}
-
-gfx::NativeWindow NativeWindowForWebContents(content::WebContents* contents) {
-  if (!contents)
-    return NULL;
-
-  return contents->GetTopLevelNativeWindow();
 }
 
 }  // namespace
@@ -613,20 +606,6 @@ bool ExtensionInstallPrompt::Prompt::ShouldDisplayRevokeFilesButton() const {
   return !retained_files_.empty();
 }
 
-ExtensionInstallPrompt::ShowParams::ShowParams(content::WebContents* contents)
-    : parent_web_contents(contents),
-      parent_window(NativeWindowForWebContents(contents)),
-      navigator(contents) {
-}
-
-ExtensionInstallPrompt::ShowParams::ShowParams(
-    gfx::NativeWindow window,
-    content::PageNavigator* navigator)
-    : parent_web_contents(NULL),
-      parent_window(window),
-      navigator(navigator) {
-}
-
 // static
 scoped_refptr<Extension>
     ExtensionInstallPrompt::GetLocalizedExtensionForDisplay(
@@ -659,23 +638,25 @@ scoped_refptr<Extension>
 }
 
 ExtensionInstallPrompt::ExtensionInstallPrompt(content::WebContents* contents)
-    : ui_loop_(base::MessageLoop::current()),
+    : profile_(ProfileForWebContents(contents)),
+      ui_loop_(base::MessageLoop::current()),
       extension_(NULL),
       bundle_(NULL),
-      install_ui_(ExtensionInstallUI::Create(ProfileForWebContents(contents))),
-      show_params_(contents),
+      install_ui_(extensions::CreateExtensionInstallUI(
+          ProfileForWebContents(contents))),
+      show_params_(new ExtensionInstallPromptShowParams(contents)),
       delegate_(NULL) {
 }
 
-ExtensionInstallPrompt::ExtensionInstallPrompt(
-    Profile* profile,
-    gfx::NativeWindow native_window,
-    content::PageNavigator* navigator)
-    : ui_loop_(base::MessageLoop::current()),
+ExtensionInstallPrompt::ExtensionInstallPrompt(Profile* profile,
+                                               gfx::NativeWindow native_window)
+    : profile_(profile),
+      ui_loop_(base::MessageLoop::current()),
       extension_(NULL),
       bundle_(NULL),
-      install_ui_(ExtensionInstallUI::Create(profile)),
-      show_params_(native_window, navigator),
+      install_ui_(extensions::CreateExtensionInstallUI(profile)),
+      show_params_(
+          new ExtensionInstallPromptShowParams(profile, native_window)),
       delegate_(NULL) {
 }
 
@@ -754,11 +735,11 @@ void ExtensionInstallPrompt::ConfirmReEnable(Delegate* delegate,
   extension_ = extension;
   delegate_ = delegate;
   bool is_remote_install =
-      install_ui_->profile() &&
-      extensions::ExtensionPrefs::Get(install_ui_->profile())->HasDisableReason(
+      profile_ &&
+      extensions::ExtensionPrefs::Get(profile_)->HasDisableReason(
           extension->id(), extensions::Extension::DISABLE_REMOTE_INSTALL);
   bool is_ephemeral =
-      extensions::util::IsEphemeralApp(extension->id(), install_ui_->profile());
+      extensions::util::IsEphemeralApp(extension->id(), profile_);
 
   PromptType type = UNSET_PROMPT_TYPE;
   if (is_ephemeral)
@@ -847,8 +828,8 @@ void ExtensionInstallPrompt::OnImageLoaded(const gfx::Image& image) {
 
 void ExtensionInstallPrompt::LoadImageIfNeeded() {
   // Bundle install prompts do not have an icon.
-  // Also |install_ui_.profile()| can be NULL in unit tests.
-  if (!icon_.empty() || !install_ui_->profile()) {
+  // Also |profile_| can be NULL in unit tests.
+  if (!icon_.empty() || !profile_) {
     ShowConfirmation();
     return;
   }
@@ -859,8 +840,7 @@ void ExtensionInstallPrompt::LoadImageIfNeeded() {
       ExtensionIconSet::MATCH_BIGGER);
 
   // Load the image asynchronously. The response will be sent to OnImageLoaded.
-  extensions::ImageLoader* loader =
-      extensions::ImageLoader::Get(install_ui_->profile());
+  extensions::ImageLoader* loader = extensions::ImageLoader::Get(profile_);
 
   std::vector<extensions::ImageLoader::ImageRepresentation> images_list;
   images_list.push_back(extensions::ImageLoader::ImageRepresentation(
@@ -887,8 +867,7 @@ void ExtensionInstallPrompt::ShowConfirmation() {
     // Initialize permissions if they have not already been set so that
     // withheld permissions are displayed properly in the install prompt.
     extensions::PermissionsUpdater(
-        install_ui_->profile(),
-        extensions::PermissionsUpdater::INIT_FLAG_TRANSIENT)
+        profile_, extensions::PermissionsUpdater::INIT_FLAG_TRANSIENT)
         .InitializePermissions(extension_);
     permissions_to_display =
         extension_->permissions_data()->active_permissions();
@@ -947,8 +926,13 @@ void ExtensionInstallPrompt::ShowConfirmation() {
   if (AutoConfirmPrompt(delegate_))
     return;
 
+  if (show_params_->WasParentDestroyed()) {
+    delegate_->InstallUIAbort(false);
+    return;
+  }
+
   if (show_dialog_callback_.is_null())
-    GetDefaultShowDialogCallback().Run(show_params_, delegate_, prompt_);
+    GetDefaultShowDialogCallback().Run(show_params_.get(), delegate_, prompt_);
   else
-    show_dialog_callback_.Run(show_params_, delegate_, prompt_);
+    show_dialog_callback_.Run(show_params_.get(), delegate_, prompt_);
 }

@@ -1181,6 +1181,20 @@ _NAMED_TYPE_INFO = {
       'GL_RGBA8_OES',
     ],
   },
+  'ImageInternalFormat': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_RGB',
+      'GL_RGBA',
+    ],
+  },
+  'ImageUsage': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_MAP_CHROMIUM',
+      'GL_SCANOUT_CHROMIUM'
+    ],
+  },
   'VertexAttribType': {
     'type': 'GLenum',
     'valid': [
@@ -1471,7 +1485,8 @@ _FUNCTION_INFO = {
   'CreateImageCHROMIUM': {
     'type': 'Manual',
     'cmd_args':
-        'GLsizei width, GLsizei height, GLenum internalformat, GLenum usage',
+        'ClientBuffer buffer, GLsizei width, GLsizei height, '
+        'GLenum internalformat',
     'result': ['GLuint'],
     'client_test': False,
     'gen_cmd': False,
@@ -1486,8 +1501,11 @@ _FUNCTION_INFO = {
     'extension': True,
     'chromium': True,
   },
-  'GetImageParameterivCHROMIUM': {
+  'CreateGpuMemoryBufferImageCHROMIUM': {
     'type': 'Manual',
+    'cmd_args':
+        'GLsizei width, GLsizei height, GLenum internalformat, GLenum usage',
+    'result': ['GLuint'],
     'client_test': False,
     'gen_cmd': False,
     'expectation': False,
@@ -1527,6 +1545,12 @@ _FUNCTION_INFO = {
   'BlendFuncSeparate': {
     'type': 'StateSet',
     'state': 'BlendFunc',
+  },
+  'BlendBarrierKHR': {
+    'gl_test_func': 'glBlendBarrierKHR',
+    'extension': True,
+    'extension_flag': 'blend_equation_advanced',
+    'client_test': False,
   },
   'SampleCoverage': {'decoder_func': 'DoSampleCoverage'},
   'StencilFunc': {
@@ -1589,15 +1613,6 @@ _FUNCTION_INFO = {
     'resource_types': 'Renderbuffers',
   },
   'DeleteShader': {'type': 'Delete', 'decoder_func': 'DoDeleteShader'},
-  'DeleteSharedIdsCHROMIUM': {
-    'type': 'Custom',
-    'decoder_func': 'DoDeleteSharedIdsCHROMIUM',
-    'impl_func': False,
-    'expectation': False,
-    'data_transfer_methods': ['shm'],
-    'extension': True,
-    'chromium': True,
-  },
   'DeleteTextures': {
     'type': 'DELn',
     'resource_type': 'Texture',
@@ -1705,15 +1720,6 @@ _FUNCTION_INFO = {
     'gl_test_func': 'glGenTextures',
     'resource_type': 'Texture',
     'resource_types': 'Textures',
-  },
-  'GenSharedIdsCHROMIUM': {
-    'type': 'Custom',
-    'decoder_func': 'DoGenSharedIdsCHROMIUM',
-    'impl_func': False,
-    'expectation': False,
-    'data_transfer_methods': ['shm'],
-    'extension': True,
-    'chromium': True,
   },
   'GetActiveAttrib': {
     'type': 'Custom',
@@ -1985,12 +1991,6 @@ _FUNCTION_INFO = {
     'client_test': False,
     'pepper_interface': 'ChromiumMapSub',
   },
-  'MapImageCHROMIUM': {
-    'gen_cmd': False,
-    'extension': True,
-    'chromium': True,
-    'client_test': False,
-  },
   'MapTexSubImage2DCHROMIUM': {
     'gen_cmd': False,
     'extension': True,
@@ -2071,15 +2071,6 @@ _FUNCTION_INFO = {
         'GLboolean async',
     'result': ['uint32_t'],
     'defer_reads': True,
-  },
-  'RegisterSharedIdsCHROMIUM': {
-    'type': 'Custom',
-    'decoder_func': 'DoRegisterSharedIdsCHROMIUM',
-    'impl_func': False,
-    'expectation': False,
-    'data_transfer_methods': ['shm'],
-    'extension': True,
-    'chromium': True,
   },
   'ReleaseShaderCompiler': {
     'decoder_func': 'DoReleaseShaderCompiler',
@@ -2238,12 +2229,6 @@ _FUNCTION_INFO = {
     'chromium': True,
     'client_test': False,
     'pepper_interface': 'ChromiumMapSub',
-  },
-  'UnmapImageCHROMIUM': {
-    'gen_cmd': False,
-    'extension': True,
-    'chromium': True,
-    'client_test': False,
   },
   'UnmapTexSubImage2DCHROMIUM': {
     'gen_cmd': False,
@@ -3160,7 +3145,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
     """Writes the GLES2 Implemention declaration."""
     impl_decl = func.GetInfo('impl_decl')
     if impl_decl == None or impl_decl == True:
-      file.Write("virtual %s %s(%s) OVERRIDE;\n" %
+      file.Write("%s %s(%s) override;\n" %
                  (func.return_type, func.original_name,
                   func.MakeTypedOriginalArgString("")))
       file.Write("\n")
@@ -3201,7 +3186,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
 
   def WriteGLES2TraceImplementationHeader(self, func, file):
     """Writes the GLES2 Trace Implemention header."""
-    file.Write("virtual %s %s(%s) OVERRIDE;\n" %
+    file.Write("%s %s(%s) override;\n" %
                (func.return_type, func.original_name,
                 func.MakeTypedOriginalArgString("")))
 
@@ -3252,7 +3237,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
 
   def WriteGLES2InterfaceStub(self, func, file):
     """Writes the GLES2 Interface stub declaration."""
-    file.Write("virtual %s %s(%s) OVERRIDE;\n" %
+    file.Write("%s %s(%s) override;\n" %
                (func.return_type, func.original_name,
                 func.MakeTypedOriginalArgString("")))
 
@@ -3849,7 +3834,7 @@ class ManualHandler(CustomHandler):
 
   def WriteGLES2ImplementationHeader(self, func, file):
     """Overrriden from TypeHandler."""
-    file.Write("virtual %s %s(%s) OVERRIDE;\n" %
+    file.Write("%s %s(%s) override;\n" %
                (func.return_type, func.original_name,
                 func.MakeTypedOriginalArgString("")))
     file.Write("\n")
@@ -4170,7 +4155,8 @@ class GENnHandler(TypeHandler):
     not_shared = func.GetInfo('not_shared')
     if not_shared:
       alloc_code = (
-"""  IdAllocatorInterface* id_allocator = GetIdAllocator(id_namespaces::k%s);
+
+"""  IdAllocator* id_allocator = GetIdAllocator(id_namespaces::k%s);
   for (GLsizei ii = 0; ii < n; ++ii)
     %s[ii] = id_allocator->AllocateID();""" %
   (func.GetInfo('resource_types'), func.GetOriginalArgs()[1].name))
@@ -5868,8 +5854,10 @@ TEST_P(%(test_name)s, %(name)sInvalidArgsBadSharedMemoryId) {
           "  helper_->%s(%s%sGetResultShmId(), GetResultShmOffset());\n" %
                  (func.name, arg_string, comma))
       file.Write("  WaitForCmd();\n")
-      file.Write("  %s result_value = *result;\n" % func.return_type)
-      file.Write('  GPU_CLIENT_LOG("returned " << result_value);\n')
+      file.Write("  %s result_value = *result" % func.return_type)
+      if func.return_type == "GLboolean":
+        file.Write(" != 0")
+      file.Write(';\n  GPU_CLIENT_LOG("returned " << result_value);\n')
       file.Write("  CheckGLError();\n")
       file.Write("  return result_value;\n")
       file.Write("}\n")

@@ -21,7 +21,7 @@
     // TODO(kcarattini): Remove the first flow, since we will not be
     // managing the Audio History Setting in Chrome anymore.
     [AUDIO_HISTORY_START],
-    [HOTWORD_ONLY_START, SPEECH_TRAINING, FINISHED],
+    [HOTWORD_ONLY_START, FINISHED],
     [HOTWORD_AUDIO_HISTORY, SPEECH_TRAINING, FINISHED],
     [SPEECH_TRAINING, FINISHED]
   ];
@@ -73,6 +73,8 @@
    */
   Flow.prototype.showStep_ = function() {
     var currentStep = this.currentFlow_[this.currentStepIndex_];
+    document.getElementById(currentStep).hidden = false;
+
     var previousStep = null;
     if (this.currentStepIndex_ > 0)
       previousStep = this.currentFlow_[this.currentStepIndex_ - 1];
@@ -80,7 +82,7 @@
     if (previousStep)
       document.getElementById(previousStep).hidden = true;
 
-    document.getElementById(currentStep).hidden = false;
+    chrome.app.window.current().show();
   };
 
   window.Flow = Flow;

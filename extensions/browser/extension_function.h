@@ -218,7 +218,14 @@ class ExtensionFunction
     extension_ = extension;
   }
   const extensions::Extension* extension() const { return extension_.get(); }
-  const std::string& extension_id() const { return extension_->id(); }
+  const std::string& extension_id() const {
+    DCHECK(extension())
+        << "extension_id() called without an Extension. If " << name()
+        << " is allowed to be called without any Extension then you should "
+        << "check extension() first. If not, there is a bug in the Extension "
+        << "platform, so page somebody in extensions/OWNERS";
+    return extension_->id();
+  }
 
   void set_request_id(int request_id) { request_id_ = request_id; }
   int request_id() { return request_id_; }
@@ -406,7 +413,7 @@ class UIThreadExtensionFunction : public ExtensionFunction {
 
   UIThreadExtensionFunction();
 
-  virtual UIThreadExtensionFunction* AsUIThreadExtensionFunction() OVERRIDE;
+  UIThreadExtensionFunction* AsUIThreadExtensionFunction() override;
 
   void set_test_delegate(DelegateForTests* delegate) {
     delegate_ = delegate;
@@ -453,9 +460,9 @@ class UIThreadExtensionFunction : public ExtensionFunction {
       content::BrowserThread::UI>;
   friend class base::DeleteHelper<UIThreadExtensionFunction>;
 
-  virtual ~UIThreadExtensionFunction();
+  ~UIThreadExtensionFunction() override;
 
-  virtual void SendResponse(bool success) OVERRIDE;
+  void SendResponse(bool success) override;
 
   // Sets the Blob UUIDs whose ownership is being transferred to the renderer.
   void SetTransferredBlobUUIDs(const std::vector<std::string>& blob_uuids);
@@ -477,7 +484,7 @@ class UIThreadExtensionFunction : public ExtensionFunction {
  private:
   class RenderHostTracker;
 
-  virtual void Destruct() const OVERRIDE;
+  void Destruct() const override;
 
   // TODO(tommycli): Remove once RenderViewHost is gone.
   IPC::Sender* GetIPCSender();
@@ -501,7 +508,7 @@ class IOThreadExtensionFunction : public ExtensionFunction {
  public:
   IOThreadExtensionFunction();
 
-  virtual IOThreadExtensionFunction* AsIOThreadExtensionFunction() OVERRIDE;
+  IOThreadExtensionFunction* AsIOThreadExtensionFunction() override;
 
   void set_ipc_sender(
       base::WeakPtr<extensions::ExtensionMessageFilter> ipc_sender,
@@ -528,11 +535,11 @@ class IOThreadExtensionFunction : public ExtensionFunction {
       content::BrowserThread::IO>;
   friend class base::DeleteHelper<IOThreadExtensionFunction>;
 
-  virtual ~IOThreadExtensionFunction();
+  ~IOThreadExtensionFunction() override;
 
-  virtual void Destruct() const OVERRIDE;
+  void Destruct() const override;
 
-  virtual void SendResponse(bool success) OVERRIDE;
+  void SendResponse(bool success) override;
 
  private:
   base::WeakPtr<extensions::ExtensionMessageFilter> ipc_sender_;
@@ -548,7 +555,7 @@ class AsyncExtensionFunction : public UIThreadExtensionFunction {
   AsyncExtensionFunction();
 
  protected:
-  virtual ~AsyncExtensionFunction();
+  ~AsyncExtensionFunction() override;
 
   // Deprecated: Override UIThreadExtensionFunction and implement Run() instead.
   //
@@ -561,7 +568,7 @@ class AsyncExtensionFunction : public UIThreadExtensionFunction {
   static bool ValidationFailure(AsyncExtensionFunction* function);
 
  private:
-  virtual ResponseAction Run() OVERRIDE;
+  ResponseAction Run() override;
 };
 
 // A SyncExtensionFunction is an ExtensionFunction that runs synchronously
@@ -576,7 +583,7 @@ class SyncExtensionFunction : public UIThreadExtensionFunction {
   SyncExtensionFunction();
 
  protected:
-  virtual ~SyncExtensionFunction();
+  ~SyncExtensionFunction() override;
 
   // Deprecated: Override UIThreadExtensionFunction and implement Run() instead.
   //
@@ -588,7 +595,7 @@ class SyncExtensionFunction : public UIThreadExtensionFunction {
   static bool ValidationFailure(SyncExtensionFunction* function);
 
  private:
-  virtual ResponseAction Run() OVERRIDE;
+  ResponseAction Run() override;
 };
 
 class SyncIOThreadExtensionFunction : public IOThreadExtensionFunction {
@@ -596,7 +603,7 @@ class SyncIOThreadExtensionFunction : public IOThreadExtensionFunction {
   SyncIOThreadExtensionFunction();
 
  protected:
-  virtual ~SyncIOThreadExtensionFunction();
+  ~SyncIOThreadExtensionFunction() override;
 
   // Deprecated: Override IOThreadExtensionFunction and implement Run() instead.
   //
@@ -609,7 +616,7 @@ class SyncIOThreadExtensionFunction : public IOThreadExtensionFunction {
   static bool ValidationFailure(SyncIOThreadExtensionFunction* function);
 
  private:
-  virtual ResponseAction Run() OVERRIDE;
+  ResponseAction Run() override;
 };
 
 #endif  // EXTENSIONS_BROWSER_EXTENSION_FUNCTION_H_

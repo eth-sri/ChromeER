@@ -107,14 +107,12 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
 
   // AecDumpMessageFilter::AecDumpDelegate implementation.
   // Called on the main render thread.
-  virtual void OnAecDumpFile(
-      const IPC::PlatformFileForTransit& file_handle) OVERRIDE;
-  virtual void OnDisableAecDump() OVERRIDE;
-  virtual void OnIpcClosing() OVERRIDE;
+  void OnAecDumpFile(const IPC::PlatformFileForTransit& file_handle) override;
+  void OnDisableAecDump() override;
+  void OnIpcClosing() override;
 
  protected:
-  friend class base::RefCountedThreadSafe<MediaStreamAudioProcessor>;
-  virtual ~MediaStreamAudioProcessor();
+  ~MediaStreamAudioProcessor() override;
 
  private:
   friend class MediaStreamAudioProcessorTest;
@@ -122,14 +120,14 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
                            GetAecDumpMessageFilter);
 
   // WebRtcPlayoutDataSource::Sink implementation.
-  virtual void OnPlayoutData(media::AudioBus* audio_bus,
-                             int sample_rate,
-                             int audio_delay_milliseconds) OVERRIDE;
-  virtual void OnPlayoutDataSourceChanged() OVERRIDE;
+  void OnPlayoutData(media::AudioBus* audio_bus,
+                     int sample_rate,
+                     int audio_delay_milliseconds) override;
+  void OnPlayoutDataSourceChanged() override;
 
   // webrtc::AudioProcessorInterface implementation.
   // This method is called on the libjingle thread.
-  virtual void GetStats(AudioProcessorStats* stats) OVERRIDE;
+  void GetStats(AudioProcessorStats* stats) override;
 
   // Helper to initialize the WebRtc AudioProcessing.
   void InitializeAudioProcessingModule(

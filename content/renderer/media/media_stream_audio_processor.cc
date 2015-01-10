@@ -19,6 +19,7 @@
 #include "media/base/audio_fifo.h"
 #include "media/base/channel_layout.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
+#include "third_party/libjingle/overrides/init_webrtc.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
 #include "third_party/webrtc/modules/audio_processing/typing_detection.h"
 
@@ -389,6 +390,7 @@ void MediaStreamAudioProcessor::GetStats(AudioProcessorStats* stats) {
 
 void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
     const blink::WebMediaConstraints& constraints, int effects) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK(!audio_processing_);
 
   MediaAudioConstraints audio_constraints(constraints, effects);
@@ -451,7 +453,7 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
 #endif
 
   // Create and configure the webrtc::AudioProcessing.
-  audio_processing_.reset(webrtc::AudioProcessing::Create(config));
+  audio_processing_.reset(CreateWebRtcAudioProcessing(config));
 
   // Enable the audio processing components.
   if (echo_cancellation) {

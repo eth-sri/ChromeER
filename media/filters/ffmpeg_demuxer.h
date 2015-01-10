@@ -59,7 +59,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Keeps a copy of |demuxer| and initializes itself using information inside
   // |stream|.  Both parameters must outlive |this|.
   FFmpegDemuxerStream(FFmpegDemuxer* demuxer, AVStream* stream);
-  virtual ~FFmpegDemuxerStream();
+  ~FFmpegDemuxerStream() override;
 
   // Enqueues the given AVPacket. It is invalid to queue a |packet| after
   // SetEndOfStream() has been called.
@@ -86,13 +86,13 @@ class FFmpegDemuxerStream : public DemuxerStream {
   }
 
   // DemuxerStream implementation.
-  virtual Type type() OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual VideoRotation video_rotation() OVERRIDE;
+  Type type() override;
+  void Read(const ReadCB& read_cb) override;
+  void EnableBitstreamConverter() override;
+  bool SupportsConfigChanges() override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  VideoRotation video_rotation() override;
 
   // Returns the range of buffered data in this stream.
   Ranges<base::TimeDelta> GetBufferedRanges() const;
@@ -123,6 +123,9 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Converts an FFmpeg stream timestamp into a base::TimeDelta.
   static base::TimeDelta ConvertStreamTimestamp(const AVRational& time_base,
                                                 int64 timestamp);
+
+  // Resets any currently active bitstream converters.
+  void ResetBitstreamConverter();
 
   FFmpegDemuxer* demuxer_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
@@ -158,18 +161,18 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
                 DataSource* data_source,
                 const NeedKeyCB& need_key_cb,
                 const scoped_refptr<MediaLog>& media_log);
-  virtual ~FFmpegDemuxer();
+  ~FFmpegDemuxer() override;
 
   // Demuxer implementation.
-  virtual void Initialize(DemuxerHost* host,
-                          const PipelineStatusCB& status_cb,
-                          bool enable_text_tracks) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
-  virtual base::Time GetTimelineOffset() const OVERRIDE;
-  virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
-  virtual base::TimeDelta GetStartTime() const OVERRIDE;
-  virtual Liveness GetLiveness() const OVERRIDE;
+  void Initialize(DemuxerHost* host,
+                  const PipelineStatusCB& status_cb,
+                  bool enable_text_tracks) override;
+  void Stop() override;
+  void Seek(base::TimeDelta time, const PipelineStatusCB& cb) override;
+  base::Time GetTimelineOffset() const override;
+  DemuxerStream* GetStream(DemuxerStream::Type type) override;
+  base::TimeDelta GetStartTime() const override;
+  Liveness GetLiveness() const override;
 
   // Calls |need_key_cb_| with the initialization data encountered in the file.
   void FireNeedKey(const std::string& init_data_type,

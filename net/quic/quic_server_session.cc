@@ -13,10 +13,9 @@
 
 namespace net {
 
-QuicServerSession::QuicServerSession(
-    const QuicConfig& config,
-    QuicConnection* connection,
-    QuicServerSessionVisitor* visitor)
+QuicServerSession::QuicServerSession(const QuicConfig& config,
+                                     QuicConnection* connection,
+                                     QuicServerSessionVisitor* visitor)
     : QuicSession(connection, config),
       visitor_(visitor),
       bandwidth_estimate_sent_to_client_(QuicBandwidth::Zero()),
@@ -52,7 +51,7 @@ void QuicServerSession::OnConnectionClosed(QuicErrorCode error,
   QuicSession::OnConnectionClosed(error, from_peer);
   // In the unlikely event we get a connection close while doing an asynchronous
   // crypto event, make sure we cancel the callback.
-  if (crypto_stream_.get() != NULL) {
+  if (crypto_stream_.get() != nullptr) {
     crypto_stream_->CancelOutstandingCallbacks();
   }
   visitor_->OnConnectionClosed(connection()->connection_id(), error);
@@ -123,7 +122,7 @@ void QuicServerSession::OnCongestionWindowChange(QuicTime now) {
   cached_network_params.set_max_bandwidth_timestamp_seconds(
       max_bandwidth_timestamp);
   cached_network_params.set_min_rtt_ms(
-      sent_packet_manager.GetRttStats()->min_rtt().ToMilliseconds());
+      sent_packet_manager.GetRttStats()->MinRtt().ToMilliseconds());
   cached_network_params.set_previous_connection_state(
       bandwidth_recorder.EstimateRecordedDuringSlowStart()
           ? CachedNetworkParameters::SLOW_START
@@ -157,7 +156,7 @@ bool QuicServerSession::ShouldCreateIncomingDataStream(QuicStreamId id) {
 QuicDataStream* QuicServerSession::CreateIncomingDataStream(
     QuicStreamId id) {
   if (!ShouldCreateIncomingDataStream(id)) {
-    return NULL;
+    return nullptr;
   }
 
   return new QuicSpdyServerStream(id, this);
@@ -165,7 +164,7 @@ QuicDataStream* QuicServerSession::CreateIncomingDataStream(
 
 QuicDataStream* QuicServerSession::CreateOutgoingDataStream() {
   DLOG(ERROR) << "Server push not yet supported";
-  return NULL;
+  return nullptr;
 }
 
 QuicCryptoServerStream* QuicServerSession::GetCryptoStream() {

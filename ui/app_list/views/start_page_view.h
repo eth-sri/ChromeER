@@ -16,9 +16,11 @@
 
 namespace app_list {
 
+class AllAppsTileItemView;
 class AppListMainView;
 class AppListViewDelegate;
 class SearchResultListView;
+class SearchResultTileItemView;
 class TileItemView;
 
 // The start page for the experimental app list.
@@ -28,7 +30,7 @@ class APP_LIST_EXPORT StartPageView : public views::View,
  public:
   StartPageView(AppListMainView* app_list_main_view,
                 AppListViewDelegate* view_delegate);
-  virtual ~StartPageView();
+  ~StartPageView() override;
 
   void Reset();
   void ShowSearchResults();
@@ -37,12 +39,15 @@ class APP_LIST_EXPORT StartPageView : public views::View,
 
   void UpdateForTesting();
 
-  const std::vector<TileItemView*>& tile_views() const { return tile_views_; }
+  const std::vector<SearchResultTileItemView*>& tile_views() const {
+    return search_result_tile_views_;
+  }
+  TileItemView* all_apps_button() const;
   SearchBoxView* dummy_search_box_view() { return search_box_view_; }
 
   // Overridden from views::View:
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual void Layout() OVERRIDE;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  void Layout() override;
 
  private:
   enum ShowState {
@@ -64,13 +69,13 @@ class APP_LIST_EXPORT StartPageView : public views::View,
   void ScheduleUpdate();
 
   // Overridden from SearchBoxViewDelegate:
-  virtual void QueryChanged(SearchBoxView* sender) OVERRIDE;
+  void QueryChanged(SearchBoxView* sender) override;
 
   // Overridden from ui::ListModelObserver:
-  virtual void ListItemsAdded(size_t start, size_t count) OVERRIDE;
-  virtual void ListItemsRemoved(size_t start, size_t count) OVERRIDE;
-  virtual void ListItemMoved(size_t index, size_t target_index) OVERRIDE;
-  virtual void ListItemsChanged(size_t start, size_t count) OVERRIDE;
+  void ListItemsAdded(size_t start, size_t count) override;
+  void ListItemsRemoved(size_t start, size_t count) override;
+  void ListItemMoved(size_t index, size_t target_index) override;
+  void ListItemsChanged(size_t start, size_t count) override;
 
   // The parent view of ContentsView which is the parent of this view.
   AppListMainView* app_list_main_view_;
@@ -85,7 +90,8 @@ class APP_LIST_EXPORT StartPageView : public views::View,
   views::View* instant_container_;  // Owned by views hierarchy.
   views::View* tiles_container_;    // Owned by views hierarchy.
 
-  std::vector<TileItemView*> tile_views_;
+  std::vector<SearchResultTileItemView*> search_result_tile_views_;
+  AllAppsTileItemView* all_apps_button_;
 
   ShowState show_state_;
 

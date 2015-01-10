@@ -443,11 +443,12 @@ void BrowserMediaPlayerManager::OnInitialize(
 
   RenderProcessHostImpl* host = static_cast<RenderProcessHostImpl*>(
       web_contents()->GetRenderProcessHost());
-  MediaPlayerAndroid* player = CreateMediaPlayer(
-      media_player_params,
+  MediaPlayerAndroid* player =
+      CreateMediaPlayer(media_player_params,
 
-      host->GetBrowserContext()->IsOffTheRecord(), this,
-      host->browser_demuxer_android());
+                        host->GetBrowserContext()->IsOffTheRecord(),
+                        this,
+                        host->browser_demuxer_android().get());
 
   if (!player)
     return;
@@ -590,9 +591,6 @@ void BrowserMediaPlayerManager::OnMediaResourcesRequested(int player_id) {
 
 void BrowserMediaPlayerManager::ReleaseMediaResources(int player_id) {
 #if defined(VIDEO_HOLE)
-  MediaPlayerAndroid* player = GetPlayer(player_id);
-  if (player && player->IsSurfaceInUse())
-    return;
   if (external_video_surface_container_)
     external_video_surface_container_->ReleaseExternalVideoSurface(player_id);
 #endif  // defined(VIDEO_HOLE)

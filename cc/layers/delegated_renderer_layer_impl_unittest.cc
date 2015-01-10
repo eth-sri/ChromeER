@@ -589,7 +589,8 @@ class DelegatedRendererLayerImplTestTransform
                              gfx::Rect(5, 5, 7, 7),  // visible_rect
                              RenderPassId(10, 7),    // render_pass_id
                              0,                      // mask_resource_id
-                             gfx::RectF(),           // mask_uv_rect
+                             gfx::Vector2dF(),       // mask_uv_scale
+                             gfx::Size(),            // mask_texture_size
                              FilterOperations(),     // filters
                              gfx::Vector2dF(),       // filters_scale
                              FilterOperations());    // background_filters
@@ -692,8 +693,8 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_NoSurface) {
   LayerTreeHostImpl::FrameData frame;
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
-  const SharedQuadState* root_delegated_shared_quad_state = NULL;
-  const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
+  const SharedQuadState* root_delegated_shared_quad_state = nullptr;
+  const SharedQuadState* contrib_delegated_shared_quad_state = nullptr;
   VerifyRenderPasses(
       frame,
       2,
@@ -747,8 +748,8 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_NoSurface) {
   LayerTreeHostImpl::FrameData frame;
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
-  const SharedQuadState* root_delegated_shared_quad_state = NULL;
-  const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
+  const SharedQuadState* root_delegated_shared_quad_state = nullptr;
+  const SharedQuadState* contrib_delegated_shared_quad_state = nullptr;
   VerifyRenderPasses(
       frame,
       2,
@@ -808,8 +809,8 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsUnclipped_Surface) {
   LayerTreeHostImpl::FrameData frame;
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
-  const SharedQuadState* root_delegated_shared_quad_state = NULL;
-  const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
+  const SharedQuadState* root_delegated_shared_quad_state = nullptr;
+  const SharedQuadState* contrib_delegated_shared_quad_state = nullptr;
   VerifyRenderPasses(
       frame,
       3,
@@ -856,8 +857,8 @@ TEST_F(DelegatedRendererLayerImplTestTransform, QuadsClipped_Surface) {
   LayerTreeHostImpl::FrameData frame;
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
-  const SharedQuadState* root_delegated_shared_quad_state = NULL;
-  const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
+  const SharedQuadState* root_delegated_shared_quad_state = nullptr;
+  const SharedQuadState* contrib_delegated_shared_quad_state = nullptr;
   VerifyRenderPasses(
       frame,
       3,
@@ -903,8 +904,8 @@ TEST_F(DelegatedRendererLayerImplTestTransform, MismatchedDeviceScaleFactor) {
   LayerTreeHostImpl::FrameData frame;
   EXPECT_EQ(DRAW_SUCCESS, host_impl_->PrepareToDraw(&frame));
 
-  const SharedQuadState* root_delegated_shared_quad_state = NULL;
-  const SharedQuadState* contrib_delegated_shared_quad_state = NULL;
+  const SharedQuadState* root_delegated_shared_quad_state = nullptr;
+  const SharedQuadState* contrib_delegated_shared_quad_state = nullptr;
   VerifyRenderPasses(frame,
                      2,
                      &root_delegated_shared_quad_state,
@@ -1021,7 +1022,8 @@ class DelegatedRendererLayerImplTestClip
                              gfx::Rect(5, 5, 7, 7),  // visible_quad_rect
                              RenderPassId(10, 7),    // render_pass_id
                              0,                      // mask_resource_id
-                             gfx::RectF(),           // mask_uv_rect
+                             gfx::Vector2dF(),       // mask_uv_scale
+                             gfx::Size(),            // mask_texture_size,
                              FilterOperations(),     // filters
                              gfx::Vector2dF(),       // filters_scale
                              FilterOperations());    // background_filters
@@ -1414,7 +1416,12 @@ TEST_F(DelegatedRendererLayerImplTest, Occlusion) {
                                         pass1_id,
                                         gfx::Rect(layer_size),
                                         gfx::Transform());
-  AddRenderPassQuad(pass1, pass2, 0, FilterOperations(), transform);
+  AddRenderPassQuad(pass1,
+                    pass2,
+                    0,
+                    FilterOperations(),
+                    transform,
+                    SkXfermode::kSrcOver_Mode);
   delegated_renderer_layer_impl->SetFrameDataForRenderPasses(
       1.f, &delegated_render_passes);
 

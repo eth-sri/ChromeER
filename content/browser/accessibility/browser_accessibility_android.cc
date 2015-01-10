@@ -97,6 +97,8 @@ bool BrowserAccessibilityAndroid::IsCheckable() const {
   GetAriaTristate("aria-pressed", &is_aria_pressed_defined, &is_mixed);
   if (GetRole() == ui::AX_ROLE_CHECK_BOX ||
       GetRole() == ui::AX_ROLE_RADIO_BUTTON ||
+      GetRole() == ui::AX_ROLE_MENU_ITEM_CHECK_BOX ||
+      GetRole() == ui::AX_ROLE_MENU_ITEM_RADIO ||
       is_aria_pressed_defined) {
     checkable = true;
   }
@@ -117,6 +119,7 @@ bool BrowserAccessibilityAndroid::IsCollection() const {
   return (GetRole() == ui::AX_ROLE_GRID ||
           GetRole() == ui::AX_ROLE_LIST ||
           GetRole() == ui::AX_ROLE_LIST_BOX ||
+          GetRole() == ui::AX_ROLE_DESCRIPTION_LIST ||
           GetRole() == ui::AX_ROLE_TABLE ||
           GetRole() == ui::AX_ROLE_TREE);
 }
@@ -165,6 +168,7 @@ bool BrowserAccessibilityAndroid::IsHeading() const {
 
 bool BrowserAccessibilityAndroid::IsHierarchical() const {
   return (GetRole() == ui::AX_ROLE_LIST ||
+          GetRole() == ui::AX_ROLE_DESCRIPTION_LIST ||
           GetRole() == ui::AX_ROLE_TREE);
 }
 
@@ -236,8 +240,10 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
       break;
     case ui::AX_ROLE_CANVAS:
     case ui::AX_ROLE_IMAGE:
+    case ui::AX_ROLE_SVG_ROOT:
       class_name = "android.widget.Image";
       break;
+    case ui::AX_ROLE_METER:
     case ui::AX_ROLE_PROGRESS_INDICATOR:
       class_name = "android.widget.ProgressBar";
       break;
@@ -250,6 +256,7 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
       break;
     case ui::AX_ROLE_LIST:
     case ui::AX_ROLE_LIST_BOX:
+    case ui::AX_ROLE_DESCRIPTION_LIST:
       class_name = "android.widget.ListView";
       break;
     case ui::AX_ROLE_DIALOG:
@@ -257,6 +264,11 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
       break;
     case ui::AX_ROLE_ROOT_WEB_AREA:
       class_name = "android.webkit.WebView";
+      break;
+    case ui::AX_ROLE_MENU_ITEM:
+    case ui::AX_ROLE_MENU_ITEM_CHECK_BOX:
+    case ui::AX_ROLE_MENU_ITEM_RADIO:
+      class_name = "android.view.MenuItem";
       break;
     default:
       class_name = "android.view.View";
@@ -275,15 +287,34 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
   // See comment in browser_accessibility_win.cc for details.
   // The difference here is that we can only expose one accessible
   // name on Android, not 2 or 3 like on Windows or Mac.
-  //
-  // The basic rule is: prefer description (aria-labelledby or aria-label),
-  // then help (title), then name (inner text), then value (control value).
-  // However, if title_elem_id is set, that means there's a label element
+
+  // First, always return the |value| attribute if this is an
+  // editable text field.
+  if (!value().empty() &&
+      (GetRole() == ui::AX_ROLE_EDITABLE_TEXT ||
+       GetRole() == ui::AX_ROLE_TEXT_AREA ||
+       GetRole() == ui::AX_ROLE_TEXT_FIELD ||
+       HasState(ui::AX_STATE_EDITABLE))) {
+    return base::UTF8ToUTF16(value());
+  }
+
+  // Always prefer visible text if this is a link. Sites sometimes add
+  // a "title" attribute to a link with more information, but we can't
+  // lose the link text.
+  if (!name().empty() && GetRole() == ui::AX_ROLE_LINK)
+    return base::UTF8ToUTF16(name());
+
+  // If there's no text value, the basic rule is: prefer description
+  // (aria-labelledby or aria-label), then help (title), then name
+  // (inner text), then value (control value).  However, if
+  // title_elem_id is set, that means there's a label element
   // supplying the name and then name takes precedence over help.
   // TODO(dmazzoni): clean this up by providing more granular labels in
   // Blink, making the platform-specific mapping to accessible text simpler.
   base::string16 description = GetString16Attribute(ui::AX_ATTR_DESCRIPTION);
   base::string16 help = GetString16Attribute(ui::AX_ATTR_HELP);
+  base::string16 placeholder;
+  GetHtmlAttribute("placeholder", &placeholder);
   int title_elem_id = GetIntAttribute(
       ui::AX_ATTR_TITLE_UI_ELEMENT);
   base::string16 text;
@@ -295,27 +326,23 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
     text = help;
   else if (!name().empty())
     text = base::UTF8ToUTF16(name());
+  else if (GetRole() == ui::AX_ROLE_TEXT_FIELD && !placeholder.empty())
+    text = placeholder;
   else if (!value().empty())
     text = base::UTF8ToUTF16(value());
 
   // This is called from PlatformIsLeaf, so don't call PlatformChildCount
   // from within this!
-  if (text.empty() && HasOnlyStaticTextChildren()) {
+  if (text.empty() &&
+      (HasOnlyStaticTextChildren() ||
+       (IsFocusable() && HasOnlyTextAndImageChildren()))) {
     for (uint32 i = 0; i < InternalChildCount(); i++) {
       BrowserAccessibility* child = InternalGetChild(i);
       text += static_cast<BrowserAccessibilityAndroid*>(child)->GetText();
     }
   }
 
-  switch(GetRole()) {
-    case ui::AX_ROLE_HEADING:
-      // Only append "heading" if this node already has text.
-      if (!text.empty())
-        text += base::ASCIIToUTF16(" Heading");
-      break;
-  }
-
-  if (text.empty() && IsLink()) {
+  if (text.empty() && (IsLink() || GetRole() == ui::AX_ROLE_IMAGE)) {
     base::string16 url = GetString16Attribute(ui::AX_ATTR_URL);
     // Given a url like http://foo.com/bar/baz.png, just return the
     // base name, e.g., "baz".
@@ -364,6 +391,7 @@ int BrowserAccessibilityAndroid::GetItemCount() const {
   switch(GetRole()) {
     case ui::AX_ROLE_LIST:
     case ui::AX_ROLE_LIST_BOX:
+    case ui::AX_ROLE_DESCRIPTION_LIST:
       count = PlatformChildCount();
       break;
     case ui::AX_ROLE_SLIDER:
@@ -527,6 +555,7 @@ int BrowserAccessibilityAndroid::RowCount() const {
 
   if (GetRole() == ui::AX_ROLE_LIST ||
       GetRole() == ui::AX_ROLE_LIST_BOX ||
+      GetRole() == ui::AX_ROLE_DESCRIPTION_LIST ||
       GetRole() == ui::AX_ROLE_TREE) {
     return PlatformChildCount();
   }
@@ -596,6 +625,19 @@ bool BrowserAccessibilityAndroid::HasOnlyStaticTextChildren() const {
     BrowserAccessibility* child = InternalGetChild(i);
     if (child->GetRole() != ui::AX_ROLE_STATIC_TEXT)
       return false;
+  }
+  return true;
+}
+
+bool BrowserAccessibilityAndroid::HasOnlyTextAndImageChildren() const {
+  // This is called from PlatformIsLeaf, so don't call PlatformChildCount
+  // from within this!
+  for (uint32 i = 0; i < InternalChildCount(); i++) {
+    BrowserAccessibility* child = InternalGetChild(i);
+    if (child->GetRole() != ui::AX_ROLE_STATIC_TEXT &&
+        child->GetRole() != ui::AX_ROLE_IMAGE) {
+      return false;
+    }
   }
   return true;
 }

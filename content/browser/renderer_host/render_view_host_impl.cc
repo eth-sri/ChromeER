@@ -66,6 +66,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/drop_data.h"
+#include "content/public/common/file_chooser_file_info.h"
+#include "content/public/common/file_chooser_params.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_utils.h"
 #include "net/base/filename_util.h"
@@ -80,7 +82,6 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/native_theme/native_theme_switches.h"
-#include "ui/shell_dialogs/selected_file_info.h"
 #include "url/url_constants.h"
 
 #if defined(OS_WIN)
@@ -129,7 +130,7 @@ void DismissVirtualKeyboardTask() {
 }  // namespace
 
 // static
-const int RenderViewHostImpl::kUnloadTimeoutMS = 1000;
+const int64 RenderViewHostImpl::kUnloadTimeoutMS = 1000;
 
 ///////////////////////////////////////////////////////////////////////////////
 // RenderViewHost, public:
@@ -166,7 +167,8 @@ RenderViewHostImpl::RenderViewHostImpl(
     int routing_id,
     int main_frame_routing_id,
     bool swapped_out,
-    bool hidden)
+    bool hidden,
+    bool has_initialized_audio_host)
     : RenderWidgetHostImpl(widget_delegate,
                            instance->GetProcess(),
                            routing_id,
@@ -195,13 +197,24 @@ RenderViewHostImpl::RenderViewHostImpl(
   GetProcess()->EnableSendQueue();
 
   if (ResourceDispatcherHostImpl::Get()) {
+    bool has_active_audio = false;
+    if (has_initialized_audio_host) {
+      scoped_refptr<AudioRendererHost> arh =
+          static_cast<RenderProcessHostImpl*>(GetProcess())
+              ->audio_renderer_host();
+      if (arh.get())
+        has_active_audio = arh->RenderViewHasActiveAudio(GetRoutingID());
+    }
     BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
+        BrowserThread::IO,
+        FROM_HERE,
         base::Bind(&ResourceDispatcherHostImpl::OnRenderViewHostCreated,
                    base::Unretained(ResourceDispatcherHostImpl::Get()),
-                   GetProcess()->GetID(), GetRoutingID(), !is_hidden()));
+                   GetProcess()->GetID(),
+                   GetRoutingID(),
+                   !is_hidden(),
+                   has_active_audio));
   }
-
 #if defined(ENABLE_BROWSER_CDMS)
   media_web_contents_observer_.reset(new MediaWebContentsObserver(this));
 #endif
@@ -367,13 +380,15 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
   prefs.antialiased_2d_canvas_disabled =
       command_line.HasSwitch(switches::kDisable2dCanvasAntialiasing);
+  prefs.antialiased_clips_2d_canvas_enabled =
+      command_line.HasSwitch(switches::kEnable2dCanvasClipAntialiasing);
   prefs.accelerated_2d_canvas_msaa_sample_count =
       atoi(command_line.GetSwitchValueASCII(
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
-  prefs.deferred_filters_enabled =
-      !command_line.HasSwitch(switches::kDisableDeferredFilters);
   prefs.container_culling_enabled =
       command_line.HasSwitch(switches::kEnableContainerCulling);
+  prefs.text_blobs_enabled =
+      command_line.HasSwitch(switches::kEnableTextBlobs);
   prefs.region_based_columns_enabled =
       command_line.HasSwitch(switches::kEnableRegionBasedColumns);
 
@@ -399,6 +414,9 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
 
   prefs.touch_adjustment_enabled =
       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
+
+  prefs.slimming_paint_enabled =
+      command_line.HasSwitch(switches::kEnableSlimmingPaint);
 
 #if defined(OS_MACOSX) || defined(OS_CHROMEOS)
   bool default_enable_scroll_animator = true;
@@ -719,17 +737,27 @@ void RenderViewHostImpl::SetInitialFocus(bool reverse) {
 }
 
 void RenderViewHostImpl::FilesSelectedInChooser(
-    const std::vector<ui::SelectedFileInfo>& files,
+    const std::vector<content::FileChooserFileInfo>& files,
     FileChooserParams::Mode permissions) {
+  storage::FileSystemContext* const file_system_context =
+      BrowserContext::GetStoragePartition(GetProcess()->GetBrowserContext(),
+                                          GetSiteInstance())
+          ->GetFileSystemContext();
   // Grant the security access requested to the given files.
   for (size_t i = 0; i < files.size(); ++i) {
-    const ui::SelectedFileInfo& file = files[i];
+    const content::FileChooserFileInfo& file = files[i];
     if (permissions == FileChooserParams::Save) {
       ChildProcessSecurityPolicyImpl::GetInstance()->GrantCreateReadWriteFile(
-          GetProcess()->GetID(), file.local_path);
+          GetProcess()->GetID(), file.file_path);
     } else {
       ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFile(
-          GetProcess()->GetID(), file.local_path);
+          GetProcess()->GetID(), file.file_path);
+    }
+    if (file.file_system_url.is_valid()) {
+      ChildProcessSecurityPolicyImpl::GetInstance()->GrantReadFileSystem(
+          GetProcess()->GetID(),
+          file_system_context->CrackURL(file.file_system_url)
+          .mount_filesystem_id());
     }
   }
   Send(new ViewMsg_RunFileChooserResponse(GetRoutingID(), files));
@@ -996,6 +1024,12 @@ void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
 }
 
 void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
+  // If the following DCHECK fails, you have encountered a tricky edge-case that
+  // has evaded reproduction for a very long time. Please report what you were
+  // doing on http://crbug.com/407376, whether or not you can reproduce the
+  // failure.
+  DCHECK_EQ(page_id, page_id_);
+
   // Without this check, the renderer can trick the browser into using
   // filenames it can't access in a future session restore.
   if (!CanAccessFilesOfPageState(state)) {
@@ -1003,7 +1037,7 @@ void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
     return;
   }
 
-  delegate_->UpdateState(this, page_id_, page_id, state);
+  delegate_->UpdateState(this, page_id, state);
 }
 
 void RenderViewHostImpl::OnUpdateTargetURL(const GURL& url) {

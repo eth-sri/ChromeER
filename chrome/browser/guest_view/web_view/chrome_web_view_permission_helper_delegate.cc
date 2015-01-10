@@ -17,8 +17,10 @@
 #include "extensions/browser/guest_view/web_view/web_view_constants.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
 
+namespace extensions {
+
 ChromeWebViewPermissionHelperDelegate::ChromeWebViewPermissionHelperDelegate(
-    extensions::WebViewPermissionHelper* web_view_permission_helper)
+    WebViewPermissionHelper* web_view_permission_helper)
     : WebViewPermissionHelperDelegate(web_view_permission_helper),
       weak_factory_(this) {
 }
@@ -136,7 +138,7 @@ void ChromeWebViewPermissionHelperDelegate::CanDownload(
       request_info,
       base::Bind(
           &ChromeWebViewPermissionHelperDelegate::OnDownloadPermissionResponse,
-          base::Unretained(this),
+          weak_factory_.GetWeakPtr(),
           callback),
       false /* allowed_by_default */);
 }
@@ -164,7 +166,7 @@ void ChromeWebViewPermissionHelperDelegate::RequestPointerLockPermission(
       request_info,
       base::Bind(&ChromeWebViewPermissionHelperDelegate::
                      OnPointerLockPermissionResponse,
-                 base::Unretained(this),
+                 weak_factory_.GetWeakPtr(),
                  callback),
       false /* allowed_by_default */);
 }
@@ -188,11 +190,11 @@ void ChromeWebViewPermissionHelperDelegate::RequestGeolocationPermission(
   // It is safe to hold an unretained pointer to
   // ChromeWebViewPermissionHelperDelegate because this callback is called from
   // ChromeWebViewPermissionHelperDelegate::SetPermission.
-  const extensions::WebViewPermissionHelper::PermissionResponseCallback
+  const WebViewPermissionHelper::PermissionResponseCallback
       permission_callback =
       base::Bind(&ChromeWebViewPermissionHelperDelegate::
                      OnGeolocationPermissionResponse,
-                 base::Unretained(this),
+                 weak_factory_.GetWeakPtr(),
                  bridge_id,
                  user_gesture,
                  callback);
@@ -274,7 +276,7 @@ void ChromeWebViewPermissionHelperDelegate::RequestFileSystemPermission(
       request_info,
       base::Bind(&ChromeWebViewPermissionHelperDelegate::
                      OnFileSystemPermissionResponse,
-                 base::Unretained(this),
+                 weak_factory_.GetWeakPtr(),
                  callback),
       allowed_by_default);
 }
@@ -297,7 +299,7 @@ void ChromeWebViewPermissionHelperDelegate::FileSystemAccessedAsync(
       !blocked_by_policy,
       base::Bind(&ChromeWebViewPermissionHelperDelegate::
                      FileSystemAccessedAsyncResponse,
-                 base::Unretained(this),
+                 weak_factory_.GetWeakPtr(),
                  render_process_id,
                  render_frame_id,
                  request_id,
@@ -327,7 +329,7 @@ void ChromeWebViewPermissionHelperDelegate::FileSystemAccessedSync(
       !blocked_by_policy,
       base::Bind(&ChromeWebViewPermissionHelperDelegate::
                      FileSystemAccessedSyncResponse,
-                 base::Unretained(this),
+                 weak_factory_.GetWeakPtr(),
                  render_process_id,
                  render_frame_id,
                  url,
@@ -346,3 +348,5 @@ void ChromeWebViewPermissionHelperDelegate::FileSystemAccessedSyncResponse(
                                                                   allowed);
   Send(reply_msg);
 }
+
+}  // namespace extensions

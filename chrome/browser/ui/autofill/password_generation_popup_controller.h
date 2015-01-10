@@ -25,6 +25,9 @@ class PasswordGenerationPopupController : public AutofillPopupViewDelegate {
   // Desired height of the password section.
   static const int kPopupPasswordSectionHeight = 62;
 
+  // Called by the view when the password was accepted.
+  virtual void PasswordAccepted() = 0;
+
   // Called by the view when the saved passwords link is clicked.
   virtual void OnSavedPasswordsLinkClicked() = 0;
 
@@ -39,10 +42,11 @@ class PasswordGenerationPopupController : public AutofillPopupViewDelegate {
   // Translated strings
   virtual base::string16 SuggestedText() = 0;
   virtual const base::string16& HelpText() = 0;
+  virtual base::string16 AccessibleName() = 0;
   virtual const gfx::Range& HelpTextLinkRange() = 0;
 
  protected:
-  virtual ~PasswordGenerationPopupController() {}
+  ~PasswordGenerationPopupController() override {}
 };
 
 }  // namespace autofill

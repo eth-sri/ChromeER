@@ -27,6 +27,7 @@
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/android/sqlite_cursor.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -270,7 +271,7 @@ class RemoveBookmarkTask : public BookmarkModelObserverTask {
       const BookmarkNode* parent,
       int old_index,
       const BookmarkNode* node,
-      const std::set<GURL>& removed_urls) OVERRIDE {
+      const std::set<GURL>& removed_urls) override {
     if (bookmark_model == model() && node->id() == id_to_delete_)
         ++deleted_;
   }
@@ -354,7 +355,7 @@ class UpdateBookmarkTask : public BookmarkModelObserverTask {
 
   // Verify that the bookmark was actually updated. Called synchronously.
   virtual void BookmarkNodeChanged(BookmarkModel* bookmark_model,
-                                   const BookmarkNode* node) OVERRIDE {
+                                   const BookmarkNode* node) override {
     if (bookmark_model == model() && node->id() == id_to_update_)
       ++updated_;
   }
@@ -1154,6 +1155,7 @@ bool ChromeBrowserProvider::RegisterChromeBrowserProvider(JNIEnv* env) {
 
 ChromeBrowserProvider::ChromeBrowserProvider(JNIEnv* env, jobject obj)
     : weak_java_provider_(env, obj),
+      history_service_observer_(this),
       handling_extensive_changes_(false) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   profile_ = g_browser_process->profile_manager()->GetLastUsedProfile();
@@ -1165,8 +1167,8 @@ ChromeBrowserProvider::ChromeBrowserProvider(JNIEnv* env, jobject obj)
 
   // Registers the notifications we are interested.
   bookmark_model_->AddObserver(this);
-  notification_registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URL_VISITED,
-                              content::NotificationService::AllSources());
+  history_service_observer_.Add(
+      HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS));
   notification_registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_DELETED,
                               content::NotificationService::AllSources());
   notification_registrar_.Add(this,
@@ -1301,7 +1303,7 @@ ScopedJavaLocalRef<jobject> ChromeBrowserProvider::QueryBookmarkFromAPI(
   // Creates and returns org.chromium.chrome.browser.database.SQLiteCursor
   // Java object.
   return SQLiteCursor::NewJavaSqliteCursor(env, columns_name, statement,
-             service_.get(), favicon_service_.get());
+             service_.get());
 }
 
 // Updates the bookmarks with the given column values. The value is not given if
@@ -1437,7 +1439,7 @@ ScopedJavaLocalRef<jobject> ChromeBrowserProvider::QuerySearchTermFromAPI(
   // Creates and returns org.chromium.chrome.browser.database.SQLiteCursor
   // Java object.
   return SQLiteCursor::NewJavaSqliteCursor(env, columns_name, statement,
-             service_.get(), favicon_service_.get());
+             service_.get());
 }
 
 // Updates the search terms with the given column values. The value is not
@@ -1603,17 +1605,28 @@ void ChromeBrowserProvider::BookmarkModelChanged() {
   Java_ChromeBrowserProvider_onBookmarkChanged(env, obj.obj());
 }
 
+void ChromeBrowserProvider::OnHistoryChanged() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = weak_java_provider_.get(env);
+  if (obj.is_null())
+    return;
+  Java_ChromeBrowserProvider_onHistoryChanged(env, obj.obj());
+}
+
+void ChromeBrowserProvider::OnURLVisited(HistoryService* history_service,
+                                         ui::PageTransition transition,
+                                         const history::URLRow& row,
+                                         const history::RedirectList& redirects,
+                                         base::Time visit_time) {
+  OnHistoryChanged();
+}
+
 void ChromeBrowserProvider::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_HISTORY_URL_VISITED ||
-      type == chrome::NOTIFICATION_HISTORY_URLS_DELETED) {
-    JNIEnv* env = AttachCurrentThread();
-    ScopedJavaLocalRef<jobject> obj = weak_java_provider_.get(env);
-    if (obj.is_null())
-      return;
-    Java_ChromeBrowserProvider_onHistoryChanged(env, obj.obj());
+  if (type == chrome::NOTIFICATION_HISTORY_URLS_DELETED) {
+    OnHistoryChanged();
   } else if (type ==
       chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED) {
     JNIEnv* env = AttachCurrentThread();

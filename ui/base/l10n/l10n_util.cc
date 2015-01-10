@@ -33,6 +33,7 @@
 #include "ui/base/ui_base_paths.h"
 
 #if defined(OS_ANDROID)
+#include "base/android/locale_utils.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #endif
 
@@ -188,6 +189,7 @@ static const char* const kAcceptLanguageList[] = {
 bool IsDuplicateName(const std::string& locale_name) {
   static const char* const kDuplicateNames[] = {
     "en",
+    "en_001",
     "pt",
     "zh",
     "zh_hans_cn",
@@ -387,7 +389,7 @@ bool CheckAndResolveLocale(const std::string& locale,
       {"en", "en-US"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(alias_map); ++i) {
+  for (size_t i = 0; i < arraysize(alias_map); ++i) {
     if (LowerCaseEqualsASCII(lang, alias_map[i].source)) {
       std::string tmp_locale(alias_map[i].dest);
       if (IsLocaleAvailable(tmp_locale)) {
@@ -447,7 +449,7 @@ std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
 #elif defined(OS_ANDROID)
 
   // On Android, query java.util.Locale for the default locale.
-  candidates.push_back(GetDefaultLocale());
+  candidates.push_back(base::android::GetDefaultLocale());
 
 #elif defined(USE_GLIB) && !defined(OS_CHROMEOS)
 

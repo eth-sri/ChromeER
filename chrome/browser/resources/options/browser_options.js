@@ -12,7 +12,7 @@ cr.exportPath('options');
  *            setupCompleted: (boolean|undefined),
  *            setupInProgress: (boolean|undefined),
  *            signedIn: (boolean|undefined),
- *            signinAllowed: boolean,
+ *            signinAllowed: (boolean|undefined),
  *            signoutAllowed: (boolean|undefined),
  *            statusText: (string|undefined),
  *            syncSystemEnabled: (boolean|undefined)}}
@@ -146,9 +146,9 @@ cr.define('options', function() {
       $('advanced-settings').addEventListener('webkitTransitionEnd',
           this.updateAdvancedSettingsExpander_.bind(this));
 
-      if (loadTimeData.getBoolean('showVersion')) {
-        $('version-button').hidden = false;
-        $('version-button').addEventListener('click', function() {
+      if (loadTimeData.getBoolean('showAbout')) {
+        $('about-button').hidden = false;
+        $('about-button').addEventListener('click', function() {
           PageManager.showPageByName('help');
           chrome.send('coreOptionsUserMetricsAction',
                       ['Options_About']);
@@ -269,6 +269,11 @@ cr.define('options', function() {
 
       // Device section (ChromeOS only).
       if (cr.isChromeOS) {
+        $('power-settings-button').onclick = function(evt) {
+          PageManager.showPageByName('power-overlay');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_ShowPowerSettings']);
+        };
         $('battery-button').onclick = function(evt) {
           WebsiteSettingsManager.showWebsiteSettings('battery');
         };
@@ -1139,9 +1144,17 @@ cr.define('options', function() {
      * @private
      */
     showHotwordAlwaysOnSection_: function() {
-      $('voice-section-title').hidden = false;
       $('hotword-always-on-search').hidden = false;
       $('audio-logging').hidden = false;
+    },
+
+    /**
+     * Activates the Hotword section on devices with no DSP
+     * from the System settings page.
+     * @private
+     */
+    showHotwordNoDSPSection_: function() {
+      $('hotword-no-dsp-search').hidden = false;
     },
 
     /**
@@ -1508,16 +1521,15 @@ cr.define('options', function() {
      * @param {boolean} managed
      */
     setWallpaperManaged_: function(managed) {
-      var button = $('set-wallpaper');
-      button.disabled = !!managed;
+      if (managed)
+        $('set-wallpaper').disabled = true;
+      else
+        this.enableElementIfPossible_(getRequiredElement('set-wallpaper'));
 
       // Create a synthetic pref change event decorated as
       // CoreOptionsHandler::CreateValueForPref() does.
       var event = new Event('wallpaper');
-      if (managed)
-        event.value = { controlledBy: 'policy' };
-      else
-        event.value = {};
+      event.value = managed ? { controlledBy: 'policy' } : {};
       $('wallpaper-indicator').handlePrefChange(event);
     },
 
@@ -1968,6 +1980,41 @@ cr.define('options', function() {
     handleSetTime_: function() {
       chrome.send('showSetTime');
     },
+
+    /**
+     * Enables the given element if possible; on Chrome OS, it won't enable
+     * an element that must stay disabled for the session type.
+     * @param {!Element} element Element to enable.
+     */
+    enableElementIfPossible_: function(element) {
+      if (cr.isChromeOS)
+        UIAccountTweaks.enableElementIfPossible(element);
+      else
+        element.disabled = false;
+    },
+
+    /**
+     * Sets the icon in the battery section.
+     * @param {string} iconData The data representing the icon to display.
+     * @private
+     */
+    setBatteryIcon_: function(iconData) {
+      $('battery-icon').style.backgroundImage = 'url(' + iconData + ')';
+      $('battery-icon').hidden = false;
+    },
+
+    /**
+     * Sets the text for the battery section.
+     * @param {string} statusText The battery status, with a relevant label.
+     * @private
+     */
+    setBatteryStatusText_: function(statusText) {
+      $('battery').hidden = !statusText.length;
+      if (statusText.length) {
+        $('battery-status').textContent = statusText;
+        chrome.send('requestBatteryIcon');
+      }
+    },
   };
 
   //Forward public APIs to private implementations.
@@ -1986,6 +2033,8 @@ cr.define('options', function() {
     'setAccountPictureManaged',
     'setWallpaperManaged',
     'setAutoOpenFileTypesDisplayed',
+    'setBatteryIcon',
+    'setBatteryStatusText',
     'setBluetoothState',
     'setCanSetTime',
     'setFontSize',
@@ -2005,6 +2054,7 @@ cr.define('options', function() {
     'showCreateProfileSuccess',
     'showCreateProfileWarning',
     'showHotwordAlwaysOnSection',
+    'showHotwordNoDSPSection',
     'showHotwordSection',
     'showMouseControls',
     'showSupervisedUserImportError',

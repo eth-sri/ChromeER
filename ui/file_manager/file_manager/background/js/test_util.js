@@ -664,6 +664,32 @@ test.util.sync.runVisitDesktopMenu = function(contentWindow, profileId) {
 };
 
 /**
+ * Calls the unload handler for the window.
+ * @param {Window} contentWindow Window to be tested.
+ */
+test.util.sync.unload = function(contentWindow) {
+  contentWindow.fileManager.onUnload_();
+};
+
+/**
+ * Obtains the list of notification ID.
+ * @param {function(Object.<string, boolean>)} callback Callback function with
+ *     results returned by the script.
+ */
+test.util.async.getNotificationIDs = function(callback) {
+  chrome.notifications.getAll(callback);
+};
+
+/**
+ * Obtains the preferences.
+ * @param {function(Object)} callback Callback function with results returned by
+ *     the script.
+ */
+test.util.async.getPreferences = function(callback) {
+  chrome.fileManagerPrivate.getPreferences(callback);
+};
+
+/**
  * Registers message listener, which runs test utility functions.
  */
 test.util.registerRemoteTestUtils = function() {

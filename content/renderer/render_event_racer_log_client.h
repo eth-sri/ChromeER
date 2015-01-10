@@ -18,11 +18,11 @@ public:
   RenderEventRacerLogClient(int32);
   virtual ~RenderEventRacerLogClient();
 
-  virtual void didCompleteEventAction(const WebEventAction &) OVERRIDE;
-  virtual void didHappenBefore(const WebVector<WebEventActionEdge> &) OVERRIDE;
-  virtual void didUpdateStringTable(size_t, const WebVector<WebString> &) OVERRIDE;
+  virtual void didCompleteEventAction(const WebEventAction &) override;
+  virtual void didHappenBefore(const WebVector<WebEventActionEdge> &) override;
+  virtual void didUpdateStringTable(size_t, const WebVector<WebString> &) override;
 
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  virtual bool Send(IPC::Message* msg) override;
 
 private:
   int32 routing_id_;

@@ -27,6 +27,8 @@ typedef base::Callback<void(CopresenceStatus)> StatusCallback;
 // A delegate interface for users of Copresence.
 class CopresenceDelegate {
  public:
+  virtual ~CopresenceDelegate() {}
+
   // This method will be called when we have subscribed messages that need to
   // be sent to their respective apps.
   virtual void HandleMessages(
@@ -38,7 +40,8 @@ class CopresenceDelegate {
 
   virtual const std::string GetPlatformVersionString() const = 0;
 
-  virtual const std::string GetAPIKey() const = 0;
+  virtual const std::string GetAPIKey(const std::string& app_id) const = 0;
+  virtual const std::string GetAuthToken() const = 0;
 
   virtual WhispernetClient* GetWhispernetClient() = 0;
 };

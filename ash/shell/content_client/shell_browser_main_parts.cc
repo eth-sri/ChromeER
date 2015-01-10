@@ -51,16 +51,16 @@ namespace {
 class ShellViewsDelegate : public views::TestViewsDelegate {
  public:
   ShellViewsDelegate() {}
-  virtual ~ShellViewsDelegate() {}
+  ~ShellViewsDelegate() override {}
 
   // Overridden from views::TestViewsDelegate:
-  virtual views::NonClientFrameView* CreateDefaultNonClientFrameView(
-      views::Widget* widget) OVERRIDE {
+  views::NonClientFrameView* CreateDefaultNonClientFrameView(
+      views::Widget* widget) override {
     return ash::Shell::GetInstance()->CreateDefaultNonClientFrameView(widget);
   }
-  virtual void OnBeforeWidgetInit(
+  void OnBeforeWidgetInit(
       views::Widget::InitParams* params,
-      views::internal::NativeWidgetDelegate* delegate) OVERRIDE {
+      views::internal::NativeWidgetDelegate* delegate) override {
     if (params->opacity == views::Widget::InitParams::INFER_OPACITY)
       params->opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
 

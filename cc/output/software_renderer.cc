@@ -127,7 +127,7 @@ void SoftwareRenderer::ReceiveSwapBuffersAck(const CompositorFrameAck& ack) {
   output_device_->ReclaimSoftwareFrame(ack.last_software_frame_id);
 }
 
-bool SoftwareRenderer::FlippedFramebuffer() const {
+bool SoftwareRenderer::FlippedFramebuffer(const DrawingFrame* frame) const {
   return false;
 }
 
@@ -239,14 +239,16 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
   current_canvas_->setMatrix(sk_device_matrix);
 
   current_paint_.reset();
-  if (!IsScaleAndIntegerTranslate(sk_device_matrix)) {
+  if (settings_->force_antialiasing ||
+      !IsScaleAndIntegerTranslate(sk_device_matrix)) {
     // TODO(danakj): Until we can enable AA only on exterior edges of the
     // layer, disable AA if any interior edges are present. crbug.com/248175
     bool all_four_edges_are_exterior = quad->IsTopEdge() &&
                                        quad->IsLeftEdge() &&
                                        quad->IsBottomEdge() &&
                                        quad->IsRightEdge();
-    if (settings_->allow_antialiasing && all_four_edges_are_exterior)
+    if (settings_->allow_antialiasing &&
+        (settings_->force_antialiasing || all_four_edges_are_exterior))
       current_paint_.setAntiAlias(true);
     current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
   }
@@ -518,11 +520,11 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
 
     const SkBitmap* mask = mask_lock.sk_bitmap();
 
-    SkRect mask_rect = SkRect::MakeXYWH(
-        quad->mask_uv_rect.x() * mask->width(),
-        quad->mask_uv_rect.y() * mask->height(),
-        quad->mask_uv_rect.width() * mask->width(),
-        quad->mask_uv_rect.height() * mask->height());
+    // Scale normalized uv rect into absolute texel coordinates.
+    SkRect mask_rect =
+        gfx::RectFToSkRect(gfx::ScaleRect(quad->MaskUVRect(),
+                                          quad->mask_texture_size.width(),
+                                          quad->mask_texture_size.height()));
 
     SkMatrix mask_mat;
     mask_mat.setRectToRect(mask_rect, dest_rect, SkMatrix::kFill_ScaleToFit);
@@ -566,7 +568,7 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
   gfx::Rect copy_rect = frame->current_render_pass->output_rect;
   if (request->has_area())
     copy_rect.Intersect(request->area());
-  gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
+  gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(frame, copy_rect);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
   bitmap->setInfo(SkImageInfo::MakeN32Premul(window_copy_rect.width(),

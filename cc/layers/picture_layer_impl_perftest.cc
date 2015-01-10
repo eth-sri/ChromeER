@@ -45,7 +45,7 @@ class PictureLayerImplPerfTest : public testing::Test {
                base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
                kTimeCheckInterval) {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     host_impl_.InitializeRenderer(FakeOutputSurface::Create3d());
   }
 
@@ -80,7 +80,7 @@ class PictureLayerImplPerfTest : public testing::Test {
       PictureLayerImpl::LayerRasterTileIterator it(pending_layer_, false);
       while (count--) {
         ASSERT_TRUE(it) << "count: " << count;
-        ASSERT_TRUE(*it != NULL) << "count: " << count;
+        ASSERT_TRUE(*it != nullptr) << "count: " << count;
         ++it;
       }
       timer_.NextLap();
@@ -97,7 +97,8 @@ class PictureLayerImplPerfTest : public testing::Test {
   void RunRasterIteratorConstructTest(const std::string& test_name,
                                       const gfx::Rect& viewport) {
     host_impl_.SetViewportSize(viewport.size());
-    pending_layer_->SetScrollOffset(gfx::Vector2d(viewport.x(), viewport.y()));
+    pending_layer_->SetScrollOffset(
+        gfx::ScrollOffset(viewport.x(), viewport.y()));
     host_impl_.pending_tree()->UpdateDrawProperties();
 
     timer_.Reset();
@@ -132,7 +133,7 @@ class PictureLayerImplPerfTest : public testing::Test {
           pending_layer_, priorities[priority_count]);
       while (count--) {
         ASSERT_TRUE(it) << "count: " << count;
-        ASSERT_TRUE(*it != NULL) << "count: " << count;
+        ASSERT_TRUE(*it != nullptr) << "count: " << count;
         ++it;
       }
       priority_count = (priority_count + 1) % arraysize(priorities);
@@ -150,7 +151,8 @@ class PictureLayerImplPerfTest : public testing::Test {
   void RunEvictionIteratorConstructTest(const std::string& test_name,
                                         const gfx::Rect& viewport) {
     host_impl_.SetViewportSize(viewport.size());
-    pending_layer_->SetScrollOffset(gfx::Vector2d(viewport.x(), viewport.y()));
+    pending_layer_->SetScrollOffset(
+        gfx::ScrollOffset(viewport.x(), viewport.y()));
     host_impl_.pending_tree()->UpdateDrawProperties();
 
     TreePriority priorities[] = {SAME_PRIORITY_FOR_BOTH_TREES,
@@ -235,7 +237,7 @@ TEST_F(PictureLayerImplPerfTest, LayerEvictionTileIteratorConstructAndIterate) {
   AddTiling(1.0f, pending_layer_, &all_tiles);
   AddTiling(2.0f, pending_layer_, &all_tiles);
 
-  ASSERT_TRUE(host_impl_.tile_manager() != NULL);
+  ASSERT_TRUE(host_impl_.tile_manager() != nullptr);
   host_impl_.tile_manager()->InitializeTilesWithResourcesForTesting(all_tiles);
 
   RunEvictionIteratorConstructAndIterateTest(
@@ -260,7 +262,7 @@ TEST_F(PictureLayerImplPerfTest, LayerEvictionTileIteratorConstruct) {
   AddTiling(1.0f, pending_layer_, &all_tiles);
   AddTiling(2.0f, pending_layer_, &all_tiles);
 
-  ASSERT_TRUE(host_impl_.tile_manager() != NULL);
+  ASSERT_TRUE(host_impl_.tile_manager() != nullptr);
   host_impl_.tile_manager()->InitializeTilesWithResourcesForTesting(all_tiles);
 
   RunEvictionIteratorConstructTest("0_0_100x100", gfx::Rect(0, 0, 100, 100));

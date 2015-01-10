@@ -42,10 +42,6 @@
 #include "net/base/url_util.h"
 #include "third_party/re2/re2/re2.h"
 
-#if defined(OS_ANDROID)
-#include "chrome/browser/android/password_authentication_manager.h"
-#endif  // OS_ANDROID
-
 using password_manager::PasswordManagerInternalsService;
 using password_manager::PasswordManagerInternalsServiceFactory;
 
@@ -73,8 +69,7 @@ ChromePasswordManagerClient::ChromePasswordManagerClient(
       observer_(NULL),
       can_use_log_router_(false),
       autofill_sync_state_(ALLOW_SYNC_CREDENTIALS),
-      sync_credential_was_filtered_(false),
-      weak_factory_(this) {
+      sync_credential_was_filtered_(false) {
   PasswordManagerInternalsService* service =
       PasswordManagerInternalsServiceFactory::GetForBrowserContext(profile_);
   if (service)
@@ -139,6 +134,10 @@ bool ChromePasswordManagerClient::ShouldFilterAutofillResult(
   return false;
 }
 
+std::string ChromePasswordManagerClient::GetSyncUsername() const {
+  return password_manager_sync_metrics::GetSyncUsername(profile_);
+}
+
 bool ChromePasswordManagerClient::IsSyncAccountCredential(
     const std::string& username, const std::string& origin) const {
   return password_manager_sync_metrics::IsSyncAccountCredential(
@@ -201,21 +200,6 @@ void ChromePasswordManagerClient::PasswordAutofillWasBlocked(
     controller->OnBlacklistBlockedAutofill(best_matches);
 }
 
-void ChromePasswordManagerClient::AuthenticateAutofillAndFillForm(
-      scoped_ptr<autofill::PasswordFormFillData> fill_data) {
-#if defined(OS_ANDROID)
-  PasswordAuthenticationManager::AuthenticatePasswordAutofill(
-      web_contents(),
-      base::Bind(&ChromePasswordManagerClient::CommitFillPasswordForm,
-                 weak_factory_.GetWeakPtr(),
-                 base::Owned(fill_data.release())));
-#else
-  // Additional authentication is currently only available for Android, so all
-  // other plaftorms should just fill the password form directly.
-  CommitFillPasswordForm(fill_data.get());
-#endif  // OS_ANDROID
-}
-
 void ChromePasswordManagerClient::HidePasswordGenerationPopup() {
   if (popup_controller_)
     popup_controller_->HideAndDestroy();
@@ -257,16 +241,18 @@ ChromePasswordManagerClient::GetProbabilityForExperiment(
   return enabled_probability;
 }
 
-bool ChromePasswordManagerClient::IsPasswordSyncEnabled() {
+bool ChromePasswordManagerClient::IsPasswordSyncEnabled(
+    password_manager::CustomPassphraseState state) {
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetForProfile(profile_);
-  // Don't consider sync enabled if the user has a custom passphrase. See
-  // crbug.com/358998 for more details.
-  if (sync_service &&
-      sync_service->HasSyncSetupCompleted() &&
-      sync_service->sync_initialized() &&
-      !sync_service->IsUsingSecondaryPassphrase()) {
-    return sync_service->GetActiveDataTypes().Has(syncer::PASSWORDS);
+  if (sync_service && sync_service->HasSyncSetupCompleted() &&
+      sync_service->SyncActive() &&
+      sync_service->GetActiveDataTypes().Has(syncer::PASSWORDS)) {
+    if (sync_service->IsUsingSecondaryPassphrase()) {
+      return state == password_manager::ONLY_CUSTOM_PASSPHRASE;
+    } else {
+      return state == password_manager::WITHOUT_CUSTOM_PASSPHRASE;
+    }
   }
   return false;
 }
@@ -355,8 +341,6 @@ void ChromePasswordManagerClient::ShowPasswordGenerationPopup(
     const autofill::PasswordForm& form) {
   // TODO(gcasto): Validate data in PasswordForm.
 
-  // Not yet implemented on other platforms.
-#if defined(USE_AURA) || defined(OS_MACOSX)
   gfx::RectF element_bounds_in_screen_space = GetBoundsInScreenSpace(bounds);
 
   popup_controller_ =
@@ -370,15 +354,12 @@ void ChromePasswordManagerClient::ShowPasswordGenerationPopup(
           web_contents(),
           web_contents()->GetNativeView());
   popup_controller_->Show(true /* display_password */);
-#endif  // defined(USE_AURA) || defined(OS_MACOSX)
 }
 
 void ChromePasswordManagerClient::ShowPasswordEditingPopup(
     const gfx::RectF& bounds,
     const autofill::PasswordForm& form) {
   gfx::RectF element_bounds_in_screen_space = GetBoundsInScreenSpace(bounds);
-  // Not yet implemented on other platforms.
-#if defined(USE_AURA) || defined(OS_MACOSX)
   popup_controller_ =
       autofill::PasswordGenerationPopupControllerImpl::GetOrCreate(
           popup_controller_,
@@ -390,7 +371,6 @@ void ChromePasswordManagerClient::ShowPasswordEditingPopup(
           web_contents(),
           web_contents()->GetNativeView());
   popup_controller_->Show(false /* display_password */);
-#endif  // defined(USE_AURA) || defined(OS_MACOSX)
 }
 
 void ChromePasswordManagerClient::NotifyRendererOfLoggingAvailability() {
@@ -400,11 +380,6 @@ void ChromePasswordManagerClient::NotifyRendererOfLoggingAvailability() {
   web_contents()->GetRenderViewHost()->Send(new AutofillMsg_SetLoggingState(
       web_contents()->GetRenderViewHost()->GetRoutingID(),
       can_use_log_router_));
-}
-
-void ChromePasswordManagerClient::CommitFillPasswordForm(
-    autofill::PasswordFormFillData* data) {
-  driver_.FillPasswordForm(*data);
 }
 
 bool ChromePasswordManagerClient::LastLoadWasTransactionalReauthPage() const {

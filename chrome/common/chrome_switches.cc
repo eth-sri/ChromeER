@@ -225,6 +225,10 @@ const char kDisableBackgroundNetworking[]   = "disable-background-networking";
 // Disables the bundled PPAPI version of Flash.
 const char kDisableBundledPpapiFlash[]      = "disable-bundled-ppapi-flash";
 
+// Disable hardware encoding support for Cast Streaming.
+const char kDisableCastStreamingHWEncoding[] =
+    "disable-cast-streaming-hw-encoding";
+
 // Disables the client-side phishing detection feature. Note that even if
 // client-side phishing detection is enabled, it will only be active if the
 // user has opted in to UMA stats and SafeBrowsing is enabled in the
@@ -345,6 +349,14 @@ const char kDisableSpdy31[]                 = "disable-spdy31";
 
 // Disables the suggestions service.
 const char kDisableSuggestionsService[]     = "disable-suggestions-service";
+
+// Disables the supervised user host blacklist.
+const char kDisableSupervisedUserBlacklist[] =
+    "disable-supervised-user-blacklist";
+
+// Disables SafeSites filtering for supervised users.
+const char kDisableSupervisedUserSafeSites[] =
+    "disable-supervised-user-safesites";
 
 // Disables syncing browser data to a Google Account.
 const char kDisableSync[]                   = "disable-sync";
@@ -507,6 +519,9 @@ const char kEnablePanels[]                  = "enable-panels";
 const char kEnablePluginPlaceholderShadowDom[] =
     "enable-plugin-placeholder-shadow-dom";
 
+// Enables the Power overlay in Settings.
+const char kEnablePowerOverlay[]            = "enable-power-overlay";
+
 // Enables showing unregistered printers in print preview
 const char kEnablePrintPreviewRegisterPromos[] =
     "enable-print-preview-register-promos";
@@ -587,6 +602,11 @@ const char kEnableSpellingFeedbackFieldTrial[] =
 // minimize the number of full SSL handshakes completed.
 const char kEnableSSLConnectJobWaiting[] = "enable-ssl-connect-job-waiting";
 
+// Enables implementation of the Cache-Control: stale-while-revalidate directive
+// which permits servers to allow the use of stale resources while revalidation
+// proceeds in the background.
+const char kEnableStaleWhileRevalidate[]    = "enable-stale-while-revalidate";
+
 // Enables an experimental hosted app experience.
 const char kEnableStreamlinedHostedApps[]   = "enable-streamlined-hosted-apps";
 
@@ -596,6 +616,10 @@ const char kEnableSuggestionsService[]      = "enable-suggestions-service";
 // Enables the supervised user host blacklist.
 const char kEnableSupervisedUserBlacklist[] =
     "enable-supervised-user-blacklist";
+
+// Enables SafeSites filtering for supervised users.
+const char kEnableSupervisedUserSafeSites[] =
+    "enable-supervised-user-safesites";
 
 // Enables synced notifications.
 const char kEnableSyncSyncedNotifications[] =
@@ -742,7 +766,9 @@ const char kInstallChromeApp[]              = "install-chrome-app";
 
 // Causes Chrome to attempt to get metadata from the webstore for the
 // app/extension ID given, and then prompt the user to download and install it.
-const char kInstallFromWebstore[]           = "install-from-webstore";
+// This is allowed *only* for ephemeral apps. All other ids will be ignored.
+const char kInstallEphemeralAppFromWebstore[] =
+    "install-ephemeral-app-from-webstore";
 
 // Marks a renderer as an Instant process.
 const char kInstantProcess[]                = "instant-process";
@@ -766,10 +792,6 @@ const char kKioskMode[]                     = "kiosk";
 // Print automatically in kiosk mode. |kKioskMode| must be set as well.
 // See http://crbug.com/31395.
 const char kKioskModePrinting[]             = "kiosk-printing";
-
-// Causes Chrome to attempt to get metadata from the webstore for the
-// given item, and then prompt the user to download and install it.
-const char kLimitedInstallFromWebstore[]    = "limited-install-from-webstore";
 
 // Comma-separated list of directories with component extensions to load.
 const char kLoadComponentExtension[]        = "load-component-extension";
@@ -1111,6 +1133,10 @@ const char kSSLVersionMax[]                 = "ssl-version-max";
 // "tls1.2").
 const char kSSLVersionMin[]                 = "ssl-version-min";
 
+// Specifies the minimum SSL/TLS version ("ssl3", "tls1", "tls1.1", or
+// "tls1.2") that TLS fallback will accept.
+const char kSSLVersionFallbackMin[]         = "ssl-version-fallback-min";
+
 // Starts the browser maximized, regardless of any previous settings.
 const char kStartMaximized[]                = "start-maximized";
 
@@ -1227,25 +1253,15 @@ const char kEnableAppInstallAlerts[]        = "enable-app-install-alerts";
 // Enables Contextual Search.
 const char kEnableContextualSearch[]        = "enable-contextual-search";
 
-// Enables zero suggest functionality on Dev channel, showing contextual
-// suggestions (EtherSuggest) for http pages and google.com search queries.
-const char kEnableZeroSuggestEtherSerp[] =
-    "enable-zero-suggest-ether-serp";
-
-// Enables zero suggest functionality on Dev channel, showing contextual
-// suggestions (EtherSuggest) for http pages.
-const char kEnableZeroSuggestEtherNoSerp[] =
-    "enable-zero-suggest-ether-noserp";
-
 // Enables zero suggest functionality on Dev channel, showing most visited
 // sites as default suggestions.
 const char kEnableZeroSuggestMostVisited[] =
     "enable-zero-suggest-most-visited";
 
-// Enables zero suggest functionality on Dev channel, showing recently typed
-// queries as default suggestions.
-const char kEnableZeroSuggestPersonalized[] =
-    "enable-zero-suggest-personalized";
+// Enable zero suggest functionality on Dev channel, showing most visited
+// sites on non-search-result pages as default suggestions.
+const char kEnableZeroSuggestMostVisitedWithoutSerp[] =
+    "enable-zero-suggest-most-visited-without-serp";
 
 // Enables instant search clicks feature.
 const char kEnableInstantSearchClicks[] = "enable-instant-search-clicks";
@@ -1277,10 +1293,6 @@ const char kAppsKeepChromeAliveInTests[]    = "apps-keep-chrome-alive-in-tests";
 // older, SnowLeopard-style fullscreen.
 const char kDisableSystemFullscreenForTesting[] =
     "disable-system-fullscreen-for-testing";
-
-// Makes the browser window's contentView take up the full size of the
-// window in OSX Yosemite.
-const char kEnableFullSizeContentView[]     = "enable-full-size-content-view";
 
 // A process type (switches::kProcessType) that relaunches the browser. See
 // chrome/browser/mac/relauncher.h.
@@ -1348,6 +1360,13 @@ bool SettingsWindowEnabled() {
       ::switches::kEnableSettingsWindow);
 #endif
 }
+
+#if defined(OS_CHROMEOS)
+bool PowerOverlayEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kEnablePowerOverlay);
+}
+#endif
 
 // -----------------------------------------------------------------------------
 // DO NOT ADD YOUR CRAP TO THE BOTTOM OF THIS FILE.

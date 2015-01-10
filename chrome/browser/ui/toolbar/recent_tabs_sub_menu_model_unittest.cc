@@ -52,14 +52,14 @@ class TestRecentTabsSubMenuModel : public RecentTabsSubMenuModel {
   }
 
   // Testing overrides to ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
+  bool IsCommandIdEnabled(int command_id) const override {
     bool val = RecentTabsSubMenuModel::IsCommandIdEnabled(command_id);
     if (val)
       ++enable_count_;
     return val;
   }
 
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     ++execute_count_;
   }
 
@@ -81,18 +81,15 @@ class TestRecentTabsMenuModelDelegate : public ui::MenuModelDelegate {
     model_->SetMenuModelDelegate(this);
   }
 
-  virtual ~TestRecentTabsMenuModelDelegate() {
+  ~TestRecentTabsMenuModelDelegate() override {
     model_->SetMenuModelDelegate(NULL);
   }
 
   // ui::MenuModelDelegate implementation:
 
-  virtual void OnIconChanged(int index) OVERRIDE {
-  }
+  void OnIconChanged(int index) override {}
 
-  virtual void OnMenuStructureChanged() OVERRIDE {
-    got_changes_ = true;
-  }
+  void OnMenuStructureChanged() override { got_changes_ = true; }
 
   bool got_changes() const { return got_changes_; }
 
@@ -105,10 +102,10 @@ class TestRecentTabsMenuModelDelegate : public ui::MenuModelDelegate {
 
 class DummyRouter : public browser_sync::LocalSessionEventRouter {
  public:
-  virtual ~DummyRouter() {}
-  virtual void StartRoutingTo(
-      browser_sync::LocalSessionEventHandler* handler) OVERRIDE {}
-  virtual void Stop() OVERRIDE {}
+  ~DummyRouter() override {}
+  void StartRoutingTo(
+      browser_sync::LocalSessionEventHandler* handler) override {}
+  void Stop() override {}
 };
 
 }  // namespace
@@ -264,8 +261,9 @@ TEST_F(RecentTabsSubMenuModelTest,
   SessionServiceFactory::SetForTestProfile(profile(), session_service);
   SessionID tab_id;
   SessionID window_id;
-  session_service->SetWindowType(
-      window_id, Browser::TYPE_TABBED, SessionService::TYPE_NORMAL);
+  session_service->SetWindowType(window_id,
+                                 Browser::TYPE_TABBED,
+                                 SessionService::TYPE_NORMAL);
   session_service->SetTabWindow(window_id, tab_id);
   session_service->SetTabIndexInWindow(window_id, tab_id, 0);
   session_service->SetSelectedTabInWindow(window_id, 0);

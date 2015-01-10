@@ -31,6 +31,8 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/capturing_net_log.h"
+#include "net/base/chunked_upload_data_stream.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
@@ -242,10 +244,10 @@ bool ContainsString(const std::string& haystack, const char* needle) {
   return it != haystack.end();
 }
 
-UploadDataStream* CreateSimpleUploadData(const char* data) {
+scoped_ptr<UploadDataStream> CreateSimpleUploadData(const char* data) {
   scoped_ptr<UploadElementReader> reader(
       new UploadBytesElementReader(data, strlen(data)));
-  return UploadDataStream::CreateWithReader(reader.Pass(), 0);
+  return ElementsUploadDataStream::CreateWithReader(reader.Pass(), 0);
 }
 
 // Verify that the SSLInfo of a successful SSL connection has valid values.
@@ -365,26 +367,26 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
                        const AuthCallback& callback);
 
   // TestNetworkDelegate implementation.
-  virtual int OnBeforeURLRequest(URLRequest* request,
-                                 const CompletionCallback& callback,
-                                 GURL* new_url) OVERRIDE;
+  int OnBeforeURLRequest(URLRequest* request,
+                         const CompletionCallback& callback,
+                         GURL* new_url) override;
 
-  virtual int OnBeforeSendHeaders(URLRequest* request,
-                                  const CompletionCallback& callback,
-                                  HttpRequestHeaders* headers) OVERRIDE;
+  int OnBeforeSendHeaders(URLRequest* request,
+                          const CompletionCallback& callback,
+                          HttpRequestHeaders* headers) override;
 
-  virtual int OnHeadersReceived(
+  int OnHeadersReceived(
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
-      GURL* allowed_unsafe_redirect_url) OVERRIDE;
+      GURL* allowed_unsafe_redirect_url) override;
 
-  virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
+  NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
       const AuthChallengeInfo& auth_info,
       const AuthCallback& callback,
-      AuthCredentials* credentials) OVERRIDE;
+      AuthCredentials* credentials) override;
 
   // Resets the callbacks and |stage_blocked_for_callback_|.
   void Reset();
@@ -594,7 +596,7 @@ class TestURLRequestContextWithProxy : public TestURLRequestContext {
     set_network_delegate(delegate);
     Init();
   }
-  virtual ~TestURLRequestContextWithProxy() {}
+  ~TestURLRequestContextWithProxy() override {}
 };
 
 }  // namespace
@@ -613,7 +615,7 @@ class URLRequestTest : public PlatformTest {
     default_context_.set_job_factory(&job_factory_);
     default_context_.Init();
   }
-  virtual ~URLRequestTest() {
+  ~URLRequestTest() override {
     // URLRequestJobs may post clean-up tasks on destruction.
     base::RunLoop().RunUntilIdle();
   }
@@ -1103,11 +1105,9 @@ class RestartTestJob : public URLRequestTestJob {
   RestartTestJob(URLRequest* request, NetworkDelegate* network_delegate)
     : URLRequestTestJob(request, network_delegate, true) {}
  protected:
-  virtual void StartAsync() OVERRIDE {
-    this->NotifyRestartRequired();
-  }
+  void StartAsync() override { this->NotifyRestartRequired(); }
  private:
-  virtual ~RestartTestJob() {}
+  ~RestartTestJob() override {}
 };
 
 class CancelTestJob : public URLRequestTestJob {
@@ -1115,11 +1115,9 @@ class CancelTestJob : public URLRequestTestJob {
   explicit CancelTestJob(URLRequest* request, NetworkDelegate* network_delegate)
     : URLRequestTestJob(request, network_delegate, true) {}
  protected:
-  virtual void StartAsync() OVERRIDE {
-    request_->Cancel();
-  }
+  void StartAsync() override { request_->Cancel(); }
  private:
-  virtual ~CancelTestJob() {}
+  ~CancelTestJob() override {}
 };
 
 class CancelThenRestartTestJob : public URLRequestTestJob {
@@ -1129,12 +1127,12 @@ class CancelThenRestartTestJob : public URLRequestTestJob {
       : URLRequestTestJob(request, network_delegate, true) {
   }
  protected:
-  virtual void StartAsync() OVERRIDE {
+  void StartAsync() override {
     request_->Cancel();
     this->NotifyRestartRequired();
   }
  private:
-  virtual ~CancelThenRestartTestJob() {}
+  ~CancelThenRestartTestJob() override {}
 };
 
 // An Interceptor for use with interceptor tests
@@ -1154,13 +1152,12 @@ class TestInterceptor : URLRequest::Interceptor {
     URLRequest::Deprecated::RegisterRequestInterceptor(this);
   }
 
-  virtual ~TestInterceptor() {
+  ~TestInterceptor() override {
     URLRequest::Deprecated::UnregisterRequestInterceptor(this);
   }
 
-  virtual URLRequestJob* MaybeIntercept(
-      URLRequest* request,
-      NetworkDelegate* network_delegate) OVERRIDE {
+  URLRequestJob* MaybeIntercept(URLRequest* request,
+                                NetworkDelegate* network_delegate) override {
     if (restart_main_request_) {
       restart_main_request_ = false;
       did_restart_main_ = true;
@@ -1195,10 +1192,9 @@ class TestInterceptor : URLRequest::Interceptor {
     return job;
   }
 
-  virtual URLRequestJob* MaybeInterceptRedirect(
-      URLRequest* request,
-      NetworkDelegate* network_delegate,
-      const GURL& location) OVERRIDE {
+  URLRequestJob* MaybeInterceptRedirect(URLRequest* request,
+                                        NetworkDelegate* network_delegate,
+                                        const GURL& location) override {
     if (cancel_redirect_request_) {
       cancel_redirect_request_ = false;
       did_cancel_redirect_ = true;
@@ -1215,8 +1211,9 @@ class TestInterceptor : URLRequest::Interceptor {
                                  true);
   }
 
-  virtual URLRequestJob* MaybeInterceptResponse(
-      URLRequest* request, NetworkDelegate* network_delegate) OVERRIDE {
+  URLRequestJob* MaybeInterceptResponse(
+      URLRequest* request,
+      NetworkDelegate* network_delegate) override {
     if (cancel_final_request_) {
       cancel_final_request_ = false;
       did_cancel_final_ = true;
@@ -2394,15 +2391,15 @@ class FixedDateNetworkDelegate : public TestNetworkDelegate {
  public:
   explicit FixedDateNetworkDelegate(const std::string& fixed_date)
       : fixed_date_(fixed_date) {}
-  virtual ~FixedDateNetworkDelegate() {}
+  ~FixedDateNetworkDelegate() override {}
 
   // NetworkDelegate implementation
-  virtual int OnHeadersReceived(
+  int OnHeadersReceived(
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
-      GURL* allowed_unsafe_redirect_url) OVERRIDE;
+      GURL* allowed_unsafe_redirect_url) override;
 
  private:
   std::string fixed_date_;
@@ -2556,7 +2553,7 @@ class URLRequestTestHTTP : public URLRequestTest {
         redirect_url, DEFAULT_PRIORITY, &d, NULL));
     req->set_method(request_method);
     if (include_data) {
-      req->set_upload(make_scoped_ptr(CreateSimpleUploadData(kData)));
+      req->set_upload(CreateSimpleUploadData(kData));
       HttpRequestHeaders headers;
       headers.SetHeader(HttpRequestHeaders::kContentLength,
                         base::UintToString(arraysize(kData) - 1));
@@ -2602,7 +2599,7 @@ class URLRequestTestHTTP : public URLRequestTest {
           test_server_.GetURL("echo"), DEFAULT_PRIORITY, &d, NULL));
       r->set_method(method.c_str());
 
-      r->set_upload(make_scoped_ptr(CreateSimpleUploadData(uploadBytes)));
+      r->set_upload(CreateSimpleUploadData(uploadBytes));
 
       r->Start();
       EXPECT_TRUE(r->is_pending());
@@ -3015,7 +3012,7 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestPost) {
     scoped_ptr<URLRequest> r(context.CreateRequest(
         original_url, DEFAULT_PRIORITY, &d, NULL));
     r->set_method("POST");
-    r->set_upload(make_scoped_ptr(CreateSimpleUploadData(kData)));
+    r->set_upload(CreateSimpleUploadData(kData));
     HttpRequestHeaders headers;
     headers.SetHeader(HttpRequestHeaders::kContentLength,
                       base::UintToString(arraysize(kData) - 1));
@@ -3989,29 +3986,29 @@ class AsyncDelegateLogger : public base::RefCounted<AsyncDelegateLogger> {
 class AsyncLoggingNetworkDelegate : public TestNetworkDelegate {
  public:
   AsyncLoggingNetworkDelegate() {}
-  virtual ~AsyncLoggingNetworkDelegate() {}
+  ~AsyncLoggingNetworkDelegate() override {}
 
   // NetworkDelegate implementation.
-  virtual int OnBeforeURLRequest(URLRequest* request,
-                                 const CompletionCallback& callback,
-                                 GURL* new_url) OVERRIDE {
+  int OnBeforeURLRequest(URLRequest* request,
+                         const CompletionCallback& callback,
+                         GURL* new_url) override {
     TestNetworkDelegate::OnBeforeURLRequest(request, callback, new_url);
     return RunCallbackAsynchronously(request, callback);
   }
 
-  virtual int OnBeforeSendHeaders(URLRequest* request,
-                                  const CompletionCallback& callback,
-                                  HttpRequestHeaders* headers) OVERRIDE {
+  int OnBeforeSendHeaders(URLRequest* request,
+                          const CompletionCallback& callback,
+                          HttpRequestHeaders* headers) override {
     TestNetworkDelegate::OnBeforeSendHeaders(request, callback, headers);
     return RunCallbackAsynchronously(request, callback);
   }
 
-  virtual int OnHeadersReceived(
+  int OnHeadersReceived(
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
-      GURL* allowed_unsafe_redirect_url) OVERRIDE {
+      GURL* allowed_unsafe_redirect_url) override {
     TestNetworkDelegate::OnHeadersReceived(request,
                                            callback,
                                            original_response_headers,
@@ -4020,11 +4017,11 @@ class AsyncLoggingNetworkDelegate : public TestNetworkDelegate {
     return RunCallbackAsynchronously(request, callback);
   }
 
-  virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
+  NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
       const AuthChallengeInfo& auth_info,
       const AuthCallback& callback,
-      AuthCredentials* credentials) OVERRIDE {
+      AuthCredentials* credentials) override {
     AsyncDelegateLogger::Run(
         request,
         LOAD_STATE_WAITING_FOR_DELEGATE,
@@ -4081,12 +4078,12 @@ class AsyncLoggingUrlRequestDelegate : public TestDelegate {
     else if (cancel_stage == CANCEL_ON_READ_COMPLETED)
       set_cancel_in_received_data(true);
   }
-  virtual ~AsyncLoggingUrlRequestDelegate() {}
+  ~AsyncLoggingUrlRequestDelegate() override {}
 
   // URLRequest::Delegate implementation:
-  void virtual OnReceivedRedirect(URLRequest* request,
-                                  const RedirectInfo& redirect_info,
-                                  bool* defer_redirect) OVERRIDE {
+  void OnReceivedRedirect(URLRequest* request,
+                          const RedirectInfo& redirect_info,
+                          bool* defer_redirect) override {
     *defer_redirect = true;
     AsyncDelegateLogger::Run(
         request,
@@ -4098,7 +4095,7 @@ class AsyncLoggingUrlRequestDelegate : public TestDelegate {
             base::Unretained(this), request, redirect_info));
   }
 
-  virtual void OnResponseStarted(URLRequest* request) OVERRIDE {
+  void OnResponseStarted(URLRequest* request) override {
     AsyncDelegateLogger::Run(
       request,
       LOAD_STATE_WAITING_FOR_DELEGATE,
@@ -4109,8 +4106,7 @@ class AsyncLoggingUrlRequestDelegate : public TestDelegate {
           base::Unretained(this), request));
   }
 
-  virtual void OnReadCompleted(URLRequest* request,
-                               int bytes_read) OVERRIDE {
+  void OnReadCompleted(URLRequest* request, int bytes_read) override {
     AsyncDelegateLogger::Run(
         request,
         LOAD_STATE_IDLE,
@@ -4576,9 +4572,9 @@ const char kExtraHeader[] = "Allow-Snafu";
 const char kExtraValue[] = "fubar";
 
 class RedirectWithAdditionalHeadersDelegate : public TestDelegate {
-  virtual void OnReceivedRedirect(URLRequest* request,
-                                  const RedirectInfo& redirect_info,
-                                  bool* defer_redirect) OVERRIDE {
+  void OnReceivedRedirect(URLRequest* request,
+                          const RedirectInfo& redirect_info,
+                          bool* defer_redirect) override {
     TestDelegate::OnReceivedRedirect(request, redirect_info, defer_redirect);
     request->SetExtraRequestHeaderByName(kExtraHeader, kExtraValue, false);
   }
@@ -4613,9 +4609,9 @@ namespace {
 const char kExtraHeaderToRemove[] = "To-Be-Removed";
 
 class RedirectWithHeaderRemovalDelegate : public TestDelegate {
-  virtual void OnReceivedRedirect(URLRequest* request,
-                                  const RedirectInfo& redirect_info,
-                                  bool* defer_redirect) OVERRIDE {
+  void OnReceivedRedirect(URLRequest* request,
+                          const RedirectInfo& redirect_info,
+                          bool* defer_redirect) override {
     TestDelegate::OnReceivedRedirect(request, redirect_info, defer_redirect);
     request->RemoveRequestHeaderByName(kExtraHeaderToRemove);
   }
@@ -4828,8 +4824,8 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
                                     0,
                                     kuint64max,
                                     base::Time()));
-    r->set_upload(make_scoped_ptr(
-        new UploadDataStream(element_readers.Pass(), 0)));
+    r->set_upload(make_scoped_ptr<UploadDataStream>(
+        new ElementsUploadDataStream(element_readers.Pass(), 0)));
 
     r->Start();
     EXPECT_TRUE(r->is_pending());
@@ -4871,8 +4867,8 @@ TEST_F(URLRequestTestHTTP, PostUnreadableFileTest) {
         0,
         kuint64max,
         base::Time()));
-    r->set_upload(make_scoped_ptr(
-        new UploadDataStream(element_readers.Pass(), 0)));
+    r->set_upload(make_scoped_ptr<UploadDataStream>(
+        new ElementsUploadDataStream(element_readers.Pass(), 0)));
 
     r->Start();
     EXPECT_TRUE(r->is_pending());
@@ -5949,7 +5945,7 @@ TEST_F(URLRequestTestHTTP, Post302RedirectGet) {
       test_server_.GetURL("files/redirect-to-echoall"), DEFAULT_PRIORITY, &d,
       NULL));
   req->set_method("POST");
-  req->set_upload(make_scoped_ptr(CreateSimpleUploadData(kData)));
+  req->set_upload(CreateSimpleUploadData(kData));
 
   // Set headers (some of which are specific to the POST).
   HttpRequestHeaders headers;
@@ -6136,7 +6132,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost302RedirectGet) {
   scoped_ptr<URLRequest> req(default_context_.CreateRequest(
       test_server_.GetURL("empty.html"), DEFAULT_PRIORITY, &d, NULL));
   req->set_method("POST");
-  req->set_upload(make_scoped_ptr(CreateSimpleUploadData(kData)));
+  req->set_upload(CreateSimpleUploadData(kData));
   HttpRequestHeaders headers;
   headers.SetHeader(HttpRequestHeaders::kContentLength,
                     base::UintToString(arraysize(kData) - 1));
@@ -6161,7 +6157,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost307RedirectPost) {
   scoped_ptr<URLRequest> req(default_context_.CreateRequest(
       test_server_.GetURL("empty.html"), DEFAULT_PRIORITY, &d, NULL));
   req->set_method("POST");
-  req->set_upload(make_scoped_ptr(CreateSimpleUploadData(kData)));
+  req->set_upload(CreateSimpleUploadData(kData));
   HttpRequestHeaders headers;
   headers.SetHeader(HttpRequestHeaders::kContentLength,
                     base::UintToString(arraysize(kData) - 1));
@@ -6340,7 +6336,7 @@ TEST_F(URLRequestTestHTTP, EmptyHttpUserAgentSettings) {
                 { "echoheader?Accept-Charset", "None" },
                 { "echoheader?User-Agent", "" } };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); i++) {
+  for (size_t i = 0; i < arraysize(tests); i++) {
     TestDelegate d;
     scoped_ptr<URLRequest> req(context.CreateRequest(
         test_server_.GetURL(tests[i].request), DEFAULT_PRIORITY, &d, NULL));
@@ -6456,7 +6452,7 @@ class HTTPSRequestTest : public testing::Test {
     default_context_.set_network_delegate(&default_network_delegate_);
     default_context_.Init();
   }
-  virtual ~HTTPSRequestTest() {}
+  ~HTTPSRequestTest() override {}
 
  protected:
   TestNetworkDelegate default_network_delegate_;  // Must outlive URLRequest.
@@ -6720,7 +6716,7 @@ TEST_F(HTTPSRequestTest, HSTSPreservesPosts) {
                                   test_server.host_port_pair().port())),
       DEFAULT_PRIORITY, &d, NULL));
   req->set_method("POST");
-  req->set_upload(make_scoped_ptr(CreateSimpleUploadData(kData)));
+  req->set_upload(CreateSimpleUploadData(kData));
 
   req->Start();
   base::RunLoop().Run();
@@ -6809,9 +6805,8 @@ class SSLClientAuthTestDelegate : public TestDelegate {
  public:
   SSLClientAuthTestDelegate() : on_certificate_requested_count_(0) {
   }
-  virtual void OnCertificateRequested(
-      URLRequest* request,
-      SSLCertRequestInfo* cert_request_info) OVERRIDE {
+  void OnCertificateRequested(URLRequest* request,
+                              SSLCertRequestInfo* cert_request_info) override {
     on_certificate_requested_count_++;
     base::MessageLoop::current()->Quit();
   }
@@ -6934,6 +6929,28 @@ TEST_F(HTTPSRequestTest, ResumeTest) {
   }
 }
 
+// AssertTwoDistinctSessionsInserted checks that |session_info|, which must be
+// the result of fetching "ssl-session-cache" from the test server, indicates
+// that exactly two different sessions were inserted, with no lookups etc.
+static void AssertTwoDistinctSessionsInserted(const string& session_info) {
+  std::vector<std::string> lines;
+  base::SplitString(session_info, '\n', &lines);
+  ASSERT_EQ(3u, lines.size()) << session_info;
+
+  std::string session_id;
+  for (size_t i = 0; i < 2; i++) {
+    std::vector<std::string> parts;
+    base::SplitString(lines[i], '\t', &parts);
+    ASSERT_EQ(2u, parts.size());
+    EXPECT_EQ("insert", parts[0]);
+    if (i == 0) {
+      session_id = parts[1];
+    } else {
+      EXPECT_NE(session_id, parts[1]);
+    }
+  }
+}
+
 TEST_F(HTTPSRequestTest, SSLSessionCacheShardTest) {
   // Test that sessions aren't resumed when the value of ssl_session_cache_shard
   // differs.
@@ -6997,22 +7014,7 @@ TEST_F(HTTPSRequestTest, SSLSessionCacheShardTest) {
     // three lines.
 
     EXPECT_EQ(1, d.response_started_count());
-    std::vector<std::string> lines;
-    base::SplitString(d.data_received(), '\n', &lines);
-    ASSERT_EQ(3u, lines.size());
-
-    std::string session_id;
-    for (size_t i = 0; i < 2; i++) {
-      std::vector<std::string> parts;
-      base::SplitString(lines[i], '\t', &parts);
-      ASSERT_EQ(2u, parts.size());
-      EXPECT_EQ("insert", parts[0]);
-      if (i == 0) {
-        session_id = parts[1];
-      } else {
-        EXPECT_NE(session_id, parts[1]);
-      }
-    }
+    AssertTwoDistinctSessionsInserted(d.data_received());
   }
 }
 
@@ -7033,8 +7035,7 @@ bool IsECDSACipherSuite(uint16_t cipher_suite) {
 
 // Test that ECDSA is disabled on Windows XP, where ECDSA certificates cannot be
 // verified.
-// Test seems flaky, see http://crbug.com/411827.
-TEST_F(HTTPSRequestTest, DISABLED_DisableECDSAOnXP) {
+TEST_F(HTTPSRequestTest, DisableECDSAOnXP) {
   if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
     LOG(INFO) << "Skipping test on this version.";
     return;
@@ -7068,17 +7069,80 @@ TEST_F(HTTPSRequestTest, DISABLED_DisableECDSAOnXP) {
 
 #endif  // OS_WIN
 
+class TestSSLConfigService : public SSLConfigService {
+ public:
+  TestSSLConfigService(bool ev_enabled,
+                       bool online_rev_checking,
+                       bool rev_checking_required_local_anchors)
+      : ev_enabled_(ev_enabled),
+        online_rev_checking_(online_rev_checking),
+        rev_checking_required_local_anchors_(
+            rev_checking_required_local_anchors),
+        min_version_(kDefaultSSLVersionMin),
+        fallback_min_version_(kDefaultSSLVersionFallbackMin) {}
+
+  void set_min_version(uint16 version) {
+    min_version_ = version;
+  }
+
+  void set_fallback_min_version(uint16 version) {
+    fallback_min_version_ = version;
+  }
+
+  // SSLConfigService:
+  void GetSSLConfig(SSLConfig* config) override {
+    *config = SSLConfig();
+    config->rev_checking_enabled = online_rev_checking_;
+    config->verify_ev_cert = ev_enabled_;
+    config->rev_checking_required_local_anchors =
+        rev_checking_required_local_anchors_;
+    if (fallback_min_version_) {
+      config->version_fallback_min = fallback_min_version_;
+    }
+    if (min_version_) {
+      config->version_min = min_version_;
+    }
+  }
+
+ protected:
+  ~TestSSLConfigService() override {}
+
+ private:
+  const bool ev_enabled_;
+  const bool online_rev_checking_;
+  const bool rev_checking_required_local_anchors_;
+  uint16 min_version_;
+  uint16 fallback_min_version_;
+};
+
+class FallbackTestURLRequestContext : public TestURLRequestContext {
+ public:
+  explicit FallbackTestURLRequestContext(bool delay_initialization)
+      : TestURLRequestContext(delay_initialization) {}
+
+  void set_fallback_min_version(uint16 version) {
+    TestSSLConfigService *ssl_config_service =
+        new TestSSLConfigService(true /* check for EV */,
+                                 false /* online revocation checking */,
+                                 false /* require rev. checking for local
+                                          anchors */);
+    ssl_config_service->set_min_version(SSL_PROTOCOL_VERSION_SSL3);
+    ssl_config_service->set_fallback_min_version(version);
+    set_ssl_config_service(ssl_config_service);
+  }
+};
+
 class HTTPSFallbackTest : public testing::Test {
  public:
-  HTTPSFallbackTest() : context_(true) {
-    context_.Init();
-    delegate_.set_allow_certificate_errors(true);
-  }
-  virtual ~HTTPSFallbackTest() {}
+  HTTPSFallbackTest() : context_(true) {}
+  ~HTTPSFallbackTest() override {}
 
  protected:
   void DoFallbackTest(const SpawnedTestServer::SSLOptions& ssl_options) {
     DCHECK(!request_);
+    context_.Init();
+    delegate_.set_allow_certificate_errors(true);
+
     SpawnedTestServer test_server(
         SpawnedTestServer::TYPE_HTTPS,
         ssl_options,
@@ -7090,6 +7154,10 @@ class HTTPSFallbackTest : public testing::Test {
     request_->Start();
 
     base::RunLoop().Run();
+  }
+
+  void set_fallback_min_version(uint16 version) {
+    context_.set_fallback_min_version(version);
   }
 
   void ExpectConnection(int version) {
@@ -7110,7 +7178,7 @@ class HTTPSFallbackTest : public testing::Test {
 
  private:
   TestDelegate delegate_;
-  TestURLRequestContext context_;
+  FallbackTestURLRequestContext context_;
   scoped_ptr<URLRequest> request_;
 };
 
@@ -7186,7 +7254,7 @@ TEST_F(HTTPSFallbackTest, FallbackSCSVClosed) {
   ExpectFailure(ERR_CONNECTION_CLOSED);
 }
 
-// Tests that the SSLv3 fallback triggers on alert.
+// Tests that the SSLv3 fallback doesn't happen by default.
 TEST_F(HTTPSFallbackTest, SSLv3Fallback) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_OK);
@@ -7194,10 +7262,23 @@ TEST_F(HTTPSFallbackTest, SSLv3Fallback) {
       SpawnedTestServer::SSLOptions::TLS_INTOLERANT_ALL;
 
   ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
+  ExpectFailure(ERR_SSL_VERSION_OR_CIPHER_MISMATCH);
+}
+
+// Tests that the SSLv3 fallback works when explicitly enabled.
+TEST_F(HTTPSFallbackTest, SSLv3FallbackEnabled) {
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_OK);
+  ssl_options.tls_intolerant =
+      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_ALL;
+  set_fallback_min_version(SSL_PROTOCOL_VERSION_SSL3);
+
+  ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
   ExpectConnection(SSL_CONNECTION_VERSION_SSL3);
 }
 
-// Tests that the SSLv3 fallback triggers on closed connections.
+// Tests that the SSLv3 fallback triggers on closed connections when explicitly
+// enabled.
 TEST_F(HTTPSFallbackTest, SSLv3FallbackClosed) {
   SpawnedTestServer::SSLOptions ssl_options(
       SpawnedTestServer::SSLOptions::CERT_OK);
@@ -7205,9 +7286,80 @@ TEST_F(HTTPSFallbackTest, SSLv3FallbackClosed) {
       SpawnedTestServer::SSLOptions::TLS_INTOLERANT_ALL;
   ssl_options.tls_intolerance_type =
       SpawnedTestServer::SSLOptions::TLS_INTOLERANCE_CLOSE;
+  set_fallback_min_version(SSL_PROTOCOL_VERSION_SSL3);
 
   ASSERT_NO_FATAL_FAILURE(DoFallbackTest(ssl_options));
   ExpectConnection(SSL_CONNECTION_VERSION_SSL3);
+}
+
+// Test that SSLv3 fallback probe connections don't cause sessions to be cached.
+TEST_F(HTTPSRequestTest, SSLv3FallbackNoCache) {
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_OK);
+  ssl_options.tls_intolerant =
+      SpawnedTestServer::SSLOptions::TLS_INTOLERANT_ALL;
+  ssl_options.tls_intolerance_type =
+      SpawnedTestServer::SSLOptions::TLS_INTOLERANCE_CLOSE;
+  ssl_options.record_resume = true;
+
+  SpawnedTestServer test_server(
+      SpawnedTestServer::TYPE_HTTPS,
+      ssl_options,
+      base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
+  ASSERT_TRUE(test_server.Start());
+
+  SSLClientSocket::ClearSessionCache();
+
+  // Make a connection that does a probe fallback to SSLv3 but fails because
+  // SSLv3 fallback is disabled. We don't wish a session for this connection to
+  // be inserted locally.
+  {
+    TestDelegate delegate;
+    FallbackTestURLRequestContext context(true);
+
+    context.set_fallback_min_version(SSL_PROTOCOL_VERSION_TLS1);
+    context.Init();
+    scoped_ptr<URLRequest> request(context.CreateRequest(
+        test_server.GetURL(std::string()), DEFAULT_PRIORITY, &delegate, NULL));
+    request->Start();
+
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, delegate.response_started_count());
+    EXPECT_FALSE(request->status().is_success());
+    EXPECT_EQ(URLRequestStatus::FAILED, request->status().status());
+    EXPECT_EQ(ERR_SSL_FALLBACK_BEYOND_MINIMUM_VERSION,
+              request->status().error());
+  }
+
+  // Now allow SSLv3 connections and request the session cache log.
+  {
+    TestDelegate delegate;
+    FallbackTestURLRequestContext context(true);
+    context.set_fallback_min_version(SSL_PROTOCOL_VERSION_SSL3);
+
+    context.Init();
+    scoped_ptr<URLRequest> request(
+        context.CreateRequest(test_server.GetURL("ssl-session-cache"),
+                               DEFAULT_PRIORITY,
+                               &delegate,
+                               NULL));
+    request->Start();
+
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, delegate.response_started_count());
+    EXPECT_NE(0, delegate.bytes_received());
+    EXPECT_EQ(SSL_CONNECTION_VERSION_SSL3, SSLConnectionStatusToVersion(
+        request->ssl_info().connection_status));
+    EXPECT_TRUE(request->ssl_info().connection_status &
+                SSL_CONNECTION_VERSION_FALLBACK);
+
+    std::vector<std::string> lines;
+    // If no sessions were cached then the server should have seen two sessions
+    // inserted with no lookups.
+    AssertTwoDistinctSessionsInserted(delegate.data_received());
+  }
 }
 
 // This test is disabled on Android because the remote test server doesn't cause
@@ -7236,7 +7388,7 @@ class HTTPSSessionTest : public testing::Test {
     default_context_.set_cert_verifier(&cert_verifier_);
     default_context_.Init();
   }
-  virtual ~HTTPSSessionTest() {}
+  ~HTTPSSessionTest() override {}
 
  protected:
   MockCertVerifier cert_verifier_;
@@ -7302,52 +7454,9 @@ TEST_F(HTTPSSessionTest, DontResumeSessionsForInvalidCertificates) {
     //   insert xyz
 
     EXPECT_EQ(1, d.response_started_count());
-    std::vector<std::string> lines;
-    base::SplitString(d.data_received(), '\n', &lines);
-    ASSERT_EQ(3u, lines.size()) << d.data_received();
-
-    std::string session_id;
-    for (size_t i = 0; i < 2; i++) {
-      std::vector<std::string> parts;
-      base::SplitString(lines[i], '\t', &parts);
-      ASSERT_EQ(2u, parts.size());
-      EXPECT_EQ("insert", parts[0]);
-      if (i == 0) {
-        session_id = parts[1];
-      } else {
-        EXPECT_NE(session_id, parts[1]);
-      }
-    }
+    AssertTwoDistinctSessionsInserted(d.data_received());
   }
 }
-
-class TestSSLConfigService : public SSLConfigService {
- public:
-  TestSSLConfigService(bool ev_enabled,
-                       bool online_rev_checking,
-                       bool rev_checking_required_local_anchors)
-      : ev_enabled_(ev_enabled),
-        online_rev_checking_(online_rev_checking),
-        rev_checking_required_local_anchors_(
-            rev_checking_required_local_anchors) {}
-
-  // SSLConfigService:
-  virtual void GetSSLConfig(SSLConfig* config) OVERRIDE {
-    *config = SSLConfig();
-    config->rev_checking_enabled = online_rev_checking_;
-    config->verify_ev_cert = ev_enabled_;
-    config->rev_checking_required_local_anchors =
-        rev_checking_required_local_anchors_;
-  }
-
- protected:
-  virtual ~TestSSLConfigService() {}
-
- private:
-  const bool ev_enabled_;
-  const bool online_rev_checking_;
-  const bool rev_checking_required_local_anchors_;
-};
 
 // This the fingerprint of the "Testing CA" certificate used by the testserver.
 // See net/data/ssl/certificates/ocsp-test-root.pem.
@@ -7378,7 +7487,7 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
                                    kOCSPTestCertPolicy)) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     SetupContext(&context_);
     context_.Init();
 
@@ -7415,7 +7524,7 @@ class HTTPSOCSPTest : public HTTPSRequestTest {
     *out_cert_status = r->ssl_info().cert_status;
   }
 
-  virtual ~HTTPSOCSPTest() {
+  ~HTTPSOCSPTest() override {
 #if defined(USE_NSS) || defined(OS_IOS)
     ShutdownNSSHttpIO();
 #endif
@@ -7559,7 +7668,7 @@ TEST_F(HTTPSOCSPTest, Invalid) {
 
 class HTTPSHardFailTest : public HTTPSOCSPTest {
  protected:
-  virtual void SetupContext(URLRequestContext* context) OVERRIDE {
+  void SetupContext(URLRequestContext* context) override {
     context->set_ssl_config_service(
         new TestSSLConfigService(false /* check for EV */,
                                  false /* online revocation checking */,
@@ -7597,7 +7706,7 @@ TEST_F(HTTPSHardFailTest, FailsOnOCSPInvalid) {
 
 class HTTPSEVCRLSetTest : public HTTPSOCSPTest {
  protected:
-  virtual void SetupContext(URLRequestContext* context) OVERRIDE {
+  void SetupContext(URLRequestContext* context) override {
     context->set_ssl_config_service(
         new TestSSLConfigService(true /* check for EV */,
                                  false /* online revocation checking */,
@@ -7782,7 +7891,7 @@ TEST_F(HTTPSEVCRLSetTest, ExpiredCRLSetAndRevokedNonEVCert) {
 
 class HTTPSCRLSetTest : public HTTPSOCSPTest {
  protected:
-  virtual void SetupContext(URLRequestContext* context) OVERRIDE {
+  void SetupContext(URLRequestContext* context) override {
     context->set_ssl_config_service(
         new TestSSLConfigService(false /* check for EV */,
                                  false /* online revocation checking */,

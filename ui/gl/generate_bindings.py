@@ -216,7 +216,7 @@ GL_FUNCTIONS = [
   'names': ['glDrawBuffer'],
   'arguments': 'GLenum mode', },
 { 'return_type': 'void',
-  'names': ['glDrawBuffersARB', 'glDrawBuffersEXT'],
+  'names': ['glDrawBuffersARB', 'glDrawBuffersEXT', 'glDrawBuffers'],
   'arguments': 'GLsizei n, const GLenum* bufs', },
 { 'return_type': 'void',
   'names': ['glDrawElements'],
@@ -329,7 +329,9 @@ GL_FUNCTIONS = [
                'GLenum attachment, GLenum pname, GLint* params', },
 { 'return_type': 'GLenum',
   'names': ['glGetGraphicsResetStatusARB',
-            'glGetGraphicsResetStatusEXT'],
+            'glGetGraphicsResetStatusKHR',
+            'glGetGraphicsResetStatusEXT',
+            'glGetGraphicsResetStatus'],
   'arguments': 'void', },
 { 'return_type': 'void',
   'names': ['glGetIntegerv'],
@@ -868,6 +870,13 @@ GL_FUNCTIONS = [
                  'gl_versions': ['es3'],
                  'extensions': ['GL_NV_path_rendering'] }],
   'arguments': 'GLenum matrixMode' },
+  { 'return_type': 'void',
+    'known_as': 'glBlendBarrierKHR',
+    'versions': [{ 'name': 'glBlendBarrierNV',
+                   'extensions': ['GL_NV_blend_equation_advanced'] },
+                 { 'name': 'glBlendBarrierKHR',
+                   'extensions': ['GL_KHR_blend_equation_advanced'] }],
+    'arguments': 'void' },
 ]
 
 OSMESA_FUNCTIONS = [
@@ -1079,7 +1088,7 @@ EGL_FUNCTIONS = [
       'EGLuint64CHROMIUM* sbc', },
 { 'return_type': 'EGLint',
   'versions': [{ 'name': 'eglWaitSyncKHR',
-                 'extensions': ['EGL_KHR_fence_sync'] }],
+                 'extensions': ['EGL_KHR_fence_sync', 'EGL_KHR_wait_sync'] }],
   'arguments': 'EGLDisplay dpy, EGLSyncKHR sync, EGLint flags' }
 ]
 
@@ -1415,7 +1424,7 @@ def GenerateAPIHeader(file, functions, set_name):
 
   # Write API declaration.
   for func in functions:
-    file.write('  virtual %s %sFn(%s) OVERRIDE;\n' %
+    file.write('  virtual %s %sFn(%s) override;\n' %
       (func['return_type'], func['known_as'], func['arguments']))
 
   file.write('\n')
@@ -1521,9 +1530,10 @@ namespace gfx {
   # on the extension string or the GL version.
   file.write("""void Driver%s::InitializeDynamicBindings(GLContext* context) {
   DCHECK(context && context->IsCurrent(NULL));
-  const GLVersionInfo* ver ALLOW_UNUSED = context->GetVersionInfo();
-  std::string extensions ALLOW_UNUSED = context->GetExtensions();
-  extensions += " ";
+  const GLVersionInfo* ver = context->GetVersionInfo();
+  ALLOW_UNUSED_LOCAL(ver);
+  std::string extensions = context->GetExtensions() + " ";
+  ALLOW_UNUSED_LOCAL(extensions);
 
 """ % set_name.upper())
   for extension in sorted(used_extensions):

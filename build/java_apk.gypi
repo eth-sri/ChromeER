@@ -220,9 +220,23 @@
     }],
     ['native_lib_target != ""', {
       'variables': {
+        'conditions': [
+          ['use_chromium_linker == 1', {
+            'variables': {
+              'chromium_linker_path': [
+                '<(SHARED_LIB_DIR)/<(libchromium_android_linker)',
+              ],
+            }
+          }, {
+            'variables': {
+              'chromium_linker_path': [],
+            },
+          }],
+        ],
         'generated_src_dirs': [ '<(native_libraries_java_dir)' ],
         'native_libs_paths': [
-          '<(SHARED_LIB_DIR)/<(native_lib_target).>(android_product_extension)'
+          '<(SHARED_LIB_DIR)/<(native_lib_target).>(android_product_extension)',
+          '<@(chromium_linker_path)'
         ],
         'package_input_paths': [
           '<(apk_package_native_libs_dir)/<(android_app_abi)/gdbserver',
@@ -242,23 +256,9 @@
       'actions': [
         {
           'variables': {
-            'conditions': [
-              ['use_chromium_linker == 1', {
-                'variables': {
-                  'linker_input_libraries': [
-                    '<(SHARED_LIB_DIR)/<(libchromium_android_linker)',
-                  ],
-                }
-              }, {
-                'variables': {
-                  'linker_input_libraries': [],
-                },
-              }],
-            ],
             'input_libraries': [
               '<@(native_libs_paths)',
               '<@(extra_native_libs)',
-              '<@(linker_input_libraries)',
             ],
           },
           'includes': ['../build/android/write_ordered_libraries.gypi'],
@@ -342,10 +342,23 @@
           'includes': ['../build/android/strip_native_libraries.gypi'],
         },
         {
+          'action_name': 'insert_chromium_version',
+          'variables': {
+            'ordered_libraries_file%': '<(ordered_libraries_file)',
+            'stripped_libraries_dir%': '<(stripped_libraries_dir)',
+            'version_string': '<(native_lib_version_name)',
+            'input_paths': [
+              '<(strip_stamp)',
+            ],
+            'stamp': '<(version_stamp)'
+          },
+          'includes': ['../build/android/insert_chromium_version.gypi'],
+        },
+        {
           'action_name': 'pack_arm_relocations',
           'variables': {
             'conditions': [
-              ['use_chromium_linker == 1 and use_relocation_packer == 1', {
+              ['use_chromium_linker == 1 and use_relocation_packer == 1 and profiling != 1', {
                 'enable_packing': 1,
               }, {
                 'enable_packing': 0,
@@ -358,24 +371,11 @@
             'stripped_libraries_dir%': '<(stripped_libraries_dir)',
             'packed_libraries_dir': '<(libraries_source_dir)',
             'input_paths': [
-              '<(strip_stamp)',
+              '<(version_stamp)'
             ],
             'stamp': '<(pack_arm_relocations_stamp)',
           },
           'includes': ['../build/android/pack_arm_relocations.gypi'],
-        },
-        {
-          'action_name': 'insert_chromium_version',
-          'variables': {
-            'ordered_libraries_file%': '<(ordered_libraries_file)',
-            'libraries_source_dir%': '<(libraries_source_dir)',
-            'version_string': '<(native_lib_version_name)',
-            'input_paths': [
-              '<(pack_arm_relocations_stamp)',
-            ],
-            'stamp': '<(version_stamp)'
-          },
-          'includes': ['../build/android/insert_chromium_version.gypi'],
         },
         {
           'variables': {
@@ -436,6 +436,7 @@
           },
           'dependencies': [
             '<(DEPTH)/build/android/setup.gyp:get_build_device_configurations',
+            '<(DEPTH)/build/android/pylib/device/commands/commands.gyp:chromium_commands',
           ],
           'actions': [
             {
@@ -476,7 +477,7 @@
                     'inputs': [
                       '<(ordered_libraries_file)',
                       '<(strip_additional_stamp)',
-                      '<(version_stamp)',
+                      '<(pack_arm_relocations_stamp)',
                     ],
                     'input_apk_path': '<(unsigned_apk_path)',
                     'output_apk_path': '<(unsigned_standalone_apk_path)',
@@ -493,7 +494,7 @@
             'libraries_source_dir': '<(apk_package_native_libs_dir)/<(android_app_abi)',
             'package_input_paths': [
               '<(strip_additional_stamp)',
-              '<(version_stamp)',
+              '<(pack_arm_relocations_stamp)',
             ],
           },
         }],
@@ -511,7 +512,6 @@
         },
       ],
       'dependencies': [
-        '<(DEPTH)/build/android/rezip.gyp:rezip#host',
         '<(DEPTH)/build/android/rezip.gyp:rezip_apk_jar',
       ],
     }],
@@ -547,12 +547,12 @@
         },
       ],
       'dependencies': [
-        '<(DEPTH)/build/android/rezip.gyp:rezip#host',
         '<(DEPTH)/build/android/rezip.gyp:rezip_apk_jar',
       ],
     }],
     ['is_test_apk == 1', {
       'dependencies': [
+        '<(DEPTH)/build/android/pylib/device/commands/commands.gyp:chromium_commands',
         '<(DEPTH)/tools/android/android_tools.gyp:android_tools',
       ]
     }],

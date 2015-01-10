@@ -6,6 +6,7 @@
   "default_locale": "en",
   "permissions": [
     "app.window.ime",
+    "app.window.alpha",
     "input",
     "metricsPrivate",
     "accessibilityFeatures.read"
@@ -440,7 +441,7 @@
       "description": "",
       "language": ["nb", "nn", "no"],
       "layouts": ["no"],
-      "input_view": "inputview.html?id=no.compact.qwerty&language=nb&passwordLayout=us.compact.qwerty&name=keyboard_norwegian"
+      "input_view": "inputview.html?id=no.compact.qwerty&language=no&passwordLayout=no.compact.qwerty&name=keyboard_norwegian"
     },
     {
       "name": "__MSG_keyboard_polish__",

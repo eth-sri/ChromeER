@@ -80,14 +80,13 @@ DataTypeStatusTable BuildStatusTable(ModelTypeSet crypto_errors,
 class FakeBackendDataTypeConfigurer : public BackendDataTypeConfigurer {
  public:
   FakeBackendDataTypeConfigurer() {}
-  virtual ~FakeBackendDataTypeConfigurer() {}
+  ~FakeBackendDataTypeConfigurer() override {}
 
-  virtual void ConfigureDataTypes(
+  void ConfigureDataTypes(
       syncer::ConfigureReason reason,
       const DataTypeConfigStateMap& config_state_map,
-      const base::Callback<void(ModelTypeSet,
-                                ModelTypeSet)>& ready_task,
-      const base::Callback<void()>& retry_callback) OVERRIDE {
+      const base::Callback<void(ModelTypeSet, ModelTypeSet)>& ready_task,
+      const base::Callback<void()>& retry_callback) override {
     last_ready_task_ = ready_task;
 
     if (!expected_configure_types_.Empty()) {
@@ -101,12 +100,12 @@ class FakeBackendDataTypeConfigurer : public BackendDataTypeConfigurer {
     }
   }
 
-  virtual void ActivateDataType(
-      syncer::ModelType type, syncer::ModelSafeGroup group,
-      ChangeProcessor* change_processor) OVERRIDE {
+  void ActivateDataType(syncer::ModelType type,
+                        syncer::ModelSafeGroup group,
+                        ChangeProcessor* change_processor) override {
     activated_types_.Put(type);
   }
-  virtual void DeactivateDataType(syncer::ModelType type) OVERRIDE {
+  void DeactivateDataType(syncer::ModelType type) override {
     activated_types_.Remove(type);
   }
 
@@ -130,7 +129,7 @@ class FakeBackendDataTypeConfigurer : public BackendDataTypeConfigurer {
 class FakeDataTypeManagerObserver : public DataTypeManagerObserver {
  public:
   FakeDataTypeManagerObserver() { ResetExpectations(); }
-  virtual ~FakeDataTypeManagerObserver() {
+  ~FakeDataTypeManagerObserver() override {
     EXPECT_FALSE(start_expected_);
     DataTypeManager::ConfigureResult default_result;
     EXPECT_EQ(done_expectation_.status, default_result.status);
@@ -149,8 +148,8 @@ class FakeDataTypeManagerObserver : public DataTypeManagerObserver {
     done_expectation_ = DataTypeManager::ConfigureResult();
   }
 
-  virtual void OnConfigureDone(
-      const DataTypeManager::ConfigureResult& result) OVERRIDE {
+  void OnConfigureDone(
+      const DataTypeManager::ConfigureResult& result) override {
     EXPECT_EQ(done_expectation_.status, result.status);
     DataTypeStatusTable::TypeErrorMap errors =
         result.data_type_status_table.GetAllErrors();
@@ -168,7 +167,7 @@ class FakeDataTypeManagerObserver : public DataTypeManagerObserver {
     done_expectation_ = DataTypeManager::ConfigureResult();
   }
 
-  virtual void OnConfigureStart() OVERRIDE {
+  void OnConfigureStart() override {
     EXPECT_TRUE(start_expected_);
     start_expected_ = false;
   }
@@ -181,10 +180,10 @@ class FakeDataTypeManagerObserver : public DataTypeManagerObserver {
 class FakeDataTypeEncryptionHandler : public DataTypeEncryptionHandler {
  public:
   FakeDataTypeEncryptionHandler();
-  virtual ~FakeDataTypeEncryptionHandler();
+  ~FakeDataTypeEncryptionHandler() override;
 
-  virtual bool IsPassphraseRequired() const OVERRIDE;
-  virtual ModelTypeSet GetEncryptedDataTypes() const OVERRIDE;
+  bool IsPassphraseRequired() const override;
+  ModelTypeSet GetEncryptedDataTypes() const override;
 
   void set_passphrase_required(bool passphrase_required) {
     passphrase_required_ = passphrase_required;
@@ -237,14 +236,14 @@ class TestDataTypeManager : public DataTypeManagerImpl {
     return configure_result_;
   }
 
-  virtual void OnModelAssociationDone(
-      const DataTypeManager::ConfigureResult& result) OVERRIDE {
+  void OnModelAssociationDone(
+      const DataTypeManager::ConfigureResult& result) override {
     configure_result_ = result;
     DataTypeManagerImpl::OnModelAssociationDone(result);
   }
 
  private:
-  virtual ModelTypeSet GetPriorityTypes() const OVERRIDE {
+  ModelTypeSet GetPriorityTypes() const override {
     return custom_priority_types_;
   }
 
@@ -258,11 +257,10 @@ class SyncDataTypeManagerImplTest : public testing::Test {
  public:
   SyncDataTypeManagerImplTest() {}
 
-  virtual ~SyncDataTypeManagerImplTest() {
-  }
+  ~SyncDataTypeManagerImplTest() override {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
    dtm_.reset(
        new TestDataTypeManager(
            syncer::WeakHandle<syncer::DataTypeDebugInfoListener>(),
@@ -1381,6 +1379,38 @@ TEST_F(SyncDataTypeManagerImplTest, ErrorBeforeAssociation) {
   EXPECT_EQ(DataTypeManager::CONFIGURED, dtm_->state());
   EXPECT_EQ(DataTypeController::NOT_RUNNING, GetController(BOOKMARKS)->state());
 
+  EXPECT_EQ(0U, configurer_.activated_types().Size());
+}
+
+TEST_F(SyncDataTypeManagerImplTest, AssociationNeverCompletes) {
+  AddController(BOOKMARKS);
+
+  // Bookmarks times out during association and so it's never started.
+  SetConfigureStartExpectation();
+  SetConfigureDoneExpectation(DataTypeManager::OK,
+                              BuildStatusTable(ModelTypeSet(),
+                                               ModelTypeSet(BOOKMARKS),
+                                               ModelTypeSet(),
+                                               ModelTypeSet()));
+  Configure(dtm_.get(), ModelTypeSet(BOOKMARKS));
+
+  GetController(BOOKMARKS)->SetDelayModelLoad();
+  FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
+  FinishDownload(*dtm_, ModelTypeSet(BOOKMARKS), ModelTypeSet());
+
+  EXPECT_EQ(DataTypeManager::CONFIGURING, dtm_->state());
+
+  // Simulate timeout by firing the timer.
+  dtm_->GetModelAssociationManagerForTesting()
+      ->GetTimerForTesting()
+      ->user_task()
+      .Run();
+  EXPECT_EQ(DataTypeManager::DOWNLOAD_PENDING, dtm_->state());
+  EXPECT_EQ(DataTypeController::NOT_RUNNING, GetController(BOOKMARKS)->state());
+
+  FinishDownload(*dtm_, ModelTypeSet(), ModelTypeSet());
+
+  EXPECT_EQ(DataTypeManager::CONFIGURED, dtm_->state());
   EXPECT_EQ(0U, configurer_.activated_types().Size());
 }
 

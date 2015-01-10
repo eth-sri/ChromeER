@@ -16,12 +16,12 @@
 #include "base/test/simple_test_clock.h"
 #include "base/time/clock.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/geolocation/geolocation_permission_context_factory.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/permission_request_id.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
@@ -40,7 +40,6 @@
 #if defined(OS_ANDROID)
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/android/mock_google_location_settings_helper.h"
-#include "chrome/common/pref_names.h"
 #endif
 
 #if defined(ENABLE_EXTENSIONS)
@@ -56,12 +55,12 @@ using content::MockRenderProcessHost;
 class ClosedInfoBarTracker : public content::NotificationObserver {
  public:
   ClosedInfoBarTracker();
-  virtual ~ClosedInfoBarTracker();
+  ~ClosedInfoBarTracker() override;
 
   // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) override;
 
   size_t size() const { return removed_infobars_.size(); }
 
@@ -106,8 +105,8 @@ class GeolocationPermissionContextTests
     : public ChromeRenderViewHostTestHarness {
  protected:
   // ChromeRenderViewHostTestHarness:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   PermissionRequestID RequestID(int bridge_id);
   PermissionRequestID RequestIDForTab(int tab, int bridge_id);
@@ -209,8 +208,8 @@ void GeolocationPermissionContextTests::AddNewTab(const GURL& url) {
       content::WebContents::CreateParams(profile()));
   new_tab->GetController().LoadURL(
       url, content::Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
-  content::RenderViewHostTester::For(new_tab->GetRenderViewHost())->
-      SendNavigate(extra_tabs_.size() + 1, url);
+  content::RenderFrameHostTester::For(new_tab->GetMainFrame())
+      ->SendNavigate(extra_tabs_.size() + 1, url);
 
   // Set up required helpers, and make this be as "tabby" as the code requires.
 #if defined(ENABLE_EXTENSIONS)

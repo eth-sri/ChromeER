@@ -13,6 +13,9 @@ if (is_android) {
 } else {
   import("//tools/grit/grit_rule.gni")
 }
+if (is_desktop_linux) {
+  import("//build/config/linux/pkg_config.gni")
+}
 
 about_credits_file = "$target_gen_dir/about_credits.html"
 additional_modules_list_file =
@@ -23,6 +26,12 @@ gypi_values = exec_script(
     [ rebase_path("../chrome_browser.gypi") ],
     "scope",
     [ "../chrome_browser.gypi" ])
+
+if (is_desktop_linux) {
+  pkg_config("gnome_keyring") {
+    packages = [ "gnome-keyring-1" ]
+  }
+}
 
 static_library("browser") {
   configs += [
@@ -64,8 +73,9 @@ static_library("browser") {
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
     "//components/crx_file",
-    "//components/data_reduction_proxy/browser",
+    "//components/data_reduction_proxy/core/browser",
     "//components/domain_reliability",
+    "//components/enhanced_bookmarks",
     "//components/favicon_base",
     "//components/favicon/core",
     "//components/feedback",
@@ -79,7 +89,6 @@ static_library("browser") {
     "//components/metrics:net",
     "//components/metrics:profiler",
     "//components/metrics/proto:proto",
-    "//components/native_app_window",
     "//components/navigation_metrics",
     "//components/network_time",
     "//components/omaha_query_params",
@@ -104,6 +113,8 @@ static_library("browser") {
     "//components/translate/core/common",
     "//components/url_fixer",
     "//components/user_prefs",
+    "//components/variations",
+    "//components/variations/net",
     "//components/webdata/common",
     "//content/public/browser",
     "//content/public/common",
@@ -124,7 +135,7 @@ static_library("browser") {
     "//third_party/zlib:minizip",
     "//third_party/zlib:zip",
     "//ui/base",
-    "//ui/events",
+    "//ui/events:events_base",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/message_center",
@@ -162,7 +173,7 @@ static_library("browser") {
       "//components/navigation_interception",
       "//components/password_manager/content/browser",
       "//components/precache/content",
-      "//components/sessions",
+      "//components/sessions:sessions_content",
       "//components/storage_monitor",
       "//components/translate/content/browser",
       "//components/url_matcher",
@@ -173,10 +184,11 @@ static_library("browser") {
       "//content/app/resources",
       "//media",
       "//media/cast:net",
+      "//mojo/common",
+      "//mojo/edk/system",
       "//mojo/environment:chromium",
       "//mojo/public/cpp/bindings",
       "//mojo/public/js/bindings",
-      "//mojo/system",
       "//net:extras",
       "//net:net_with_v8",
       "//storage/browser",
@@ -236,8 +248,9 @@ static_library("browser") {
       #"browser_app_shim"  TODO(GYP)
     ]
   }
-  if (!toolkit_views) {
-    deps -= [ "//components/native_app_window" ]
+  if (is_mac || is_ios) {
+    sources += rebase_path(gypi_values.chrome_browser_mac_ios_sources,
+                           ".", "//chrome")
   }
   if (cld2_data_source == "component") {
     sources += [
@@ -258,9 +271,10 @@ static_library("browser") {
   if (enable_background) {
     sources += rebase_path(gypi_values.chrome_browser_background_sources,
                            ".", "//chrome")
-    if (!use_aura || is_win) {
+    if (!use_aura || is_win || is_chromeos) {
       sources -= [ "background/background_mode_manager_aura.cc" ]
     }
+    defines += [ "ENABLE_BACKGROUND=1" ]
   }
   if (enable_task_manager) {
     sources += rebase_path(gypi_values.chrome_browser_task_manager_sources,
@@ -299,7 +313,10 @@ static_library("browser") {
       sources += rebase_path(gypi_values.chrome_browser_policy_desktop_sources,
                              ".", "//chrome")
     }
-    if (!is_android && !is_ios) {  # Non-mobile
+    if (is_android || is_ios) {
+      sources += rebase_path(gypi_values.chrome_browser_policy_mobile_sources,
+                             ".", "//chrome")
+    } else {
       deps += [
         "//chrome/browser/policy:path_parser",
       ]
@@ -353,12 +370,19 @@ static_library("browser") {
     sources += rebase_path(gypi_values.chrome_browser_chromeos_sources,
                            ".", "//chrome")
     deps += [
-      #"browser_chromeos",  TODO(GYP)
+      "//chrome/browser/chromeos",
     ]
   } else {
     # Non-ChromeOS.
     sources += rebase_path(gypi_values.chrome_browser_non_chromeos_sources,
                            ".", "//chrome")
+  }
+
+  if (is_chromeos || is_ios) {
+    sources -= [
+      "metrics/signin_status_metrics_provider.cc",
+      "metrics/signin_status_metrics_provider.h",
+    ]
   }
 
   if (use_cups) {
@@ -367,7 +391,7 @@ static_library("browser") {
   if (is_desktop_linux) {
     sources += rebase_path(gypi_values.chrome_browser_gnome_keyring_sources,
                            ".", "//chrome")
-    configs += [ "//build/config/linux:gnome_keyring" ]
+    configs += [ ":gnome_keyring" ]
   }
   if (use_aura) {
     sources += rebase_path(gypi_values.chrome_browser_aura_sources,
@@ -407,6 +431,9 @@ static_library("browser") {
   if (use_nss_certs) {
     sources += rebase_path(gypi_values.chrome_browser_nss_sources,
                            ".", "//chrome")
+    if (is_chromeos) {
+      sources -= [ "net/nss_context_linux.cc" ]
+    }
   }
   if (enable_notifications) {
     sources += rebase_path(gypi_values.chrome_browser_notifications_sources,
@@ -453,6 +480,11 @@ static_library("browser") {
                            ".", "//chrome")
   }
 
+  if (!is_android && !is_ios && !is_chromeos) {
+    sources += rebase_path(gypi_values.chrome_browser_desktop_sources,
+                           ".", "//chrome")
+  }
+
   if (is_android || is_ios) {
     # Mobile.
     sources += rebase_path(gypi_values.chrome_browser_mobile_sources,
@@ -473,7 +505,10 @@ static_library("browser") {
     deps += [
       ":jni_headers",
       "//components/cdm/browser",
-      #"../components/components.gyp:web_contents_delegate_android",  TODO(GYP)
+      "//components/enhanced_bookmarks",
+      "//components/history/core/android",
+      "//components/web_contents_delegate_android",
+      "//third_party/android_opengl/etc1",
     ]
     deps -= [
       "//third_party/libaddressinput",
@@ -727,8 +762,6 @@ source_set("test_support") {
     "download/download_test_file_activity_observer.h",
     "download/test_download_shelf.cc",
     "download/test_download_shelf.h",
-    "extensions/extension_action_test_util.cc",
-    "extensions/extension_action_test_util.h",
     "invalidation/fake_invalidation_service.cc",
     "invalidation/fake_invalidation_service.h",
     "media/fake_desktop_media_list.cc",
@@ -803,6 +836,10 @@ source_set("test_support") {
   }
 
   if (enable_extensions) {
+    sources += [
+      "extensions/extension_action_test_util.cc",
+      "extensions/extension_action_test_util.h",
+    ]
     deps += [
       "//extensions:test_support",
     ]
@@ -856,7 +893,7 @@ source_set("test_support") {
       "chromeos/system/fake_input_device_settings.h",
     ]
     configs += [ "//build/config/linux:dbus" ]
-    #deps += [ "//chromeos:test_support" ]  TODO(GYP)
+    deps += [ "//chromeos:test_support" ]
   }
 
   if (enable_configuration_policy) {

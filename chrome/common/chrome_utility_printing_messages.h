@@ -49,7 +49,8 @@ IPC_STRUCT_TRAITS_BEGIN(printing::PrinterSemanticCapsAndDefaults)
   IPC_STRUCT_TRAITS_MEMBER(default_dpi)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS(printing::PwgRasterTransformType)
+IPC_ENUM_TRAITS_MAX_VALUE(printing::PwgRasterTransformType,
+                          printing::TRANSFORM_TYPE_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(printing::PwgRasterSettings)
   IPC_STRUCT_TRAITS_MEMBER(odd_page_transform)
@@ -148,5 +149,5 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_RenderPDFPagesToMetafiles_PageCount,
 // Reply when the utility process rendered the PDF page.
 IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_RenderPDFPagesToMetafiles_PageDone,
                      bool /* success */,
-                     double /* scale_factor */)
+                     float /* scale_factor */)
 #endif  // ENABLE_PRINTING && OS_WIN

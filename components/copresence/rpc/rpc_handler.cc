@@ -25,6 +25,7 @@
 #include "components/copresence/proto/codes.pb.h"
 #include "components/copresence/proto/data.pb.h"
 #include "components/copresence/proto/rpcs.pb.h"
+#include "components/copresence/public/copresence_constants.h"
 #include "components/copresence/public/copresence_delegate.h"
 #include "net/http/http_status_code.h"
 
@@ -60,8 +61,7 @@ const char kDefaultCopresenceServer[] =
 bool CopresenceErrorLogged(const Status& status) {
   if (status.code() != OK) {
     LOG(ERROR) << "Copresence error code " << status.code()
-               << (status.message().empty() ? std::string() :
-                  ": " + status.message());
+               << (status.message().empty() ? "" : ": " + status.message());
   }
   return status.code() != OK;
 }
@@ -135,7 +135,7 @@ ClientVersion* CreateVersion(const std::string& client,
   return version;
 }
 
-void AddTokenToRequest(ReportRequest* request, const AudioToken& token) {
+void AddTokenToRequest(const AudioToken& token, ReportRequest* request) {
   TokenObservation* token_observation =
       request->mutable_update_signals_request()->add_token_observation();
   token_observation->set_token_id(ToUrlSafe(token.token));
@@ -159,49 +159,78 @@ RpcHandler::RpcHandler(CopresenceDelegate* delegate)
                                        base::Unretained(this))) {}
 
 RpcHandler::~RpcHandler() {
-  for (std::set<HttpPost*>::iterator post = pending_posts_.begin();
-       post != pending_posts_.end(); ++post) {
-    delete *post;
+  for (HttpPost* post : pending_posts_) {
+    delete post;
   }
 
   if (delegate_ && delegate_->GetWhispernetClient()) {
     delegate_->GetWhispernetClient()->RegisterTokensCallback(
         WhispernetClient::TokensCallback());
+    delegate_->GetWhispernetClient()->RegisterSamplesCallback(
+        WhispernetClient::SamplesCallback());
   }
 }
 
-void RpcHandler::Initialize(const SuccessCallback& init_done_callback) {
+void RpcHandler::RegisterForToken(const std::string& auth_token,
+                                  const SuccessCallback& init_done_callback) {
+  if (IsRegisteredForToken(auth_token)) {
+    LOG(WARNING) << "Attempted re-registration for the same auth token.";
+    init_done_callback.Run(true);
+    return;
+  }
   scoped_ptr<RegisterDeviceRequest> request(new RegisterDeviceRequest);
-  DCHECK(device_id_.empty());
 
   request->mutable_push_service()->set_service(PUSH_SERVICE_NONE);
-  Identity* identity =
-      request->mutable_device_identifiers()->mutable_registrant();
-  identity->set_type(CHROME);
-  identity->set_chrome_id(base::GenerateGUID());
+
+  DVLOG(2) << "Sending " << (auth_token.empty() ? "anonymous" : "authenticated")
+           << " registration to server.";
+
+  // Only identify as a Chrome device if we're in anonymous mode.
+  // Authenticated calls come from a "GAIA device".
+  if (auth_token.empty()) {
+    Identity* identity =
+        request->mutable_device_identifiers()->mutable_registrant();
+    identity->set_type(CHROME);
+    identity->set_chrome_id(base::GenerateGUID());
+  }
+
   SendServerRequest(
       kRegisterDeviceRpcName,
-      std::string(),
+      std::string(), // device ID
+      std::string(), // app ID
+      auth_token,
       request.Pass(),
       base::Bind(&RpcHandler::RegisterResponseHandler,
                  // On destruction, this request will be cancelled.
                  base::Unretained(this),
-                 init_done_callback));
+                 init_done_callback,
+                 auth_token));
 }
 
-void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request) {
-  SendReportRequest(request.Pass(), std::string(), StatusCallback());
+bool RpcHandler::IsRegisteredForToken(const std::string& auth_token) const {
+  return device_id_by_auth_token_.find(auth_token) !=
+      device_id_by_auth_token_.end();
+}
+
+void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request,
+                                   const std::string& auth_token) {
+  SendReportRequest(request.Pass(),
+                    std::string(),
+                    auth_token,
+                    StatusCallback());
 }
 
 void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request,
                                    const std::string& app_id,
+                                   const std::string& auth_token,
                                    const StatusCallback& status_callback) {
   DCHECK(request.get());
-  DCHECK(!device_id_.empty())
-      << "RpcHandler::Initialize() must complete successfully "
-      << "before other RpcHandler methods are called.";
+  auto registration_entry = device_id_by_auth_token_.find(auth_token);
+  DCHECK(registration_entry != device_id_by_auth_token_.end())
+      << "RegisterForToken() must complete successfully "
+      << "for new tokens before calling SendReportRequest().";
 
-  DVLOG(3) << "Sending report request to server.";
+  DVLOG(3) << "Sending ReportRequest to server.";
 
   // If we are unpublishing or unsubscribing, we need to stop those publish or
   // subscribes right away, we don't need to wait for the server to tell us.
@@ -213,7 +242,9 @@ void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request,
   AddPlayingTokens(request.get());
 
   SendServerRequest(kReportRequestRpcName,
+                    registration_entry->second,
                     app_id,
+                    auth_token,
                     request.Pass(),
                     // On destruction, this request will be cancelled.
                     base::Bind(&RpcHandler::ReportResponseHandler,
@@ -224,17 +255,33 @@ void RpcHandler::SendReportRequest(scoped_ptr<ReportRequest> request,
 void RpcHandler::ReportTokens(const std::vector<AudioToken>& tokens) {
   DCHECK(!tokens.empty());
 
-  scoped_ptr<ReportRequest> request(new ReportRequest);
-  for (size_t i = 0; i < tokens.size(); ++i) {
-    if (invalid_audio_token_cache_.HasKey(ToUrlSafe(tokens[i].token)))
-      continue;
-    DVLOG(3) << "Sending token " << tokens[i].token << " to server.";
-    AddTokenToRequest(request.get(), tokens[i]);
+  if (device_id_by_auth_token_.empty()) {
+    VLOG(2) << "Skipping token reporting because no device IDs are registered";
+    return;
   }
-  SendReportRequest(request.Pass());
+
+  // Construct the ReportRequest.
+  ReportRequest request;
+  for (const AudioToken& token : tokens) {
+    if (invalid_audio_token_cache_.HasKey(ToUrlSafe(token.token)))
+      continue;
+    DVLOG(3) << "Sending token " << token.token << " to server under "
+             << device_id_by_auth_token_.size() << " device ID(s)";
+    AddTokenToRequest(token, &request);
+  }
+
+  // Report under all active tokens.
+  for (const auto& registration : device_id_by_auth_token_) {
+    SendReportRequest(make_scoped_ptr(new ReportRequest(request)),
+                      registration.first);
+  }
 }
 
 void RpcHandler::ConnectToWhispernet() {
+  // Check if we are already connected.
+  if (directive_handler_)
+    return;
+
   WhispernetClient* whispernet_client = delegate_->GetWhispernetClient();
 
   // |directive_handler_| will be destructed with us, so unretained is safe.
@@ -255,6 +302,7 @@ void RpcHandler::ConnectToWhispernet() {
 
 void RpcHandler::RegisterResponseHandler(
     const SuccessCallback& init_done_callback,
+    const std::string& auth_token,
     HttpPost* completed_post,
     int http_status_code,
     const std::string& response_data) {
@@ -276,11 +324,16 @@ void RpcHandler::RegisterResponseHandler(
     return;
   }
 
-  if (CopresenceErrorLogged(response.header().status()))
+  if (CopresenceErrorLogged(response.header().status())) {
+    init_done_callback.Run(false);
     return;
-  device_id_ = response.registered_device_id();
-  DCHECK(!device_id_.empty());
-  DVLOG(2) << "Device registration successful: id " << device_id_;
+  }
+
+  const std::string& device_id = response.registered_device_id();
+  DCHECK(!device_id.empty());
+  device_id_by_auth_token_[auth_token] = device_id;
+  DVLOG(2) << (auth_token.empty() ? "Anonymous" : "Authenticated")
+           << " device registration successful: id " << device_id;
   init_done_callback.Run(true);
 }
 
@@ -315,18 +368,14 @@ void RpcHandler::ReportResponseHandler(const StatusCallback& status_callback,
     return;
   }
 
-  const RepeatedPtrField<MessageResult>& message_results =
-      response.manage_messages_response().published_message_result();
-  for (int i = 0; i < message_results.size(); ++i) {
-    DVLOG(2) << "Published message with id "
-             << message_results.Get(i).published_message_id();
+  for (const MessageResult& result :
+      response.manage_messages_response().published_message_result()) {
+    DVLOG(2) << "Published message with id " << result.published_message_id();
   }
 
-  const RepeatedPtrField<SubscriptionResult>& subscription_results =
-      response.manage_subscriptions_response().subscription_result();
-  for (int i = 0; i < subscription_results.size(); ++i) {
-    DVLOG(2) << "Created subscription with id "
-             << subscription_results.Get(i).subscription_id();
+  for (const SubscriptionResult& result :
+      response.manage_subscriptions_response().subscription_result()) {
+    DVLOG(2) << "Created subscription with id " << result.subscription_id();
   }
 
   if (response.has_update_signals_response()) {
@@ -335,28 +384,27 @@ void RpcHandler::ReportResponseHandler(const StatusCallback& status_callback,
     DispatchMessages(update_response.message());
 
     if (directive_handler_.get()) {
-      for (int i = 0; i < update_response.directive_size(); ++i)
-        directive_handler_->AddDirective(update_response.directive(i));
+      for (const Directive& directive : update_response.directive())
+        directive_handler_->AddDirective(directive);
     } else {
       DVLOG(1) << "No directive handler.";
     }
 
-    const RepeatedPtrField<Token>& tokens = update_response.token();
-    for (int i = 0; i < tokens.size(); ++i) {
-      switch (tokens.Get(i).status()) {
+    for (const Token& token : update_response.token()) {
+      switch (token.status()) {
         case VALID:
           // TODO(rkc/ckehoe): Store the token in a |valid_token_cache_| with a
           // short TTL (like 10s) and send it up with every report request.
           // Then we'll still get messages while we're waiting to hear it again.
-          VLOG(1) << "Got valid token " << tokens.Get(i).id();
+          VLOG(1) << "Got valid token " << token.id();
           break;
         case INVALID:
-          DVLOG(3) << "Discarding invalid token " << tokens.Get(i).id();
-          invalid_audio_token_cache_.Add(tokens.Get(i).id(), true);
+          DVLOG(3) << "Discarding invalid token " << token.id();
+          invalid_audio_token_cache_.Add(token.id(), true);
           break;
         default:
-          DVLOG(2) << "Token " << tokens.Get(i).id() << " has status code "
-                   << tokens.Get(i).status();
+          DVLOG(2) << "Token " << token.id() << " has status code "
+                   << token.status();
       }
     }
   }
@@ -369,18 +417,18 @@ void RpcHandler::ReportResponseHandler(const StatusCallback& status_callback,
 void RpcHandler::ProcessRemovedOperations(const ReportRequest& request) {
   // Remove unpublishes.
   if (request.has_manage_messages_request()) {
-    const RepeatedPtrField<std::string>& unpublishes =
-        request.manage_messages_request().id_to_unpublish();
-    for (int i = 0; i < unpublishes.size(); ++i)
-      directive_handler_->RemoveDirectives(unpublishes.Get(i));
+    for (const std::string& unpublish :
+        request.manage_messages_request().id_to_unpublish()) {
+      directive_handler_->RemoveDirectives(unpublish);
+    }
   }
 
   // Remove unsubscribes.
   if (request.has_manage_subscriptions_request()) {
-    const RepeatedPtrField<std::string>& unsubscribes =
-        request.manage_subscriptions_request().id_to_unsubscribe();
-    for (int i = 0; i < unsubscribes.size(); ++i)
-      directive_handler_->RemoveDirectives(unsubscribes.Get(i));
+    for (const std::string& unsubscribe :
+        request.manage_subscriptions_request().id_to_unsubscribe()) {
+      directive_handler_->RemoveDirectives(unsubscribe);
+    }
   }
 }
 
@@ -388,14 +436,15 @@ void RpcHandler::AddPlayingTokens(ReportRequest* request) {
   if (!directive_handler_)
     return;
 
-  const std::string& audible_token = directive_handler_->CurrentAudibleToken();
+  const std::string& audible_token =
+      directive_handler_->GetCurrentAudioToken(AUDIBLE);
   const std::string& inaudible_token =
-      directive_handler_->CurrentInaudibleToken();
+      directive_handler_->GetCurrentAudioToken(INAUDIBLE);
 
   if (!audible_token.empty())
-    AddTokenToRequest(request, AudioToken(audible_token, true));
+    AddTokenToRequest(AudioToken(audible_token, true), request);
   if (!inaudible_token.empty())
-    AddTokenToRequest(request, AudioToken(inaudible_token, false));
+    AddTokenToRequest(AudioToken(inaudible_token, false), request);
 }
 
 void RpcHandler::DispatchMessages(
@@ -406,28 +455,26 @@ void RpcHandler::DispatchMessages(
   // Index the messages by subscription id.
   std::map<std::string, std::vector<Message>> messages_by_subscription;
   DVLOG(3) << "Dispatching " << messages.size() << " messages";
-  for (int m = 0; m < messages.size(); ++m) {
-    const RepeatedPtrField<std::string>& subscription_ids =
-        messages.Get(m).subscription_id();
-    for (int s = 0; s < subscription_ids.size(); ++s) {
-      messages_by_subscription[subscription_ids.Get(s)].push_back(
-          messages.Get(m).published_message());
+  for (const SubscribedMessage& message : messages) {
+    for (const std::string& subscription_id : message.subscription_id()) {
+      messages_by_subscription[subscription_id].push_back(
+          message.published_message());
     }
   }
 
   // Send the messages for each subscription.
-  for (std::map<std::string, std::vector<Message>>::const_iterator
-           subscription = messages_by_subscription.begin();
-       subscription != messages_by_subscription.end();
-       ++subscription) {
+  for (const auto& map_entry : messages_by_subscription) {
     // TODO(ckehoe): Once we have the app ID from the server, we need to pass
     // it in here and get rid of the app id registry from the main API class.
-    delegate_->HandleMessages("", subscription->first, subscription->second);
+    const std::string& subscription = map_entry.first;
+    const std::vector<Message>& messages = map_entry.second;
+    delegate_->HandleMessages(std::string(), subscription, messages);
   }
 }
 
 RequestHeader* RpcHandler::CreateRequestHeader(
-    const std::string& client_name) const {
+    const std::string& client_name,
+    const std::string& device_id) const {
   RequestHeader* header = new RequestHeader;
 
   header->set_allocated_framework_version(CreateVersion(
@@ -437,7 +484,7 @@ RequestHeader* RpcHandler::CreateRequestHeader(
         CreateVersion(client_name, std::string()));
   }
   header->set_current_time_millis(base::Time::Now().ToJsTime());
-  header->set_registered_device_id(device_id_);
+  header->set_registered_device_id(device_id);
 
   DeviceFingerprint* fingerprint = new DeviceFingerprint;
   fingerprint->set_platform_version(delegate_->GetPlatformVersionString());
@@ -450,18 +497,24 @@ RequestHeader* RpcHandler::CreateRequestHeader(
 template <class T>
 void RpcHandler::SendServerRequest(
     const std::string& rpc_name,
+    const std::string& device_id,
     const std::string& app_id,
+    const std::string& auth_token,
     scoped_ptr<T> request,
     const PostCleanupCallback& response_handler) {
-  request->set_allocated_header(CreateRequestHeader(app_id));
+  request->set_allocated_header(CreateRequestHeader(app_id, device_id));
   server_post_callback_.Run(delegate_->GetRequestContext(),
                             rpc_name,
+                            delegate_->GetAPIKey(app_id),
+                            auth_token,
                             make_scoped_ptr<MessageLite>(request.release()),
                             response_handler);
 }
 
 void RpcHandler::SendHttpPost(net::URLRequestContextGetter* url_context_getter,
                               const std::string& rpc_name,
+                              const std::string& api_key,
+                              const std::string& auth_token,
                               scoped_ptr<MessageLite> request_proto,
                               const PostCleanupCallback& callback) {
   // Create the base URL to call.
@@ -476,8 +529,9 @@ void RpcHandler::SendHttpPost(net::URLRequestContextGetter* url_context_getter,
       url_context_getter,
       copresence_server_host,
       rpc_name,
+      api_key,
+      auth_token,
       command_line->GetSwitchValueASCII(switches::kCopresenceTracingToken),
-      delegate_->GetAPIKey(),
       *request_proto);
 
   http_post->Start(base::Bind(callback, http_post));
@@ -486,12 +540,13 @@ void RpcHandler::SendHttpPost(net::URLRequestContextGetter* url_context_getter,
 
 void RpcHandler::AudioDirectiveListToWhispernetConnector(
     const std::string& token,
-    bool audible,
+    AudioType type,
     const WhispernetClient::SamplesCallback& samples_callback) {
+  DCHECK(type == AUDIBLE || type == INAUDIBLE);
   WhispernetClient* whispernet_client = delegate_->GetWhispernetClient();
   if (whispernet_client) {
     whispernet_client->RegisterSamplesCallback(samples_callback);
-    whispernet_client->EncodeToken(token, audible);
+    whispernet_client->EncodeToken(token, type);
   }
 }
 

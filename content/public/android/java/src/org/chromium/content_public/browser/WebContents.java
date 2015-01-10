@@ -24,6 +24,17 @@ public interface WebContents {
     String getVisibleUrl();
 
     /**
+     * @return Whether this WebContents is loading a resource.
+     */
+    boolean isLoading();
+
+    /**
+     * @return Whether this WebContents is loading and and the load is to a different top-level
+     *         document (rather than being a navigation within the same document).
+     */
+    boolean isLoadingToDifferentDocument();
+
+    /**
      * Stop any pending navigation.
      */
     void stop();
@@ -152,6 +163,11 @@ public interface WebContents {
     public void beginExitTransition(String cssSelector);
 
     /**
+     * Clear the navigation transition data.
+     */
+    public void clearNavigationTransitionData();
+
+    /**
      * Injects the passed Javascript code in the current page and evaluates it.
      * If a result is required, pass in a callback.
      *
@@ -163,4 +179,16 @@ public interface WebContents {
      */
     public void evaluateJavaScript(String script, JavaScriptCallback callback);
 
+    /**
+     * Post a message to a frame.
+     * TODO(sgurun) also add support for transferring a message channel port.
+     *
+     * @param frameName The name of the frame. If the name is null the message is posted
+     *                  to the main frame.
+     * @param message   The message
+     * @param sourceOrigin  The source origin
+     * @param targetOrigin  The target origin
+     */
+    public void postMessageToFrame(String frameName, String message,
+            String sourceOrigin, String targetOrigin);
 }

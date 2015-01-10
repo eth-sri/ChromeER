@@ -9,10 +9,10 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
-#include "chrome/common/instant_restricted_id_cache.h"
 #include "chrome/common/instant_types.h"
 #include "chrome/common/ntp_logging_events.h"
 #include "chrome/common/omnibox_focus_state.h"
+#include "chrome/renderer/instant_restricted_id_cache.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "content/public/renderer/render_view_observer_tracker.h"
 #include "ui/base/window_open_disposition.h"
@@ -26,7 +26,7 @@ class SearchBox : public content::RenderViewObserver,
                   public content::RenderViewObserverTracker<SearchBox> {
  public:
   explicit SearchBox(content::RenderView* render_view);
-  virtual ~SearchBox();
+  ~SearchBox() override;
 
   // Sends ChromeViewHostMsg_LogEvent to the browser.
   void LogEvent(NTPLoggingEventType event);
@@ -114,7 +114,7 @@ class SearchBox : public content::RenderViewObserver,
 
  private:
   // Overridden from content::RenderViewObserver:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   void OnSetPageSequenceNumber(int page_seq_no);
   void OnChromeIdentityCheckResult(const base::string16& identity,

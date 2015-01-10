@@ -21,6 +21,7 @@
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/local_auth.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -163,7 +164,7 @@ class UserManagerScreenHandler::ProfileUpdateObserver
     profile_manager_->GetProfileInfoCache().AddObserver(this);
   }
 
-  virtual ~ProfileUpdateObserver() {
+  ~ProfileUpdateObserver() override {
     DCHECK(profile_manager_);
     profile_manager_->GetProfileInfoCache().RemoveObserver(this);
   }
@@ -172,31 +173,28 @@ class UserManagerScreenHandler::ProfileUpdateObserver
   // ProfileInfoCacheObserver implementation:
   // If any change has been made to a profile, propagate it to all the
   // visible user manager screens.
-  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE {
+  void OnProfileAdded(const base::FilePath& profile_path) override {
     user_manager_handler_->SendUserList();
   }
 
-  virtual void OnProfileWasRemoved(
-      const base::FilePath& profile_path,
-      const base::string16& profile_name) OVERRIDE {
+  void OnProfileWasRemoved(const base::FilePath& profile_path,
+                           const base::string16& profile_name) override {
     // TODO(noms): Change 'SendUserList' to 'removeUser' JS-call when
     // UserManager is able to find pod belonging to removed user.
     user_manager_handler_->SendUserList();
   }
 
-  virtual void OnProfileNameChanged(
-      const base::FilePath& profile_path,
-      const base::string16& old_profile_name) OVERRIDE {
+  void OnProfileNameChanged(const base::FilePath& profile_path,
+                            const base::string16& old_profile_name) override {
     user_manager_handler_->SendUserList();
   }
 
-  virtual void OnProfileAvatarChanged(
-      const base::FilePath& profile_path) OVERRIDE {
+  void OnProfileAvatarChanged(const base::FilePath& profile_path) override {
     user_manager_handler_->SendUserList();
   }
 
-  virtual void OnProfileSigninRequiredChanged(
-      const base::FilePath& profile_path) OVERRIDE {
+  void OnProfileSigninRequiredChanged(
+      const base::FilePath& profile_path) override {
     user_manager_handler_->SendUserList();
   }
 
@@ -481,7 +479,17 @@ void UserManagerScreenHandler::OnClientLoginFailure(
                   state == GoogleServiceAuthError::CAPTCHA_REQUIRED ||
                   state == GoogleServiceAuthError::TWO_FACTOR ||
                   state == GoogleServiceAuthError::ACCOUNT_DELETED ||
-                  state == GoogleServiceAuthError::ACCOUNT_DISABLED);
+                  state == GoogleServiceAuthError::ACCOUNT_DISABLED ||
+                  state == GoogleServiceAuthError::WEB_LOGIN_REQUIRED);
+
+  // If the password was correct, the user must have changed it since the
+  // profile was locked.  Save the password to streamline future unlocks.
+  if (success) {
+    DCHECK(!password_attempt_.empty());
+    chrome::SetLocalAuthCredentials(authenticating_profile_index_,
+                                    password_attempt_);
+  }
+
   bool offline = (state == GoogleServiceAuthError::CONNECTION_FAILED ||
                   state == GoogleServiceAuthError::SERVICE_UNAVAILABLE ||
                   state == GoogleServiceAuthError::REQUEST_CANCELED);
@@ -717,11 +725,17 @@ void UserManagerScreenHandler::OnBrowserWindowReady(Browser* browser) {
   DCHECK(browser);
   DCHECK(browser->window());
   if (url_hash_ == profiles::kUserManagerSelectProfileTaskManager) {
-     base::MessageLoop::current()->PostTask(
-         FROM_HERE, base::Bind(&chrome::ShowTaskManager, browser));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&chrome::OpenTaskManager, browser));
   } else if (url_hash_ == profiles::kUserManagerSelectProfileAboutChrome) {
-     base::MessageLoop::current()->PostTask(
-         FROM_HERE, base::Bind(&chrome::ShowAboutChrome, browser));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&chrome::ShowAboutChrome, browser));
+  } else if (url_hash_ == profiles::kUserManagerSelectProfileChromeSettings) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&chrome::ShowSettings, browser));
+  } else if (url_hash_ == profiles::kUserManagerSelectProfileChromeMemory) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&chrome::ShowMemory, browser));
   }
 
   // This call is last as it deletes this object.

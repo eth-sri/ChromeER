@@ -34,6 +34,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
 
@@ -48,31 +49,6 @@ const char kEmptyPage[] = "files/empty.html";
 const char kMalwarePage[] = "files/safe_browsing/malware.html";
 const char kMalwareIframe[] = "files/safe_browsing/malware_iframe.html";
 
-class InterstitialObserver : public content::WebContentsObserver {
- public:
-  InterstitialObserver(content::WebContents* web_contents,
-                       const base::Closure& attach_callback,
-                       const base::Closure& detach_callback)
-      : WebContentsObserver(web_contents),
-        attach_callback_(attach_callback),
-        detach_callback_(detach_callback) {
-  }
-
-  virtual void DidAttachInterstitialPage() OVERRIDE {
-    attach_callback_.Run();
-  }
-
-  virtual void DidDetachInterstitialPage() OVERRIDE {
-    detach_callback_.Run();
-  }
-
- private:
-  base::Closure attach_callback_;
-  base::Closure detach_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(InterstitialObserver);
-};
-
 // A SafeBrowsingDatabaseManager class that allows us to inject the malicious
 // URLs.
 class FakeSafeBrowsingDatabaseManager :  public SafeBrowsingDatabaseManager {
@@ -85,7 +61,7 @@ class FakeSafeBrowsingDatabaseManager :  public SafeBrowsingDatabaseManager {
   // Otherwise it returns false, and "client" is called asynchronously with the
   // result when it is ready.
   // Overrides SafeBrowsingDatabaseManager::CheckBrowseUrl.
-  virtual bool CheckBrowseUrl(const GURL& gurl, Client* client) OVERRIDE {
+  bool CheckBrowseUrl(const GURL& gurl, Client* client) override {
     if (badurls[gurl.spec()] == SB_THREAT_TYPE_SAFE)
       return true;
 
@@ -115,7 +91,7 @@ class FakeSafeBrowsingDatabaseManager :  public SafeBrowsingDatabaseManager {
   }
 
  private:
-  virtual ~FakeSafeBrowsingDatabaseManager() {}
+  ~FakeSafeBrowsingDatabaseManager() override {}
 
   base::hash_map<std::string, SBThreatType> badurls;
   DISALLOW_COPY_AND_ASSIGN(FakeSafeBrowsingDatabaseManager);
@@ -128,8 +104,7 @@ class FakeSafeBrowsingUIManager :  public SafeBrowsingUIManager {
       SafeBrowsingUIManager(service) { }
 
   // Overrides SafeBrowsingUIManager
-  virtual void SendSerializedMalwareDetails(
-      const std::string& serialized) OVERRIDE {
+  void SendSerializedMalwareDetails(const std::string& serialized) override {
     // Notify the UI thread that we got a report.
     BrowserThread::PostTask(
         BrowserThread::UI,
@@ -162,7 +137,7 @@ class FakeSafeBrowsingUIManager :  public SafeBrowsingUIManager {
   }
 
  protected:
-  virtual ~FakeSafeBrowsingUIManager() { }
+  ~FakeSafeBrowsingUIManager() override {}
 
  private:
   std::string report_;
@@ -189,14 +164,14 @@ class FakeSafeBrowsingService : public SafeBrowsingService {
   }
 
  protected:
-  virtual ~FakeSafeBrowsingService() { }
+  ~FakeSafeBrowsingService() override {}
 
-  virtual SafeBrowsingDatabaseManager* CreateDatabaseManager() OVERRIDE {
+  SafeBrowsingDatabaseManager* CreateDatabaseManager() override {
     fake_database_manager_ = new FakeSafeBrowsingDatabaseManager(this);
     return fake_database_manager_;
   }
 
-  virtual SafeBrowsingUIManager* CreateUIManager() OVERRIDE {
+  SafeBrowsingUIManager* CreateUIManager() override {
     fake_ui_manager_ = new FakeSafeBrowsingUIManager(this);
     return fake_ui_manager_;
   }
@@ -213,9 +188,9 @@ class TestSafeBrowsingServiceFactory : public SafeBrowsingServiceFactory {
  public:
   TestSafeBrowsingServiceFactory() :
       most_recent_service_(NULL) { }
-  virtual ~TestSafeBrowsingServiceFactory() { }
+  ~TestSafeBrowsingServiceFactory() override {}
 
-  virtual SafeBrowsingService* CreateSafeBrowsingService() OVERRIDE {
+  SafeBrowsingService* CreateSafeBrowsingService() override {
     most_recent_service_ =  new FakeSafeBrowsingService();
     return most_recent_service_;
   }
@@ -239,9 +214,9 @@ class FakeMalwareDetails : public MalwareDetails {
         got_dom_(false),
         waiting_(false) { }
 
-  virtual void AddDOMDetails(
+  void AddDOMDetails(
       const std::vector<SafeBrowsingHostMsg_MalwareDOMDetails_Node>& params)
-          OVERRIDE {
+      override {
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
     MalwareDetails::AddDOMDetails(params);
 
@@ -263,7 +238,7 @@ class FakeMalwareDetails : public MalwareDetails {
   }
 
  private:
-  virtual ~FakeMalwareDetails() {}
+  ~FakeMalwareDetails() override {}
 
   void OnDOMDetailsDone() {
     got_dom_ = true;
@@ -281,12 +256,12 @@ class FakeMalwareDetails : public MalwareDetails {
 class TestMalwareDetailsFactory : public MalwareDetailsFactory {
  public:
   TestMalwareDetailsFactory() : details_() { }
-  virtual ~TestMalwareDetailsFactory() { }
+  ~TestMalwareDetailsFactory() override {}
 
-  virtual MalwareDetails* CreateMalwareDetails(
+  MalwareDetails* CreateMalwareDetails(
       SafeBrowsingUIManager* delegate,
       WebContents* web_contents,
-      const SafeBrowsingUIManager::UnsafeResource& unsafe_resource) OVERRIDE {
+      const SafeBrowsingUIManager::UnsafeResource& unsafe_resource) override {
     details_ = new FakeMalwareDetails(delegate, web_contents,
                                       unsafe_resource);
     return details_;
@@ -312,7 +287,7 @@ class TestSafeBrowsingBlockingPage : public SafeBrowsingBlockingPage {
     malware_details_proceed_delay_ms_ = 100;
   }
 
-  virtual ~TestSafeBrowsingBlockingPage() {
+  ~TestSafeBrowsingBlockingPage() override {
     if (!wait_for_delete_)
       return;
 
@@ -327,15 +302,11 @@ class TestSafeBrowsingBlockingPage : public SafeBrowsingBlockingPage {
   }
 
   // InterstitialPageDelegate methods:
-  virtual void CommandReceived(const std::string& command) OVERRIDE {
+  void CommandReceived(const std::string& command) override {
     SafeBrowsingBlockingPage::CommandReceived(command);
   }
-  virtual void OnProceed() OVERRIDE {
-    SafeBrowsingBlockingPage::OnProceed();
-  }
-  virtual void OnDontProceed() OVERRIDE {
-    SafeBrowsingBlockingPage::OnDontProceed();
-  }
+  void OnProceed() override { SafeBrowsingBlockingPage::OnProceed(); }
+  void OnDontProceed() override { SafeBrowsingBlockingPage::OnDontProceed(); }
 
  private:
   bool wait_for_delete_;
@@ -345,13 +316,13 @@ class TestSafeBrowsingBlockingPageFactory
     : public SafeBrowsingBlockingPageFactory {
  public:
   TestSafeBrowsingBlockingPageFactory() { }
-  virtual ~TestSafeBrowsingBlockingPageFactory() { }
+  ~TestSafeBrowsingBlockingPageFactory() override {}
 
-  virtual SafeBrowsingBlockingPage* CreateSafeBrowsingPage(
+  SafeBrowsingBlockingPage* CreateSafeBrowsingPage(
       SafeBrowsingUIManager* delegate,
       WebContents* web_contents,
       const SafeBrowsingBlockingPage::UnsafeResourceList& unsafe_resources)
-          OVERRIDE {
+      override {
     return new TestSafeBrowsingBlockingPage(delegate, web_contents,
                                               unsafe_resources);
   }
@@ -373,21 +344,21 @@ class SafeBrowsingBlockingPageBrowserTest
   SafeBrowsingBlockingPageBrowserTest() {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     SafeBrowsingService::RegisterFactory(&factory_);
     SafeBrowsingBlockingPage::RegisterFactory(&blocking_page_factory_);
     MalwareDetails::RegisterFactory(&details_factory_);
     InProcessBrowserTest::SetUp();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     InProcessBrowserTest::TearDown();
     SafeBrowsingBlockingPage::RegisterFactory(NULL);
     SafeBrowsingService::RegisterFactory(NULL);
     MalwareDetails::RegisterFactory(NULL);
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     ASSERT_TRUE(test_server()->Start());
   }
 
@@ -483,18 +454,6 @@ class SafeBrowsingBlockingPageBrowserTest
     return interstitial_page != NULL;
   }
 
-  void WaitForInterstitial() {
-    WebContents* contents =
-        browser()->tab_strip_model()->GetActiveWebContents();
-    scoped_refptr<content::MessageLoopRunner> loop_runner(
-        new content::MessageLoopRunner);
-    InterstitialObserver observer(contents,
-                                  loop_runner->QuitClosure(),
-                                  base::Closure());
-    if (!InterstitialPage::GetInterstitialPage(contents))
-      loop_runner->Run();
-  }
-
   void SetReportSentCallback(const base::Closure& callback) {
     factory_.most_recent_service()
         ->fake_ui_manager()
@@ -520,7 +479,9 @@ class SafeBrowsingBlockingPageBrowserTest
         GURL("javascript:" + open_function + "()"),
         CURRENT_TAB,
         ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
-    WaitForInterstitial();
+    WebContents* contents =
+        browser()->tab_strip_model()->GetActiveWebContents();
+    content::WaitForInterstitialAttach(contents);
     // Cancel the redirect request while interstitial page is open.
     browser()->tab_strip_model()->ActivateTabAt(0, true);
     ui_test_utils::NavigateToURLWithDisposition(
@@ -598,15 +559,10 @@ class SafeBrowsingBlockingPageBrowserTest
     // We wait for interstitial_detached rather than nav_entry_committed, as
     // going back from a main-frame malware interstitial page will not cause a
     // nav entry committed event.
-    scoped_refptr<content::MessageLoopRunner> loop_runner(
-        new content::MessageLoopRunner);
-    InterstitialObserver observer(
-        browser()->tab_strip_model()->GetActiveWebContents(),
-        base::Closure(),
-        loop_runner->QuitClosure());
     if (!Click(node_id))
       return false;
-    loop_runner->Run();
+    content::WaitForInterstitialDetach(
+        browser()->tab_strip_model()->GetActiveWebContents());
     return true;
   }
 

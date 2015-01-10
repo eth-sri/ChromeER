@@ -14,8 +14,6 @@
 /* @const */ var WAIT_FOR_POLYMER = true;
 
 <include src="login_common.js">
-<include src="oobe-screen.js">
-<include src="html-echo.js">
 <include src="oobe_screen_eula.js">
 <include src="oobe_screen_network.js">
 <include src="oobe_screen_hid_detection.js">
@@ -96,6 +94,7 @@ cr.define('cr.ui.Oobe', function() {
       login.FatalErrorScreen.register();
       login.ControllerPairingScreen.register();
       login.HostPairingScreen.register();
+      login.DeviceDisabledScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));

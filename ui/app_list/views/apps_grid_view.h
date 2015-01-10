@@ -70,7 +70,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Constructs the app icon grid view. |delegate| is the delegate of this
   // view, which usually is the hosting AppListView.
   explicit AppsGridView(AppsGridViewDelegate* delegate);
-  virtual ~AppsGridView();
+  ~AppsGridView() override;
 
   // Sets fixed layout parameters. After setting this, CalculateLayout below
   // is no longer called to dynamically choosing those layout params.
@@ -93,10 +93,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void ClearSelectedView(AppListItemView* view);
   void ClearAnySelectedView();
   bool IsSelectedView(const AppListItemView* view) const;
-
-  // Ensures the view is visible. Note that if there is a running page
-  // transition, this does nothing.
-  void EnsureViewVisible(const AppListItemView* view);
 
   void InitiateDrag(AppListItemView* view,
                     Pointer pointer,
@@ -131,22 +127,22 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   PaginationModel* pagination_model() { return &pagination_model_; }
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
-  virtual bool GetDropFormats(
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnKeyReleased(const ui::KeyEvent& event) override;
+  bool OnMouseWheel(const ui::MouseWheelEvent& event) override;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
+  bool GetDropFormats(
       int* formats,
-      std::set<OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
-  virtual bool CanDrop(const OSExchangeData& data) OVERRIDE;
-  virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
+      std::set<OSExchangeData::CustomFormat>* custom_formats) override;
+  bool CanDrop(const OSExchangeData& data) override;
+  int OnDragUpdated(const ui::DropTargetEvent& event) override;
 
   // Overridden from ui::EventHandler:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
 
   // Stops the timer that triggers a page flip during a drag.
   void StopPageFlipTimer();
@@ -196,7 +192,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void OnFolderItemRemoved();
 
   // Return the view model for test purposes.
-  const views::ViewModel* view_model_for_test() const { return &view_model_; }
+  const views::ViewModelT<AppListItemView>* view_model_for_test() const {
+    return &view_model_;
+  }
 
   // For test: Return if the drag and drop handler was set.
   bool has_drag_and_drop_host_for_test() { return NULL != drag_and_drop_host_; }
@@ -259,10 +257,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // number of apps.
   void UpdatePulsingBlockViews();
 
-  // Returns the pulsing block view of the item at |index| in the pulsing block
-  // model.
-  PulsingBlockView* GetPulsingBlockViewAt(int index) const;
-
   AppListItemView* CreateViewForItemAtIndex(size_t index);
 
   // Convert between the model index and the visual index. The model index
@@ -270,6 +264,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // struct above with page/slot info of where to display the item.
   Index GetIndexFromModelIndex(int model_index) const;
   int GetModelIndexFromIndex(const Index& index) const;
+
+  // Ensures the view is visible. Note that if there is a running page
+  // transition, this does nothing.
+  void EnsureViewVisible(const Index& index);
 
   void SetSelectedItemByIndex(const Index& index);
   bool IsValidIndex(const Index& index) const;
@@ -370,27 +368,27 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   bool IsPointWithinDragBuffer(const gfx::Point& point) const;
 
   // Overridden from views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   // Overridden from AppListItemListObserver:
-  virtual void OnListItemAdded(size_t index, AppListItem* item) OVERRIDE;
-  virtual void OnListItemRemoved(size_t index, AppListItem* item) OVERRIDE;
-  virtual void OnListItemMoved(size_t from_index,
-                               size_t to_index,
-                               AppListItem* item) OVERRIDE;
+  void OnListItemAdded(size_t index, AppListItem* item) override;
+  void OnListItemRemoved(size_t index, AppListItem* item) override;
+  void OnListItemMoved(size_t from_index,
+                       size_t to_index,
+                       AppListItem* item) override;
+  void OnAppListItemHighlight(size_t index, bool highlight) override;
 
   // Overridden from PaginationModelObserver:
-  virtual void TotalPagesChanged() OVERRIDE;
-  virtual void SelectedPageChanged(int old_selected, int new_selected) OVERRIDE;
-  virtual void TransitionStarted() OVERRIDE;
-  virtual void TransitionChanged() OVERRIDE;
+  void TotalPagesChanged() override;
+  void SelectedPageChanged(int old_selected, int new_selected) override;
+  void TransitionStarted() override;
+  void TransitionChanged() override;
 
   // Overridden from AppListModelObserver:
-  virtual void OnAppListModelStatusChanged() OVERRIDE;
+  void OnAppListModelStatusChanged() override;
 
   // ui::ImplicitAnimationObserver overrides:
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE;
+  void OnImplicitAnimationsCompleted() override;
 
   // Hide a given view temporarily without losing (mouse) events and / or
   // changing the size of it. If |immediate| is set the change will be
@@ -400,10 +398,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   // Whether the folder drag-and-drop UI should be enabled.
   bool EnableFolderDragDropUI();
-
-  // Whether target specified by |drap_target| can accept more items to be
-  // dropped into it.
-  bool CanDropIntoTarget(const Index& drop_target) const;
 
   // Returns the size of the entire tile grid.
   gfx::Size GetTileGridSize() const;
@@ -422,7 +416,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // there is no item displayed at |slot|, returns NULL. Note that this finds an
   // item *displayed* at a slot, which may differ from the item's location in
   // the model (as it may have been temporarily moved during a drag operation).
-  AppListItemView* GetViewDisplayedAtSlotOnCurrentPage(int slot);
+  AppListItemView* GetViewDisplayedAtSlotOnCurrentPage(int slot) const;
 
   // Sets state of the view with |target_index| to |is_target_folder| for
   // dropping |drag_view_|.
@@ -482,11 +476,11 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   int cols_;
   int rows_per_page_;
 
-  // List of AppListItemViews. There is a view per item in |model_|.
-  views::ViewModel view_model_;
+  // List of app item views. There is a view per item in |model_|.
+  views::ViewModelT<AppListItemView> view_model_;
 
-  // List of PulsingBlockViews.
-  views::ViewModel pulsing_blocks_model_;
+  // List of pulsing block views.
+  views::ViewModelT<PulsingBlockView> pulsing_blocks_model_;
 
   AppListItemView* selected_view_;
 

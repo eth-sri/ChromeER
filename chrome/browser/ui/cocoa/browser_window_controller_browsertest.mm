@@ -40,10 +40,20 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_utils.h"
 #import "testing/gtest_mac.h"
+#import "third_party/ocmock/OCMock/OCMock.h"
 #import "ui/base/cocoa/nsview_additions.h"
 #include "ui/gfx/animation/slide_animation.h"
 
 namespace {
+
+// Creates a mock of an NSWindow that has the given |frame|.
+id MockWindowWithFrame(NSRect frame) {
+  id window = [OCMockObject mockForClass:[NSWindow class]];
+  NSValue* window_frame =
+      [NSValue valueWithBytes:&frame objCType:@encode(NSRect)];
+  [[[window stub] andReturnValue:window_frame] frame];
+  return window;
+}
 
 void CreateProfileCallback(const base::Closure& quit_closure,
                            Profile* profile,
@@ -66,6 +76,96 @@ enum ViewID {
   VIEW_ID_TAB_CONTENT_AREA,
   VIEW_ID_FULLSCREEN_FLOATING_BAR,
   VIEW_ID_COUNT,
+};
+
+// Checks that no views draw on top of the supposedly exposed view.
+class ViewExposedChecker {
+ public:
+  ViewExposedChecker() : below_exposed_view_(YES) {}
+  ~ViewExposedChecker() {}
+
+  void SetExceptions(NSArray* exceptions) {
+    exceptions_.reset([exceptions retain]);
+  }
+
+  // Checks that no views draw in front of |view|, with the exception of
+  // |exceptions|.
+  void CheckViewExposed(NSView* view) {
+    below_exposed_view_ = YES;
+    exposed_view_.reset([view retain]);
+    CheckViewsDoNotObscure([[[view window] contentView] superview]);
+  }
+
+ private:
+  // Checks that |view| does not draw on top of |exposed_view_|.
+  void CheckViewDoesNotObscure(NSView* view) {
+    NSRect viewWindowFrame = [view convertRect:[view bounds] toView:nil];
+    NSRect viewBeingVerifiedWindowFrame =
+        [exposed_view_ convertRect:[exposed_view_ bounds] toView:nil];
+
+    // The views do not intersect.
+    if (!NSIntersectsRect(viewBeingVerifiedWindowFrame, viewWindowFrame))
+      return;
+
+    // No view can be above the view being checked.
+    EXPECT_TRUE(below_exposed_view_);
+
+    // If |view| is a parent of |exposed_view_|, then there's nothing else
+    // to check.
+    NSView* parent = exposed_view_;
+    while (parent != nil) {
+      parent = [parent superview];
+      if (parent == view)
+        return;
+    }
+
+    if ([exposed_view_ layer])
+      return;
+
+    // If the view being verified doesn't have a layer, then no views that
+    // intersect it can have a layer.
+    if ([exceptions_ containsObject:view]) {
+      EXPECT_FALSE([view isOpaque]);
+      return;
+    }
+
+    EXPECT_TRUE(![view layer]) << [[view description] UTF8String] << " " <<
+        [NSStringFromRect(viewWindowFrame) UTF8String];
+  }
+
+  // Recursively checks that |view| and its subviews do not draw on top of
+  // |exposed_view_|. The recursion passes through all views in order of
+  // back-most in Z-order to front-most in Z-order.
+  void CheckViewsDoNotObscure(NSView* view) {
+    // If this is the view being checked, don't recurse into its subviews. All
+    // future views encountered in the recursion are in front of the view being
+    // checked.
+    if (view == exposed_view_) {
+      below_exposed_view_ = NO;
+      return;
+    }
+
+    CheckViewDoesNotObscure(view);
+
+    // Perform the recursion.
+    for (NSView* subview in [view subviews])
+      CheckViewsDoNotObscure(subview);
+  }
+
+  // The method CheckViewExposed() recurses through the views in the view
+  // hierarchy and checks that none of the views obscure |exposed_view_|.
+  base::scoped_nsobject<NSView> exposed_view_;
+
+  // While this flag is true, the views being recursed through are below
+  // |exposed_view_| in Z-order. After the recursion passes |exposed_view_|,
+  // this flag is set to false.
+  BOOL below_exposed_view_;
+
+  // Exceptions are allowed to overlap |exposed_view_|. Exceptions must still
+  // be Z-order behind |exposed_view_|.
+  base::scoped_nsobject<NSArray> exceptions_;
+
+  DISALLOW_COPY_AND_ASSIGN(ViewExposedChecker);
 };
 
 }  // namespace
@@ -92,7 +192,7 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
   BrowserWindowControllerTest() : InProcessBrowserTest() {
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     [[controller() bookmarkBarController] setStateAnimationsEnabled:NO];
     [[controller() bookmarkBarController] setInnerContentAnimationsEnabled:NO];
   }
@@ -223,18 +323,29 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
     return icon_bottom.y - info_bar_top.y;
   }
 
-  // The traffic lights should always be in front of the content view and the
-  // tab strip view. Since the traffic lights change across OSX versions, this
-  // test verifies that the contentView is in the back, and if the tab strip
-  // view is a sibling, it is directly in front of the content view.
-  void VerifyTrafficLightZOrder() const {
-    NSView* contentView = [[controller() window] contentView];
-    NSView* rootView = [contentView superview];
-    EXPECT_EQ(contentView, [[rootView subviews] objectAtIndex:0]);
+  // Nothing should draw on top of the window controls.
+  void VerifyWindowControlsZOrder() {
+    NSWindow* window = [controller() window];
+    ViewExposedChecker checker;
 
-    NSView* tabStripView = [controller() tabStripView];
-    if ([[rootView subviews] containsObject:tabStripView])
-      EXPECT_EQ(tabStripView, [[rootView subviews] objectAtIndex:1]);
+    // The exceptions are the contentView, chromeContentView and tabStripView,
+    // which are layer backed but transparent.
+    NSArray* exceptions = @[
+      [window contentView],
+      controller().chromeContentView,
+      controller().tabStripView
+    ];
+    checker.SetExceptions(exceptions);
+
+    checker.CheckViewExposed([window standardWindowButton:NSWindowCloseButton]);
+    checker.CheckViewExposed(
+        [window standardWindowButton:NSWindowMiniaturizeButton]);
+    checker.CheckViewExposed([window standardWindowButton:NSWindowZoomButton]);
+
+    // There is no fullscreen button on OSX 10.6 or OSX 10.10+.
+    NSView* view = [window standardWindowButton:NSWindowFullScreenButton];
+    if (view)
+      checker.CheckViewExposed(view);
   }
 
  private:
@@ -381,6 +492,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, SheetPosition) {
   EXPECT_FALSE([controller() isBookmarkBarVisible]);
 
   NSRect defaultAlertFrame = NSMakeRect(0, 0, 300, 200);
+  id sheet = MockWindowWithFrame(defaultAlertFrame);
   NSWindow* window = browser()->window()->GetNativeWindow();
   NSRect alertFrame = [controller() window:window
                          willPositionSheet:nil
@@ -392,10 +504,23 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, SheetPosition) {
   chrome::ToggleBookmarkBarWhenVisible(browser()->profile());
   EXPECT_TRUE([controller() isBookmarkBarVisible]);
   alertFrame = [controller() window:window
-                  willPositionSheet:nil
+                  willPositionSheet:sheet
                           usingRect:defaultAlertFrame];
   NSRect bookmarkBarFrame = [[[controller() bookmarkBarController] view] frame];
   EXPECT_EQ(NSMinY(alertFrame), NSMinY(bookmarkBarFrame));
+
+  // If the sheet is too large, it should be positioned at the top of the
+  // window.
+  defaultAlertFrame = NSMakeRect(0, 0, 300, 2000);
+  sheet = MockWindowWithFrame(defaultAlertFrame);
+  alertFrame = [controller() window:window
+                  willPositionSheet:sheet
+                          usingRect:defaultAlertFrame];
+  EXPECT_EQ(NSMinY(alertFrame), NSHeight([window frame]));
+
+  // Reset the sheet's size.
+  defaultAlertFrame = NSMakeRect(0, 0, 300, 200);
+  sheet = MockWindowWithFrame(defaultAlertFrame);
 
   // Make sure the profile does not have the bookmark visible so that
   // we'll create the shortcut window without the bookmark bar.
@@ -417,7 +542,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, SheetPosition) {
   // Open sheet in an application window.
   [popupController showWindow:nil];
   alertFrame = [popupController window:popupWindow
-                     willPositionSheet:nil
+                     willPositionSheet:sheet
                              usingRect:defaultAlertFrame];
   EXPECT_EQ(NSMinY(alertFrame),
             NSHeight([[popupWindow contentView] frame]) -
@@ -496,15 +621,17 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 
 IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, TrafficLightZOrder) {
   // Verify z order immediately after creation.
-  VerifyTrafficLightZOrder();
+  VerifyWindowControlsZOrder();
 
-  // Toggle overlay, then verify z order.
+  // Verify z order in and out of overlay.
   [controller() showOverlay];
+  VerifyWindowControlsZOrder();
   [controller() removeOverlay];
-  VerifyTrafficLightZOrder();
+  VerifyWindowControlsZOrder();
 
-  // Toggle immersive fullscreen, then verify z order.
+  // Toggle immersive fullscreen, then verify z order. In immersive fullscreen,
+  // there are no window controls.
   [controller() enterImmersiveFullscreen];
   [controller() exitImmersiveFullscreen];
-  VerifyTrafficLightZOrder();
+  VerifyWindowControlsZOrder();
 }

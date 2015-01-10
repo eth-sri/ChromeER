@@ -34,11 +34,10 @@ class QueryManagerTest : public GpuServiceTest {
 
   QueryManagerTest() {
   }
-  virtual ~QueryManagerTest() {
-  }
+  ~QueryManagerTest() override {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     GpuServiceTest::SetUp();
     engine_.reset(new MockCommandBufferEngine());
     decoder_.reset(new MockGLES2Decoder());
@@ -51,7 +50,7 @@ class QueryManagerTest : public GpuServiceTest {
     manager_.reset(new QueryManager(decoder_.get(), feature_info.get()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     decoder_.reset();
     manager_->Destroy(false);
     manager_.reset();
@@ -96,11 +95,9 @@ class QueryManagerTest : public GpuServiceTest {
       ClearSharedMemory();
     }
 
-    virtual ~MockCommandBufferEngine() {
-    }
+    ~MockCommandBufferEngine() override {}
 
-    virtual scoped_refptr<gpu::Buffer> GetSharedMemoryBuffer(int32 shm_id)
-        OVERRIDE {
+    scoped_refptr<gpu::Buffer> GetSharedMemoryBuffer(int32 shm_id) override {
       return shm_id == kSharedMemoryId ? valid_buffer_ : invalid_buffer_;
     }
 
@@ -108,23 +105,21 @@ class QueryManagerTest : public GpuServiceTest {
       memset(data_, kInitialMemoryValue, kSharedBufferSize);
     }
 
-    virtual void set_token(int32 token) OVERRIDE {
-      DCHECK(false);
-    }
+    void set_token(int32 token) override { DCHECK(false); }
 
-    virtual bool SetGetBuffer(int32 /* transfer_buffer_id */) OVERRIDE {
+    bool SetGetBuffer(int32 /* transfer_buffer_id */) override {
       DCHECK(false);
       return false;
     }
 
     // Overridden from CommandBufferEngine.
-    virtual bool SetGetOffset(int32 offset) OVERRIDE {
+    bool SetGetOffset(int32 offset) override {
       DCHECK(false);
       return false;
     }
 
     // Overridden from CommandBufferEngine.
-    virtual int32 GetGetOffset() OVERRIDE {
+    int32 GetGetOffset() override {
       DCHECK(false);
       return 0;
     }

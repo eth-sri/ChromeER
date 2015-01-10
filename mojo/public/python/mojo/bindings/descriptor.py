@@ -10,8 +10,10 @@ import array
 import itertools
 import struct
 
-# pylint: disable=F0401
+import mojo.bindings.reflection as reflection
 import mojo.bindings.serialization as serialization
+
+# pylint: disable=E0611,F0401
 import mojo.system
 
 
@@ -372,10 +374,17 @@ class NativeArrayType(BaseArrayType):
 class StructType(PointerType):
   """Type object for structs."""
 
-  def __init__(self, struct_type, nullable=False):
+  def __init__(self, struct_type_getter, nullable=False):
     PointerType.__init__(self)
-    self.struct_type = struct_type
+    self._struct_type_getter = struct_type_getter
+    self._struct_type = None
     self.nullable = nullable
+
+  @property
+  def struct_type(self):
+    if not self._struct_type:
+      self._struct_type = self._struct_type_getter()
+    return self._struct_type
 
   def Convert(self, value):
     if value is None or isinstance(value, self.struct_type):
@@ -394,6 +403,61 @@ class StructType(PointerType):
 
   def DeserializePointer(self, size, nb_elements, data, handles):
     return self.struct_type.Deserialize(data, handles)
+
+
+class MapType(SerializableType):
+  """Type objects for maps."""
+
+  def __init__(self, key_type, value_type, nullable=False):
+    self._key_type = key_type
+    self._value_type = value_type
+    dictionary = {
+      '__metaclass__': reflection.MojoStructType,
+      '__module__': __name__,
+      'DESCRIPTOR': {
+        'fields': [
+          SingleFieldGroup('keys', MapType._GetArrayType(key_type), 0, 0),
+          SingleFieldGroup('values', MapType._GetArrayType(value_type), 1, 1),
+        ],
+      }
+    }
+    self.struct = reflection.MojoStructType('MapStruct', (object,), dictionary)
+    self.struct_type = StructType(lambda: self.struct, nullable)
+    SerializableType.__init__(self, self.struct_type.typecode)
+
+  def Convert(self, value):
+    if value is None:
+      return value
+    if isinstance(value, dict):
+      return dict([(self._key_type.Convert(x), self._value_type.Convert(y)) for
+                   x, y in value.iteritems()])
+    raise TypeError('%r is not a dictionary.')
+
+  def Serialize(self, value, data_offset, data, handle_offset):
+    s = None
+    if value:
+      keys, values = [], []
+      for key, value in value.iteritems():
+        keys.append(key)
+        values.append(value)
+      s = self.struct(keys=keys, values=values)
+    return self.struct_type.Serialize(s, data_offset, data, handle_offset)
+
+  def Deserialize(self, value, data, handles):
+    s = self.struct_type.Deserialize(value, data, handles)
+    if s:
+      if len(s.keys) != len(s.values):
+        raise serialization.DeserializationException(
+            'keys and values do not have the same length.')
+      return dict(zip(s.keys, s.values))
+    return None
+
+  @staticmethod
+  def _GetArrayType(t):
+    if t == TYPE_BOOL:
+      return BooleanArrayType()
+    else:
+      return GenericArrayType(t)
 
 
 class NoneType(SerializableType):
@@ -439,10 +503,11 @@ TYPE_NULLABLE_HANDLE = HandleType(True)
 class FieldDescriptor(object):
   """Describes a field in a generated struct."""
 
-  def __init__(self, name, field_type, field_number, default_value=None):
+  def __init__(self, name, field_type, index, version, default_value=None):
     self.name = name
     self.field_type = field_type
-    self.field_number = field_number
+    self.version = version
+    self.index = index
     self._default_value = default_value
 
   def GetDefaultValue(self):
@@ -479,9 +544,9 @@ class FieldGroup(object):
 class SingleFieldGroup(FieldGroup, FieldDescriptor):
   """A FieldGroup that contains a single FieldDescriptor."""
 
-  def __init__(self, name, field_type, field_number, default_value=None):
+  def __init__(self, name, field_type, index, version, default_value=None):
     FieldDescriptor.__init__(
-        self, name, field_type, field_number, default_value)
+        self, name, field_type, index, version, default_value)
     FieldGroup.__init__(self, [self])
 
   def GetTypeCode(self):
@@ -491,7 +556,7 @@ class SingleFieldGroup(FieldGroup, FieldDescriptor):
     return self.field_type.GetByteSize()
 
   def GetVersion(self):
-    return self.field_number
+    return self.version
 
   def Serialize(self, obj, data_offset, data, handle_offset):
     value = getattr(obj, self.name)
@@ -506,7 +571,7 @@ class BooleanGroup(FieldGroup):
   """A FieldGroup to pack booleans."""
   def __init__(self, descriptors):
     FieldGroup.__init__(self, descriptors)
-    self.version = min([descriptor.field_number  for descriptor in descriptors])
+    self.version = min([descriptor.version  for descriptor in descriptors])
 
   def GetTypeCode(self):
     return 'B'

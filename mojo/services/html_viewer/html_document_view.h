@@ -5,7 +5,7 @@
 #ifndef MOJO_SERVICES_HTML_VIEWER_HTML_DOCUMENT_VIEW_H_
 #define MOJO_SERVICES_HTML_VIEWER_HTML_DOCUMENT_VIEW_H_
 
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "mojo/public/cpp/application/lazy_interface_ptr.h"
 #include "mojo/services/public/cpp/view_manager/view_manager_client_factory.h"
@@ -86,19 +86,18 @@ class HTMLDocumentView : public blink::WebViewClient,
       blink::WebHistoryCommitType commit_type);
 
   // ViewManagerDelegate methods:
-  virtual void OnEmbed(
-      ViewManager* view_manager,
-      View* root,
-      ServiceProviderImpl* embedee_service_provider_impl,
-      scoped_ptr<ServiceProvider> embedder_service_provider) OVERRIDE;
-  virtual void OnViewManagerDisconnected(ViewManager* view_manager) OVERRIDE;
+  void OnEmbed(ViewManager* view_manager,
+               View* root,
+               ServiceProviderImpl* embedee_service_provider_impl,
+               scoped_ptr<ServiceProvider> embedder_service_provider) override;
+  void OnViewManagerDisconnected(ViewManager* view_manager) override;
 
   // ViewObserver methods:
-  virtual void OnViewBoundsChanged(View* view,
-                                   const gfx::Rect& old_bounds,
-                                   const gfx::Rect& new_bounds) OVERRIDE;
-  virtual void OnViewDestroyed(View* view) OVERRIDE;
-  virtual void OnViewInputEvent(View* view, const EventPtr& event) OVERRIDE;
+  void OnViewBoundsChanged(View* view,
+                           const Rect& old_bounds,
+                           const Rect& new_bounds) override;
+  void OnViewDestroyed(View* view) override;
+  void OnViewInputEvent(View* view, const EventPtr& event) override;
 
   void Load(URLResponsePtr response);
 

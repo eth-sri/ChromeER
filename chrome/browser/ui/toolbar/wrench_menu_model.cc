@@ -247,9 +247,7 @@ void ToolsMenuModel::Build(Browser* browser) {
     AddSeparator(ui::NORMAL_SEPARATOR);
   }
 
-  // If settings-in-a-window is enabled the Extensions item is at the top level.
-  if (!::switches::SettingsWindowEnabled())
-    AddItemWithStringId(IDC_MANAGE_EXTENSIONS, IDS_SHOW_EXTENSIONS);
+  AddItemWithStringId(IDC_MANAGE_EXTENSIONS, IDS_SHOW_EXTENSIONS);
 
   if (chrome::CanOpenTaskManager())
     AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
@@ -558,9 +556,14 @@ void WrenchMenuModel::Build() {
   }
 
 #if defined(OS_WIN)
+  base::win::Version min_version_for_ash_mode = base::win::VERSION_WIN8;
+  // Windows 7 ASH mode is only supported in DEBUG for now.
+#if !defined(NDEBUG)
+  min_version_for_ash_mode = base::win::VERSION_WIN7;
+#endif
   // Windows 8 can support ASH mode using WARP, but Windows 7 requires a working
   // GPU compositor.
-  if ((base::win::GetVersion() >= base::win::VERSION_WIN7 &&
+  if ((base::win::GetVersion() >= min_version_for_ash_mode &&
       content::GpuDataManager::GetInstance()->CanUseGpuBrowserCompositor()) ||
       (base::win::GetVersion() >= base::win::VERSION_WIN8)) {
     if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH) {
@@ -598,9 +601,6 @@ void WrenchMenuModel::Build() {
 
   AddItemWithStringId(IDC_SHOW_HISTORY, IDS_SHOW_HISTORY);
   AddItemWithStringId(IDC_SHOW_DOWNLOADS, IDS_SHOW_DOWNLOADS);
-  // If settings-in-a-window is enabled the Extensions item is at the top level.
-  if (::switches::SettingsWindowEnabled())
-    AddItemWithStringId(IDC_MANAGE_EXTENSIONS, IDS_SHOW_EXTENSIONS);
   AddSeparator(ui::NORMAL_SEPARATOR);
 
 #if !defined(OS_CHROMEOS)

@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "init_webrtc.h"
 #include "talk/media/webrtc/webrtcmediaengine.h"
+#include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/logging.h"
 
@@ -38,11 +39,18 @@ cricket::MediaEngineInterface* CreateWebRtcMediaEngine(
 
 void DestroyWebRtcMediaEngine(cricket::MediaEngineInterface* media_engine);
 
-// Define webrtc:field_trial::FindFullName to provide webrtc with a field trial
-// implementation. The implementation is provided by the loader via the
-// InitializeModule.
 namespace {
+// Provide webrtc with a field trial and metrics implementations.
+// The implementations are provided by the loader via the InitializeModule.
+
+// Defines webrtc::field_trial::FindFullName.
 FieldTrialFindFullName g_field_trial_find_ = NULL;
+// Defines webrtc::metrics::RtcFactoryGetCounts.
+RtcHistogramFactoryGetCounts g_factory_get_counts = NULL;
+// Defines webrtc::metrics::RtcFactoryGetEnumeration.
+RtcHistogramFactoryGetEnumeration g_factory_get_enumeration = NULL;
+// Defines webrtc::metrics::RtcAdd.
+RtcHistogramAdd g_histogram_add = NULL;
 }
 
 namespace webrtc {
@@ -51,6 +59,23 @@ std::string FindFullName(const std::string& trial_name) {
   return g_field_trial_find_(trial_name);
 }
 }  // namespace field_trial
+
+namespace metrics {
+Histogram* HistogramFactoryGetCounts(
+    const std::string& name, int min, int max, int bucket_count) {
+  return g_factory_get_counts(name, min, max, bucket_count);
+}
+
+Histogram* HistogramFactoryGetEnumeration(
+    const std::string& name, int boundary) {
+  return g_factory_get_enumeration(name, boundary);
+}
+
+void HistogramAdd(
+    Histogram* histogram_pointer, const std::string& name, int sample) {
+  g_histogram_add(histogram_pointer, name, sample);
+}
+}  // namespace metrics
 }  // namespace webrtc
 
 extern "C" {
@@ -65,23 +90,32 @@ bool InitializeModule(const CommandLine& command_line,
                       DellocateFunction dealloc,
 #endif
                       FieldTrialFindFullName field_trial_find,
+                      RtcHistogramFactoryGetCounts factory_get_counts,
+                      RtcHistogramFactoryGetEnumeration factory_get_enumeration,
+                      RtcHistogramAdd histogram_add,
                       logging::LogMessageHandlerFunction log_handler,
                       webrtc::GetCategoryEnabledPtr trace_get_category_enabled,
                       webrtc::AddTraceEventPtr trace_add_trace_event,
                       CreateWebRtcMediaEngineFunction* create_media_engine,
                       DestroyWebRtcMediaEngineFunction* destroy_media_engine,
                       InitDiagnosticLoggingDelegateFunctionFunction*
-                          init_diagnostic_logging) {
+                          init_diagnostic_logging,
+                      CreateWebRtcAudioProcessingFunction*
+                          create_audio_processing) {
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
   g_alloc = alloc;
   g_dealloc = dealloc;
 #endif
 
   g_field_trial_find_ = field_trial_find;
+  g_factory_get_counts = factory_get_counts;
+  g_factory_get_enumeration = factory_get_enumeration;
+  g_histogram_add = histogram_add;
 
   *create_media_engine = &CreateWebRtcMediaEngine;
   *destroy_media_engine = &DestroyWebRtcMediaEngine;
   *init_diagnostic_logging = &rtc::InitDiagnosticLoggingDelegateFunction;
+  *create_audio_processing = &webrtc::AudioProcessing::Create;
 
   if (CommandLine::Init(0, NULL)) {
 #if !defined(OS_WIN)

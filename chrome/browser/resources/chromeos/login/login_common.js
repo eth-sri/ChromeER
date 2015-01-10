@@ -14,6 +14,7 @@
 <include src="../../../../../ui/login/display_manager.js">
 <include src="header_bar.js">
 <include src="network_dropdown.js">
+<include src="oobe_screen_reset_confirmation_overlay.js">
 <include src="oobe_screen_reset.js">
 <include src="oobe_screen_autolaunch.js">
 <include src="oobe_screen_enable_kiosk.js">
@@ -29,6 +30,7 @@
 <include src="screen_wrong_hwid.js">
 <include src="screen_confirm_password.js">
 <include src="screen_fatal_error.js">
+<include src="screen_device_disabled.js">
 <include src="../../../../../ui/login/login_ui_tools.js">
 <include src="../../../../../ui/login/account_picker/user_pod_row.js">
 <include src="../../../../../ui/login/resource_loader.js">
@@ -261,7 +263,7 @@ cr.define('cr.ui', function() {
   Oobe.loginForTesting = function(username, password) {
     Oobe.disableSigninUI();
     chrome.send('skipToLoginForTesting', [username]);
-    chrome.send('completeLogin', [username, password, false]);
+    chrome.send('completeLogin', ['12345', username, password, false]);
   };
 
   /**

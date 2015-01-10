@@ -11,6 +11,7 @@
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/renderer/media/webrtc_logging.h"
@@ -61,7 +62,8 @@ bool JingleSocketOptionToP2PSocketOption(rtc::Socket::Option option,
 }
 
 // TODO(miu): This needs tuning.  http://crbug.com/237960
-const size_t kMaximumInFlightBytes = 64 * 1024;  // 64 KB
+// http://crbug.com/427555
+const size_t kMaximumInFlightBytes = 256 * 1024;  // 256 KB
 
 // IpcPacketSocket implements rtc::AsyncPacketSocket interface
 // using P2PSocketClient that works over IPC-channel. It must be used
@@ -70,7 +72,7 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
                         public P2PSocketClientDelegate {
  public:
   IpcPacketSocket();
-  virtual ~IpcPacketSocket();
+  ~IpcPacketSocket() override;
 
   // Always takes ownership of client even if initialization fails.
   bool Init(P2PSocketType type, P2PSocketClientImpl* client,
@@ -78,31 +80,32 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
             const rtc::SocketAddress& remote_address);
 
   // rtc::AsyncPacketSocket interface.
-  virtual rtc::SocketAddress GetLocalAddress() const OVERRIDE;
-  virtual rtc::SocketAddress GetRemoteAddress() const OVERRIDE;
-  virtual int Send(const void *pv, size_t cb,
-                   const rtc::PacketOptions& options) OVERRIDE;
-  virtual int SendTo(const void *pv, size_t cb,
-                     const rtc::SocketAddress& addr,
-                     const rtc::PacketOptions& options) OVERRIDE;
-  virtual int Close() OVERRIDE;
-  virtual State GetState() const OVERRIDE;
-  virtual int GetOption(rtc::Socket::Option option, int* value) OVERRIDE;
-  virtual int SetOption(rtc::Socket::Option option, int value) OVERRIDE;
-  virtual int GetError() const OVERRIDE;
-  virtual void SetError(int error) OVERRIDE;
+  rtc::SocketAddress GetLocalAddress() const override;
+  rtc::SocketAddress GetRemoteAddress() const override;
+  int Send(const void* pv,
+           size_t cb,
+           const rtc::PacketOptions& options) override;
+  int SendTo(const void* pv,
+             size_t cb,
+             const rtc::SocketAddress& addr,
+             const rtc::PacketOptions& options) override;
+  int Close() override;
+  State GetState() const override;
+  int GetOption(rtc::Socket::Option option, int* value) override;
+  int SetOption(rtc::Socket::Option option, int value) override;
+  int GetError() const override;
+  void SetError(int error) override;
 
   // P2PSocketClientDelegate implementation.
-  virtual void OnOpen(const net::IPEndPoint& local_address,
-                      const net::IPEndPoint& remote_address) OVERRIDE;
-  virtual void OnIncomingTcpConnection(
-      const net::IPEndPoint& address,
-      P2PSocketClient* client) OVERRIDE;
-  virtual void OnSendComplete() OVERRIDE;
-  virtual void OnError() OVERRIDE;
-  virtual void OnDataReceived(const net::IPEndPoint& address,
-                              const std::vector<char>& data,
-                              const base::TimeTicks& timestamp) OVERRIDE;
+  void OnOpen(const net::IPEndPoint& local_address,
+              const net::IPEndPoint& remote_address) override;
+  void OnIncomingTcpConnection(const net::IPEndPoint& address,
+                               P2PSocketClient* client) override;
+  void OnSendComplete() override;
+  void OnError() override;
+  void OnDataReceived(const net::IPEndPoint& address,
+                      const std::vector<char>& data,
+                      const base::TimeTicks& timestamp) override;
 
  private:
   enum InternalState {
@@ -112,6 +115,10 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
     IS_CLOSED,
     IS_ERROR,
   };
+
+  // Increment the counter for consecutive bytes discarded as socket is running
+  // out of buffer.
+  void IncrementDiscardCounters(size_t bytes_discarded);
 
   // Update trace of send throttling internal state. This should be called
   // immediately after any changes to |send_bytes_available_| and/or
@@ -160,6 +167,15 @@ class IpcPacketSocket : public rtc::AsyncPacketSocket,
   int error_;
   int options_[P2P_SOCKET_OPT_MAX];
 
+  // Track the maximum and current consecutive bytes discarded due to not enough
+  // send_bytes_available_.
+  size_t max_discard_bytes_sequence_;
+  size_t current_discard_bytes_sequence_;
+
+  // Track the total number of packets and the number of packets discarded.
+  size_t packets_discarded_;
+  size_t total_packets_;
+
   DISALLOW_COPY_AND_ASSIGN(IpcPacketSocket);
 };
 
@@ -172,14 +188,13 @@ class AsyncAddressResolverImpl :  public base::NonThreadSafe,
                                   public rtc::AsyncResolverInterface {
  public:
   AsyncAddressResolverImpl(P2PSocketDispatcher* dispatcher);
-  virtual ~AsyncAddressResolverImpl();
+  ~AsyncAddressResolverImpl() override;
 
   // rtc::AsyncResolverInterface interface.
-  virtual void Start(const rtc::SocketAddress& addr) OVERRIDE;
-  virtual bool GetResolvedAddress(
-      int family, rtc::SocketAddress* addr) const OVERRIDE;
-  virtual int GetError() const OVERRIDE;
-  virtual void Destroy(bool wait) OVERRIDE;
+  void Start(const rtc::SocketAddress& addr) override;
+  bool GetResolvedAddress(int family, rtc::SocketAddress* addr) const override;
+  int GetError() const override;
+  void Destroy(bool wait) override;
 
  private:
   virtual void OnAddressResolved(const net::IPAddressList& addresses);
@@ -195,7 +210,11 @@ IpcPacketSocket::IpcPacketSocket()
       state_(IS_UNINITIALIZED),
       send_bytes_available_(kMaximumInFlightBytes),
       writable_signal_expected_(false),
-      error_(0) {
+      error_(0),
+      max_discard_bytes_sequence_(0),
+      current_discard_bytes_sequence_(0),
+      packets_discarded_(0),
+      total_packets_(0) {
   COMPILE_ASSERT(kMaximumInFlightBytes > 0, would_send_at_zero_rate);
   std::fill_n(options_, static_cast<int> (P2P_SOCKET_OPT_MAX),
               kDefaultNonSetOptionValue);
@@ -206,6 +225,14 @@ IpcPacketSocket::~IpcPacketSocket() {
       state_ == IS_ERROR) {
     Close();
   }
+
+  UMA_HISTOGRAM_COUNTS_10000("WebRTC.ApplicationMaxConsecutiveBytesDiscard",
+                             max_discard_bytes_sequence_);
+
+  if (total_packets_ > 0) {
+    UMA_HISTOGRAM_PERCENTAGE("WebRTC.ApplicationPercentPacketsDiscarded",
+                             (packets_discarded_ * 100) / total_packets_);
+  }
 }
 
 void IpcPacketSocket::TraceSendThrottlingState() const {
@@ -213,6 +240,15 @@ void IpcPacketSocket::TraceSendThrottlingState() const {
                     send_bytes_available_);
   TRACE_COUNTER_ID1("p2p", "P2PSendPacketsInFlight", local_address_.port(),
                     in_flight_packet_sizes_.size());
+}
+
+void IpcPacketSocket::IncrementDiscardCounters(size_t bytes_discarded) {
+  current_discard_bytes_sequence_ += bytes_discarded;
+  packets_discarded_++;
+
+  if (current_discard_bytes_sequence_ > max_discard_bytes_sequence_) {
+    max_discard_bytes_sequence_ = current_discard_bytes_sequence_;
+  }
 }
 
 bool IpcPacketSocket::Init(P2PSocketType type,
@@ -316,6 +352,8 @@ int IpcPacketSocket::SendTo(const void *data, size_t data_size,
     return 0;
   }
 
+  total_packets_++;
+
   if (data_size > send_bytes_available_) {
     TRACE_EVENT_INSTANT1("p2p", "MaxPendingBytesWouldBlock",
                          TRACE_EVENT_SCOPE_THREAD,
@@ -330,7 +368,10 @@ int IpcPacketSocket::SendTo(const void *data, size_t data_size,
     }
 
     error_ = EWOULDBLOCK;
+    IncrementDiscardCounters(data_size);
     return -1;
+  } else {
+    current_discard_bytes_sequence_ = 0;
   }
 
   net::IPEndPoint address_chrome;

@@ -226,11 +226,7 @@ const ui::Compositor* NativeWidgetAura::GetCompositor() const {
   return window_ ? window_->layer()->GetCompositor() : NULL;
 }
 
-ui::Compositor* NativeWidgetAura::GetCompositor() {
-  return window_ ? window_->layer()->GetCompositor() : NULL;
-}
-
-ui::Layer* NativeWidgetAura::GetLayer() {
+const ui::Layer* NativeWidgetAura::GetLayer() const {
   return window_ ? window_->layer() : NULL;
 }
 
@@ -700,6 +696,8 @@ bool NativeWidgetAura::IsTranslucentWindowOpacitySupported() const {
 void NativeWidgetAura::OnSizeConstraintsChanged() {
   window_->SetProperty(aura::client::kCanMaximizeKey,
                        GetWidget()->widget_delegate()->CanMaximize());
+  window_->SetProperty(aura::client::kCanMinimizeKey,
+                       GetWidget()->widget_delegate()->CanMinimize());
   window_->SetProperty(aura::client::kCanResizeKey,
                        GetWidget()->widget_delegate()->CanResize());
 }
@@ -1105,16 +1103,18 @@ void NativeWidgetPrivate::GetAllChildWidgets(gfx::NativeView native_view,
 // static
 void NativeWidgetPrivate::GetAllOwnedWidgets(gfx::NativeView native_view,
                                              Widget::Widgets* owned) {
-  const aura::Window::Windows& transient_children =
-      wm::GetTransientChildren(native_view);
-  for (aura::Window::Windows::const_iterator i = transient_children.begin();
-       i != transient_children.end(); ++i) {
+  // Add all owned widgets.
+  for (aura::Window* transient_child : wm::GetTransientChildren(native_view)) {
     NativeWidgetPrivate* native_widget = static_cast<NativeWidgetPrivate*>(
-        GetNativeWidgetForNativeView(*i));
+        GetNativeWidgetForNativeView(transient_child));
     if (native_widget && native_widget->GetWidget())
       owned->insert(native_widget->GetWidget());
-    GetAllOwnedWidgets((*i), owned);
+    GetAllOwnedWidgets(transient_child, owned);
   }
+
+  // Add all child windows.
+  for (aura::Window* child : native_view->children())
+    GetAllChildWidgets(child, owned);
 }
 
 // static
@@ -1170,7 +1170,7 @@ bool NativeWidgetPrivate::IsMouseButtonDown() {
 // static
 gfx::FontList NativeWidgetPrivate::GetWindowTitleFontList() {
 #if defined(OS_WIN)
-  NONCLIENTMETRICS ncm;
+  NONCLIENTMETRICS_XP ncm;
   base::win::GetNonClientMetrics(&ncm);
   l10n_util::AdjustUIFont(&(ncm.lfCaptionFont));
   base::win::ScopedHFONT caption_font(CreateFontIndirect(&(ncm.lfCaptionFont)));

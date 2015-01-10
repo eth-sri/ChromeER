@@ -72,15 +72,15 @@ class MEDIA_EXPORT AlsaPcmOutputStream : public AudioOutputStream {
                       AlsaWrapper* wrapper,
                       AudioManagerBase* manager);
 
-  virtual ~AlsaPcmOutputStream();
+  ~AlsaPcmOutputStream() override;
 
   // Implementation of AudioOutputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual void GetVolume(double* volume) OVERRIDE;
+  bool Open() override;
+  void Close() override;
+  void Start(AudioSourceCallback* callback) override;
+  void Stop() override;
+  void SetVolume(double volume) override;
+  void GetVolume(double* volume) override;
 
  private:
   friend class AlsaPcmOutputStreamTest;

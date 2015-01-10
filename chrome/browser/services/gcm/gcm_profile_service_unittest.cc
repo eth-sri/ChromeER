@@ -54,11 +54,11 @@ KeyedService* BuildGCMProfileService(content::BrowserContext* context) {
 class GCMProfileServiceTest : public testing::Test {
  protected:
   GCMProfileServiceTest();
-  virtual ~GCMProfileServiceTest();
+  ~GCMProfileServiceTest() override;
 
   // testing::Test:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   FakeGCMClient* GetGCMClient() const;
 
@@ -255,7 +255,7 @@ TEST_F(GCMProfileServiceTest, RegisterAndUnregister) {
   RegisterAndWaitForCompletion(sender_ids);
 
   std::string expected_registration_id =
-      FakeGCMClient::GetRegistrationIdFromSenderIds(sender_ids);
+      GetGCMClient()->GetRegistrationIdFromSenderIds(sender_ids);
   EXPECT_EQ(expected_registration_id, registration_id());
   EXPECT_EQ(GCMClient::SUCCESS, registration_result());
 

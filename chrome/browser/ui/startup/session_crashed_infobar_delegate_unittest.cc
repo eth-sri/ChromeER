@@ -11,7 +11,6 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
@@ -20,7 +19,7 @@
 
 class SessionCrashedInfoBarDelegateUnitTest : public BrowserWithTestWindowTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     static_cast<TestingBrowserProcess*>(g_browser_process)
         ->SetLocalState(&pref_service);
     chrome::RegisterLocalState(pref_service.registry());
@@ -30,7 +29,7 @@ class SessionCrashedInfoBarDelegateUnitTest : public BrowserWithTestWindowTest {
     BrowserWithTestWindowTest::SetUp();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     static_cast<TestingBrowserProcess*>(g_browser_process)->SetLocalState(NULL);
     BrowserWithTestWindowTest::TearDown();
   }

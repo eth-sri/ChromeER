@@ -29,41 +29,39 @@ struct PdfMetafileSkiaData;
 class PRINTING_EXPORT PdfMetafileSkia : public Metafile {
  public:
   PdfMetafileSkia();
-  virtual ~PdfMetafileSkia();
+  ~PdfMetafileSkia() override;
 
   // Metafile methods.
-  virtual bool Init() OVERRIDE;
-  virtual bool InitFromData(const void* src_buffer,
-                            uint32 src_buffer_size) OVERRIDE;
+  bool Init() override;
+  bool InitFromData(const void* src_buffer, uint32 src_buffer_size) override;
 
-  virtual SkBaseDevice* StartPageForVectorCanvas(
-      const gfx::Size& page_size,
-      const gfx::Rect& content_area,
-      const float& scale_factor) OVERRIDE;
+  SkBaseDevice* StartPageForVectorCanvas(const gfx::Size& page_size,
+                                         const gfx::Rect& content_area,
+                                         const float& scale_factor) override;
 
-  virtual bool StartPage(const gfx::Size& page_size,
-                         const gfx::Rect& content_area,
-                         const float& scale_factor) OVERRIDE;
-  virtual bool FinishPage() OVERRIDE;
-  virtual bool FinishDocument() OVERRIDE;
+  bool StartPage(const gfx::Size& page_size,
+                 const gfx::Rect& content_area,
+                 const float& scale_factor) override;
+  bool FinishPage() override;
+  bool FinishDocument() override;
 
-  virtual uint32 GetDataSize() const OVERRIDE;
-  virtual bool GetData(void* dst_buffer, uint32 dst_buffer_size) const OVERRIDE;
+  uint32 GetDataSize() const override;
+  bool GetData(void* dst_buffer, uint32 dst_buffer_size) const override;
 
-  virtual gfx::Rect GetPageBounds(unsigned int page_number) const OVERRIDE;
-  virtual unsigned int GetPageCount() const OVERRIDE;
+  gfx::Rect GetPageBounds(unsigned int page_number) const override;
+  unsigned int GetPageCount() const override;
 
-  virtual gfx::NativeDrawingContext context() const OVERRIDE;
+  gfx::NativeDrawingContext context() const override;
 
 #if defined(OS_WIN)
   virtual bool Playback(gfx::NativeDrawingContext hdc,
-                        const RECT* rect) const OVERRIDE;
-  virtual bool SafePlayback(gfx::NativeDrawingContext hdc) const OVERRIDE;
+                        const RECT* rect) const override;
+  virtual bool SafePlayback(gfx::NativeDrawingContext hdc) const override;
 #elif defined(OS_MACOSX)
-  virtual bool RenderPage(unsigned int page_number,
-                          gfx::NativeDrawingContext context,
-                          const CGRect rect,
-                          const MacRenderPageParams& params) const OVERRIDE;
+  bool RenderPage(unsigned int page_number,
+                  gfx::NativeDrawingContext context,
+                  const CGRect rect,
+                  const MacRenderPageParams& params) const override;
 #endif
 
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID)

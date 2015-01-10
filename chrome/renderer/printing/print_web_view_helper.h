@@ -67,7 +67,7 @@ class PrintWebViewHelper
       public content::RenderViewObserverTracker<PrintWebViewHelper> {
  public:
   explicit PrintWebViewHelper(content::RenderView* render_view);
-  virtual ~PrintWebViewHelper();
+  ~PrintWebViewHelper() override;
 
   // Disable print preview and switch to system dialog printing even if full
   // printing is build-in. This method is used by CEF.
@@ -118,11 +118,10 @@ class PrintWebViewHelper
   };
 
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void PrintPage(blink::WebLocalFrame* frame,
-                         bool user_initiated) OVERRIDE;
-  virtual void DidStartLoading() OVERRIDE;
-  virtual void DidStopLoading() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void PrintPage(blink::WebLocalFrame* frame, bool user_initiated) override;
+  void DidStartLoading() override;
+  void DidStopLoading() override;
 
   // Message handlers ---------------------------------------------------------
 #if !defined(DISABLE_BASIC_PRINTING)

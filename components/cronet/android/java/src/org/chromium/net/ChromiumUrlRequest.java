@@ -319,19 +319,6 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
 
             mStarted = true;
 
-            String method = mMethod;
-            if (method == null &&
-                    ((mUploadData != null && mUploadData.length > 0) ||
-                      mUploadChannel != null || mChunkedUpload)) {
-                // Default to POST if there is data to upload but no method was
-                // specified.
-                method = "POST";
-            }
-
-            if (method != null) {
-                nativeSetMethod(mUrlRequestAdapter, method);
-            }
-
             if (mHeaders != null && !mHeaders.isEmpty()) {
                 for (Entry<String, String> entry : mHeaders.entrySet()) {
                     nativeAddHeader(mUrlRequestAdapter, entry.getKey(),
@@ -358,8 +345,15 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
                                           mUploadContentType);
             }
 
+            // Note:  The above functions to set the upload body also set the
+            // method to POST, behind the scenes, so if mMethod is null but
+            // there's an upload body, the method will default to POST.
+            if (mMethod != null) {
+                nativeSetMethod(mUrlRequestAdapter, mMethod);
+            }
+
             nativeStart(mUrlRequestAdapter);
-          }
+        }
     }
 
     @Override
@@ -510,7 +504,7 @@ public class ChromiumUrlRequest implements HttpUrlRequest {
                     mContentLength > mContentLengthLimit &&
                     mCancelIfContentLengthOverLimit) {
                 onContentLengthOverLimit();
-                    return;
+                return;
             }
 
             if (mBufferFullResponse && mContentLength != -1 &&

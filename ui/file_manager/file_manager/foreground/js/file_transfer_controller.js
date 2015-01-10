@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-'use strict';
-
 /**
  * Global (placed in the window object) variable name to hold internal
  * file dragging information. Needed to show visual feedback while dragging
@@ -23,6 +21,7 @@ var DRAG_AND_DROP_GLOBAL_DATA = '__drag_and_drop_global_data';
  *     used to share files from another profile.
  * @param {ProgressCenter} progressCenter To notify starting copy operation.
  * @constructor
+ * @extends {cr.EventTarget}
  */
 function FileTransferController(doc,
                                 fileOperationManager,
@@ -192,7 +191,7 @@ FileTransferController.prototype = {
     dataTransfer.effectAllowed = effectAllowed;
     dataTransfer.setData('fs/effectallowed', effectAllowed);
     dataTransfer.setData('fs/missingFileContents',
-                         !this.isAllSelectedFilesAvailable_());
+                         (!this.isAllSelectedFilesAvailable_()).toString());
 
     for (var i = 0; i < this.selectedFileObjects_.length; i++) {
       dataTransfer.items.add(this.selectedFileObjects_[i]);
@@ -256,7 +255,7 @@ FileTransferController.prototype = {
   /**
    * Obtains entries that need to share with me.
    * The method also observers child entries of the given entries.
-   * @param {Array.<Entries>} entries Entries.
+   * @param {Array.<Entry>} entries Entries.
    * @return {Promise} Promise to be fulfilled with the entries that need to
    *     share.
    */
@@ -397,7 +396,7 @@ FileTransferController.prototype = {
                     dialogResult,
                     function() {
                       // TODO(hirono): Check chrome.runtime.lastError here.
-                      fulfill();
+                      fulfill(null);
                     });
               }).then(requestDriveShare.bind(null, index + 1));
             };
@@ -448,7 +447,7 @@ FileTransferController.prototype = {
     var imagePromise = metadataPromise.then(function(metadata) {
       return new Promise(function(fulfill, reject) {
         var loader = new ThumbnailLoader(
-            entry, ThumbnailLoader.LoaderType.Image, metadata);
+            entry, ThumbnailLoader.LoaderType.IMAGE, metadata);
         loader.loadDetachedImage(function(result) {
           if (result)
             fulfill(loader.getImage());
@@ -470,7 +469,7 @@ FileTransferController.prototype = {
    * Renders a drag-and-drop thumbnail.
    *
    * @this {FileTransferController}
-   * @return {HTMLElement} Element containing the thumbnail.
+   * @return {Element} Element containing the thumbnail.
    */
   renderThumbnail_: function() {
     var length = this.selectedEntries_.length;
@@ -556,8 +555,8 @@ FileTransferController.prototype = {
     }
 
     var dt = event.dataTransfer;
-    var canCopy = this.canCopyOrDrag_(dt);
-    var canCut = this.canCutOrDrag_(dt);
+    var canCopy = this.canCopyOrDrag_();
+    var canCut = this.canCutOrDrag_();
     if (canCopy || canCut) {
       if (canCopy && canCut) {
         this.cutOrCopy_(dt, 'all');
@@ -600,7 +599,7 @@ FileTransferController.prototype = {
    * @this {FileTransferController}
    * @param {boolean} onlyIntoDirectories True if the drag is only into
    *     directories.
-   * @param {cr.ui.List} list Drop target list.
+   * @param {(cr.ui.List|DirectoryTree)} list Drop target list.
    * @param {Event} event A dragover event of DOM.
    */
   onDragOver_: function(onlyIntoDirectories, list, event) {
@@ -613,13 +612,14 @@ FileTransferController.prototype = {
 
   /**
    * @this {FileTransferController}
-   * @param {cr.ui.List} list Drop target list.
+   * @param {(cr.ui.List|DirectoryTree)} list Drop target list.
    * @param {Event} event A dragenter event of DOM.
    */
   onDragEnterFileList_: function(list, event) {
     event.preventDefault();  // Required to prevent the cursor flicker.
     this.lastEnteredTarget_ = event.target;
-    var item = list.getListItemAncestor(event.target);
+    var item = list.getListItemAncestor(
+        /** @type {HTMLElement} */ (event.target));
     item = item && list.isItem(item) ? item : null;
     if (item === this.dropTarget_)
       return;
@@ -657,7 +657,7 @@ FileTransferController.prototype = {
 
   /**
    * @this {FileTransferController}
-   * @param {cr.ui.List} list Drop target list.
+   * @param {*} list Drop target list.
    * @param {Event} event A dragleave event of DOM.
    */
   onDragLeave_: function(list, event) {
@@ -722,9 +722,10 @@ FileTransferController.prototype = {
 
     // Start timer changing the directory.
     this.navigateTimer_ = setTimeout(function() {
-      if (domElement instanceof DirectoryItem)
+      if (domElement instanceof DirectoryItem) {
         // Do custom action.
-        (/** @type {DirectoryItem} */ domElement).doDropTargetAction();
+        /** @type {DirectoryItem} */ (domElement).doDropTargetAction();
+      }
       this.directoryModel_.changeDirectoryEntry(destinationEntry);
     }.bind(this), 2000);
   },
@@ -950,7 +951,7 @@ FileTransferController.prototype = {
    *
    * @this {FileTransferController}
    * @param {string} command 'copy', 'cut' or 'paste'.
-   * @param {function} handler Event handler.
+   * @param {function(Event)} handler Event handler.
    */
   simulateCommand_: function(command, handler) {
     var iframe = this.document_.querySelector('#command-dispatcher');

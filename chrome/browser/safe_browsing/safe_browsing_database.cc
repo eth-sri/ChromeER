@@ -12,7 +12,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
-#include "base/process/process.h"
+#include "base/process/process_handle.h"
 #include "base/process/process_metrics.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
@@ -313,13 +313,13 @@ bool GetCachedFullHash(std::map<SBPrefix, SBCachedFullHashResult>* cache,
 // The default SafeBrowsingDatabaseFactory.
 class SafeBrowsingDatabaseFactoryImpl : public SafeBrowsingDatabaseFactory {
  public:
-  virtual SafeBrowsingDatabase* CreateSafeBrowsingDatabase(
+  SafeBrowsingDatabase* CreateSafeBrowsingDatabase(
       bool enable_download_protection,
       bool enable_client_side_whitelist,
       bool enable_download_whitelist,
       bool enable_extension_blacklist,
       bool enable_side_effect_free_whitelist,
-      bool enable_ip_blacklist) OVERRIDE {
+      bool enable_ip_blacklist) override {
     return new SafeBrowsingDatabaseNew(
         new SafeBrowsingStoreFile,
         enable_download_protection ? new SafeBrowsingStoreFile : NULL,
@@ -1197,7 +1197,7 @@ int64 SafeBrowsingDatabaseNew::UpdateHashPrefixStore(
 void SafeBrowsingDatabaseNew::UpdateBrowseStore() {
   // Measure the amount of IO during the filter build.
   base::IoCounters io_before, io_after;
-  base::ProcessHandle handle = base::Process::Current().handle();
+  base::ProcessHandle handle = base::GetCurrentProcessHandle();
   scoped_ptr<base::ProcessMetrics> metric(
 #if !defined(OS_MACOSX)
       base::ProcessMetrics::CreateProcessMetrics(handle)

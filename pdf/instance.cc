@@ -76,6 +76,7 @@ const char kJSGetHeight[] = "getHeight";
 const char kJSGetHorizontalScrollbarThickness[] =
     "getHorizontalScrollbarThickness";
 const char kJSGetPageLocationNormalized[] = "getPageLocationNormalized";
+const char kJSGetSelectedText[] = "getSelectedText";
 const char kJSGetVerticalScrollbarThickness[] = "getVerticalScrollbarThickness";
 const char kJSGetWidth[] = "getWidth";
 const char kJSGetZoomLevel[] = "getZoomLevel";
@@ -778,6 +779,14 @@ void Instance::StopFind() {
 
 void Instance::Zoom(double scale, bool text_only) {
   UserMetricsRecordAction("PDF.ZoomFromBrowser");
+
+  // If the zoom level doesn't change it means that this zoom change might have
+  // been initiated by the plugin. In that case, we don't want to change the
+  // zoom mode to ZOOM_SCALE as it may have been intentionally set to
+  // ZOOM_FIT_TO_PAGE or some other value when the zoom was last changed.
+  if (scale == zoom_)
+    return;
+
   SetZoom(ZOOM_SCALE, scale);
 }
 
@@ -1683,6 +1692,7 @@ bool Instance::HasScriptableMethod(const pp::Var& method, pp::Var* exception) {
           method_str == kJSGetHeight ||
           method_str == kJSGetHorizontalScrollbarThickness ||
           method_str == kJSGetPageLocationNormalized ||
+          method_str == kJSGetSelectedText ||
           method_str == kJSGetVerticalScrollbarThickness ||
           method_str == kJSGetWidth ||
           method_str == kJSGetZoomLevel ||
@@ -1805,6 +1815,9 @@ pp::Var Instance::CallScriptableMethod(const pp::Var& method,
   if (method_str == kJSGetVerticalScrollbarThickness) {
     return pp::Var(
           v_scrollbar_.get() ? GetScrollbarReservedThickness() : 0);
+  }
+  if (method_str == kJSGetSelectedText) {
+    return GetSelectedText(false);
   }
   if (method_str == kJSDocumentLoadComplete) {
     return pp::Var((document_load_state_ != LOAD_STATE_LOADING));

@@ -17,6 +17,7 @@
 #include "cc/base/util.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
+#include "cc/input/page_scale_animation.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_iterator.h"
@@ -26,9 +27,9 @@
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/occlusion_tracker.h"
-#include "ui/gfx/point_conversions.h"
-#include "ui/gfx/size_conversions.h"
-#include "ui/gfx/vector2d_conversions.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/geometry/vector2d_conversions.h"
 
 namespace cc {
 
@@ -43,29 +44,32 @@ class LayerScrollOffsetDelegateProxy : public LayerImpl::ScrollOffsetDelegate {
       : layer_(layer), delegate_(delegate), layer_tree_impl_(layer_tree) {}
   virtual ~LayerScrollOffsetDelegateProxy() {}
 
-  gfx::Vector2dF last_set_scroll_offset() const {
+  gfx::ScrollOffset last_set_scroll_offset() const {
     return last_set_scroll_offset_;
   }
 
   // LayerScrollOffsetDelegate implementation.
-  virtual void SetTotalScrollOffset(const gfx::Vector2dF& new_offset) OVERRIDE {
+  void SetTotalScrollOffset(const gfx::ScrollOffset& new_offset) override {
     last_set_scroll_offset_ = new_offset;
-    layer_tree_impl_->UpdateScrollOffsetDelegate();
   }
 
-  virtual gfx::Vector2dF GetTotalScrollOffset() OVERRIDE {
+  gfx::ScrollOffset GetTotalScrollOffset() override {
     return layer_tree_impl_->GetDelegatedScrollOffset(layer_);
   }
 
-  virtual bool IsExternalFlingActive() const OVERRIDE {
+  bool IsExternalFlingActive() const override {
     return delegate_->IsExternalFlingActive();
+  }
+
+  void Update() const override {
+    layer_tree_impl_->UpdateScrollOffsetDelegate();
   }
 
  private:
   LayerImpl* layer_;
   LayerScrollOffsetDelegate* delegate_;
   LayerTreeImpl* layer_tree_impl_;
-  gfx::Vector2dF last_set_scroll_offset_;
+  gfx::ScrollOffset last_set_scroll_offset_;
 };
 
 LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
@@ -86,7 +90,6 @@ LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
       max_page_scale_factor_(0),
       scrolling_layer_id_from_previous_tree_(0),
       contents_textures_purged_(false),
-      requires_high_res_to_draw_(false),
       viewport_size_invalid_(false),
       needs_update_draw_properties_(true),
       needs_full_tree_sync_(true),
@@ -142,8 +145,8 @@ LayerImpl* LayerTreeImpl::OuterViewportScrollLayer() const {
   return outer_viewport_scroll_layer_;
 }
 
-gfx::Vector2dF LayerTreeImpl::TotalScrollOffset() const {
-  gfx::Vector2dF offset;
+gfx::ScrollOffset LayerTreeImpl::TotalScrollOffset() const {
+  gfx::ScrollOffset offset;
 
   if (inner_viewport_scroll_layer_)
     offset += inner_viewport_scroll_layer_->TotalScrollOffset();
@@ -154,8 +157,8 @@ gfx::Vector2dF LayerTreeImpl::TotalScrollOffset() const {
   return offset;
 }
 
-gfx::Vector2dF LayerTreeImpl::TotalMaxScrollOffset() const {
-  gfx::Vector2dF offset;
+gfx::ScrollOffset LayerTreeImpl::TotalMaxScrollOffset() const {
+  gfx::ScrollOffset offset;
 
   if (inner_viewport_scroll_layer_)
     offset += inner_viewport_scroll_layer_->MaxScrollOffset();
@@ -218,6 +221,8 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
       target_tree->page_scale_delta() / target_tree->sent_page_scale_delta());
   target_tree->set_sent_page_scale_delta(1);
 
+  target_tree->page_scale_animation_ = page_scale_animation_.Pass();
+
   if (page_scale_layer_ && inner_viewport_scroll_layer_) {
     target_tree->SetViewportLayersFromIds(
         page_scale_layer_->id(),
@@ -262,6 +267,12 @@ LayerImpl* LayerTreeImpl::InnerViewportContainerLayer() const {
              : NULL;
 }
 
+LayerImpl* LayerTreeImpl::OuterViewportContainerLayer() const {
+  return outer_viewport_scroll_layer_
+             ? outer_viewport_scroll_layer_->scroll_clip_layer()
+             : NULL;
+}
+
 LayerImpl* LayerTreeImpl::CurrentlyScrollingLayer() const {
   DCHECK(IsActiveTree());
   return currently_scrolling_layer_;
@@ -292,7 +303,7 @@ void ForceScrollbarParameterUpdateAfterScaleChange(LayerImpl* current_layer) {
     return;
 
   while (current_layer) {
-    current_layer->ScrollbarParametersDidChange();
+    current_layer->ScrollbarParametersDidChange(false);
     current_layer = current_layer->parent();
   }
 }
@@ -363,7 +374,7 @@ gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
   if (!InnerViewportContainerLayer())
     return gfx::SizeF();
 
-  return gfx::ScaleSize(InnerViewportContainerLayer()->bounds(),
+  return gfx::ScaleSize(InnerViewportContainerLayer()->BoundsForScrolling(),
                         1.0f / total_page_scale_factor());
 }
 
@@ -501,13 +512,16 @@ bool LayerTreeImpl::UpdateDrawProperties() {
                  IsActiveTree(),
                  "SourceFrameNumber",
                  source_frame_number_);
-    scoped_ptr<OcclusionTracker<LayerImpl> > occlusion_tracker;
+    scoped_ptr<OcclusionTracker<LayerImpl>> occlusion_tracker;
     if (settings().use_occlusion_for_tile_prioritization) {
       occlusion_tracker.reset(new OcclusionTracker<LayerImpl>(
           root_layer()->render_surface()->content_rect()));
       occlusion_tracker->set_minimum_tracking_size(
           settings().minimum_occlusion_tracking_size);
     }
+
+    bool resourceless_software_draw = (layer_tree_host_impl_->GetDrawMode() ==
+                                       DRAW_MODE_RESOURCELESS_SOFTWARE);
 
     // LayerIterator is used here instead of CallFunctionForSubtree to only
     // UpdateTilePriorities on layers that will be visible (and thus have valid
@@ -527,8 +541,10 @@ bool LayerTreeImpl::UpdateDrawProperties() {
                                   layer->draw_transform())
                             : Occlusion();
 
-      if (it.represents_itself())
-        layer->UpdateTiles(occlusion_in_content_space);
+      if (it.represents_itself()) {
+        layer->UpdateTiles(occlusion_in_content_space,
+                           resourceless_software_draw);
+      }
 
       if (!it.represents_contributing_render_surface()) {
         if (occlusion_tracker)
@@ -536,11 +552,14 @@ bool LayerTreeImpl::UpdateDrawProperties() {
         continue;
       }
 
-      if (layer->mask_layer())
-        layer->mask_layer()->UpdateTiles(occlusion_in_content_space);
-      if (layer->replica_layer() && layer->replica_layer()->mask_layer())
+      if (layer->mask_layer()) {
+        layer->mask_layer()->UpdateTiles(occlusion_in_content_space,
+                                         resourceless_software_draw);
+      }
+      if (layer->replica_layer() && layer->replica_layer()->mask_layer()) {
         layer->replica_layer()->mask_layer()->UpdateTiles(
-            occlusion_in_content_space);
+            occlusion_in_content_space, resourceless_software_draw);
+      }
 
       if (occlusion_tracker)
         occlusion_tracker->LeaveLayer(it);
@@ -616,7 +635,7 @@ void LayerTreeImpl::DidBecomeActive() {
 
   // Always reset this flag on activation, as we would only have activated
   // if we were in a good state.
-  ResetRequiresHighResToDraw();
+  layer_tree_host_impl_->ResetRequiresHighResToDraw();
 
   if (root_layer())
     DidBecomeActiveRecursive(root_layer());
@@ -643,16 +662,8 @@ void LayerTreeImpl::ResetContentsTexturesPurged() {
   layer_tree_host_impl_->OnCanDrawStateChangedForTree();
 }
 
-void LayerTreeImpl::SetRequiresHighResToDraw() {
-  requires_high_res_to_draw_ = true;
-}
-
-void LayerTreeImpl::ResetRequiresHighResToDraw() {
-  requires_high_res_to_draw_ = false;
-}
-
 bool LayerTreeImpl::RequiresHighResToDraw() const {
-  return requires_high_res_to_draw_;
+  return layer_tree_host_impl_->RequiresHighResToDraw();
 }
 
 bool LayerTreeImpl::ViewportSizeInvalid() const {
@@ -739,13 +750,6 @@ LayerImpl* LayerTreeImpl::FindPendingTreeLayerById(int id) {
   return tree->LayerById(id);
 }
 
-LayerImpl* LayerTreeImpl::FindRecycleTreeLayerById(int id) {
-  LayerTreeImpl* tree = layer_tree_host_impl_->recycle_tree();
-  if (!tree)
-    return NULL;
-  return tree->LayerById(id);
-}
-
 bool LayerTreeImpl::PinchGestureActive() const {
   return layer_tree_host_impl_->pinch_gesture_active();
 }
@@ -780,16 +784,25 @@ LayerTreeImpl::CreateScrollbarAnimationController(LayerImpl* scrolling_layer) {
   DCHECK(settings().scrollbar_fade_duration_ms);
   base::TimeDelta delay =
       base::TimeDelta::FromMilliseconds(settings().scrollbar_fade_delay_ms);
+  base::TimeDelta resize_delay = base::TimeDelta::FromMilliseconds(
+      settings().scrollbar_fade_resize_delay_ms);
   base::TimeDelta duration =
       base::TimeDelta::FromMilliseconds(settings().scrollbar_fade_duration_ms);
   switch (settings().scrollbar_animator) {
     case LayerTreeSettings::LinearFade: {
       return ScrollbarAnimationControllerLinearFade::Create(
-          scrolling_layer, layer_tree_host_impl_, delay, duration);
+          scrolling_layer,
+          layer_tree_host_impl_,
+          delay,
+          resize_delay,
+          duration);
     }
     case LayerTreeSettings::Thinning: {
-      return ScrollbarAnimationControllerThinning::Create(
-          scrolling_layer, layer_tree_host_impl_, delay, duration);
+      return ScrollbarAnimationControllerThinning::Create(scrolling_layer,
+                                                          layer_tree_host_impl_,
+                                                          delay,
+                                                          resize_delay,
+                                                          duration);
     }
     case LayerTreeSettings::NoAnimator:
       NOTREACHED();
@@ -913,14 +926,28 @@ void LayerTreeImpl::SetRootLayerScrollOffsetDelegate(
       outer_viewport_scroll_layer_->SetScrollOffsetDelegate(
           outer_viewport_scroll_delegate_proxy_.get());
     }
+
+    if (inner_viewport_scroll_layer_)
+      UpdateScrollOffsetDelegate();
+  }
+}
+
+void LayerTreeImpl::OnRootLayerDelegatedScrollOffsetChanged() {
+  DCHECK(root_layer_scroll_offset_delegate_);
+  if (inner_viewport_scroll_layer_) {
+    inner_viewport_scroll_layer_->DidScroll();
+  }
+  if (outer_viewport_scroll_layer_) {
+    outer_viewport_scroll_layer_->DidScroll();
   }
 }
 
 void LayerTreeImpl::UpdateScrollOffsetDelegate() {
   DCHECK(InnerViewportScrollLayer());
+  DCHECK(!OuterViewportScrollLayer() || outer_viewport_scroll_delegate_proxy_);
   DCHECK(root_layer_scroll_offset_delegate_);
 
-  gfx::Vector2dF offset =
+  gfx::ScrollOffset offset =
       inner_viewport_scroll_delegate_proxy_->last_set_scroll_offset();
 
   if (OuterViewportScrollLayer())
@@ -935,7 +962,7 @@ void LayerTreeImpl::UpdateScrollOffsetDelegate() {
       max_page_scale_factor());
 }
 
-gfx::Vector2dF LayerTreeImpl::GetDelegatedScrollOffset(LayerImpl* layer) {
+gfx::ScrollOffset LayerTreeImpl::GetDelegatedScrollOffset(LayerImpl* layer) {
   DCHECK(root_layer_scroll_offset_delegate_);
   DCHECK(InnerViewportScrollLayer());
   if (layer == InnerViewportScrollLayer() && !OuterViewportScrollLayer())
@@ -945,13 +972,13 @@ gfx::Vector2dF LayerTreeImpl::GetDelegatedScrollOffset(LayerImpl* layer) {
   // the scroll offset between them.
   DCHECK(inner_viewport_scroll_delegate_proxy_);
   DCHECK(outer_viewport_scroll_delegate_proxy_);
-  gfx::Vector2dF inner_viewport_offset =
+  gfx::ScrollOffset inner_viewport_offset =
       inner_viewport_scroll_delegate_proxy_->last_set_scroll_offset();
-  gfx::Vector2dF outer_viewport_offset =
+  gfx::ScrollOffset outer_viewport_offset =
       outer_viewport_scroll_delegate_proxy_->last_set_scroll_offset();
 
   // It may be nothing has changed.
-  gfx::Vector2dF delegate_offset =
+  gfx::ScrollOffset delegate_offset =
       root_layer_scroll_offset_delegate_->GetTotalScrollOffset();
   if (inner_viewport_offset + outer_viewport_offset == delegate_offset) {
     if (layer == InnerViewportScrollLayer())
@@ -960,12 +987,12 @@ gfx::Vector2dF LayerTreeImpl::GetDelegatedScrollOffset(LayerImpl* layer) {
       return outer_viewport_offset;
   }
 
-  gfx::Vector2d max_outer_viewport_scroll_offset =
+  gfx::ScrollOffset max_outer_viewport_scroll_offset =
       OuterViewportScrollLayer()->MaxScrollOffset();
 
   outer_viewport_offset = delegate_offset - inner_viewport_offset;
   outer_viewport_offset.SetToMin(max_outer_viewport_scroll_offset);
-  outer_viewport_offset.SetToMax(gfx::Vector2d());
+  outer_viewport_offset.SetToMax(gfx::ScrollOffset());
 
   if (layer == OuterViewportScrollLayer())
     return outer_viewport_offset;
@@ -1445,8 +1472,53 @@ void LayerTreeImpl::InputScrollAnimationFinished() {
   layer_tree_host_impl_->ScrollEnd();
 }
 
+bool LayerTreeImpl::SmoothnessTakesPriority() const {
+  return layer_tree_host_impl_->GetTreePriority() == SMOOTHNESS_TAKES_PRIORITY;
+}
+
 BlockingTaskRunner* LayerTreeImpl::BlockingMainThreadTaskRunner() const {
   return proxy()->blocking_main_thread_task_runner();
+}
+
+void LayerTreeImpl::SetPageScaleAnimation(
+    const gfx::Vector2d& target_offset,
+    bool anchor_point,
+    float page_scale,
+    base::TimeDelta duration) {
+  if (!InnerViewportScrollLayer())
+    return;
+
+  gfx::ScrollOffset scroll_total = TotalScrollOffset();
+  gfx::SizeF scaled_scrollable_size = ScrollableSize();
+  gfx::SizeF viewport_size = InnerViewportContainerLayer()->bounds();
+
+  // Easing constants experimentally determined.
+  scoped_ptr<TimingFunction> timing_function =
+      CubicBezierTimingFunction::Create(.8, 0, .3, .9);
+
+  // TODO(miletus) : Pass in ScrollOffset.
+  page_scale_animation_ =
+      PageScaleAnimation::Create(ScrollOffsetToVector2dF(scroll_total),
+                                 total_page_scale_factor(),
+                                 viewport_size,
+                                 scaled_scrollable_size,
+                                 timing_function.Pass());
+
+  if (anchor_point) {
+    gfx::Vector2dF anchor(target_offset);
+    page_scale_animation_->ZoomWithAnchor(anchor,
+                                          page_scale,
+                                          duration.InSecondsF());
+  } else {
+    gfx::Vector2dF scaled_target_offset = target_offset;
+    page_scale_animation_->ZoomTo(scaled_target_offset,
+                                  page_scale,
+                                  duration.InSecondsF());
+  }
+}
+
+scoped_ptr<PageScaleAnimation> LayerTreeImpl::TakePageScaleAnimation() {
+  return page_scale_animation_.Pass();
 }
 
 }  // namespace cc

@@ -28,15 +28,14 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
   virtual ~PasswordAutofillManager();
 
   // AutofillPopupDelegate implementation.
-  virtual void OnPopupShown() OVERRIDE;
-  virtual void OnPopupHidden() OVERRIDE;
-  virtual void DidSelectSuggestion(const base::string16& value,
-                                   int identifier) OVERRIDE;
-  virtual void DidAcceptSuggestion(const base::string16& value,
-                                   int identifier) OVERRIDE;
-  virtual void RemoveSuggestion(const base::string16& value,
-                                int identifier) OVERRIDE;
-  virtual void ClearPreviewedForm() OVERRIDE;
+  void OnPopupShown() override;
+  void OnPopupHidden() override;
+  void DidSelectSuggestion(const base::string16& value,
+                           int identifier) override;
+  void DidAcceptSuggestion(const base::string16& value,
+                           int identifier) override;
+  void RemoveSuggestion(const base::string16& value, int identifier) override;
+  void ClearPreviewedForm() override;
 
   // Invoked when a password mapping is added.
   void OnAddPasswordFormMapping(
@@ -45,11 +44,10 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
 
   // Handles a request from the renderer to show a popup with the given
   // |suggestions| from the password manager.
-  void OnShowPasswordSuggestions(
-      const autofill::FormFieldData& field,
-      const gfx::RectF& bounds,
-      const std::vector<base::string16>& suggestions,
-      const std::vector<base::string16>& realms);
+  void OnShowPasswordSuggestions(const autofill::FormFieldData& field,
+                                 const base::string16& typed_username,
+                                 bool show_all,
+                                 const gfx::RectF& bounds);
 
   // Invoked to clear any page specific cached values.
   void Reset();

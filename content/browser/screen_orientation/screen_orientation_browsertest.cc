@@ -32,12 +32,12 @@ class ScreenOrientationBrowserTest : public ContentBrowserTest  {
   ScreenOrientationBrowserTest() {
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     command_line->AppendSwitch(
         switches::kEnableExperimentalWebPlatformFeatures);
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Painting has to happen otherwise the Resize messages will be added on top
     // of each other without properly ack-painting which will fail and crash.
     UseSoftwareCompositing();

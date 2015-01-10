@@ -7,6 +7,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/content/browser/credential_manager_password_form_manager.h"
 #include "components/password_manager/content/common/credential_manager_messages.h"
 #include "components/password_manager/content/common/credential_manager_types.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
@@ -46,8 +47,8 @@ bool ContentCredentialManagerDispatcher::OnMessageReceived(
 }
 
 void ContentCredentialManagerDispatcher::OnNotifyFailedSignIn(
-    int request_id,
-    const password_manager::CredentialInfo&) {
+    int request_id, const CredentialInfo&) {
+  DCHECK(request_id);
   // TODO(mkwst): This is a stub.
   web_contents()->GetRenderViewHost()->Send(
       new CredentialManagerMsg_AcknowledgeFailedSignIn(
@@ -56,14 +57,30 @@ void ContentCredentialManagerDispatcher::OnNotifyFailedSignIn(
 
 void ContentCredentialManagerDispatcher::OnNotifySignedIn(
     int request_id,
-    const password_manager::CredentialInfo&) {
-  // TODO(mkwst): This is a stub.
+    const password_manager::CredentialInfo& credential) {
+  DCHECK(request_id);
+  scoped_ptr<autofill::PasswordForm> form(
+      CreatePasswordFormFromCredentialInfo(credential,
+          web_contents()->GetLastCommittedURL().GetOrigin()));
+
+  // TODO(mkwst): This is a stub; we should be checking the PasswordStore to
+  // determine whether or not the credential exists, and calling UpdateLogin
+  // accordingly.
+  form_manager_.reset(
+      new CredentialManagerPasswordFormManager(client_, *form, this));
+
   web_contents()->GetRenderViewHost()->Send(
       new CredentialManagerMsg_AcknowledgeSignedIn(
           web_contents()->GetRenderViewHost()->GetRoutingID(), request_id));
 }
 
+void ContentCredentialManagerDispatcher::OnProvisionalSaveComplete() {
+  DCHECK(form_manager_);
+  client_->PromptUserToSavePassword(form_manager_.Pass());
+}
+
 void ContentCredentialManagerDispatcher::OnNotifySignedOut(int request_id) {
+  DCHECK(request_id);
   // TODO(mkwst): This is a stub.
   web_contents()->GetRenderViewHost()->Send(
       new CredentialManagerMsg_AcknowledgeSignedOut(
@@ -77,8 +94,15 @@ void ContentCredentialManagerDispatcher::OnRequestCredential(
   DCHECK(request_id);
   PasswordStore* store = GetPasswordStore();
   if (pending_request_id_ || !store) {
-    // TODO(mkwst): Reject the promise if we can't get to the password store, or
-    // if we're already requesting credentials.
+    web_contents()->GetRenderViewHost()->Send(
+        new CredentialManagerMsg_RejectCredentialRequest(
+            web_contents()->GetRenderViewHost()->GetRoutingID(),
+            request_id,
+            pending_request_id_
+                ? blink::WebCredentialManagerError::ErrorTypePendingRequest
+                : blink::WebCredentialManagerError::
+                      ErrorTypePasswordStoreUnavailable));
+    return;
   }
 
   pending_request_id_ = request_id;
@@ -95,11 +119,16 @@ void ContentCredentialManagerDispatcher::OnGetPasswordStoreResults(
     const std::vector<autofill::PasswordForm*>& results) {
   DCHECK(pending_request_id_);
 
-  // TODO(mkwst): This is a stub. We should be looking at |results| here. Baby
-  // steps.
-  password_manager::CredentialInfo info(base::ASCIIToUTF16("id"),
-                                        base::ASCIIToUTF16("name"),
-                                        GURL("https://example.com/image.png"));
+  // Take ownership of all the password form objects in the |results| vector.
+  ScopedVector<autofill::PasswordForm> entries;
+  entries.assign(results.begin(), results.end());
+
+  // TODO(mkwst): This is a stub. We're just grabbing the first result and
+  // piping it down into Blink. Really, we should be kicking off some sort
+  // of UI full of magic moments and delight. Also, we should deal with
+  // federated login types.
+  CredentialInfo info = results.empty() ? CredentialInfo()
+                                        : CredentialInfo(*entries[0]);
   web_contents()->GetRenderViewHost()->Send(
       new CredentialManagerMsg_SendCredential(
           web_contents()->GetRenderViewHost()->GetRoutingID(),

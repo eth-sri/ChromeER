@@ -14,7 +14,7 @@
 #include "media/filters/skcanvas_video_renderer.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 
 namespace cc {
 
@@ -26,11 +26,11 @@ const ResourceFormat kRGBResourceFormat = RGBA_8888;
 class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
  public:
   explicit SyncPointClientImpl(gpu::gles2::GLES2Interface* gl) : gl_(gl) {}
-  virtual ~SyncPointClientImpl() {}
-  virtual uint32 InsertSyncPoint() OVERRIDE {
+  ~SyncPointClientImpl() override {}
+  uint32 InsertSyncPoint() override {
     return GLC(gl_, gl_->InsertSyncPointCHROMIUM());
   }
-  virtual void WaitSyncPoint(uint32 sync_point) OVERRIDE {
+  void WaitSyncPoint(uint32 sync_point) override {
     GLC(gl_, gl_->WaitSyncPointCHROMIUM(sync_point));
   }
 

@@ -39,11 +39,10 @@ class DesktopSesssionClipboardStub : public protocol::ClipboardStub {
  public:
   explicit DesktopSesssionClipboardStub(
       scoped_refptr<DesktopSessionAgent> desktop_session_agent);
-  virtual ~DesktopSesssionClipboardStub();
+  ~DesktopSesssionClipboardStub() override;
 
   // protocol::ClipboardStub implementation.
-  virtual void InjectClipboardEvent(
-      const protocol::ClipboardEvent& event) OVERRIDE;
+  void InjectClipboardEvent(const protocol::ClipboardEvent& event) override;
 
  private:
   scoped_refptr<DesktopSessionAgent> desktop_session_agent_;
@@ -76,13 +75,10 @@ class DesktopSessionAgent::SharedBuffer : public webrtc::SharedMemory {
     scoped_ptr<base::SharedMemory> memory(new base::SharedMemory());
     if (!memory->CreateAndMapAnonymous(size))
       return nullptr;
-    return scoped_ptr<SharedBuffer>(
-        new SharedBuffer(agent, memory.Pass(), size, id));
+    return make_scoped_ptr(new SharedBuffer(agent, memory.Pass(), size, id));
   }
 
-  virtual ~SharedBuffer() {
-    agent_->OnSharedBufferDeleted(id());
-  }
+  ~SharedBuffer() override { agent_->OnSharedBufferDeleted(id()); }
 
  private:
   SharedBuffer(DesktopSessionAgent* agent,

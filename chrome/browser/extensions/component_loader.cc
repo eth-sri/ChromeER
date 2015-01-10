@@ -288,6 +288,13 @@ void ComponentLoader::AddVideoPlayerExtension() {
 #endif  // defined(OS_CHROMEOS)
 }
 
+void ComponentLoader::AddAudioPlayerExtension() {
+#if defined(OS_CHROMEOS)
+  Add(IDR_AUDIO_PLAYER_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("audio_player")));
+#endif  // defined(OS_CHROMEOS)
+}
+
 void ComponentLoader::AddGalleryExtension() {
 #if defined(OS_CHROMEOS)
   Add(IDR_GALLERY_MANIFEST, base::FilePath(FILE_PATH_LITERAL("gallery")));
@@ -490,9 +497,7 @@ void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(
     return;
 
   // Component extensions needed for kiosk apps.
-  AddVideoPlayerExtension();
   AddFileManagerExtension();
-  AddGalleryExtension();
 
   // Add virtual keyboard.
   AddKeyboardApp();
@@ -522,6 +527,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 
   if (!skip_session_components) {
     AddVideoPlayerExtension();
+    AddAudioPlayerExtension();
     AddFileManagerExtension();
     AddGalleryExtension();
 

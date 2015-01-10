@@ -19,7 +19,7 @@ class ShapedAppWindowTargeterTest : public aura::test::AuraTestBase {
       : web_view_(NULL) {
   }
 
-  virtual ~ShapedAppWindowTargeterTest() {}
+  ~ShapedAppWindowTargeterTest() override {}
 
   views::Widget* widget() { return widget_.get(); }
 
@@ -27,7 +27,7 @@ class ShapedAppWindowTargeterTest : public aura::test::AuraTestBase {
   ChromeNativeAppWindowViews* app_window_views() { return &app_window_; }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     aura::test::AuraTestBase::SetUp();
     new wm::DefaultActivationClient(root_window());
     widget_.reset(new views::Widget);
@@ -44,7 +44,7 @@ class ShapedAppWindowTargeterTest : public aura::test::AuraTestBase {
     widget_->Show();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     widget_.reset();
     aura::test::AuraTestBase::TearDown();
   }

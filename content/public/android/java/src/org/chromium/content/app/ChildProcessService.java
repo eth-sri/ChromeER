@@ -130,6 +130,14 @@ public class ChildProcessService extends Service {
             @Override
             public void run()  {
                 try {
+                    // CommandLine must be initialized before others, e.g., Linker.isUsed()
+                    // may check the command line options.
+                    synchronized (mMainThread) {
+                        while (mCommandLineParams == null) {
+                            mMainThread.wait();
+                        }
+                    }
+                    CommandLine.init(mCommandLineParams);
                     boolean useLinker = Linker.isUsed();
                     boolean requestedSharedRelro = false;
                     if (useLinker) {
@@ -138,35 +146,30 @@ public class ChildProcessService extends Service {
                                 mMainThread.wait();
                             }
                         }
-                        if (mLinkerParams != null) {
-                            if (mLinkerParams.mWaitForSharedRelro) {
-                                requestedSharedRelro = true;
-                                Linker.initServiceProcess(mLinkerParams.mBaseLoadAddress);
-                            } else {
-                                Linker.disableSharedRelros();
-                            }
-                            Linker.setTestRunnerClassName(mLinkerParams.mTestRunnerClassName);
+                        assert mLinkerParams != null;
+                        if (mLinkerParams.mWaitForSharedRelro) {
+                            requestedSharedRelro = true;
+                            Linker.initServiceProcess(mLinkerParams.mBaseLoadAddress);
+                        } else {
+                            Linker.disableSharedRelros();
                         }
+                        Linker.setTestRunnerClassName(mLinkerParams.mTestRunnerClassName);
                     }
                     boolean isLoaded = false;
-                    synchronized (mMainThread) {
-                        while (mCommandLineParams == null) {
-                            mMainThread.wait();
-                        }
-                    }
-                    CommandLine.init(mCommandLineParams);
                     if (CommandLine.getInstance().hasSwitch(
                             BaseSwitches.RENDERER_WAIT_FOR_JAVA_DEBUGGER)) {
                         android.os.Debug.waitForDebugger();
                     }
 
+                    boolean loadAtFixedAddressFailed = false;
                     try {
                         LibraryLoader.loadNow(getApplicationContext(), false);
                         isLoaded = true;
                     } catch (ProcessInitException e) {
                         if (requestedSharedRelro) {
                             Log.w(TAG, "Failed to load native library with shared RELRO, " +
-                                  "retrying without");
+                                    "retrying without");
+                            loadAtFixedAddressFailed = true;
                         } else {
                             Log.e(TAG, "Failed to load native library", e);
                         }
@@ -183,6 +186,9 @@ public class ChildProcessService extends Service {
                     if (!isLoaded) {
                         System.exit(-1);
                     }
+                    LibraryLoader.registerRendererProcessHistogram(
+                            requestedSharedRelro,
+                            loadAtFixedAddressFailed);
                     LibraryLoader.initialize();
                     synchronized (mMainThread) {
                         mLibraryInitialized = true;
@@ -249,9 +255,9 @@ public class ChildProcessService extends Service {
         synchronized (mMainThread) {
             mCommandLineParams = intent.getStringArrayExtra(
                     ChildProcessConnection.EXTRA_COMMAND_LINE);
-            mLinkerParams = null;
-            if (Linker.isUsed())
-                mLinkerParams = new ChromiumLinkerParams(intent);
+            // mLinkerParams is never used if Linker.isUsed() returns false.
+            // See onCreate().
+            mLinkerParams = new ChromiumLinkerParams(intent);
             mIsBound = true;
             mMainThread.notifyAll();
         }
@@ -319,14 +325,47 @@ public class ChildProcessService extends Service {
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private Surface getSurfaceTextureSurface(int primaryId, int secondaryId) {
+    private void createSurfaceTextureSurface(
+            int surfaceTextureId, int clientId, SurfaceTexture surfaceTexture) {
+        if (mCallback == null) {
+            Log.e(TAG, "No callback interface has been provided.");
+            return;
+        }
+
+        Surface surface = new Surface(surfaceTexture);
+        try {
+            mCallback.registerSurfaceTextureSurface(surfaceTextureId, clientId, surface);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Unable to call registerSurfaceTextureSurface: " + e);
+        }
+        surface.release();
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    private void destroySurfaceTextureSurface(int surfaceTextureId, int clientId) {
+        if (mCallback == null) {
+            Log.e(TAG, "No callback interface has been provided.");
+            return;
+        }
+
+        try {
+            mCallback.unregisterSurfaceTextureSurface(surfaceTextureId, clientId);
+        } catch (RemoteException e) {
+            Log.e(TAG, "Unable to call unregisterSurfaceTextureSurface: " + e);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    @CalledByNative
+    private Surface getSurfaceTextureSurface(int surfaceTextureId, int clientId) {
         if (mCallback == null) {
             Log.e(TAG, "No callback interface has been provided.");
             return null;
         }
 
         try {
-            return mCallback.getSurfaceTextureSurface(primaryId, secondaryId).getSurface();
+            return mCallback.getSurfaceTextureSurface(surfaceTextureId, clientId).getSurface();
         } catch (RemoteException e) {
             Log.e(TAG, "Unable to call getSurfaceTextureSurface: " + e);
             return null;

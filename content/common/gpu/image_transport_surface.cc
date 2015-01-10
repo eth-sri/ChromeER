@@ -34,10 +34,15 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
     GpuCommandBufferStub* stub,
     const gfx::GLSurfaceHandle& handle) {
   scoped_refptr<gfx::GLSurface> surface;
-  if (handle.transport_type == gfx::NULL_TRANSPORT)
+  if (handle.transport_type == gfx::NULL_TRANSPORT) {
+#if defined(OS_ANDROID)
+    surface = CreateTransportSurface(manager, stub, handle);
+#else
     surface = new NullTransportSurface(manager, stub, handle);
-  else
+#endif
+  } else {
     surface = CreateNativeSurface(manager, stub, handle);
+  }
 
   if (!surface.get() || !surface->Initialize())
     return NULL;
@@ -86,8 +91,10 @@ bool ImageTransportHelper::Initialize() {
 bool ImageTransportHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ImageTransportHelper, message)
+#if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_BufferPresented,
                         OnBufferPresented)
+#endif
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_WakeUpGpu, OnWakeUpGpu);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -113,9 +120,9 @@ void ImageTransportHelper::SendUpdateVSyncParameters(
                                                       interval));
 }
 
-void ImageTransportHelper::SendLatencyInfo(
+void ImageTransportHelper::SwapBuffersCompleted(
     const std::vector<ui::LatencyInfo>& latency_info) {
-  manager_->Send(new GpuHostMsg_FrameDrawn(latency_info));
+  stub_->SwapBuffersCompleted(latency_info);
 }
 
 void ImageTransportHelper::SetScheduled(bool is_scheduled) {
@@ -172,10 +179,12 @@ gpu::gles2::GLES2Decoder* ImageTransportHelper::Decoder() {
   return stub_->decoder();
 }
 
+#if defined(OS_MACOSX)
 void ImageTransportHelper::OnBufferPresented(
     const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
   surface_->OnBufferPresented(params);
 }
+#endif
 
 void ImageTransportHelper::OnWakeUpGpu() {
   surface_->WakeUpGpu();
@@ -226,13 +235,17 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
   // GetVsyncValues before SwapBuffers to work around Mali driver bug:
   // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
+  for (size_t i = 0; i < latency_info_.size(); ++i) {
+    latency_info_[i].AddLatencyNumber(
+        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0);
+  }
   bool result = gfx::GLSurfaceAdapter::SwapBuffers();
   for (size_t i = 0; i < latency_info_.size(); i++) {
     latency_info_[i].AddLatencyNumber(
         ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
   }
 
-  helper_->SendLatencyInfo(latency_info_);
+  helper_->SwapBuffersCompleted(latency_info_);
   latency_info_.clear();
   return result;
 }
@@ -246,7 +259,7 @@ bool PassThroughImageTransportSurface::PostSubBuffer(
         ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
   }
 
-  helper_->SendLatencyInfo(latency_info_);
+  helper_->SwapBuffersCompleted(latency_info_);
   latency_info_.clear();
   return result;
 }
@@ -259,10 +272,12 @@ bool PassThroughImageTransportSurface::OnMakeCurrent(gfx::GLContext* context) {
   return true;
 }
 
+#if defined(OS_MACOSX)
 void PassThroughImageTransportSurface::OnBufferPresented(
     const AcceleratedSurfaceMsg_BufferPresented_Params& /* params */) {
   NOTREACHED();
 }
+#endif
 
 void PassThroughImageTransportSurface::OnResize(gfx::Size size,
                                                 float scale_factor) {
@@ -274,7 +289,7 @@ gfx::Size PassThroughImageTransportSurface::GetSize() {
 }
 
 void PassThroughImageTransportSurface::WakeUpGpu() {
-  NOTIMPLEMENTED();
+  NOTREACHED();
 }
 
 PassThroughImageTransportSurface::~PassThroughImageTransportSurface() {}

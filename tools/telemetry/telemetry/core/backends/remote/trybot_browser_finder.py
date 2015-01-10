@@ -108,9 +108,9 @@ class PossibleTrybotBrowser(possible_browser.PossibleBrowser):
     # Generate the command line for the perf trybots
     arguments = sys.argv
     if self._target_os == 'win':
-      arguments[0] = 'python tools\\perf\\run_measurement'
+      arguments[0] = 'python tools\\perf\\run_benchmark'
     else:
-      arguments[0] = './tools/perf/run_measurement'
+      arguments[0] = './tools/perf/run_benchmark'
     for index, arg in enumerate(arguments):
       if arg.startswith('--browser='):
         if self._target_os == 'android':
@@ -206,7 +206,7 @@ class PossibleTrybotBrowser(possible_browser.PossibleBrowser):
     else:
       logging.error('No local changes found in chromium or blink trees. '
                     'browser=%s argument sends local changes to the %s '
-                    'perf trybot.', self._browser_type, self._buildername)
+                    'perf trybot.', self.browser_type, self._buildername)
       return
 
   def _InitPlatformIfNeeded(self):

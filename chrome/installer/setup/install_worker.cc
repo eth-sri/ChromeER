@@ -31,6 +31,7 @@
 #include "chrome/installer/setup/install.h"
 #include "chrome/installer/setup/setup_constants.h"
 #include "chrome/installer/setup/setup_util.h"
+#include "chrome/installer/util/app_registration_data.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/callback_work_item.h"
 #include "chrome/installer/util/conditional_work_item_list.h"
@@ -45,6 +46,7 @@
 #include "chrome/installer/util/product.h"
 #include "chrome/installer/util/set_reg_value_work_item.h"
 #include "chrome/installer/util/shell_util.h"
+#include "chrome/installer/util/updating_app_registration_data.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item_list.h"
 
@@ -70,6 +72,11 @@ const wchar_t kIELowRightsPolicyOldGuid[] =
 
 const wchar_t kElevationPolicyKeyPath[] =
     L"SOFTWARE\\Microsoft\\Internet Explorer\\Low Rights\\ElevationPolicy\\";
+
+// The legacy command ids for installing an application or extension. These are
+// only here so they can be removed from the registry.
+const wchar_t kLegacyCmdInstallApp[] = L"install-application";
+const wchar_t kLegacyCmdInstallExtension[] = L"install-extension";
 
 void GetOldIELowRightsElevationPolicyKeyPath(base::string16* key_path) {
   key_path->assign(kElevationPolicyKeyPath,
@@ -180,14 +187,20 @@ void AddInstallerCopyTasks(const InstallerState& installer_state,
   }
 }
 
-base::string16 GetRegCommandKey(BrowserDistribution* dist,
-                                const wchar_t* name) {
-  base::string16 cmd_key(dist->GetVersionKey());
+base::string16 GetRegistrationDataCommandKey(
+    const AppRegistrationData& reg_data,
+    const wchar_t* name) {
+  base::string16 cmd_key(reg_data.GetVersionKey());
   cmd_key.append(1, base::FilePath::kSeparators[0])
       .append(google_update::kRegCommandsKey)
       .append(1, base::FilePath::kSeparators[0])
       .append(name);
   return cmd_key;
+}
+
+base::string16 GetRegCommandKey(BrowserDistribution* dist,
+                                const wchar_t* name) {
+  return GetRegistrationDataCommandKey(dist->GetAppRegistrationData(), name);
 }
 
 // Adds work items to create (or delete if uninstalling) app commands to launch
@@ -230,31 +243,16 @@ void AddCommandWithParameterWorkItems(const InstallerState& installer_state,
   }
 }
 
-void AddInstallAppCommandWorkItems(const InstallerState& installer_state,
-                                   const InstallationState& machine_state,
-                                   const Version& new_version,
-                                   const Product& product,
-                                   WorkItemList* work_item_list) {
-  DCHECK(product.is_chrome_app_host());
-  AddCommandWithParameterWorkItems(installer_state, machine_state, new_version,
-                                   product, kCmdInstallApp,
-                                   installer::kChromeAppHostExe,
-                                   ::switches::kInstallFromWebstore,
-                                   work_item_list);
-}
-
-void AddInstallExtensionCommandWorkItem(const InstallerState& installer_state,
-                                        const InstallationState& machine_state,
-                                        const base::FilePath& setup_path,
-                                        const Version& new_version,
-                                        const Product& product,
-                                        WorkItemList* work_item_list) {
-  DCHECK(product.is_chrome());
-  AddCommandWithParameterWorkItems(installer_state, machine_state, new_version,
-                                   product, kCmdInstallExtension,
-                                   installer::kChromeExe,
-                                   ::switches::kLimitedInstallFromWebstore,
-                                   work_item_list);
+void AddLegacyAppCommandRemovalItem(const InstallerState& installer_state,
+                                    const AppRegistrationData& reg_data,
+                                    const wchar_t* name,
+                                    WorkItemList* work_item_list) {
+  // These failures are ignored because this is a clean-up operation that
+  // shouldn't block an install or update on failing.
+  work_item_list->AddDeleteRegKeyWorkItem(
+      installer_state.root_key(),
+      GetRegistrationDataCommandKey(reg_data, name),
+      KEY_WOW64_32KEY)->set_ignore_failure(true);
 }
 
 // A callback invoked by |work_item| that adds firewall rules for Chrome. Rules
@@ -401,17 +399,25 @@ void AddProductSpecificWorkItems(const InstallationState& original_state,
   for (Products::const_iterator it = products.begin(); it < products.end();
        ++it) {
     const Product& p = **it;
-    if (p.is_chrome_app_host()) {
-      AddInstallAppCommandWorkItems(installer_state, original_state,
-                                    new_version, p, list);
-    }
     if (p.is_chrome()) {
       AddOsUpgradeWorkItems(installer_state, setup_path, new_version, p,
                             list);
-      AddInstallExtensionCommandWorkItem(installer_state, original_state,
-                                         setup_path, new_version, p, list);
       AddFirewallRulesWorkItems(
           installer_state, p.distribution(), is_new_install, list);
+      AddLegacyAppCommandRemovalItem(
+          installer_state,
+          p.distribution()->GetAppRegistrationData(),
+          kLegacyCmdInstallExtension,
+          list);
+
+      if (p.distribution()->AppHostIsSupported()) {
+        // Unconditionally remove the "install-application" command from the app
+        // hosts's key.
+        UpdatingAppRegistrationData app_launcher_reg_data(
+            installer::kAppLauncherGuid);
+        AddLegacyAppCommandRemovalItem(installer_state, app_launcher_reg_data,
+                                       kLegacyCmdInstallApp, list);
+      }
     }
     if (p.is_chrome_binaries()) {
       AddQueryEULAAcceptanceWorkItems(

@@ -120,7 +120,16 @@
       'sources': [
         'bpf_dsl/bpf_dsl.cc',
         'bpf_dsl/bpf_dsl.h',
+        'bpf_dsl/bpf_dsl_forward.h',
+        'bpf_dsl/bpf_dsl_impl.h',
         'bpf_dsl/cons.h',
+        'bpf_dsl/dump_bpf.cc',
+        'bpf_dsl/dump_bpf.h',
+        'bpf_dsl/policy.cc',
+        'bpf_dsl/policy.h',
+        'bpf_dsl/policy_compiler.cc',
+        'bpf_dsl/policy_compiler.h',
+        'bpf_dsl/trap_registry.h',
         'seccomp-bpf/basicblock.cc',
         'seccomp-bpf/basicblock.h',
         'seccomp-bpf/codegen.cc',
@@ -133,8 +142,6 @@
         'seccomp-bpf/linux_seccomp.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
-        'seccomp-bpf/sandbox_bpf_policy.cc',
-        'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
         'seccomp-bpf/syscall_iterator.cc',
@@ -150,6 +157,11 @@
       ],
       'defines': [
         'SANDBOX_IMPLEMENTATION',
+      ],
+      'includes': [
+        # Disable LTO due to compiler bug
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=57703
+        '../../build/android/disable_lto.gypi',
       ],
       'include_dirs': [
         '../..',
@@ -301,7 +313,7 @@
   'conditions': [
     [ 'OS=="android"', {
       'targets': [
-        {
+      {
         'target_name': 'sandbox_linux_unittests_stripped',
         'type': 'none',
         'dependencies': [ 'sandbox_linux_unittests' ],
@@ -310,9 +322,26 @@
           'inputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests' ],
           'outputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped' ],
           'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
-          }],
-        }
-      ],
+        }],
+      },
+      {
+        'target_name': 'sandbox_linux_unittests_deps',
+        'type': 'none',
+        'dependencies': [
+          'sandbox_linux_unittests_stripped',
+        ],
+        # For the component build, ensure dependent shared libraries are
+        # stripped and put alongside sandbox_linux_unittests to simplify pushing
+        # to the device.
+        'variables': {
+           'output_dir': '<(PRODUCT_DIR)/sandbox_linux_unittests_deps/',
+           'native_binary': '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped',
+           'include_main_binary': 0,
+        },
+        'includes': [
+          '../../build/android/native_app_dependencies.gypi'
+        ],
+      }],
     }],
     [ 'OS=="android"', {
       'targets': [
@@ -339,7 +368,6 @@
           ],
           'includes': [
             '../../build/isolate.gypi',
-            '../sandbox_linux_unittests.isolate',
           ],
           'sources': [
             '../sandbox_linux_unittests.isolate',

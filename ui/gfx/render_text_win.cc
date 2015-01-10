@@ -802,7 +802,7 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
       pos.back().set(SkIntToScalar(text_offset.x() + segment_x),
                      SkIntToScalar(text_offset.y()));
 
-      renderer.SetTextSize(run->font.GetFontSize());
+      renderer.SetTextSize(SkIntToScalar(run->font.GetFontSize()));
       renderer.SetFontFamilyWithStyle(run->font.GetFontName(), run->font_style);
 
       for (BreakList<SkColor>::const_iterator it =
@@ -828,10 +828,10 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
         renderer.SetForegroundColor(it->second);
         renderer.DrawPosText(&start_pos, &run->glyphs[colored_glyphs.start()],
                              colored_glyphs.length());
-        renderer.DrawDecorations(start_pos.x(), text_offset.y(),
-                                 SkScalarCeilToInt(end_pos.x() - start_pos.x()),
-                                 run->underline, run->strike,
-                                 run->diagonal_strike);
+        int start_x = SkScalarRoundToInt(start_pos.x());
+        renderer.DrawDecorations(
+            start_x, text_offset.y(), SkScalarRoundToInt(end_pos.x()) - start_x,
+            run->underline, run->strike, run->diagonal_strike);
       }
 
       preceding_segment_widths += segment_width;
@@ -1032,8 +1032,12 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
 
   // Try finding a fallback font using a meta file.
   // TODO(msw|asvitkine): Support RenderText's font_list()?
+  Font uniscribe_font;
+  bool got_uniscribe_font = false;
   if (GetUniscribeFallbackFont(original_font, run_text, run_length,
-                               &current_font)) {
+                               &uniscribe_font)) {
+    got_uniscribe_font = true;
+    current_font = uniscribe_font;
     missing_count = CountCharsWithMissingGlyphs(run,
         ShapeTextRunWithFont(run, current_font));
     if (missing_count == 0) {
@@ -1050,8 +1054,9 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   std::vector<std::string> fonts =
       GetFallbackFontFamilies(original_font.GetFontName());
   for (size_t i = 1; i < fonts.size(); ++i) {
+    current_font = Font(fonts[i], original_font.GetFontSize());
     missing_count = CountCharsWithMissingGlyphs(run,
-        ShapeTextRunWithFont(run, Font(fonts[i], original_font.GetFontSize())));
+        ShapeTextRunWithFont(run, current_font));
     if (missing_count == 0) {
       successful_substitute_fonts_[original_font.GetFontName()] = current_font;
       return;
@@ -1059,6 +1064,25 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
     if (missing_count < best_partial_font_missing_char_count) {
       best_partial_font_missing_char_count = missing_count;
       best_partial_font = current_font;
+    }
+  }
+
+  // Try fonts in the fallback list of the Uniscribe font.
+  if (got_uniscribe_font) {
+    fonts = GetFallbackFontFamilies(uniscribe_font.GetFontName());
+    for (size_t i = 1; i < fonts.size(); ++i) {
+      current_font = Font(fonts[i], original_font.GetFontSize());
+      missing_count = CountCharsWithMissingGlyphs(run,
+          ShapeTextRunWithFont(run, current_font));
+      if (missing_count == 0) {
+        successful_substitute_fonts_[original_font.GetFontName()] =
+            current_font;
+        return;
+      }
+      if (missing_count < best_partial_font_missing_char_count) {
+        best_partial_font_missing_char_count = missing_count;
+        best_partial_font = current_font;
+      }
     }
   }
 
@@ -1103,8 +1127,8 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   for (int i = 0; i < run->glyph_count; ++i)
     run->glyphs[i] = IsWhitespace(run_text[i]) ? space_glyph : missing_glyph;
   for (size_t i = 0; i < run_length; ++i) {
-    run->logical_clusters[i] = run->script_analysis.fRTL ?
-        run_length - 1 - i : i;
+    run->logical_clusters[i] =
+        static_cast<WORD>(run->script_analysis.fRTL ? run_length - 1 - i : i);
   }
 
   // TODO(msw): Don't use SCRIPT_UNDEFINED. Apparently Uniscribe can

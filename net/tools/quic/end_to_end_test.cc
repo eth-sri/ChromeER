@@ -158,11 +158,12 @@ class ServerDelegate : public PacketDroppingTestWriter::Delegate {
                  QuicDispatcher* dispatcher)
       : writer_factory_(writer_factory),
         dispatcher_(dispatcher) {}
-  virtual ~ServerDelegate() {}
-  virtual void OnPacketSent(WriteResult result) OVERRIDE {
+  ~ServerDelegate() override {}
+  void OnPacketSent(WriteResult result) override {
     writer_factory_->OnPacketSent(result);
   }
-  virtual void OnCanWrite() OVERRIDE { dispatcher_->OnCanWrite(); }
+  void OnCanWrite() override { dispatcher_->OnCanWrite(); }
+
  private:
   TestWriterFactory* writer_factory_;
   QuicDispatcher* dispatcher_;
@@ -171,9 +172,9 @@ class ServerDelegate : public PacketDroppingTestWriter::Delegate {
 class ClientDelegate : public PacketDroppingTestWriter::Delegate {
  public:
   explicit ClientDelegate(QuicClient* client) : client_(client) {}
-  virtual ~ClientDelegate() {}
-  virtual void OnPacketSent(WriteResult result) OVERRIDE {}
-  virtual void OnCanWrite() OVERRIDE {
+  ~ClientDelegate() override {}
+  void OnPacketSent(WriteResult result) override {}
+  void OnCanWrite() override {
     EpollEvent event(EPOLLOUT, false);
     client_->OnEvent(client_->fd(), &event);
   }
@@ -197,9 +198,6 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     FLAGS_enable_quic_fec = GetParam().use_fec;
 
     VLOG(1) << "Using Configuration: " << GetParam();
-
-    client_config_.SetDefaults();
-    server_config_.SetDefaults();
 
     // Use different flow control windows for client/server.
     client_config_.SetInitialFlowControlWindowToSend(
@@ -241,39 +239,39 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
   }
 
   void set_client_initial_flow_control_receive_window(uint32 window) {
-    CHECK(client_.get() == NULL);
+    CHECK(client_.get() == nullptr);
     DVLOG(1) << "Setting client initial flow control window: " << window;
     client_config_.SetInitialFlowControlWindowToSend(window);
   }
 
   void set_client_initial_stream_flow_control_receive_window(uint32 window) {
-    CHECK(client_.get() == NULL);
+    CHECK(client_.get() == nullptr);
     DVLOG(1) << "Setting client initial stream flow control window: " << window;
     client_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
   void set_client_initial_session_flow_control_receive_window(uint32 window) {
-    CHECK(client_.get() == NULL);
+    CHECK(client_.get() == nullptr);
     DVLOG(1) << "Setting client initial session flow control window: "
              << window;
     client_config_.SetInitialSessionFlowControlWindowToSend(window);
   }
 
   void set_server_initial_flow_control_receive_window(uint32 window) {
-    CHECK(server_thread_.get() == NULL);
+    CHECK(server_thread_.get() == nullptr);
     DVLOG(1) << "Setting server initial flow control window: " << window;
     server_config_.SetInitialFlowControlWindowToSend(window);
   }
 
   void set_server_initial_stream_flow_control_receive_window(uint32 window) {
-    CHECK(server_thread_.get() == NULL);
+    CHECK(server_thread_.get() == nullptr);
     DVLOG(1) << "Setting server initial stream flow control window: "
              << window;
     server_config_.SetInitialStreamFlowControlWindowToSend(window);
   }
 
   void set_server_initial_session_flow_control_receive_window(uint32 window) {
-    CHECK(server_thread_.get() == NULL);
+    CHECK(server_thread_.get() == nullptr);
     DVLOG(1) << "Setting server initial session flow control window: "
              << window;
     server_config_.SetInitialSessionFlowControlWindowToSend(window);
@@ -323,16 +321,14 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     return client_->client()->connected();
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // The ownership of these gets transferred to the QuicPacketWriterWrapper
     // and TestWriterFactory when Initialize() is executed.
     client_writer_ = new PacketDroppingTestWriter();
     server_writer_ = new PacketDroppingTestWriter();
   }
 
-  virtual void TearDown() OVERRIDE {
-    StopServer();
-  }
+  void TearDown() override { StopServer(); }
 
   void StartServer() {
     server_thread_.reset(
@@ -502,7 +498,7 @@ TEST_P(EndToEndTest, MultipleRequestResponse) {
 
 TEST_P(EndToEndTest, MultipleClients) {
   ASSERT_TRUE(Initialize());
-  scoped_ptr<QuicTestClient> client2(CreateQuicClient(NULL));
+  scoped_ptr<QuicTestClient> client2(CreateQuicClient(nullptr));
 
   HTTPMessage request(HttpConstants::HTTP_1_1,
                       HttpConstants::POST, "/foo");
@@ -765,9 +761,6 @@ TEST_P(EndToEndTest, DoNotSetResumeWriteAlarmIfConnectionFlowControlBlocked) {
   // an infinite loop in the EpollServer, as the alarm fires and is immediately
   // rescheduled.
   ASSERT_TRUE(Initialize());
-  if (negotiated_version_ < QUIC_VERSION_19) {
-    return;
-  }
   client_->client()->WaitForCryptoHandshakeConfirmed();
 
   // Ensure both stream and connection level are flow control blocked by setting
@@ -833,7 +826,7 @@ TEST_P(EndToEndTest, DISABLED_MultipleTermination) {
   // before HTTP framing is complete, we send an error and close the stream,
   // and the second write is picked up as writing on a closed stream.
   QuicSpdyClientStream* stream = client_->GetOrCreateStream();
-  ASSERT_TRUE(stream != NULL);
+  ASSERT_TRUE(stream != nullptr);
   ReliableQuicStreamPeer::SetStreamBytesWritten(3, stream);
 
   client_->SendData("bar", true);
@@ -860,22 +853,27 @@ TEST_P(EndToEndTest, Timeout) {
 }
 
 TEST_P(EndToEndTest, NegotiateMaxOpenStreams) {
+  ValueRestore<bool> old_flag(&FLAGS_quic_allow_more_open_streams, true);
+
   // Negotiate 1 max open stream.
   client_config_.SetMaxStreamsPerConnection(1, 1);
   ASSERT_TRUE(Initialize());
   client_->client()->WaitForCryptoHandshakeConfirmed();
 
   // Make the client misbehave after negotiation.
-  QuicSessionPeer::SetMaxOpenStreams(client_->client()->session(), 10);
+  const int kServerMaxStreams = kMaxStreamsMinimumIncrement + 1;
+  QuicSessionPeer::SetMaxOpenStreams(client_->client()->session(),
+                                     kServerMaxStreams + 1);
 
-  HTTPMessage request(HttpConstants::HTTP_1_1,
-                      HttpConstants::POST, "/foo");
+  HTTPMessage request(HttpConstants::HTTP_1_1, HttpConstants::POST, "/foo");
   request.AddHeader("content-length", "3");
   request.set_has_complete_message(false);
 
-  // Open two simultaneous streams.
-  client_->SendMessage(request);
-  client_->SendMessage(request);
+  // The server supports a small number of additional streams beyond the
+  // negotiated limit. Open enough streams to go beyond that limit.
+  for (int i = 0; i < kServerMaxStreams + 1; ++i) {
+    client_->SendMessage(request);
+  }
   client_->WaitForResponse();
 
   EXPECT_FALSE(client_->connected());
@@ -884,6 +882,7 @@ TEST_P(EndToEndTest, NegotiateMaxOpenStreams) {
 }
 
 TEST_P(EndToEndTest, NegotiateCongestionControl) {
+  ValueRestore<bool> old_flag(&FLAGS_quic_allow_bbr, true);
   ASSERT_TRUE(Initialize());
   client_->client()->WaitForCryptoHandshakeConfirmed();
 
@@ -903,7 +902,7 @@ TEST_P(EndToEndTest, NegotiateCongestionControl) {
   }
 
   EXPECT_EQ(expected_congestion_control_type,
-            QuicSentPacketManagerPeer::GetCongestionControlAlgorithm(
+            QuicSentPacketManagerPeer::GetSendAlgorithm(
                 *GetSentPacketManagerFromFirstServerSession())
             ->GetCongestionControlType());
 }
@@ -1103,19 +1102,16 @@ class WrongAddressWriter : public QuicPacketWriterWrapper {
     self_address_ = IPEndPoint(ip, 0);
   }
 
-  virtual WriteResult WritePacket(
-      const char* buffer,
-      size_t buf_len,
-      const IPAddressNumber& real_self_address,
-      const IPEndPoint& peer_address) OVERRIDE {
+  WriteResult WritePacket(const char* buffer,
+                          size_t buf_len,
+                          const IPAddressNumber& real_self_address,
+                          const IPEndPoint& peer_address) override {
     // Use wrong address!
     return QuicPacketWriterWrapper::WritePacket(
         buffer, buf_len, self_address_.address(), peer_address);
   }
 
-  virtual bool IsWriteBlockedDataBuffered() const OVERRIDE {
-    return false;
-  }
+  bool IsWriteBlockedDataBuffered() const override { return false; }
 
   IPEndPoint self_address_;
 };
@@ -1248,7 +1244,7 @@ TEST_P(EndToEndTest, DifferentFlowControlWindowsQ020) {
   set_server_initial_session_flow_control_receive_window(kServerSessionIFCW);
 
   ASSERT_TRUE(Initialize());
-  if (negotiated_version_ <= QUIC_VERSION_19) {
+  if (negotiated_version_ == QUIC_VERSION_19) {
     return;
   }
 

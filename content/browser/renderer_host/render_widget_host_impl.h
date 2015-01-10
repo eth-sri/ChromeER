@@ -23,6 +23,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#include "cc/base/rolling_time_delta_history.h"
 #include "cc/resources/shared_bitmap.h"
 #include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/browser/renderer_host/input/input_ack_handler.h"
@@ -105,7 +106,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                        RenderProcessHost* process,
                        int routing_id,
                        bool hidden);
-  virtual ~RenderWidgetHostImpl();
+  ~RenderWidgetHostImpl() override;
 
   // Similar to RenderWidgetHost::FromID, but returning the Impl object.
   static RenderWidgetHostImpl* FromID(int32 process_id, int32 routing_id);
@@ -125,47 +126,41 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   }
 
   // RenderWidgetHost implementation.
-  virtual void UpdateTextDirection(blink::WebTextDirection direction) OVERRIDE;
-  virtual void NotifyTextDirection() OVERRIDE;
-  virtual void Focus() OVERRIDE;
-  virtual void Blur() OVERRIDE;
-  virtual void SetActive(bool active) OVERRIDE;
-  virtual void CopyFromBackingStore(
+  void UpdateTextDirection(blink::WebTextDirection direction) override;
+  void NotifyTextDirection() override;
+  void Focus() override;
+  void Blur() override;
+  void SetActive(bool active) override;
+  void CopyFromBackingStore(
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkColorType color_type) OVERRIDE;
-  virtual bool CanCopyFromBackingStore() OVERRIDE;
+      const SkColorType color_type) override;
+  bool CanCopyFromBackingStore() override;
 #if defined(OS_ANDROID)
-  virtual void LockBackingStore() OVERRIDE;
-  virtual void UnlockBackingStore() OVERRIDE;
+  virtual void LockBackingStore() override;
+  virtual void UnlockBackingStore() override;
 #endif
-  virtual void ForwardMouseEvent(
-      const blink::WebMouseEvent& mouse_event) OVERRIDE;
-  virtual void ForwardWheelEvent(
-      const blink::WebMouseWheelEvent& wheel_event) OVERRIDE;
-  virtual void ForwardKeyboardEvent(
-      const NativeWebKeyboardEvent& key_event) OVERRIDE;
-  virtual RenderProcessHost* GetProcess() const OVERRIDE;
-  virtual int GetRoutingID() const OVERRIDE;
-  virtual RenderWidgetHostView* GetView() const OVERRIDE;
-  virtual bool IsLoading() const OVERRIDE;
-  virtual bool IsRenderView() const OVERRIDE;
-  virtual void ResizeRectChanged(const gfx::Rect& new_rect) OVERRIDE;
-  virtual void RestartHangMonitorTimeout() OVERRIDE;
-  virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
-  virtual void WasResized() OVERRIDE;
-  virtual void AddKeyPressEventCallback(
-      const KeyPressEventCallback& callback) OVERRIDE;
-  virtual void RemoveKeyPressEventCallback(
-      const KeyPressEventCallback& callback) OVERRIDE;
-  virtual void AddMouseEventCallback(
-      const MouseEventCallback& callback) OVERRIDE;
-  virtual void RemoveMouseEventCallback(
-      const MouseEventCallback& callback) OVERRIDE;
-  virtual void GetWebScreenInfo(blink::WebScreenInfo* result) OVERRIDE;
+  void ForwardMouseEvent(const blink::WebMouseEvent& mouse_event) override;
+  void ForwardWheelEvent(const blink::WebMouseWheelEvent& wheel_event) override;
+  void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event) override;
+  RenderProcessHost* GetProcess() const override;
+  int GetRoutingID() const override;
+  RenderWidgetHostView* GetView() const override;
+  bool IsLoading() const override;
+  bool IsRenderView() const override;
+  void ResizeRectChanged(const gfx::Rect& new_rect) override;
+  void RestartHangMonitorTimeout() override;
+  void SetIgnoreInputEvents(bool ignore_input_events) override;
+  void WasResized() override;
+  void AddKeyPressEventCallback(const KeyPressEventCallback& callback) override;
+  void RemoveKeyPressEventCallback(
+      const KeyPressEventCallback& callback) override;
+  void AddMouseEventCallback(const MouseEventCallback& callback) override;
+  void RemoveMouseEventCallback(const MouseEventCallback& callback) override;
+  void GetWebScreenInfo(blink::WebScreenInfo* result) override;
 
-  virtual SkColorType PreferredReadbackFormat() OVERRIDE;
+  SkColorType PreferredReadbackFormat() override;
 
   // Forces redraw in the renderer and when the update reaches the browser
   // grabs snapshot from the compositor. Returns PNG-encoded snapshot.
@@ -198,10 +193,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void Shutdown();
 
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // Sends a message to the corresponding object in the renderer.
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // Indicates if the page has finished loading.
   virtual void SetIsLoading(bool is_loading);
@@ -277,12 +272,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void SetTouchEventEmulationEnabled(bool enabled);
 
   // TouchEmulatorClient implementation.
-  virtual void ForwardGestureEvent(
-      const blink::WebGestureEvent& gesture_event) OVERRIDE;
-  virtual void ForwardEmulatedTouchEvent(
-      const blink::WebTouchEvent& touch_event) OVERRIDE;
-  virtual void SetCursor(const WebCursor& cursor) OVERRIDE;
-  virtual void ShowContextMenuAtPoint(const gfx::Point& point) OVERRIDE;
+  void ForwardGestureEvent(
+      const blink::WebGestureEvent& gesture_event) override;
+  void ForwardEmulatedTouchEvent(
+      const blink::WebTouchEvent& touch_event) override;
+  void SetCursor(const WebCursor& cursor) override;
+  void ShowContextMenuAtPoint(const gfx::Point& point) override;
 
   // Queues a synthetic gesture for testing purposes.  Invokes the on_complete
   // callback when the gesture is finished running.
@@ -436,7 +431,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void FlushInput();
 
   // InputRouterClient
-  virtual void SetNeedsFlush() OVERRIDE;
+  void SetNeedsFlush() override;
 
   // Indicates whether the renderer drives the RenderWidgetHosts's size or the
   // other way around.
@@ -476,12 +471,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // or create it if it doesn't already exist.
   BrowserAccessibilityManager* GetOrCreateRootBrowserAccessibilityManager();
 
+  base::TimeDelta GetEstimatedBrowserCompositeTime();
+
 #if defined(OS_WIN)
   gfx::NativeViewAccessible GetParentNativeViewAccessible();
 #endif
 
  protected:
-  virtual RenderWidgetHostImpl* AsRenderWidgetHostImpl() OVERRIDE;
+  RenderWidgetHostImpl* AsRenderWidgetHostImpl() override;
 
   // Create a LatencyInfo struct with INPUT_EVENT_LATENCY_RWH_COMPONENT
   // component if it is not already in |original|. And if |original| is
@@ -568,7 +565,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool renderer_initialized_;
 
   // This value indicates how long to wait before we consider a renderer hung.
-  int hung_renderer_delay_ms_;
+  int64 hung_renderer_delay_ms_;
 
  private:
   friend class MockRenderWidgetHost;
@@ -599,10 +596,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void OnFocus();
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
-  void OnTextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params);
+  void OnTextInputTypeChanged(ui::TextInputType type,
+                              ui::TextInputMode input_mode,
+                              bool can_compose_inline,
+                              int flags);
 
-#if defined(OS_MACOSX) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA) || defined(OS_ANDROID)
   void OnImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
@@ -639,25 +638,25 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool KeyPressListenersHandleEvent(const NativeWebKeyboardEvent& event);
 
   // InputRouterClient
-  virtual InputEventAckState FilterInputEvent(
+  InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& event,
-      const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual void IncrementInFlightEventCount() OVERRIDE;
-  virtual void DecrementInFlightEventCount() OVERRIDE;
-  virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE;
-  virtual void DidFlush() OVERRIDE;
-  virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE;
+      const ui::LatencyInfo& latency_info) override;
+  void IncrementInFlightEventCount() override;
+  void DecrementInFlightEventCount() override;
+  void OnHasTouchEventHandlers(bool has_handlers) override;
+  void DidFlush() override;
+  void DidOverscroll(const DidOverscrollParams& params) override;
 
   // InputAckHandler
-  virtual void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
-                                  InputEventAckState ack_result) OVERRIDE;
-  virtual void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
-                               InputEventAckState ack_result) OVERRIDE;
-  virtual void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
-                               InputEventAckState ack_result) OVERRIDE;
-  virtual void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
-                                 InputEventAckState ack_result) OVERRIDE;
-  virtual void OnUnexpectedEventAck(UnexpectedEventAckType type) OVERRIDE;
+  void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
+                          InputEventAckState ack_result) override;
+  void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override;
+  void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override;
+  void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
+                         InputEventAckState ack_result) override;
+  void OnUnexpectedEventAck(UnexpectedEventAckType type) override;
 
   void OnSyntheticGestureCompleted(SyntheticGesture::Result result);
 
@@ -839,6 +838,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   typedef std::map<int,
       base::Callback<void(const unsigned char*, size_t)> > PendingSnapshotMap;
   PendingSnapshotMap pending_browser_snapshots_;
+
+  cc::RollingTimeDeltaHistory browser_composite_latency_history_;
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 

@@ -24,21 +24,20 @@ class DictionaryValue;
 class ChromeSSLHostStateDelegate : public content::SSLHostStateDelegate {
  public:
   explicit ChromeSSLHostStateDelegate(Profile* profile);
-  virtual ~ChromeSSLHostStateDelegate();
+  ~ChromeSSLHostStateDelegate() override;
 
   // SSLHostStateDelegate:
-  virtual void AllowCert(const std::string& host,
-                         const net::X509Certificate& cert,
-                         net::CertStatus error) OVERRIDE;
-  virtual void Clear() OVERRIDE;
-  virtual CertJudgment QueryPolicy(const std::string& host,
-                                   const net::X509Certificate& cert,
-                                   net::CertStatus error,
-                                   bool* expired_previous_decision) OVERRIDE;
-  virtual void HostRanInsecureContent(const std::string& host,
-                                      int pid) OVERRIDE;
-  virtual bool DidHostRunInsecureContent(const std::string& host,
-                                         int pid) const OVERRIDE;
+  void AllowCert(const std::string& host,
+                 const net::X509Certificate& cert,
+                 net::CertStatus error) override;
+  void Clear() override;
+  CertJudgment QueryPolicy(const std::string& host,
+                           const net::X509Certificate& cert,
+                           net::CertStatus error,
+                           bool* expired_previous_decision) override;
+  void HostRanInsecureContent(const std::string& host, int pid) override;
+  bool DidHostRunInsecureContent(const std::string& host,
+                                 int pid) const override;
 
   // Revokes all SSL certificate error allow exceptions made by the user for
   // |host| in the given Profile.
@@ -116,6 +115,29 @@ class ChromeSSLHostStateDelegate : public content::SSLHostStateDelegate {
   // specified process.  Note that insecure content can travel between
   // same-origin frames in one processs but cannot jump between processes.
   std::set<BrokenHostEntry> ran_insecure_content_hosts_;
+
+  // This is a GUID to mark this unique session. Whenever a certificate decision
+  // expiration is set, the GUID is saved as well so Chrome can tell if it was
+  // last set during the current session. This is used by the
+  // FORGET_SSL_EXCEPTION_DECISIONS_AT_SESSION_END experimental group to
+  // determine if the expired_previous_decision bit should be set on queries.
+  //
+  // Why not just iterate over the set of current extensions and mark them all
+  // as expired when the session starts, rather than storing a GUID for the
+  // current session? Glad you asked! Unfortunately, content settings does not
+  // currently support iterating over all current *compound* content setting
+  // values (iteration only works for simple content settings). While this could
+  // be added, it would be a fair amount of work for what amounts to a temporary
+  // measurement problem, so it's not worth the complexity.
+  //
+  // TODO(jww): This is only used by the default and disable groups of the
+  // certificate memory decisions experiment to tell if a decision has expired
+  // since the last session. Since this is only used for UMA purposes, this
+  // should be removed after the experiment has finished, and a call to Clear()
+  // should be added to the constructor and destructor for members of the
+  // FORGET_SSL_EXCEPTION_DECISIONS_AT_SESSION_END groups. See
+  // https://crbug.com/418631 for more details.
+  const std::string current_expiration_guid_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeSSLHostStateDelegate);
 };

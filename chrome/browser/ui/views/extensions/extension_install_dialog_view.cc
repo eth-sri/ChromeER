@@ -17,12 +17,15 @@
 #include "chrome/browser/extensions/api/experience_sampling_private/experience_sampling.h"
 #include "chrome/browser/extensions/bundle_installer.h"
 #include "chrome/browser/extensions/extension_install_prompt_experiment.h"
+#include "chrome/browser/extensions/extension_install_prompt_show_params.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "components/constrained_window/constrained_window_views.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
@@ -166,13 +169,16 @@ CheckboxedView::CheckboxedView(views::View* view,
 }
 
 void ShowExtensionInstallDialogImpl(
-    const ExtensionInstallPrompt::ShowParams& show_params,
+    ExtensionInstallPromptShowParams* show_params,
     ExtensionInstallPrompt::Delegate* delegate,
     scoped_refptr<ExtensionInstallPrompt::Prompt> prompt) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  CreateBrowserModalDialogViews(
-      new ExtensionInstallDialogView(show_params.navigator, delegate, prompt),
-      show_params.parent_window)->Show();
+  ExtensionInstallDialogView* dialog =
+      new ExtensionInstallDialogView(show_params->profile(),
+                                     show_params->GetParentWebContents(),
+                                     delegate,
+                                     prompt);
+  CreateBrowserModalDialogViews(dialog, show_params->GetParentWindow())->Show();
 }
 
 CustomScrollableView::CustomScrollableView() {}
@@ -184,10 +190,12 @@ void CustomScrollableView::Layout() {
 }
 
 ExtensionInstallDialogView::ExtensionInstallDialogView(
+    Profile* profile,
     content::PageNavigator* navigator,
     ExtensionInstallPrompt::Delegate* delegate,
     scoped_refptr<ExtensionInstallPrompt::Prompt> prompt)
-    : navigator_(navigator),
+    : profile_(profile),
+      navigator_(navigator),
       delegate_(delegate),
       prompt_(prompt),
       scroll_view_(NULL),
@@ -746,6 +754,7 @@ void ExtensionInstallDialogView::ContentsChanged() {
 
 void ExtensionInstallDialogView::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
+  views::DialogDelegateView::ViewHierarchyChanged(details);
   // Since we want the links to show up in the same visual row as the accept
   // and cancel buttons, which is provided by the framework, we must add the
   // buttons to the non-client view, which is the parent of this view.
@@ -851,7 +860,14 @@ void ExtensionInstallDialogView::LinkClicked(views::Link* source,
         store_url, Referrer(), NEW_FOREGROUND_TAB,
         ui::PAGE_TRANSITION_LINK,
         false);
-    navigator_->OpenURL(params);
+
+    if (navigator_) {
+      navigator_->OpenURL(params);
+    } else {
+      chrome::ScopedTabbedBrowserDisplayer displayer(
+          profile_, chrome::GetActiveDesktop());
+      displayer.browser()->OpenURL(params);
+    }
     GetWidget()->Close();
   }
 }

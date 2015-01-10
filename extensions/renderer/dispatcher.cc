@@ -324,10 +324,18 @@ void Dispatcher::DidCreateScriptContext(
     module_system->Require("platformApp");
   }
 
+  if (context->GetAvailability("appViewEmbedderInternal").is_available()) {
+    module_system->Require("appView");
+  } else if (context_type == extensions::Feature::BLESSED_EXTENSION_CONTEXT) {
+    module_system->Require("denyAppView");
+  }
+
   // Note: setting up the WebView class here, not the chrome.webview API.
   // The API will be automatically set up when first used.
   if (context->GetAvailability("webViewInternal").is_available()) {
     module_system->Require("webView");
+    module_system->Require("webViewConstants");
+    module_system->Require("webViewAttributes");
     if (context->GetAvailability("webViewExperimentalInternal")
             .is_available()) {
       module_system->Require("webViewExperimental");
@@ -513,6 +521,8 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
   std::vector<std::pair<std::string, int> > resources;
 
   // Libraries.
+  resources.push_back(std::make_pair("appView", IDR_APP_VIEW_JS));
+  resources.push_back(std::make_pair("denyAppView", IDR_APP_VIEW_DENY_JS));
   resources.push_back(std::make_pair("entryIdManager", IDR_ENTRY_ID_MANAGER));
   resources.push_back(std::make_pair(kEventBindings, IDR_EVENT_BINDINGS_JS));
   resources.push_back(std::make_pair("imageUtil", IDR_IMAGE_UTIL_JS));
@@ -540,6 +550,10 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
   // Note: webView not webview so that this doesn't interfere with the
   // chrome.webview API bindings.
   resources.push_back(std::make_pair("webView", IDR_WEB_VIEW_JS));
+  resources.push_back(std::make_pair("webViewAttributes",
+                                     IDR_WEB_VIEW_ATTRIBUTES_JS));
+  resources.push_back(std::make_pair("webViewConstants",
+                                     IDR_WEB_VIEW_CONSTANTS_JS));
   resources.push_back(std::make_pair("webViewEvents", IDR_WEB_VIEW_EVENTS_JS));
   resources.push_back(
       std::make_pair("webViewExperimental", IDR_WEB_VIEW_EXPERIMENTAL_JS));
@@ -560,6 +574,17 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
       std::make_pair(mojo::kUnicodeModuleName, IDR_MOJO_UNICODE_JS));
   resources.push_back(
       std::make_pair(mojo::kValidatorModuleName, IDR_MOJO_VALIDATOR_JS));
+  resources.push_back(std::make_pair("async_waiter", IDR_ASYNC_WAITER_JS));
+  resources.push_back(std::make_pair("data_receiver", IDR_DATA_RECEIVER_JS));
+  resources.push_back(std::make_pair("data_sender", IDR_DATA_SENDER_JS));
+  resources.push_back(std::make_pair("keep_alive", IDR_KEEP_ALIVE_JS));
+  resources.push_back(std::make_pair("extensions/common/mojo/keep_alive.mojom",
+                                     IDR_KEEP_ALIVE_MOJOM_JS));
+  resources.push_back(std::make_pair("device/serial/data_stream.mojom",
+                                     IDR_DATA_STREAM_MOJOM_JS));
+  resources.push_back(
+      std::make_pair("device/serial/data_stream_serialization.mojom",
+                     IDR_DATA_STREAM_SERIALIZATION_MOJOM_JS));
 
   // Custom bindings.
   resources.push_back(
@@ -579,7 +604,21 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
   resources.push_back(
       std::make_pair("runtime", IDR_RUNTIME_CUSTOM_BINDINGS_JS));
   resources.push_back(std::make_pair("windowControls", IDR_WINDOW_CONTROLS_JS));
+  resources.push_back(
+      std::make_pair("webViewRequest",
+                     IDR_WEB_VIEW_REQUEST_CUSTOM_BINDINGS_JS));
   resources.push_back(std::make_pair("binding", IDR_BINDING_JS));
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableMojoSerialService)) {
+    resources.push_back(
+        std::make_pair("serial", IDR_SERIAL_CUSTOM_BINDINGS_JS));
+  }
+  resources.push_back(std::make_pair("serial_service", IDR_SERIAL_SERVICE_JS));
+  resources.push_back(
+      std::make_pair("device/serial/serial.mojom", IDR_SERIAL_MOJOM_JS));
+  resources.push_back(std::make_pair("device/serial/serial_serialization.mojom",
+                                     IDR_SERIAL_SERIALIZATION_MOJOM_JS));
 
   // Custom types sources.
   resources.push_back(std::make_pair("StorageArea", IDR_STORAGE_AREA_JS));

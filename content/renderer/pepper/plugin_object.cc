@@ -71,7 +71,9 @@ PluginObject* PluginObject::FromV8Object(v8::Isolate* isolate,
 PP_Var PluginObject::Create(PepperPluginInstanceImpl* instance,
                             const PPP_Class_Deprecated* ppp_class,
                             void* ppp_class_data) {
-  PepperTryCatchVar try_catch(instance, NULL);
+  V8VarConverter var_converter(instance->pp_instance(),
+                               V8VarConverter::kAllowObjectVars);
+  PepperTryCatchVar try_catch(instance, &var_converter, NULL);
   gin::Handle<PluginObject> object =
       gin::CreateHandle(instance->GetIsolate(),
                         new PluginObject(instance, ppp_class, ppp_class_data));
@@ -88,14 +90,49 @@ v8::Local<v8::Value> PluginObject::GetNamedProperty(
   return GetPropertyOrMethod(instance_->GetIsolate(), identifier_var.get());
 }
 
+bool PluginObject::SetNamedProperty(v8::Isolate* isolate,
+                                    const std::string& identifier,
+                                    v8::Local<v8::Value> value) {
+  if (!instance_)
+    return false;
+  ScopedPPVar identifier_var(ScopedPPVar::PassRef(),
+                             StringVar::StringToPPVar(identifier));
+  V8VarConverter var_converter(instance_->pp_instance(),
+                               V8VarConverter::kAllowObjectVars);
+  PepperTryCatchV8 try_catch(instance_, &var_converter, isolate);
+
+  bool has_property =
+      ppp_class_->HasProperty(ppp_class_data_, identifier_var.get(),
+                              try_catch.exception());
+  if (try_catch.ThrowException())
+    return false;
+
+  if (!has_property)
+    return false;
+
+  ScopedPPVar var = try_catch.FromV8(value);
+  if (try_catch.ThrowException())
+    return false;
+
+  ppp_class_->SetProperty(ppp_class_data_, identifier_var.get(), var.get(),
+                          try_catch.exception());
+
+  // If the plugin threw an exception, then throw a V8 version of it to
+  // JavaScript. Either way, return true, because we successfully dispatched
+  // the call to the plugin.
+  try_catch.ThrowException();
+  return true;
+}
+
 std::vector<std::string> PluginObject::EnumerateNamedProperties(
     v8::Isolate* isolate) {
   std::vector<std::string> result;
   if (!instance_)
     return result;
 
-  PepperTryCatchV8 try_catch(instance_, V8VarConverter::kAllowObjectVars,
-                             isolate);
+  V8VarConverter var_converter(instance_->pp_instance(),
+                               V8VarConverter::kAllowObjectVars);
+  PepperTryCatchV8 try_catch(instance_, &var_converter, isolate);
 
   PP_Var* name_vars;
   uint32_t count = 0;
@@ -147,8 +184,9 @@ v8::Local<v8::Value> PluginObject::GetPropertyOrMethod(v8::Isolate* isolate,
   if (!instance_)
     return v8::Local<v8::Value>();
 
-  PepperTryCatchV8 try_catch(instance_, V8VarConverter::kAllowObjectVars,
-                             isolate);
+  V8VarConverter var_converter(instance_->pp_instance(),
+                               V8VarConverter::kAllowObjectVars);
+  PepperTryCatchV8 try_catch(instance_, &var_converter, isolate);
   bool has_property =
       ppp_class_->HasProperty(ppp_class_data_, identifier_var,
                               try_catch.exception());
@@ -192,8 +230,9 @@ void PluginObject::Call(const std::string& identifier,
   if (!instance_)
     return;
 
-  PepperTryCatchV8 try_catch(instance_, V8VarConverter::kAllowObjectVars,
-                             args->isolate());
+  V8VarConverter var_converter(instance_->pp_instance(),
+                               V8VarConverter::kAllowObjectVars);
+  PepperTryCatchV8 try_catch(instance_, &var_converter, args->isolate());
   ScopedPPVar identifier_var(ScopedPPVar::PassRef(),
                              StringVar::StringToPPVar(identifier));
   ScopedPPVarArray argument_vars(args->Length());

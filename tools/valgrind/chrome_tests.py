@@ -11,6 +11,7 @@ import multiprocessing
 import optparse
 import os
 import stat
+import subprocess
 import sys
 
 import logging_utils
@@ -26,6 +27,10 @@ class MultipleGTestFiltersSpecified(Exception): pass
 class BuildDirNotFound(Exception): pass
 
 class BuildDirAmbiguous(Exception): pass
+
+class ExecutableNotFound(Exception): pass
+
+class BadBinary(Exception): pass
 
 class ChromeTests:
   SLOW_TOOLS = ["memcheck", "tsan", "tsan_rv", "drmemory"]
@@ -115,7 +120,24 @@ class ChromeTests:
         cmd.append(arg)
     if exe:
       self._EnsureBuildDirFound()
-      cmd.append(os.path.join(self._options.build_dir, exe))
+      exe_path = os.path.join(self._options.build_dir, exe)
+      if not os.path.exists(exe_path):
+        raise ExecutableNotFound("Couldn't find '%s'" % exe_path)
+
+      # Make sure we don't try to test ASan-built binaries
+      # with other dynamic instrumentation-based tools.
+      # TODO(timurrrr): also check TSan and MSan?
+      # `nm` might not be available, so use try-except.
+      try:
+        nm_output = subprocess.check_output(["nm", exe_path])
+        if nm_output.find("__asan_init") != -1:
+          raise BadBinary("You're trying to run an executable instrumented "
+                          "with AddressSanitizer under %s. Please provide "
+                          "an uninstrumented executable." % tool_name)
+      except OSError:
+        pass
+
+      cmd.append(exe_path)
       # Valgrind runs tests slowly, so slow tests hurt more; show elapased time
       # so we can find the slowpokes.
       cmd.append("--gtest_print_time")
@@ -375,14 +397,8 @@ class ChromeTests:
   def TestMessageCenter(self):
     return self.SimpleTest("message_center", "message_center_unittests")
 
-  def TestMojoAppsJS(self):
-    return self.SimpleTest("mojo_apps_js", "mojo_apps_js_unittests")
-
   def TestMojoCommon(self):
     return self.SimpleTest("mojo_common", "mojo_common_unittests")
-
-  def TestMojoJS(self):
-    return self.SimpleTest("mojo_js", "mojo_js_unittests")
 
   def TestMojoPublicBindings(self):
     return self.SimpleTest("mojo_public_bindings",
@@ -404,15 +420,8 @@ class ChromeTests:
     return self.SimpleTest("mojo_public_utility",
                            "mojo_public_utility_unittests")
 
-  def TestMojoApplicationManager(self):
-    return self.SimpleTest("mojo_application_manager",
-                           "mojo_application_manager_unittests")
-
   def TestMojoSystem(self):
     return self.SimpleTest("mojo_system", "mojo_system_unittests")
-
-  def TestMojoViewManager(self):
-    return self.SimpleTest("mojo_view_manager", "mojo_view_manager_unittests")
 
   def TestNet(self):
     return self.SimpleTest("net", "net_unittests")
@@ -452,6 +461,9 @@ class ChromeTests:
       logging.warning("unit_tests are disabled for memcheck on MacOS.")
       return 0;
     return self.SimpleTest("chrome", "unit_tests")
+
+  def TestUIBaseUnit(self):
+    return self.SimpleTest("chrome", "ui_base_unittests")
 
   def TestUIUnit(self):
     return self.SimpleTest("chrome", "ui_unittests")
@@ -677,17 +689,13 @@ class ChromeTests:
     "media": TestMedia,          "media_unittests": TestMedia,
     "message_center": TestMessageCenter,
     "message_center_unittests" : TestMessageCenter,
-    "mojo_apps_js": TestMojoAppsJS,
     "mojo_common": TestMojoCommon,
-    "mojo_js": TestMojoJS,
     "mojo_system": TestMojoSystem,
     "mojo_public_system": TestMojoPublicSystem,
     "mojo_public_utility": TestMojoPublicUtility,
     "mojo_public_bindings": TestMojoPublicBindings,
     "mojo_public_env": TestMojoPublicEnv,
     "mojo_public_sysperf": TestMojoPublicSysPerf,
-    "mojo_application_manager": TestMojoApplicationManager,
-    "mojo_view_manager": TestMojoViewManager,
     "net": TestNet,              "net_unittests": TestNet,
     "net_perf": TestNetPerf,     "net_perftests": TestNetPerf,
     "phonenumber": TestPhoneNumber,
@@ -701,6 +709,7 @@ class ChromeTests:
     "sync": TestSync,            "sync_unit_tests": TestSync,
     "sync_integration_tests": TestSyncIntegration,
     "sync_integration": TestSyncIntegration,
+    "ui_base_unit": TestUIBaseUnit,       "ui_base_unittests": TestUIBaseUnit,
     "ui_unit": TestUIUnit,       "ui_unittests": TestUIUnit,
     "unit": TestUnit,            "unit_tests": TestUnit,
     "url": TestURL,              "url_unittests": TestURL,

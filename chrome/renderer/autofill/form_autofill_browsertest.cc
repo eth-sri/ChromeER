@@ -96,7 +96,7 @@ namespace autofill {
 class FormAutofillTest : public ChromeRenderViewTest {
  public:
   FormAutofillTest() : ChromeRenderViewTest() {}
-  virtual ~FormAutofillTest() {}
+  ~FormAutofillTest() override {}
 
   void ExpectLabels(const char* html,
                     const std::vector<base::string16>& labels,
@@ -256,6 +256,11 @@ class FormAutofillTest : public ChromeRenderViewTest {
       EXPECT_EQ(expected_value, value);
 
     EXPECT_EQ(field_case.should_be_autofilled, element.isAutofilled());
+  }
+
+  static void FillFormForAllFieldsWrapper(const FormData& form,
+                                       const WebInputElement& element) {
+    FillFormForAllElements(form, element.form());
   }
 
   static void FillFormIncludingNonFocusableElementsWrapper(
@@ -655,7 +660,7 @@ TEST_F(FormAutofillTest, WebFormControlElementToFormFieldAutocompletetype) {
     { "malicious", "text", "x-max-data-length-exceeded" },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     WebElement web_element = frame->document().getElementById(
         ASCIIToUTF16(test_cases[i].element_id));
     WebFormControlElement element = web_element.to<WebFormControlElement>();

@@ -23,9 +23,9 @@ class DeviceInfoDataTypeControllerTest : public testing::Test,
       : load_finished_(false),
         weak_ptr_factory_(this),
         last_type_(syncer::UNSPECIFIED) {}
-  virtual ~DeviceInfoDataTypeControllerTest() {}
+  ~DeviceInfoDataTypeControllerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     local_device_.reset(new LocalDeviceInfoProviderMock(
         "cache_guid",
         "Wayne Gretzky's Hacking Box",
@@ -45,7 +45,7 @@ class DeviceInfoDataTypeControllerTest : public testing::Test,
     last_error_ = syncer::SyncError();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     controller_ = NULL;
     local_device_.reset();
   }
@@ -56,17 +56,17 @@ class DeviceInfoDataTypeControllerTest : public testing::Test,
                    weak_ptr_factory_.GetWeakPtr()));
   }
 
-  virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
-      syncer::ModelType type) OVERRIDE {
+  base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
+      syncer::ModelType type) override {
     // Shouldn't be called for this test.
     NOTREACHED();
     return base::WeakPtr<syncer::SyncableService>();
   }
 
-  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+  scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
       const scoped_refptr<syncer::AttachmentStore>& attachment_store,
       const syncer::UserShare& user_share,
-      syncer::AttachmentService::Delegate* delegate) OVERRIDE {
+      syncer::AttachmentService::Delegate* delegate) override {
     // Shouldn't be called for this test.
     NOTREACHED();
     return scoped_ptr<syncer::AttachmentService>();
@@ -125,6 +125,19 @@ TEST_F(DeviceInfoDataTypeControllerTest, StartModelsDelayedByLocalDevice) {
   local_device_->SetInitialized(true);
   EXPECT_EQ(DataTypeController::MODEL_LOADED, controller_->state());
   EXPECT_TRUE(LoadResult());
+}
+
+// Tests that DeviceInfoDataTypeControllerTest handles the situation
+// when everything stops before the start gets a chance to finish.
+TEST_F(DeviceInfoDataTypeControllerTest, DestructionWithDelayedStart) {
+  local_device_->SetInitialized(false);
+  Start();
+
+  controller_->Stop();
+  // Destroy |local_device_| and |controller_| out of order
+  // to verify that the controller doesn't crash in the destructor.
+  local_device_.reset();
+  controller_ = NULL;
 }
 
 }  // namespace
