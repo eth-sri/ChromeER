@@ -16,6 +16,7 @@
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/events/devices/device_data_manager.h"
 #include "ui/events/event.h"
 #include "ui/events/ozone/evdev/touch_event_converter_evdev.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
@@ -39,7 +40,7 @@ namespace ui {
 class MockTouchEventConverterEvdev : public TouchEventConverterEvdev {
  public:
   MockTouchEventConverterEvdev(int fd, base::FilePath path);
-  virtual ~MockTouchEventConverterEvdev() {};
+  ~MockTouchEventConverterEvdev() override {}
 
   void ConfigureReadMock(struct input_event* queue,
                          long read_this_many,
@@ -63,7 +64,8 @@ class MockTouchEventConverterEvdev : public TouchEventConverterEvdev {
     dispatched_events_.push_back(event.release());
   }
 
-  virtual bool Reinitialize() override { return true; }
+  void Initialize(const EventDeviceInfo& device_info) override {}
+  bool Reinitialize() override { return true; }
 
  private:
   int read_pipe_;
@@ -80,17 +82,16 @@ MockTouchEventConverterEvdev::MockTouchEventConverterEvdev(int fd,
           fd,
           path,
           1,
-          EventDeviceInfo(),
           base::Bind(&MockTouchEventConverterEvdev::DispatchCallback,
                      base::Unretained(this))) {
   pressure_min_ = 30;
   pressure_max_ = 60;
 
   // TODO(rjkroege): Check test axes.
-  x_min_pixels_ = x_min_tuxels_ = 0;
-  x_num_pixels_ = x_num_tuxels_ = std::numeric_limits<int>::max();
-  y_min_pixels_ = y_min_tuxels_ = 0;
-  y_num_pixels_ = y_num_tuxels_ = std::numeric_limits<int>::max();
+  x_min_tuxels_ = 0;
+  x_num_tuxels_ = std::numeric_limits<int>::max();
+  y_min_tuxels_ = 0;
+  y_num_tuxels_ = std::numeric_limits<int>::max();
 
   int fds[2];
 
@@ -124,7 +125,7 @@ class TouchEventConverterEvdevTest : public testing::Test {
   TouchEventConverterEvdevTest() {}
 
   // Overridden from testing::Test:
-  virtual void SetUp() override {
+  void SetUp() override {
     // Set up pipe to satisfy message pump (unused).
     int evdev_io[2];
     if (pipe(evdev_io))
@@ -132,12 +133,17 @@ class TouchEventConverterEvdevTest : public testing::Test {
     events_in_ = evdev_io[0];
     events_out_ = evdev_io[1];
 
-    loop_ = new base::MessageLoopForUI;
+    // Device creation happens on a worker thread since it may involve blocking
+    // operations. Simulate that by creating it before creating a UI message
+    // loop.
     device_ = new ui::MockTouchEventConverterEvdev(
         events_in_, base::FilePath(kTestDevicePath));
+    loop_ = new base::MessageLoopForUI;
+
+    ui::DeviceDataManager::CreateInstance();
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     delete device_;
     delete loop_;
   }

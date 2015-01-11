@@ -49,14 +49,18 @@ public class AwTestBase
     protected void setUp() throws Exception {
         super.setUp();
         if (needsBrowserProcessStarted()) {
-            final Context context = getActivity();
-            getInstrumentation().runOnMainSync(new Runnable() {
-                @Override
-                public void run() {
-                    AwBrowserProcess.start(context);
-                }
-            });
+            startBrowserProcess();
         }
+    }
+
+    protected void startBrowserProcess() throws Exception {
+        final Context context = getActivity();
+        getInstrumentation().runOnMainSync(new Runnable() {
+            @Override
+            public void run() {
+                AwBrowserProcess.start(context);
+            }
+        });
     }
 
     /* Override this to return false if the test doesn't want the browser startup sequence to
@@ -332,8 +336,7 @@ public class AwTestBase
             final AwContentsClient awContentsClient, boolean supportsLegacyQuirks) {
         final TestDependencyFactory testDependencyFactory = createTestDependencyFactory();
 
-        boolean allowHardwareAcceleration = !testMethodHasAnnotation(
-                DisableHardwareAccelerationForTest.class);
+        boolean allowHardwareAcceleration = isHardwareAcceleratedTest();
         final AwTestContainerView testContainerView =
                 testDependencyFactory.createAwTestContainerView(getActivity(),
                         allowHardwareAcceleration);
@@ -346,6 +349,10 @@ public class AwTestBase
                 testContainerView.getNativeGLDelegate(), awContentsClient,
                 awSettings, testDependencyFactory));
         return testContainerView;
+    }
+
+    protected boolean isHardwareAcceleratedTest() {
+        return !testMethodHasAnnotation(DisableHardwareAccelerationForTest.class);
     }
 
     public AwTestContainerView createAwTestContainerViewOnMainSync(

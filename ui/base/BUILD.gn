@@ -16,6 +16,8 @@ component("base") {
   sources = [
     "accelerators/accelerator.cc",
     "accelerators/accelerator.h",
+    "accelerators/accelerator_history.cc",
+    "accelerators/accelerator_history.h",
     "accelerators/accelerator_manager.cc",
     "accelerators/accelerator_manager.h",
     "accelerators/menu_label_accelerator_util_linux.cc",
@@ -24,6 +26,7 @@ component("base") {
     "accelerators/platform_accelerator_cocoa.h",
     "accelerators/platform_accelerator_cocoa.mm",
     "android/system_ui_resource_manager.h",
+    "android/system_ui_resource_type.h",
     "android/ui_base_jni_registrar.cc",
     "android/ui_base_jni_registrar.h",
     "android/view_android.cc",
@@ -273,7 +276,7 @@ component("base") {
     sources += [ "touch/touch_device_android.cc" ]
   } else if (use_ozone) {
     sources += [ "touch/touch_device_ozone.cc" ]
-  } else if (use_aura && use_x11) { 
+  } else if (use_aura && use_x11) {
     sources += [ "touch/touch_device_aurax11.cc" ]
   } else {
     # Empty implementation for all other cases.
@@ -313,10 +316,31 @@ component("base") {
       "ime/candidate_window.h",
       "ime/chromeos/character_composer.cc",
       "ime/chromeos/character_composer.h",
+      "ime/chromeos/component_extension_ime_manager.cc",
+      "ime/chromeos/component_extension_ime_manager.h",
+      "ime/chromeos/composition_text.cc",
+      "ime/chromeos/composition_text.h",
+      "ime/chromeos/extension_ime_util.cc",
+      "ime/chromeos/extension_ime_util.h",
+      "ime/chromeos/fake_ime_keyboard.cc",
+      "ime/chromeos/fake_ime_keyboard.h",
       "ime/chromeos/ime_bridge.cc",
       "ime/chromeos/ime_bridge.h",
+      "ime/chromeos/ime_keyboard.cc",
+      "ime/chromeos/ime_keyboard.h",
+      "ime/chromeos/ime_keyboard_ozone.cc",
+      "ime/chromeos/ime_keyboard_ozone.h",
+      "ime/chromeos/ime_keyboard_x11.cc",
+      "ime/chromeos/ime_keyboard_x11.h",
       "ime/chromeos/ime_keymap.cc",
       "ime/chromeos/ime_keymap.h",
+      "ime/chromeos/input_method_delegate.h",
+      "ime/chromeos/input_method_descriptor.cc",
+      "ime/chromeos/input_method_descriptor.h",
+      "ime/chromeos/input_method_manager.cc",
+      "ime/chromeos/input_method_manager.h",
+      "ime/chromeos/input_method_whitelist.cc",
+      "ime/chromeos/input_method_whitelist.h",
       "ime/chromeos/mock_ime_candidate_window_handler.cc",
       "ime/chromeos/mock_ime_candidate_window_handler.h",
       "ime/chromeos/mock_ime_engine_handler.cc",
@@ -394,6 +418,18 @@ component("base") {
       deps += [
         "//chromeos",
       ]
+      if (!use_ozone) {
+        sources -= [
+          "ime/chromeos/ime_keyboard_ozone.cc",
+          "ime/chromeos/ime_keyboard_ozone.h",
+        ]
+      }
+      if (!use_x11) {
+        sources -= [
+          "ime/chromeos/ime_keyboard_x11.cc",
+          "ime/chromeos/ime_keyboard_x11.h",
+        ]
+      }
     }
 
     if (use_pango) {
@@ -655,6 +691,8 @@ component("base") {
 source_set("test_support") {
   testonly = true
   sources = [
+    "test/test_clipboard.cc",
+    "test/test_clipboard.h",
     "test/ui_controls.h",
     "test/ui_controls_aura.cc",
     "test/ui_controls_internal_win.cc",
@@ -681,6 +719,12 @@ source_set("test_support") {
       "ime/dummy_input_method.h",
       "ime/dummy_text_input_client.cc",
       "ime/dummy_text_input_client.h",
+    ]
+  }
+
+  if (!use_aura) {
+    sources -= [
+      "test/ui_controls_aura.cc",
     ]
   }
 }
@@ -721,6 +765,7 @@ test("ui_unittests") {
     "resource/data_pack_literal.cc",
     "resource/data_pack_unittest.cc",
     "resource/resource_bundle_unittest.cc",
+    "test/test_clipboard_unittest.cc",
     "test/run_all_unittests.cc",
   ]
 
@@ -753,20 +798,11 @@ test("ui_unittests") {
       "models/tree_node_model_unittest.cc",
       "test/data/resource.h",
       "text/bytes_formatting_unittest.cc",
+      "touch/touch_editing_controller_unittest.cc",
       "view_prop_unittest.cc",
       "webui/web_ui_util_unittest.cc",
       "x/selection_requestor_unittest.cc",
     ]
-
-    if (!use_x11) {
-      if (is_chromeos) {
-        # These were already removed in the chromeos case.
-        sources -= [
-          "ime/chromeos/character_composer_unittest.cc",
-          "ime/input_method_chromeos_unittest.cc",
-        ]
-      }
-    }
   }
 
   if (build_ime) {
@@ -781,6 +817,13 @@ test("ui_unittests") {
     ]
     if (use_x11) {
       sources += [ "ime/composition_text_util_pango_unittest.cc" ]
+    }
+    if (!use_x11 && is_chromeos) {
+      # These were already removed in the non-chromeos case.
+      sources -= [
+        "ime/chromeos/character_composer_unittest.cc",
+        "ime/input_method_chromeos_unittest.cc",
+      ]
     }
   }
 
@@ -868,6 +911,11 @@ test("ui_unittests") {
   }
 
   if (is_mac) {
+    sources -= [
+      "dragdrop/os_exchange_data_provider_aurax11_unittest.cc",
+      "x/selection_requestor_unittest.cc",
+    ]
+
     deps += [
       "//third_party/mozilla",
       #'ui_unittests_bundle',  TODO(GYP)
@@ -886,22 +934,12 @@ test("ui_unittests") {
   }
 
   if (is_chromeos) {
-    sources += [
-      "../chromeos/network/network_state_notifier_unittest.cc",
-      "../chromeos/touch_exploration_controller_unittest.cc",
-    ]
     sources -= [
       "dragdrop/os_exchange_data_provider_aurax11_unittest.cc",
       "x/selection_requestor_unittest.cc",
     ]
     deps += [
       "//chromeos",
-      "//chromeos/resources",
-      "//chromeos/strings",
-      "//ui/aura:test_support",
-      "//ui/events:gesture_detection",
-      "//ui/chromeos:ui_chromeos",
-      "//ui/message_center:message_center",
     ]
   }
 }

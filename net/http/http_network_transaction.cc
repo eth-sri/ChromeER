@@ -45,7 +45,7 @@
 #include "net/http/http_response_info.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_status_code.h"
-#include "net/http/http_stream_base.h"
+#include "net/http/http_stream.h"
 #include "net/http/http_stream_factory.h"
 #include "net/http/http_util.h"
 #include "net/http/transport_security_state.h"
@@ -63,9 +63,6 @@
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "url/gurl.h"
 #include "url/url_canon.h"
-
-using base::Time;
-using base::TimeDelta;
 
 namespace net {
 
@@ -91,19 +88,6 @@ void ProcessAlternateProtocol(
       alternate_protocol_values,
       http_host_port_pair,
       *session);
-}
-
-// Returns true if |error| is a client certificate authentication error.
-bool IsClientCertificateError(int error) {
-  switch (error) {
-    case ERR_BAD_SSL_CLIENT_AUTH_CERT:
-    case ERR_SSL_CLIENT_AUTH_PRIVATE_KEY_ACCESS_DENIED:
-    case ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY:
-    case ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED:
-      return true;
-    default:
-      return false;
-  }
 }
 
 base::Value* NetLogSSLVersionFallbackCallback(
@@ -133,7 +117,6 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       request_(NULL),
       priority_(priority),
       headers_valid_(false),
-      logged_response_time_(false),
       fallback_error_code_(ERR_SSL_INAPPROPRIATE_FALLBACK),
       request_headers_(),
       read_buf_len_(0),
@@ -167,7 +150,7 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
         stream_->Close(true /* not reusable */);
       } else {
         // Otherwise, we try to drain the response body.
-        HttpStreamBase* stream = stream_.release();
+        HttpStream* stream = stream_.release();
         stream->Drain(session_);
       }
     }
@@ -184,7 +167,6 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
 
   net_log_ = net_log;
   request_ = request_info;
-  start_time_ = base::Time::Now();
 
   if (request_->load_flags & LOAD_DISABLE_CERT_REVOCATION_CHECKING) {
     server_ssl_config_.rev_checking_enabled = false;
@@ -310,8 +292,7 @@ void HttpNetworkTransaction::DidDrainBodyForAuthRestart(bool keep_alive) {
       // We should call connection_->set_idle_time(), but this doesn't occur
       // often enough to be worth the trouble.
       stream_->SetConnectionReused();
-      new_stream =
-          static_cast<HttpStream*>(stream_.get())->RenewStreamForAuth();
+      new_stream = stream_->RenewStreamForAuth();
     }
 
     if (!new_stream) {
@@ -426,8 +407,7 @@ UploadProgress HttpNetworkTransaction::GetUploadProgress() const {
   if (!stream_.get())
     return UploadProgress();
 
-  // TODO(bashi): This cast is temporary. Remove later.
-  return static_cast<HttpStream*>(stream_.get())->GetUploadProgress();
+  return stream_->GetUploadProgress();
 }
 
 void HttpNetworkTransaction::SetQuicServerInfo(
@@ -476,7 +456,7 @@ int HttpNetworkTransaction::ResumeNetworkStart() {
 
 void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
                                            const ProxyInfo& used_proxy_info,
-                                           HttpStreamBase* stream) {
+                                           HttpStream* stream) {
   DCHECK_EQ(STATE_CREATE_STREAM_COMPLETE, next_state_);
   DCHECK(stream_request_.get());
 
@@ -569,7 +549,7 @@ void HttpNetworkTransaction::OnHttpsProxyTunnelResponse(
     const HttpResponseInfo& response_info,
     const SSLConfig& used_ssl_config,
     const ProxyInfo& used_proxy_info,
-    HttpStreamBase* stream) {
+    HttpStream* stream) {
   DCHECK_EQ(STATE_CREATE_STREAM_COMPLETE, next_state_);
 
   headers_valid_ = true;
@@ -986,12 +966,6 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
     return OK;
   }
 
-  // After we call RestartWithAuth a new response_time will be recorded, and
-  // we need to be cautious about incorrectly logging the duration across the
-  // authentication activity.
-  if (result == OK)
-    LogTransactionConnectedMetrics();
-
   // ERR_CONNECTION_CLOSED is treated differently at this point; if partial
   // response headers were received, we do the best we can to make sense of it
   // and send it back up the stack.
@@ -1053,11 +1027,8 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
     return OK;
   }
 
-  HostPortPair endpoint = HostPortPair(request_->url.HostNoBrackets(),
-                                       request_->url.EffectiveIntPort());
-  ProcessAlternateProtocol(session_,
-                           *response_.headers.get(),
-                           endpoint);
+  ProcessAlternateProtocol(session_, *response_.headers.get(),
+                           HostPortPair::FromURL(request_->url));
 
   int rv = HandleAuthChallenge();
   if (rv != OK)
@@ -1116,7 +1087,6 @@ int HttpNetworkTransaction::DoReadBodyComplete(int result) {
 
   // Clean up connection if we are done.
   if (done) {
-    LogTransactionMetrics();
     stream_->Close(!keep_alive);
     // Note: we don't reset the stream here.  We've closed it, but we still
     // need it around so that callers can call methods such as
@@ -1166,72 +1136,6 @@ int HttpNetworkTransaction::DoDrainBodyForAuthRestartComplete(int result) {
   }
 
   return OK;
-}
-
-void HttpNetworkTransaction::LogTransactionConnectedMetrics() {
-  if (logged_response_time_)
-    return;
-
-  logged_response_time_ = true;
-
-  base::TimeDelta total_duration = response_.response_time - start_time_;
-
-  UMA_HISTOGRAM_CUSTOM_TIMES(
-      "Net.Transaction_Connected",
-      total_duration,
-      base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(10),
-      100);
-
-  bool reused_socket = stream_->IsConnectionReused();
-  if (!reused_socket) {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        "Net.Transaction_Connected_New_b",
-        total_duration,
-        base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(10),
-        100);
-  }
-
-  // Currently, non-HIGHEST priority requests are frame or sub-frame resource
-  // types.  This will change when we also prioritize certain subresources like
-  // css, js, etc.
-  if (priority_ != HIGHEST) {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        "Net.Priority_High_Latency_b",
-        total_duration,
-        base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(10),
-        100);
-  } else {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        "Net.Priority_Low_Latency_b",
-        total_duration,
-        base::TimeDelta::FromMilliseconds(1), base::TimeDelta::FromMinutes(10),
-        100);
-  }
-}
-
-void HttpNetworkTransaction::LogTransactionMetrics() const {
-  base::TimeDelta duration = base::Time::Now() -
-                             response_.request_time;
-  if (60 < duration.InMinutes())
-    return;
-
-  base::TimeDelta total_duration = base::Time::Now() - start_time_;
-
-  UMA_HISTOGRAM_CUSTOM_TIMES("Net.Transaction_Latency_b", duration,
-                             base::TimeDelta::FromMilliseconds(1),
-                             base::TimeDelta::FromMinutes(10),
-                             100);
-  UMA_HISTOGRAM_CUSTOM_TIMES("Net.Transaction_Latency_Total",
-                             total_duration,
-                             base::TimeDelta::FromMilliseconds(1),
-                             base::TimeDelta::FromMinutes(10), 100);
-
-  if (!stream_->IsConnectionReused()) {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        "Net.Transaction_Latency_Total_New_Connection",
-        total_duration, base::TimeDelta::FromMilliseconds(1),
-        base::TimeDelta::FromMinutes(10), 100);
-  }
 }
 
 int HttpNetworkTransaction::HandleCertificateRequest(int error) {

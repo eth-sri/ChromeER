@@ -7,7 +7,10 @@
 #include "chrome/browser/extensions/api/hotword_private/hotword_private_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/history/web_history_service.h"
+#include "chrome/browser/history/web_history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/hotword_audio_history_handler.h"
 #include "chrome/browser/search/hotword_client.h"
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
@@ -19,6 +22,60 @@
 namespace {
 
 const char kHotwordTestExtensionId[] = "cpfhkdbjfdgdebcjlifoldbijinjfifp";
+
+// Mock the web history service so that we don't make actual requests over the
+// network.
+class MockWebHistoryService : public history::WebHistoryService {
+ public:
+  explicit MockWebHistoryService(Profile* profile)
+      : WebHistoryService(profile),
+        expected_success_(true),
+        expected_value_(false) {}
+  ~MockWebHistoryService() override {}
+
+  // For both of the following functions, just call the callback to simulate
+  // a successful return from the url fetch.
+  void GetAudioHistoryEnabled(
+      const AudioWebHistoryCallback& callback) override {
+    callback.Run(expected_success_, expected_value_ && expected_success_);
+  }
+
+  void SetAudioHistoryEnabled(
+      bool new_enabled_value,
+      const AudioWebHistoryCallback& callback) override {
+    callback.Run(expected_success_, new_enabled_value && expected_success_);
+  }
+
+  void SetExpectedValue(bool expected_value) {
+    expected_value_ = expected_value;
+  }
+
+  void SetFailureState() {
+    expected_success_ = false;
+  }
+
+ private:
+  bool expected_success_;
+  bool expected_value_;
+};
+
+// Make a mock audio history handler so that the method for getting the web
+// history can be overridden.
+class MockAudioHistoryHandler : public HotwordAudioHistoryHandler {
+ public:
+  MockAudioHistoryHandler(content::BrowserContext* context,
+                          history::WebHistoryService* web_history)
+      : HotwordAudioHistoryHandler(context),
+        web_history_(web_history) {}
+  ~MockAudioHistoryHandler() override {}
+
+  history::WebHistoryService* GetWebHistory() override {
+    return web_history_.get();
+  }
+
+ private:
+  scoped_ptr<history::WebHistoryService> web_history_;
+};
 
 class MockHotwordService : public HotwordService {
  public:
@@ -190,6 +247,10 @@ IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, IsAvailableFalse) {
 }
 
 IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, AlwaysOnEnabled) {
+  // Bypass the hotword hardware check.
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableExperimentalHotwordHardware);
+
   {
     ExtensionTestMessageListener listener("alwaysOnEnabled: false",
                                           false);
@@ -244,6 +305,10 @@ IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, OnEnabledChanged) {
   profile()->GetPrefs()->SetBoolean(prefs::kHotwordAlwaysOnSearchEnabled,
                                     true);
   EXPECT_TRUE(listenerNotification.WaitUntilSatisfied());
+
+  listenerNotification.Reset();
+  service()->StartTraining();
+  EXPECT_TRUE(listenerNotification.WaitUntilSatisfied());
 }
 
 IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, HotwordSession) {
@@ -269,7 +334,7 @@ IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, HotwordSession) {
 IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, GetLaunchStateHotwordOnly) {
   service()->SetHotwordAudioVerificationLaunchMode(
       HotwordService::HOTWORD_ONLY);
-  ExtensionTestMessageListener listener("launchMode: 1", false);
+  ExtensionTestMessageListener listener("launchMode: 0", false);
   ASSERT_TRUE(RunComponentExtensionTest("getLaunchState")) << message_;
   EXPECT_TRUE(listener.WaitUntilSatisfied());
 }
@@ -278,7 +343,135 @@ IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest,
     GetLaunchStateHotwordAudioHistory) {
   service()->SetHotwordAudioVerificationLaunchMode(
       HotwordService::HOTWORD_AND_AUDIO_HISTORY);
-  ExtensionTestMessageListener listener("launchMode: 2", false);
+  ExtensionTestMessageListener listener("launchMode: 1", false);
   ASSERT_TRUE(RunComponentExtensionTest("getLaunchState")) << message_;
   EXPECT_TRUE(listener.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, OnFinalizeSpeakerModel) {
+  // Trigger the pref registrar.
+  extensions::HotwordPrivateEventService::GetFactoryInstance();
+  ExtensionTestMessageListener listener("ready", false);
+  ASSERT_TRUE(
+      LoadExtensionAsComponent(test_data_dir_.AppendASCII(
+          "onFinalizeSpeakerModel")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+
+  ExtensionTestMessageListener listenerNotification("notification", false);
+  service()->FinalizeSpeakerModel();
+  EXPECT_TRUE(listenerNotification.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, OnHotwordTriggered) {
+  // Trigger the pref registrar.
+  extensions::HotwordPrivateEventService::GetFactoryInstance();
+  ExtensionTestMessageListener listener("ready", false);
+  ASSERT_TRUE(
+      LoadExtensionAsComponent(test_data_dir_.AppendASCII(
+          "onHotwordTriggered")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+
+  ExtensionTestMessageListener listenerNotification("notification", false);
+  service()->NotifyHotwordTriggered();
+  EXPECT_TRUE(listenerNotification.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, Training) {
+  EXPECT_FALSE(service()->IsTraining());
+
+  ExtensionTestMessageListener listenerTrue("start training", false);
+  ASSERT_TRUE(RunComponentExtensionTest("startTraining")) << message_;
+  EXPECT_TRUE(listenerTrue.WaitUntilSatisfied());
+  EXPECT_TRUE(service()->IsTraining());
+
+  ExtensionTestMessageListener listenerFalse("stop training", false);
+  ASSERT_TRUE(RunComponentExtensionTest("stopTraining")) << message_;
+  EXPECT_TRUE(listenerFalse.WaitUntilSatisfied());
+  EXPECT_FALSE(service()->IsTraining());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, OnSpeakerModelSaved) {
+  extensions::HotwordPrivateEventService::GetFactoryInstance();
+  ExtensionTestMessageListener listener("ready", false);
+  ASSERT_TRUE(
+      LoadExtensionAsComponent(test_data_dir_.AppendASCII(
+          "onSpeakerModelSaved")));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+
+  ExtensionTestMessageListener listenerNotification("notification", false);
+  EXPECT_TRUE(listenerNotification.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, NotifySpeakerModelSaved) {
+  ExtensionTestMessageListener listener("speaker model saved", false);
+  ASSERT_TRUE(
+      RunComponentExtensionTest("notifySpeakerModelSaved")) << message_;
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, AudioHistory) {
+  MockWebHistoryService* web_history = new MockWebHistoryService(profile());
+  MockAudioHistoryHandler* handler =
+      new MockAudioHistoryHandler(profile(), web_history);
+  service()->SetAudioHistoryHandler(handler);
+  web_history->SetExpectedValue(true);
+
+  ExtensionTestMessageListener setListenerT("set AH: true success", false);
+  ExtensionTestMessageListener setListenerF("set AH: false success", false);
+  ExtensionTestMessageListener getListener("get AH: true success", false);
+
+  ASSERT_TRUE(RunComponentExtensionTest("audioHistory")) << message_;
+
+  EXPECT_TRUE(setListenerT.WaitUntilSatisfied());
+  EXPECT_TRUE(setListenerF.WaitUntilSatisfied());
+  EXPECT_TRUE(getListener.WaitUntilSatisfied());
+
+  web_history->SetExpectedValue(false);
+
+  ExtensionTestMessageListener setListenerT2("set AH: true success", false);
+  ExtensionTestMessageListener setListenerF2("set AH: false success", false);
+  ExtensionTestMessageListener getListener2("get AH: false success", false);
+
+  ASSERT_TRUE(RunComponentExtensionTest("audioHistory")) << message_;
+
+  EXPECT_TRUE(setListenerT2.WaitUntilSatisfied());
+  EXPECT_TRUE(setListenerF2.WaitUntilSatisfied());
+  EXPECT_TRUE(getListener2.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, AudioHistoryNoWebHistory) {
+  MockAudioHistoryHandler* handler =
+      new MockAudioHistoryHandler(profile(), nullptr);
+  service()->SetAudioHistoryHandler(handler);
+
+  ExtensionTestMessageListener setListenerT("set AH: false failure", false);
+  ExtensionTestMessageListener setListenerF("set AH: false failure", false);
+  ExtensionTestMessageListener getListener("get AH: false failure", false);
+
+  ASSERT_TRUE(RunComponentExtensionTest("audioHistory")) << message_;
+
+  EXPECT_TRUE(setListenerT.WaitUntilSatisfied());
+  EXPECT_TRUE(setListenerF.WaitUntilSatisfied());
+  EXPECT_TRUE(getListener.WaitUntilSatisfied());
+}
+
+IN_PROC_BROWSER_TEST_F(HotwordPrivateApiTest, AudioHistoryWebHistoryFailure) {
+  MockWebHistoryService* web_history = new MockWebHistoryService(profile());
+  MockAudioHistoryHandler* handler =
+      new MockAudioHistoryHandler(profile(), web_history);
+  service()->SetAudioHistoryHandler(handler);
+  web_history->SetFailureState();
+  // It shouldn't matter if this is set to true. GetAduioHistoryEnabled should
+  // still return false.
+  web_history->SetExpectedValue(true);
+
+  ExtensionTestMessageListener setListenerT("set AH: false failure", false);
+  ExtensionTestMessageListener setListenerF("set AH: false failure", false);
+  ExtensionTestMessageListener getListener("get AH: false failure", false);
+
+  ASSERT_TRUE(RunComponentExtensionTest("audioHistory")) << message_;
+
+  EXPECT_TRUE(setListenerT.WaitUntilSatisfied());
+  EXPECT_TRUE(setListenerF.WaitUntilSatisfied());
+  EXPECT_TRUE(getListener.WaitUntilSatisfied());
 }

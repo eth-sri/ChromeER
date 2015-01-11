@@ -95,10 +95,11 @@ void AvatarMenuButton::SetAvatarIcon(const gfx::Image& icon,
 }
 
 // static
-void AvatarMenuButton::GetAvatarImages(Profile* profile,
+bool AvatarMenuButton::GetAvatarImages(Profile* profile,
+                                       bool should_show_avatar_menu,
                                        gfx::Image* avatar,
                                        gfx::Image* taskbar_badge_avatar,
-                                       bool *is_rectangle) {
+                                       bool* is_rectangle) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   if (profile->GetProfileType() == Profile::GUEST_PROFILE) {
     *avatar = rb.
@@ -110,23 +111,34 @@ void AvatarMenuButton::GetAvatarImages(Profile* profile,
 #if !defined(OS_CHROMEOS)
     bool is_badge_rectangle = false;
     // The taskbar badge should be the profile avatar, not the OTR avatar.
-    AvatarMenu::GetImageForMenuButton(profile,
-                                      taskbar_badge_avatar,
-                                      &is_badge_rectangle);
+    profiles::GetTransparentBackgroundProfileAvatar(
+        profile->GetPath(), taskbar_badge_avatar, &is_badge_rectangle);
 #endif
-  } else if (AvatarMenu::ShouldShowAvatarMenu()) {
+  } else if (should_show_avatar_menu) {
     ProfileInfoCache& cache =
         g_browser_process->profile_manager()->GetProfileInfoCache();
     size_t index = cache.GetIndexOfProfileWithPath(profile->GetPath());
     if (index == std::string::npos)
-      return;
+      return false;
 
     if (switches::IsNewAvatarMenu()) {
       *avatar = cache.GetAvatarIconOfProfileAtIndex(index);
+      // TODO(noms): Once the code for the old avatar menu button is removed,
+      // this function will only be called for badging the taskbar icon.  The
+      // function can be renamed to something like GetAvatarImageForBadging()
+      // and only needs to return the avatar from
+      // profiles::GetTransparentBackgroundProfileAvatar.
+#if !defined(OS_CHROMEOS)
+      bool is_badge_rectangle = false;
+      profiles::GetTransparentBackgroundProfileAvatar(
+          profile->GetPath(), taskbar_badge_avatar, &is_badge_rectangle);
+#endif
     } else {
-      AvatarMenu::GetImageForMenuButton(profile, avatar, is_rectangle);
+      profiles::GetTransparentBackgroundProfileAvatar(
+          profile->GetPath(), avatar, is_rectangle);
     }
   }
+  return true;
 }
 
 // views::ViewTargeterDelegate:

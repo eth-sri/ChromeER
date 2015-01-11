@@ -12,6 +12,7 @@
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "net/base/network_change_notifier.h"
+#include "ui/base/touch/touch_device.h"
 #include "url/gurl.h"
 
 namespace blink {
@@ -32,11 +33,25 @@ enum EditingBehavior {
   EDITING_BEHAVIOR_LAST = EDITING_BEHAVIOR_ANDROID
 };
 
+// Cache options for V8. See V8CacheOptions.h for information on the options.
 enum V8CacheOptions {
-  V8_CACHE_OPTIONS_OFF,
+  V8_CACHE_OPTIONS_DEFAULT,
   V8_CACHE_OPTIONS_PARSE,
   V8_CACHE_OPTIONS_CODE,
-  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_CODE
+  V8_CACHE_OPTIONS_CODE_COMPRESSED,
+  V8_CACHE_OPTIONS_NONE,
+  V8_CACHE_OPTIONS_PARSE_MEMORY,
+  V8_CACHE_OPTIONS_HEURISTICS,
+  V8_CACHE_OPTIONS_HEURISTICS_MOBILE,
+  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_HEURISTICS_MOBILE
+};
+
+enum V8ScriptStreamingMode {
+  V8_SCRIPT_STREAMING_MODE_ALL,
+  V8_SCRIPT_STREAMING_MODE_ONLY_ASYNC_AND_DEFER,
+  V8_SCRIPT_STREAMING_MODE_ALL_PLUS_BLOCK_PARSER_BLOCKING,
+  V8_SCRIPT_STREAMING_MODE_LAST =
+      V8_SCRIPT_STREAMING_MODE_ALL_PLUS_BLOCK_PARSER_BLOCKING
 };
 
 // The ISO 15924 script code for undetermined script aka Common. It's the
@@ -123,12 +138,19 @@ struct CONTENT_EXPORT WebPreferences {
   bool css_variables_enabled;
   bool region_based_columns_enabled;
   bool touch_enabled;
+  // TODO(mustaq): Nuke when the new API is ready
   bool device_supports_touch;
+  // TODO(mustaq): Nuke when the new API is ready
   bool device_supports_mouse;
   bool touch_adjustment_enabled;
   int pointer_events_max_touch_points;
+  int available_pointer_types;
+  ui::PointerType primary_pointer_type;
+  int available_hover_types;
+  ui::HoverType primary_hover_type;
   bool sync_xhr_in_documents_enabled;
   bool deferred_image_decoding_enabled;
+  bool image_color_profiles_enabled;
   bool should_respect_image_orientation;
   int number_of_cpu_cores;
   EditingBehavior editing_behavior;
@@ -141,10 +163,12 @@ struct CONTENT_EXPORT WebPreferences {
   bool spatial_navigation_enabled;
   bool pinch_virtual_viewport_enabled;
   int pinch_overlay_scrollbar_thickness;
+  bool rubber_banding_on_compositor_thread;
   bool use_solid_color_scrollbars;
   bool navigate_on_drag_drop;
   V8CacheOptions v8_cache_options;
   bool v8_script_streaming_enabled;
+  V8ScriptStreamingMode v8_script_streaming_mode;
   bool slimming_paint_enabled;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It

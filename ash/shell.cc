@@ -121,6 +121,7 @@
 #include "ui/gfx/x/x11_types.h"
 #endif  // defined(USE_X11)
 #include "ash/ash_constants.h"
+#include "ash/content/display/screen_orientation_delegate_chromeos.h"
 #include "ash/display/display_change_observer_chromeos.h"
 #include "ash/display/display_configurator_animation.h"
 #include "ash/display/display_error_observer_chromeos.h"
@@ -749,7 +750,7 @@ Shell::~Shell() {
 
   // Destroy all child windows including widgets.
   display_controller_->CloseChildWindows();
-  display_controller_->CloseNonDesktopDisplay();
+  display_controller_->CloseMirroringDisplay();
 
   // Chrome implementation of shelf delegate depends on FocusClient,
   // so must be deleted before |focus_client_|.
@@ -926,7 +927,8 @@ void Shell::Init(const ShellInitParams& init_params) {
   AddPreTargetHandler(input_method_filter_.get());
 
   accelerator_filter_.reset(new ::wm::AcceleratorFilter(
-      scoped_ptr< ::wm::AcceleratorDelegate>(new AcceleratorDelegate).Pass()));
+      scoped_ptr< ::wm::AcceleratorDelegate>(new AcceleratorDelegate).Pass(),
+      accelerator_controller_->accelerator_history()));
   AddPreTargetHandler(accelerator_filter_.get());
 
   event_transformation_handler_.reset(new EventTransformationHandler);
@@ -1060,17 +1062,12 @@ void Shell::Init(const ShellInitParams& init_params) {
       new VideoActivityNotifier(video_detector_.get()));
   bluetooth_notification_controller_.reset(new BluetoothNotificationController);
   last_window_closed_logout_reminder_.reset(new LastWindowClosedLogoutReminder);
+  screen_orientation_delegate_.reset(new ScreenOrientationDelegate());
 #endif
-
-  weak_display_manager_factory_.reset(
-      new base::WeakPtrFactory<DisplayManager>(display_manager_.get()));
   // The compositor thread and main message loop have to be running in
   // order to create mirror window. Run it after the main message loop
   // is started.
-  base::MessageLoopForUI::current()->PostTask(
-      FROM_HERE,
-      base::Bind(&DisplayManager::CreateMirrorWindowIfAny,
-                 weak_display_manager_factory_->GetWeakPtr()));
+  display_manager_->CreateMirrorWindowAsyncIfAny();
 }
 
 void Shell::InitKeyboard() {

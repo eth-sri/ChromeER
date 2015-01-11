@@ -88,6 +88,26 @@ IPC_STRUCT_BEGIN(AccessibilityHostMsg_LocationChangeParams)
   IPC_STRUCT_MEMBER(gfx::Rect, new_location)
 IPC_STRUCT_END()
 
+IPC_STRUCT_BEGIN(AccessibilityHostMsg_FindInPageResultParams)
+  // The find in page request id.
+  IPC_STRUCT_MEMBER(int, request_id)
+
+  // The index of the result match.
+  IPC_STRUCT_MEMBER(int, match_index)
+
+  // The id of the accessibility object for the start of the match range.
+  IPC_STRUCT_MEMBER(int, start_id)
+
+  // The character offset into the text of the start object.
+  IPC_STRUCT_MEMBER(int, start_offset)
+
+  // The id of the accessibility object for the end of the match range.
+  IPC_STRUCT_MEMBER(int, end_id)
+
+  // The character offset into the text of the end object.
+  IPC_STRUCT_MEMBER(int, end_offset)
+IPC_STRUCT_END()
+
 // Messages sent from the browser to the renderer.
 
 // Relay a request from assistive technology to set focus to a given node.
@@ -122,10 +142,23 @@ IPC_MESSAGE_ROUTED3(AccessibilityMsg_SetTextSelection,
                     int /* New start offset */,
                     int /* New end offset */)
 
+// Relay a request from assistive technology to set the value of an
+// editable text element.
+IPC_MESSAGE_ROUTED2(AccessibilityMsg_SetValue,
+                    int /* object id */,
+                    base::string16 /* Value */)
+
 // Determine the accessibility object under a given point and reply with
 // a AccessibilityHostMsg_HitTestResult with the same id.
 IPC_MESSAGE_ROUTED1(AccessibilityMsg_HitTest,
                     gfx::Point /* location to test */)
+
+// Relay a request from assistive technology to set accessibility focus
+// to a given node. On platforms where this is used (currently Android),
+// inline text boxes are only computed for the node with accessibility focus,
+// rather than for the whole tree.
+IPC_MESSAGE_ROUTED1(AccessibilityMsg_SetAccessibilityFocus,
+                    int /* object id */)
 
 // Tells the render view that a AccessibilityHostMsg_Events
 // message was processed and it can send addition events.
@@ -162,3 +195,8 @@ IPC_MESSAGE_ROUTED2(
 IPC_MESSAGE_ROUTED1(
     AccessibilityHostMsg_LocationChanges,
     std::vector<AccessibilityHostMsg_LocationChangeParams>)
+
+// Sent to update the browser of the location of accessibility objects.
+IPC_MESSAGE_ROUTED1(
+    AccessibilityHostMsg_FindInPageResult,
+    AccessibilityHostMsg_FindInPageResultParams)

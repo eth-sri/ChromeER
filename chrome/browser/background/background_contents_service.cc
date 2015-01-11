@@ -458,10 +458,11 @@ void BackgroundContentsService::OnExtensionUnloaded(
     case UnloadedExtensionInfo::REASON_TERMINATE:  // Fall through.
     case UnloadedExtensionInfo::REASON_UNINSTALL:  // Fall through.
     case UnloadedExtensionInfo::REASON_BLACKLIST:  // Fall through.
+    case UnloadedExtensionInfo::REASON_LOCK_ALL:   // Fall through.
     case UnloadedExtensionInfo::REASON_PROFILE_SHUTDOWN:
       ShutdownAssociatedBackgroundContents(base::ASCIIToUTF16(extension->id()));
       SendChangeNotification(Profile::FromBrowserContext(browser_context));
-      break;
+      return;
     case UnloadedExtensionInfo::REASON_UPDATE: {
       // If there is a manifest specified background page, then shut it down
       // here, since if the updated extension still has the background page,
@@ -473,13 +474,15 @@ void BackgroundContentsService::OnExtensionUnloaded(
         ShutdownAssociatedBackgroundContents(
             base::ASCIIToUTF16(extension->id()));
       }
+      return;
+    case UnloadedExtensionInfo::REASON_UNDEFINED:
+      // Fall through to undefined case.
       break;
     }
-    default:
-      NOTREACHED();
-      ShutdownAssociatedBackgroundContents(base::ASCIIToUTF16(extension->id()));
-      break;
   }
+  NOTREACHED() << "Undefined case " << reason;
+  return ShutdownAssociatedBackgroundContents(
+      base::ASCIIToUTF16(extension->id()));
 }
 
 void BackgroundContentsService::OnExtensionUninstalled(
@@ -593,18 +596,13 @@ void BackgroundContentsService::LoadBackgroundContentsFromDictionary(
 
 void BackgroundContentsService::LoadBackgroundContentsFromManifests(
     Profile* profile) {
-  const extensions::ExtensionSet* extensions =
-      extensions::ExtensionSystem::Get(profile)->
-          extension_service()->extensions();
-  for (extensions::ExtensionSet::const_iterator iter = extensions->begin();
-       iter != extensions->end(); ++iter) {
-    const Extension* extension = iter->get();
+  for (const scoped_refptr<const extensions::Extension>& extension :
+       extensions::ExtensionRegistry::Get(profile)->enabled_extensions()) {
     if (extension->is_hosted_app() &&
-        BackgroundInfo::HasBackgroundPage(extension)) {
-      LoadBackgroundContents(profile,
-                             BackgroundInfo::GetBackgroundURL(extension),
-                             base::ASCIIToUTF16("background"),
-                             base::UTF8ToUTF16(extension->id()));
+        BackgroundInfo::HasBackgroundPage(extension.get())) {
+      LoadBackgroundContents(
+          profile, BackgroundInfo::GetBackgroundURL(extension.get()),
+          base::ASCIIToUTF16("background"), base::UTF8ToUTF16(extension->id()));
     }
   }
 }

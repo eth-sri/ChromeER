@@ -21,11 +21,13 @@ using std::min;
 namespace net {
 namespace test {
 
-const int64 kInitialCongestionWindow = 10;
-const uint32 kDefaultWindowTCP = kInitialCongestionWindow * kDefaultTCPMSS;
-
-// TODO(ianswett): Remove 10000 once b/10075719 is fixed.
-const QuicPacketCount kDefaultMaxCongestionWindowTCP = 10000;
+// TODO(ianswett): A number of theses tests were written with the assumption of
+// an initial CWND of 10. They have carefully calculated values which should be
+// updated to be based on kInitialCongestionWindowInsecure.
+const uint32 kInitialCongestionWindowPackets = 10;
+const uint32 kDefaultWindowTCP =
+    kInitialCongestionWindowPackets * kDefaultTCPMSS;
+const float kRenoBeta = 0.7f;  // Reno backoff factor.
 
 class TcpCubicSenderPeer : public TcpCubicSender {
  public:
@@ -33,7 +35,8 @@ class TcpCubicSenderPeer : public TcpCubicSender {
                      bool reno,
                      QuicPacketCount max_tcp_congestion_window)
       : TcpCubicSender(
-            clock, &rtt_stats_, reno, max_tcp_congestion_window, &stats_) {
+            clock, &rtt_stats_, reno, kInitialCongestionWindowPackets,
+            max_tcp_congestion_window, &stats_) {
   }
 
   QuicPacketCount congestion_window() {
@@ -48,6 +51,10 @@ class TcpCubicSenderPeer : public TcpCubicSender {
     return hybrid_slow_start_;
   }
 
+  float GetRenoBeta() const {
+    return RenoBeta();
+  }
+
   RttStats rtt_stats_;
   QuicConnectionStats stats_;
 };
@@ -57,7 +64,7 @@ class TcpCubicSenderTest : public ::testing::Test {
   TcpCubicSenderTest()
       : one_ms_(QuicTime::Delta::FromMilliseconds(1)),
         sender_(new TcpCubicSenderPeer(&clock_, true,
-                                       kDefaultMaxCongestionWindowTCP)),
+                                       kMaxTcpCongestionWindow)),
         receiver_(new TcpReceiver()),
         sequence_number_(1),
         acked_sequence_number_(0),
@@ -183,6 +190,8 @@ TEST_F(TcpCubicSenderTest, ExponentialSlowStart) {
   EXPECT_TRUE(sender_->TimeUntilSend(clock_.Now(),
       0,
       HAS_RETRANSMITTABLE_DATA).IsZero());
+  EXPECT_FALSE(sender_->HasReliableBandwidthEstimate());
+  EXPECT_EQ(QuicBandwidth::Zero(), sender_->BandwidthEstimate());
   // Make sure we can send.
   EXPECT_TRUE(sender_->TimeUntilSend(clock_.Now(),
                                      0,
@@ -193,14 +202,17 @@ TEST_F(TcpCubicSenderTest, ExponentialSlowStart) {
     SendAvailableSendWindow();
     AckNPackets(2);
   }
-  QuicByteCount bytes_to_send = sender_->GetCongestionWindow();
-  EXPECT_EQ(kDefaultWindowTCP + kDefaultTCPMSS * 2 * kNumberOfAcks,
-            bytes_to_send);
+  const QuicByteCount cwnd = sender_->GetCongestionWindow();
+  EXPECT_EQ(kDefaultWindowTCP + kDefaultTCPMSS * 2 * kNumberOfAcks, cwnd);
+  EXPECT_FALSE(sender_->HasReliableBandwidthEstimate());
+  EXPECT_EQ(QuicBandwidth::FromBytesAndTimeDelta(
+                cwnd, sender_->rtt_stats_.smoothed_rtt()),
+            sender_->BandwidthEstimate());
 }
 
 TEST_F(TcpCubicSenderTest, SlowStartAckTrain) {
   sender_->SetNumEmulatedConnections(1);
-  EXPECT_EQ(kDefaultMaxCongestionWindowTCP * kDefaultTCPMSS,
+  EXPECT_EQ(kMaxTcpCongestionWindow * kDefaultTCPMSS,
             sender_->GetSlowStartThreshold());
 
   // Make sure that we fall out of slow start when we send ACK train longer
@@ -264,32 +276,26 @@ TEST_F(TcpCubicSenderTest, SlowStartPacketLoss) {
 
   // Lose a packet to exit slow start.
   LoseNPackets(1);
+  size_t packets_in_recovery_window = expected_send_window / kDefaultTCPMSS;
 
-  // We should now have fallen out of slow start.
-  // We expect window to be cut in half by Reno.
-  expected_send_window /= 2;
+  // We should now have fallen out of slow start with a reduced window.
+  expected_send_window *= kRenoBeta;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
-  // Testing Reno phase.
-  // We need to ack half of the pending packet before we can send again.
+  // Recovery phase. We need to ack every packet in the recovery window before
+  // we exit recovery.
   size_t number_of_packets_in_window = expected_send_window / kDefaultTCPMSS;
-  AckNPackets(number_of_packets_in_window);
+  DVLOG(1) << "number_packets: " << number_of_packets_in_window;
+  AckNPackets(packets_in_recovery_window);
+  SendAvailableSendWindow();
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
-  // We need to ack every packet in the window before we exit recovery.
-  for (size_t i = 0; i < number_of_packets_in_window; ++i) {
-    AckNPackets(1);
-    SendAvailableSendWindow();
-    EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
-  }
+  // We need to ack an entire window before we increase CWND by 1.
+  AckNPackets(number_of_packets_in_window - 2);
+  SendAvailableSendWindow();
+  EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
-  // We need to ack another window before we increase CWND by 1.
-  for (size_t i = 0; i < number_of_packets_in_window - 2; ++i) {
-    AckNPackets(1);
-    SendAvailableSendWindow();
-    EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
-  }
-
+  // Next ack should increase cwnd by 1.
   AckNPackets(1);
   expected_send_window += kDefaultTCPMSS;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
@@ -302,7 +308,7 @@ TEST_F(TcpCubicSenderTest, SlowStartPacketLoss) {
 
 TEST_F(TcpCubicSenderTest, NoPRRWhenLessThanOnePacketInFlight) {
   SendAvailableSendWindow();
-  LoseNPackets(kInitialCongestionWindow - 1);
+  LoseNPackets(kInitialCongestionWindowPackets - 1);
   AckNPackets(1);
   // PRR will allow 2 packets for every ack during recovery.
   EXPECT_EQ(2, SendAvailableSendWindow());
@@ -330,27 +336,27 @@ TEST_F(TcpCubicSenderTest, SlowStartPacketLossPRR) {
 
   LoseNPackets(1);
 
-  // We should now have fallen out of slow start.
-  // We expect window to be cut in half by Reno.
-  expected_send_window /= 2;
+  // We should now have fallen out of slow start with a reduced window.
+  size_t send_window_before_loss = expected_send_window;
+  expected_send_window *= kRenoBeta;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
   // Testing TCP proportional rate reduction.
-  // We should send one packet for every two received acks over the remaining
-  // 18 outstanding packets.
-  size_t number_of_packets_in_window = expected_send_window / kDefaultTCPMSS;
-  // The number of packets before we exit recovery is the original CWND minus
-  // the packet that has been lost and the one which triggered the loss.
-  size_t remaining_packets_in_recovery = number_of_packets_in_window * 2 - 1;
-  for (size_t i = 0; i < remaining_packets_in_recovery - 1; i += 2) {
-    AckNPackets(2);
-    EXPECT_TRUE(sender_->TimeUntilSend(
-        clock_.Now(), bytes_in_flight_, HAS_RETRANSMITTABLE_DATA).IsZero());
-    EXPECT_EQ(1, SendAvailableSendWindow());
+  // We should send packets paced over the received acks for the remaining
+  // outstanding packets. The number of packets before we exit recovery is the
+  // original CWND minus the packet that has been lost and the one which
+  // triggered the loss.
+  size_t remaining_packets_in_recovery =
+      send_window_before_loss / kDefaultTCPMSS - 2;
+
+  for (size_t i = 0; i < remaining_packets_in_recovery; ++i) {
+    AckNPackets(1);
+    SendAvailableSendWindow();
     EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
   }
 
   // We need to ack another window before we increase CWND by 1.
+  size_t number_of_packets_in_window = expected_send_window / kDefaultTCPMSS;
   for (size_t i = 0; i < number_of_packets_in_window; ++i) {
     AckNPackets(1);
     EXPECT_EQ(1, SendAvailableSendWindow());
@@ -367,8 +373,8 @@ TEST_F(TcpCubicSenderTest, SlowStartBurstPacketLossPRR) {
   // Test based on the second example in RFC6937, though we also implement
   // forward acknowledgements, so the first two incoming acks will trigger
   // PRR immediately.
-  // Ack 10 packets in 5 acks to raise the CWND to 20, as in the example.
-  const int kNumberOfAcks = 5;
+  // Ack 20 packets in 10 acks to raise the CWND to 30.
+  const int kNumberOfAcks = 10;
   for (int i = 0; i < kNumberOfAcks; ++i) {
     // Send our full send window.
     SendAvailableSendWindow();
@@ -379,17 +385,20 @@ TEST_F(TcpCubicSenderTest, SlowStartBurstPacketLossPRR) {
       (kDefaultTCPMSS * 2 * kNumberOfAcks);
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
-  // Ack a packet with a 15 packet gap, losing 13 of them due to FACK.
-  LoseNPackets(13);
+  // Lose one more than the congestion window reduction, so that after loss,
+  // bytes_in_flight is lesser than the congestion window.
+  size_t send_window_after_loss = kRenoBeta * expected_send_window;
+  size_t num_packets_to_lose =
+      (expected_send_window - send_window_after_loss) / kDefaultTCPMSS + 1;
+  LoseNPackets(num_packets_to_lose);
   // Immediately after the loss, ensure at least one packet can be sent.
   // Losses without subsequent acks can occur with timer based loss detection.
   EXPECT_TRUE(sender_->TimeUntilSend(
       clock_.Now(), bytes_in_flight_, HAS_RETRANSMITTABLE_DATA).IsZero());
   AckNPackets(1);
 
-  // We should now have fallen out of slow start.
-  // We expect window to be cut in half by Reno.
-  expected_send_window /= 2;
+  // We should now have fallen out of slow start with a reduced window.
+  expected_send_window *= kRenoBeta;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
   // Only 2 packets should be allowed to be sent, per PRR-SSRB
@@ -409,15 +418,6 @@ TEST_F(TcpCubicSenderTest, SlowStartBurstPacketLossPRR) {
   // Send 2 packets to simulate PRR-SSRB.
   EXPECT_EQ(2, SendAvailableSendWindow());
 
-  AckNPackets(1);
-  EXPECT_EQ(2, SendAvailableSendWindow());
-
-  AckNPackets(1);
-  EXPECT_EQ(2, SendAvailableSendWindow());
-
-  // The window should not have changed.
-  EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
-
   // Exit recovery and return to sending at the new rate.
   for (int i = 0; i < kNumberOfAcks; ++i) {
     AckNPackets(1);
@@ -427,7 +427,7 @@ TEST_F(TcpCubicSenderTest, SlowStartBurstPacketLossPRR) {
 
 TEST_F(TcpCubicSenderTest, RTOCongestionWindowAndRevert) {
   EXPECT_EQ(kDefaultWindowTCP, sender_->GetCongestionWindow());
-  EXPECT_EQ(10000u, sender_->slowstart_threshold());
+  EXPECT_EQ(kMaxTcpCongestionWindow, sender_->slowstart_threshold());
 
   // Expect the window to decrease to the minimum once the RTO fires
   // and slow start threshold to be set to 1/2 of the CWND.
@@ -438,7 +438,7 @@ TEST_F(TcpCubicSenderTest, RTOCongestionWindowAndRevert) {
   // Now repair the RTO and ensure the slowstart threshold reverts.
   sender_->RevertRetransmissionTimeout();
   EXPECT_EQ(kDefaultWindowTCP, sender_->GetCongestionWindow());
-  EXPECT_EQ(10000u, sender_->slowstart_threshold());
+  EXPECT_EQ(kMaxTcpCongestionWindow, sender_->slowstart_threshold());
 }
 
 TEST_F(TcpCubicSenderTest, RTOCongestionWindowNoRetransmission) {
@@ -476,13 +476,13 @@ TEST_F(TcpCubicSenderTest, RetransmissionDelay) {
   }
   expected_delay = QuicTime::Delta::FromMilliseconds(kRttMs + kDeviationMs * 4);
 
-  EXPECT_NEAR(kRttMs, sender_->rtt_stats_.SmoothedRtt().ToMilliseconds(), 1);
+  EXPECT_NEAR(kRttMs, sender_->rtt_stats_.smoothed_rtt().ToMilliseconds(), 1);
   EXPECT_NEAR(expected_delay.ToMilliseconds(),
               sender_->RetransmissionDelay().ToMilliseconds(),
               1);
   EXPECT_EQ(static_cast<int64>(
                 sender_->GetCongestionWindow() * kNumMicrosPerSecond /
-                sender_->rtt_stats_.SmoothedRtt().ToMicroseconds()),
+                sender_->rtt_stats_.smoothed_rtt().ToMicroseconds()),
             sender_->BandwidthEstimate().ToBytesPerSecond());
 }
 
@@ -577,20 +577,26 @@ TEST_F(TcpCubicSenderTest, DontTrackAckPackets) {
 }
 
 TEST_F(TcpCubicSenderTest, ConfigureMaxInitialWindow) {
-  QuicPacketCount congestion_window = sender_->congestion_window();
   QuicConfig config;
-  QuicConfigPeer::SetReceivedInitialWindow(&config, 2 * congestion_window);
 
-  sender_->SetFromConfig(config, true);
-  EXPECT_EQ(2 * congestion_window, sender_->congestion_window());
-
-  // Verify that kCOPT: kIW10 forces the congestion window to the
-  // default of 10 regardless of ReceivedInitialWindow.
+  // Verify that kCOPT: kIW10 forces the congestion window to the default of 10.
   QuicTagVector options;
   options.push_back(kIW10);
   QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
-  sender_->SetFromConfig(config, true);
-  EXPECT_EQ(congestion_window, sender_->congestion_window());
+  sender_->SetFromConfig(config,
+                         /* is_server= */ true,
+                         /* using_pacing= */ false);
+  EXPECT_EQ(10u, sender_->congestion_window());
+}
+
+TEST_F(TcpCubicSenderTest, DisableAckTrainDetectionWithPacing) {
+  EXPECT_TRUE(sender_->hybrid_slow_start().ack_train_detection());
+
+  QuicConfig config;
+  sender_->SetFromConfig(config,
+                         /* is_server= */ true,
+                         /* using_pacing= */ true);
+  EXPECT_FALSE(sender_->hybrid_slow_start().ack_train_detection());
 }
 
 TEST_F(TcpCubicSenderTest, 2ConnectionCongestionAvoidanceAtEndOfRecovery) {
@@ -609,9 +615,8 @@ TEST_F(TcpCubicSenderTest, 2ConnectionCongestionAvoidanceAtEndOfRecovery) {
 
   LoseNPackets(1);
 
-  // We should now have fallen out of slow start, and window should be cut in
-  // half by Reno. New cwnd should be 10.
-  expected_send_window /= 2;
+  // We should now have fallen out of slow start with a reduced window.
+  expected_send_window = expected_send_window * sender_->GetRenoBeta();
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
   // No congestion window growth should occur in recovery phase, i.e., until the
@@ -626,22 +631,25 @@ TEST_F(TcpCubicSenderTest, 2ConnectionCongestionAvoidanceAtEndOfRecovery) {
   EXPECT_FALSE(sender_->InRecovery());
 
   // Out of recovery now. Congestion window should not grow for half an RTT.
+  size_t packets_in_send_window = expected_send_window / kDefaultTCPMSS;
+  SendAvailableSendWindow();
+  AckNPackets(packets_in_send_window / 2 - 2);
+  EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
+
+  // Next ack should increase congestion window by 1MSS.
   SendAvailableSendWindow();
   AckNPackets(2);
-  EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
-
-  // Next ack will be the 5th and should increase congestion window by 1MSS.
-  AckNPackets(2);
   expected_send_window += kDefaultTCPMSS;
+  packets_in_send_window += 1;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
-  for (int i = 0; i < 2; ++i) {
-    SendAvailableSendWindow();
-    AckNPackets(2);
-    EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
-  }
+  // Congestion window should remain steady again for half an RTT.
+  SendAvailableSendWindow();
+  AckNPackets(packets_in_send_window / 2 - 1);
+  EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
   // Next ack should cause congestion window to grow by 1MSS.
+  SendAvailableSendWindow();
   AckNPackets(2);
   expected_send_window += kDefaultTCPMSS;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
@@ -663,9 +671,8 @@ TEST_F(TcpCubicSenderTest, 1ConnectionCongestionAvoidanceAtEndOfRecovery) {
 
   LoseNPackets(1);
 
-  // We should now have fallen out of slow start, and window should be cut in
-  // half by Reno. New cwnd should be 10.
-  expected_send_window /= 2;
+  // We should now have fallen out of slow start with a reduced window.
+  expected_send_window *= kRenoBeta;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
 
   // No congestion window growth should occur in recovery phase, i.e., until the
@@ -680,7 +687,7 @@ TEST_F(TcpCubicSenderTest, 1ConnectionCongestionAvoidanceAtEndOfRecovery) {
   EXPECT_FALSE(sender_->InRecovery());
 
   // Out of recovery now. Congestion window should not grow during RTT.
-  for (int i = 0; i < 4; ++i) {
+  for (uint64 i = 0; i < expected_send_window / kDefaultTCPMSS - 2; i += 2) {
     // Send our full send window.
     SendAvailableSendWindow();
     AckNPackets(2);
@@ -688,9 +695,49 @@ TEST_F(TcpCubicSenderTest, 1ConnectionCongestionAvoidanceAtEndOfRecovery) {
   }
 
   // Next ack should cause congestion window to grow by 1MSS.
+  SendAvailableSendWindow();
   AckNPackets(2);
   expected_send_window += kDefaultTCPMSS;
   EXPECT_EQ(expected_send_window, sender_->GetCongestionWindow());
+}
+
+TEST_F(TcpCubicSenderTest, BandwidthResumption) {
+  // Test that when provided with CachedNetworkParameters and opted in to the
+  // bandwidth resumption experiment, that the TcpCubicSender sets initial CWND
+  // appropriately.
+
+  // Set some common values.
+  CachedNetworkParameters cached_network_params;
+  const QuicPacketCount kNumberOfPackets = 123;
+  const int kBandwidthEstimateBytesPerSecond =
+      kNumberOfPackets * kMaxPacketSize;
+  cached_network_params.set_bandwidth_estimate_bytes_per_second(
+      kBandwidthEstimateBytesPerSecond);
+  cached_network_params.set_min_rtt_ms(1000);
+
+  // Ensure that an old estimate is not used for bandwidth resumption.
+  cached_network_params.set_timestamp(clock_.WallNow().ToUNIXSeconds() -
+                                      (kNumSecondsPerHour + 1));
+  EXPECT_FALSE(sender_->ResumeConnectionState(cached_network_params));
+  EXPECT_EQ(10u, sender_->congestion_window());
+
+  // If the estimate is new enough, make sure it is used.
+  cached_network_params.set_timestamp(clock_.WallNow().ToUNIXSeconds() -
+                                      (kNumSecondsPerHour - 1));
+  EXPECT_TRUE(sender_->ResumeConnectionState(cached_network_params));
+  EXPECT_EQ(kNumberOfPackets, sender_->congestion_window());
+
+  // Resumed CWND is limited to be in a sensible range.
+  cached_network_params.set_bandwidth_estimate_bytes_per_second(
+      (kMaxTcpCongestionWindow + 1) * kMaxPacketSize);
+  EXPECT_TRUE(sender_->ResumeConnectionState(cached_network_params));
+  EXPECT_EQ(kMaxTcpCongestionWindow, sender_->congestion_window());
+
+  cached_network_params.set_bandwidth_estimate_bytes_per_second(
+      (kMinCongestionWindowForBandwidthResumption - 1) * kMaxPacketSize);
+  EXPECT_TRUE(sender_->ResumeConnectionState(cached_network_params));
+  EXPECT_EQ(kMinCongestionWindowForBandwidthResumption,
+            sender_->congestion_window());
 }
 
 }  // namespace test

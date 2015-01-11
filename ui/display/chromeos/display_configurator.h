@@ -145,6 +145,14 @@ class DISPLAY_EXPORT DisplayConfigurator : public NativeDisplayObserver {
     return cached_displays_;
   }
 
+  // Called when an external process no longer needs to control the display
+  // and Chrome can take control.
+  void TakeControl();
+
+  // Called when an external process needs to control the display and thus
+  // Chrome should relinquish it.
+  void RelinquishControl();
+
   void set_state_controller(StateController* controller) {
     state_controller_ = controller;
   }
@@ -349,6 +357,9 @@ class DISPLAY_EXPORT DisplayConfigurator : public NativeDisplayObserver {
 
   // Display protection requests of each client.
   ProtectionRequests client_protection_requests_;
+
+  // Display controlled by an external entity.
+  bool display_externally_controlled_;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayConfigurator);
 };

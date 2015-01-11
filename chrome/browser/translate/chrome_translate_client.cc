@@ -24,6 +24,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "components/infobars/core/infobar.h"
+#include "components/translate/content/browser/browser_cld_data_provider_factory.h"
 #include "components/translate/content/common/cld_data_source.h"
 #include "components/translate/content/common/translate_messages.h"
 #include "components/translate/core/browser/language_state.h"
@@ -60,14 +61,15 @@ ChromeTranslateClient::ChromeTranslateClient(content::WebContents* web_contents)
       translate_manager_(
           new translate::TranslateManager(this, prefs::kAcceptLanguages)),
       cld_data_provider_(
-          translate::CreateBrowserCldDataProviderFor(web_contents)) {
+          translate::BrowserCldDataProviderFactory::Get()->
+            CreateBrowserCldDataProvider(web_contents)) {
   translate_driver_.AddObserver(this);
   translate_driver_.set_translate_manager(translate_manager_.get());
   // Customization: for the standalone data source, we configure the path to
   // CLD data immediately on startup.
-  if (translate::CldDataSource::ShouldUseStandaloneDataFile() &&
+  if (translate::CldDataSource::IsUsingStandaloneDataSource() &&
       !g_cld_file_path_initialized_) {
-    VLOG(1) << "Initializing CLD file path for the first time.";
+    DVLOG(1) << "Initializing CLD file path for the first time.";
     base::FilePath path;
     if (!PathService::Get(chrome::DIR_USER_DATA, &path)) {
       // Chrome isn't properly installed
@@ -75,8 +77,8 @@ ChromeTranslateClient::ChromeTranslateClient(content::WebContents* web_contents)
     } else {
       g_cld_file_path_initialized_ = true;
       path = path.Append(kCldDataFileName);
-      VLOG(1) << "Setting CLD data file path: " << path.value();
-      translate::SetCldDataFilePath(path);
+      DVLOG(1) << "Setting CLD data file path: " << path.value();
+      translate::CldDataSource::Get()->SetCldDataFilePath(path);
     }
   }
 }

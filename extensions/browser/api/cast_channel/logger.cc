@@ -9,6 +9,7 @@
 #include "base/strings/string_util.h"
 #include "base/time/tick_clock.h"
 #include "extensions/browser/api/cast_channel/cast_auth_util.h"
+#include "extensions/browser/api/cast_channel/cast_socket.h"
 #include "extensions/browser/api/cast_channel/logger_util.h"
 #include "net/base/net_errors.h"
 #include "third_party/zlib/zlib.h"
@@ -46,14 +47,14 @@ proto::ChallengeReplyErrorType ChallegeReplyErrorToProto(
       return proto::CHALLENGE_REPLY_ERROR_NO_RESPONSE;
     case AuthResult::ERROR_FINGERPRINT_NOT_FOUND:
       return proto::CHALLENGE_REPLY_ERROR_FINGERPRINT_NOT_FOUND;
-    case AuthResult::ERROR_NSS_CERT_PARSING_FAILED:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_CERT_PARSING_FAILED;
-    case AuthResult::ERROR_NSS_CERT_NOT_SIGNED_BY_TRUSTED_CA:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_CERT_NOT_SIGNED_BY_TRUSTED_CA;
-    case AuthResult::ERROR_NSS_CANNOT_EXTRACT_PUBLIC_KEY:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_CANNOT_EXTRACT_PUBLIC_KEY;
-    case AuthResult::ERROR_NSS_SIGNED_BLOBS_MISMATCH:
-      return proto::CHALLENGE_REPLY_ERROR_NSS_SIGNED_BLOBS_MISMATCH;
+    case AuthResult::ERROR_CERT_PARSING_FAILED:
+      return proto::CHALLENGE_REPLY_ERROR_CERT_PARSING_FAILED;
+    case AuthResult::ERROR_CERT_NOT_SIGNED_BY_TRUSTED_CA:
+      return proto::CHALLENGE_REPLY_ERROR_CERT_NOT_SIGNED_BY_TRUSTED_CA;
+    case AuthResult::ERROR_CANNOT_EXTRACT_PUBLIC_KEY:
+      return proto::CHALLENGE_REPLY_ERROR_CANNOT_EXTRACT_PUBLIC_KEY;
+    case AuthResult::ERROR_SIGNED_BLOBS_MISMATCH:
+      return proto::CHALLENGE_REPLY_ERROR_SIGNED_BLOBS_MISMATCH;
     default:
       NOTREACHED();
       return proto::CHALLENGE_REPLY_ERROR_NONE;
@@ -143,10 +144,9 @@ Logger::~Logger() {
 void Logger::LogNewSocketEvent(const CastSocket& cast_socket) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  int channel_id = cast_socket.id();
   SocketEvent event = CreateEvent(proto::CAST_SOCKET_CREATED);
   AggregatedSocketEvent& aggregated_socket_event =
-      LogSocketEvent(channel_id, event);
+      LogSocketEvent(cast_socket.id(), event);
 
   const net::IPAddressNumber& ip = cast_socket.ip_endpoint().address();
   aggregated_socket_event.set_endpoint_id(ip.back());

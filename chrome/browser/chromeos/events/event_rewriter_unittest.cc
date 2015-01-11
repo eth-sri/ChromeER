@@ -23,10 +23,10 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/ime/fake_ime_keyboard.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/base/ime/chromeos/fake_ime_keyboard.h"
 #include "ui/events/event.h"
 #include "ui/events/event_rewriter.h"
 #include "ui/events/test/events_test_utils.h"
@@ -35,9 +35,9 @@
 #if defined(USE_X11)
 #include <X11/keysym.h>
 
+#include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/test/events_test_utils_x11.h"
-#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/x/x11_types.h"
 #endif
 

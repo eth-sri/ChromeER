@@ -184,7 +184,6 @@ class IOThread : public content::BrowserThreadDelegate {
     std::set<net::HostPortPair> forced_spdy_exclusions;
     Optional<bool> use_alternate_protocols;
     Optional<double> alternate_protocol_probability_threshold;
-    Optional<bool> enable_websocket_over_spdy;
 
     Optional<bool> enable_quic;
     Optional<bool> enable_quic_port_selection;
@@ -393,11 +392,6 @@ class IOThread : public content::BrowserThreadDelegate {
   static net::QuicTagVector GetQuicConnectionOptions(
       const base::CommandLine& command_line,
       const VariationParameters& quic_trial_params);
-
-  // Returns the list of QUIC tags represented by the comma separated
-  // string in |connection_options|.
-  static net::QuicTagVector ParseQuicConnectionOptions(
-      const std::string& connection_options);
 
   // Returns the alternate protocol probability threshold specified by
   // any flags in |command_line| or |quic_trial_params|.

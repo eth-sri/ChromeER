@@ -234,7 +234,6 @@ AppWindow::AppWindow(BrowserContext* context,
       extension_id_(extension->id()),
       window_type_(WINDOW_TYPE_DEFAULT),
       app_delegate_(app_delegate),
-      image_loader_ptr_factory_(this),
       fullscreen_types_(FULLSCREEN_TYPE_NONE),
       show_on_first_paint_(false),
       first_paint_complete_(false),
@@ -242,7 +241,8 @@ AppWindow::AppWindow(BrowserContext* context,
       can_send_events_(false),
       is_hidden_(false),
       cached_always_on_top_(false),
-      requested_alpha_enabled_(false) {
+      requested_alpha_enabled_(false),
+      image_loader_ptr_factory_(this) {
   ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
   CHECK(!client->IsGuestSession(context) || context->IsOffTheRecord())
       << "Only off the record window may be opened in the guest mode.";
@@ -254,19 +254,18 @@ void AppWindow::Init(const GURL& url,
   // Initialize the render interface and web contents
   app_window_contents_.reset(app_window_contents);
   app_window_contents_->Initialize(browser_context(), url);
-  WebContents* web_contents = app_window_contents_->GetWebContents();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableAppsShowOnFirstPaint)) {
-    content::WebContentsObserver::Observe(web_contents);
+    content::WebContentsObserver::Observe(web_contents());
   }
-  app_delegate_->InitWebContents(web_contents);
+  app_delegate_->InitWebContents(web_contents());
 
-  WebContentsModalDialogManager::CreateForWebContents(web_contents);
+  WebContentsModalDialogManager::CreateForWebContents(web_contents());
 
-  web_contents->SetDelegate(this);
-  WebContentsModalDialogManager::FromWebContents(web_contents)
+  web_contents()->SetDelegate(this);
+  WebContentsModalDialogManager::FromWebContents(web_contents())
       ->SetDelegate(this);
-  SetViewType(web_contents, VIEW_TYPE_APP_WINDOW);
+  SetViewType(web_contents(), VIEW_TYPE_APP_WINDOW);
 
   // Initialize the window
   CreateParams new_params = LoadDefaults(params);
@@ -285,11 +284,11 @@ void AppWindow::Init(const GURL& url,
       app_window_client->CreateNativeAppWindow(this, &new_params));
 
   helper_.reset(new AppWebContentsHelper(
-      browser_context_, extension_id_, web_contents, app_delegate_.get()));
+      browser_context_, extension_id_, web_contents(), app_delegate_.get()));
 
   popup_manager_.reset(
       new web_modal::PopupManager(GetWebContentsModalDialogHost()));
-  popup_manager_->RegisterWith(web_contents);
+  popup_manager_->RegisterWith(web_contents());
 
   UpdateExtensionAppIcon();
   AppWindowRegistry::Get(browser_context_)->AddAppWindow(this);
@@ -343,7 +342,7 @@ void AppWindow::Init(const GURL& url,
     gfx::Insets frame_insets = native_app_window_->GetFrameInsets();
     gfx::Rect initial_bounds = new_params.GetInitialWindowBounds(frame_insets);
     initial_bounds.Inset(frame_insets);
-    app_delegate_->ResizeWebContents(web_contents, initial_bounds.size());
+    app_delegate_->ResizeWebContents(web_contents(), initial_bounds.size());
   }
 }
 
@@ -452,9 +451,10 @@ void AppWindow::DidFirstVisuallyNonEmptyPaint() {
 void AppWindow::OnNativeClose() {
   AppWindowRegistry::Get(browser_context_)->RemoveAppWindow(this);
   if (app_window_contents_) {
-    WebContents* web_contents = app_window_contents_->GetWebContents();
-    WebContentsModalDialogManager::FromWebContents(web_contents)
-        ->SetDelegate(NULL);
+    WebContentsModalDialogManager* modal_dialog_manager =
+        WebContentsModalDialogManager::FromWebContents(web_contents());
+    if (modal_dialog_manager)  // May be null in unit tests.
+      modal_dialog_manager->SetDelegate(nullptr);
     app_window_contents_->NativeWindowClosed();
   }
   delete this;
@@ -656,6 +656,7 @@ void AppWindow::SetContentSizeConstraints(const gfx::Size& min_size,
 }
 
 void AppWindow::Show(ShowType show_type) {
+  bool was_hidden = is_hidden_ || !has_been_shown_;
   is_hidden_ = false;
 
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -676,7 +677,7 @@ void AppWindow::Show(ShowType show_type) {
       GetBaseWindow()->ShowInactive();
       break;
   }
-  AppWindowRegistry::Get(browser_context_)->AppWindowShown(this);
+  AppWindowRegistry::Get(browser_context_)->AppWindowShown(this, was_hidden);
 
   has_been_shown_ = true;
   SendOnWindowShownIfShown();
@@ -886,7 +887,9 @@ void AppWindow::CloseContents(WebContents* contents) {
   native_app_window_->Close();
 }
 
-bool AppWindow::ShouldSuppressDialogs() { return true; }
+bool AppWindow::ShouldSuppressDialogs(WebContents* source) {
+  return true;
+}
 
 content::ColorChooser* AppWindow::OpenColorChooser(
     WebContents* web_contents,
@@ -914,7 +917,7 @@ void AppWindow::MoveContents(WebContents* source, const gfx::Rect& pos) {
   native_app_window_->SetBounds(pos);
 }
 
-void AppWindow::NavigationStateChanged(const content::WebContents* source,
+void AppWindow::NavigationStateChanged(content::WebContents* source,
                                        content::InvalidateTypes changed_flags) {
   if (changed_flags & content::INVALIDATE_TYPE_TITLE)
     native_app_window_->UpdateWindowTitle();

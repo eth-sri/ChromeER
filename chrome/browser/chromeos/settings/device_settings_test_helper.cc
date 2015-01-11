@@ -100,7 +100,7 @@ void DeviceSettingsTestHelper::AddObserver(Observer* observer) {}
 
 void DeviceSettingsTestHelper::RemoveObserver(Observer* observer) {}
 
-bool DeviceSettingsTestHelper::HasObserver(Observer* observer) {
+bool DeviceSettingsTestHelper::HasObserver(const Observer* observer) const {
   return false;
 }
 
@@ -112,6 +112,10 @@ void DeviceSettingsTestHelper::RestartJob(int pid,
 void DeviceSettingsTestHelper::StartSession(const std::string& user_email) {}
 
 void DeviceSettingsTestHelper::StopSession() {}
+
+void DeviceSettingsTestHelper::NotifySupervisedUserCreationStarted() {}
+
+void DeviceSettingsTestHelper::NotifySupervisedUserCreationFinished() {}
 
 void DeviceSettingsTestHelper::StartDeviceWipe() {}
 
@@ -248,9 +252,11 @@ void DeviceSettingsTestBase::InitOwner(const std::string& user_id,
 
     ProfileHelper::Get()->SetUserToProfileMappingForTesting(user,
                                                             profile_.get());
+    ProfileHelper::Get()->SetProfileToUserMappingForTesting(
+        const_cast<user_manager::User*>(user));
   }
   OwnerSettingsServiceChromeOS* service =
-      OwnerSettingsServiceChromeOSFactory::GetForProfile(profile_.get());
+      OwnerSettingsServiceChromeOSFactory::GetForBrowserContext(profile_.get());
   CHECK(service);
   if (tpm_is_ready)
     service->OnTPMTokenReady(true /* token is enabled */);

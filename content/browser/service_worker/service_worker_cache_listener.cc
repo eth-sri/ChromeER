@@ -183,7 +183,8 @@ void ServiceWorkerCacheListener::OnCacheMatch(
   cache->Match(scoped_request.Pass(),
                base::Bind(&ServiceWorkerCacheListener::OnCacheMatchCallback,
                           weak_factory_.GetWeakPtr(),
-                          request_id));
+                          request_id,
+                          cache));
 }
 
 void ServiceWorkerCacheListener::OnCacheMatchAll(
@@ -212,7 +213,8 @@ void ServiceWorkerCacheListener::OnCacheKeys(
 
   cache->Keys(base::Bind(&ServiceWorkerCacheListener::OnCacheKeysCallback,
                          weak_factory_.GetWeakPtr(),
-                         request_id));
+                         request_id,
+                         cache));
 }
 
 void ServiceWorkerCacheListener::OnCacheBatch(
@@ -246,11 +248,14 @@ void ServiceWorkerCacheListener::OnCacheBatch(
     cache->Delete(scoped_request.Pass(),
                   base::Bind(&ServiceWorkerCacheListener::OnCacheDeleteCallback,
                              weak_factory_.GetWeakPtr(),
-                             request_id));
+                             request_id,
+                             cache));
     return;
   }
 
   if (operation.operation_type == SERVICE_WORKER_CACHE_OPERATION_TYPE_PUT) {
+    // We don't support streaming for cache.
+    DCHECK(operation.response.stream_url.is_empty());
     scoped_ptr<ServiceWorkerResponse> scoped_response(
         new ServiceWorkerResponse(operation.response.url,
                                   operation.response.status_code,
@@ -258,12 +263,14 @@ void ServiceWorkerCacheListener::OnCacheBatch(
                                   operation.response.response_type,
                                   operation.response.headers,
                                   operation.response.blob_uuid,
-                                  operation.response.blob_size));
+                                  operation.response.blob_size,
+                                  operation.response.stream_url));
     cache->Put(scoped_request.Pass(),
                scoped_response.Pass(),
                base::Bind(&ServiceWorkerCacheListener::OnCachePutCallback,
                           weak_factory_.GetWeakPtr(),
-                          request_id));
+                          request_id,
+                          cache));
 
     return;
   }
@@ -347,6 +354,7 @@ void ServiceWorkerCacheListener::OnCacheStorageKeysCallback(
 
 void ServiceWorkerCacheListener::OnCacheMatchCallback(
     int request_id,
+    const scoped_refptr<ServiceWorkerCache>& cache,
     ServiceWorkerCache::ErrorType error,
     scoped_ptr<ServiceWorkerResponse> response,
     scoped_ptr<storage::BlobDataHandle> blob_data_handle) {
@@ -364,6 +372,7 @@ void ServiceWorkerCacheListener::OnCacheMatchCallback(
 
 void ServiceWorkerCacheListener::OnCacheKeysCallback(
     int request_id,
+    const scoped_refptr<ServiceWorkerCache>& cache,
     ServiceWorkerCache::ErrorType error,
     scoped_ptr<ServiceWorkerCache::Requests> requests) {
   if (error != ServiceWorkerCache::ErrorTypeOK) {
@@ -387,6 +396,7 @@ void ServiceWorkerCacheListener::OnCacheKeysCallback(
 
 void ServiceWorkerCacheListener::OnCacheDeleteCallback(
     int request_id,
+    const scoped_refptr<ServiceWorkerCache>& cache,
     ServiceWorkerCache::ErrorType error) {
   if (error != ServiceWorkerCache::ErrorTypeOK) {
     Send(ServiceWorkerMsg_CacheBatchError(
@@ -400,6 +410,7 @@ void ServiceWorkerCacheListener::OnCacheDeleteCallback(
 
 void ServiceWorkerCacheListener::OnCachePutCallback(
     int request_id,
+    const scoped_refptr<ServiceWorkerCache>& cache,
     ServiceWorkerCache::ErrorType error,
     scoped_ptr<ServiceWorkerResponse> response,
     scoped_ptr<storage::BlobDataHandle> blob_data_handle) {
@@ -409,7 +420,8 @@ void ServiceWorkerCacheListener::OnCachePutCallback(
     return;
   }
 
-  StoreBlobDataHandle(blob_data_handle.Pass());
+  if (blob_data_handle)
+    StoreBlobDataHandle(blob_data_handle.Pass());
 
   std::vector<ServiceWorkerResponse> responses;
   responses.push_back(*response);
@@ -430,6 +442,7 @@ void ServiceWorkerCacheListener::DropCacheReference(CacheID cache_id) {
 
 void ServiceWorkerCacheListener::StoreBlobDataHandle(
     scoped_ptr<storage::BlobDataHandle> blob_data_handle) {
+  DCHECK(blob_data_handle);
   std::pair<UUIDToBlobDataHandleList::iterator, bool> rv =
       blob_handle_store_.insert(std::make_pair(
           blob_data_handle->uuid(), std::list<storage::BlobDataHandle>()));

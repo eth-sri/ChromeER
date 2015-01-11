@@ -17,6 +17,7 @@
 #include "base/environment.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_piece.h"
 #include "base/synchronization/lock.h"
 #include "crypto/ec_private_key.h"
@@ -101,9 +102,9 @@ int GetNetSSLVersion(SSL* ssl) {
       return SSL_CONNECTION_VERSION_SSL3;
     case TLS1_VERSION:
       return SSL_CONNECTION_VERSION_TLS1;
-    case 0x0302:
+    case TLS1_1_VERSION:
       return SSL_CONNECTION_VERSION_TLS1_1;
-    case 0x0303:
+    case TLS1_2_VERSION:
       return SSL_CONNECTION_VERSION_TLS1_2;
     default:
       return SSL_CONNECTION_VERSION_UNKNOWN;
@@ -138,6 +139,19 @@ ScopedX509Stack OSCertHandlesToOpenSSL(
 int LogErrorCallback(const char* str, size_t len, void* context) {
   LOG(ERROR) << base::StringPiece(str, len);
   return 1;
+}
+
+bool IsOCSPStaplingSupported() {
+#if defined(OS_WIN)
+  // CERT_OCSP_RESPONSE_PROP_ID is only implemented on Vista+, but it can be
+  // set on Windows XP without error. There is some overhead from the server
+  // sending the OCSP response if it supports the extension, for the subset of
+  // XP clients who will request it but be unable to use it, but this is an
+  // acceptable trade-off for simplicity of implementation.
+  return true;
+#else
+  return false;
+#endif
 }
 
 }  // namespace
@@ -829,8 +843,8 @@ int SSLClientSocketOpenSSL::Init() {
     SSL_enable_ocsp_stapling(ssl_);
   }
 
-  // TODO(davidben): Enable OCSP stapling on platforms which support it and pass
-  // into the certificate verifier. https://crbug.com/398677
+  if (IsOCSPStaplingSupported())
+    SSL_enable_ocsp_stapling(ssl_);
 
   return OK;
 }
@@ -886,9 +900,19 @@ bool SSLClientSocketOpenSSL::DoTransportIO() {
 }
 
 int SSLClientSocketOpenSSL::DoHandshake() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/424386 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "424386 SSLClientSocketOpenSSL::DoHandshake1"));
+
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
   int net_error = OK;
   int rv = SSL_do_handshake(ssl_);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/424386 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "424386 SSLClientSocketOpenSSL::DoHandshake2"));
 
   if (client_auth_cert_needed_) {
     net_error = ERR_SSL_CLIENT_AUTH_CERT_NEEDED;
@@ -933,10 +957,16 @@ int SSLClientSocketOpenSSL::DoHandshake() {
                            ssl_config_.channel_id_enabled,
                            crypto::ECPrivateKey::IsSupported());
 
-    uint8_t* ocsp_response;
-    size_t ocsp_response_len;
-    SSL_get0_ocsp_response(ssl_, &ocsp_response, &ocsp_response_len);
-    set_stapled_ocsp_response_received(ocsp_response_len != 0);
+    // Only record OCSP histograms if OCSP was requested.
+    if (ssl_config_.signed_cert_timestamps_enabled ||
+        IsOCSPStaplingSupported()) {
+      uint8_t* ocsp_response;
+      size_t ocsp_response_len;
+      SSL_get0_ocsp_response(ssl_, &ocsp_response, &ocsp_response_len);
+
+      set_stapled_ocsp_response_received(ocsp_response_len != 0);
+      UMA_HISTOGRAM_BOOLEAN("Net.OCSPResponseStapled", ocsp_response_len != 0);
+    }
 
     uint8_t* sct_list;
     size_t sct_list_len;
@@ -1095,6 +1125,9 @@ int SSLClientSocketOpenSSL::DoVerifyCertComplete(int result) {
     }
   }
 
+  if (result == OK)
+    RecordConnectionTypeMetrics(GetNetSSLVersion(ssl_));
+
   const CertStatus cert_status = server_cert_verify_result_.cert_status;
   if (transport_security_state_ &&
       (result == OK ||
@@ -1163,6 +1196,31 @@ void SSLClientSocketOpenSSL::UpdateServerCert() {
         NetLog::TYPE_SSL_CERTIFICATES_RECEIVED,
         base::Bind(&NetLogX509CertificateCallback,
                    base::Unretained(server_cert_.get())));
+
+    // TODO(rsleevi): Plumb an OCSP response into the Mac system library and
+    // update IsOCSPStaplingSupported for Mac. https://crbug.com/430714
+    if (IsOCSPStaplingSupported()) {
+#if defined(OS_WIN)
+      uint8_t* ocsp_response_raw;
+      size_t ocsp_response_len;
+      SSL_get0_ocsp_response(ssl_, &ocsp_response_raw, &ocsp_response_len);
+
+      CRYPT_DATA_BLOB ocsp_response_blob;
+      ocsp_response_blob.cbData = ocsp_response_len;
+      ocsp_response_blob.pbData = ocsp_response_raw;
+      BOOL ok = CertSetCertificateContextProperty(
+          server_cert_->os_cert_handle(),
+          CERT_OCSP_RESPONSE_PROP_ID,
+          CERT_SET_PROPERTY_IGNORE_PERSIST_ERROR_FLAG,
+          &ocsp_response_blob);
+      if (!ok) {
+        VLOG(1) << "Failed to set OCSP response property: "
+                << GetLastError();
+      }
+#else
+      NOTREACHED();
+#endif
+    }
   }
 }
 
@@ -1561,8 +1619,15 @@ int SSLClientSocketOpenSSL::TransportReadComplete(int result) {
 }
 
 int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/424386 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "424386 SSLClientSocketOpenSSL::ClientCertRequestCallback"));
+
   DVLOG(3) << "OpenSSL ClientCertRequestCallback called";
   DCHECK(ssl == ssl_);
+
+  net_log_.AddEvent(NetLog::TYPE_SSL_CLIENT_CERT_REQUESTED);
 
   // Clear any currently configured certificates.
   SSL_certs_clear(ssl_);
@@ -1641,15 +1706,26 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl) {
       LOG(WARNING) << "Failed to set client certificate";
       return -1;
     }
+
+    int cert_count = 1 + sk_X509_num(chain.get());
+    net_log_.AddEvent(NetLog::TYPE_SSL_CLIENT_CERT_PROVIDED,
+                      NetLog::IntegerCallback("cert_count", cert_count));
     return 1;
   }
 #endif  // defined(OS_IOS)
 
   // Send no client certificate.
+  net_log_.AddEvent(NetLog::TYPE_SSL_CLIENT_CERT_PROVIDED,
+                    NetLog::IntegerCallback("cert_count", 0));
   return 1;
 }
 
 int SSLClientSocketOpenSSL::CertVerifyCallback(X509_STORE_CTX* store_ctx) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/424386 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "424386 SSLClientSocketOpenSSL::CertVerifyCallback"));
+
   if (!completed_connect_) {
     // If the first handshake hasn't completed then we accept any certificates
     // because we verify after the handshake.
@@ -1684,6 +1760,11 @@ int SSLClientSocketOpenSSL::SelectNextProtoCallback(unsigned char** out,
                                                     unsigned char* outlen,
                                                     const unsigned char* in,
                                                     unsigned int inlen) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/424386 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "424386 SSLClientSocketOpenSSL::SelectNextProtoCallback"));
+
   if (ssl_config_.next_protos.empty()) {
     *out = reinterpret_cast<uint8*>(
         const_cast<char*>(kDefaultSupportedNPNProtocol));

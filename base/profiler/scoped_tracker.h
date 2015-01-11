@@ -10,6 +10,7 @@
 // found using profiler data.
 
 #include "base/base_export.h"
+#include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/location.h"
 #include "base/profiler/scoped_profile.h"
@@ -19,6 +20,21 @@ namespace tracked_objects {
 // ScopedTracker instruments a region within the code if the instrumentation is
 // enabled. It can be used, for example, to find out if a source of jankiness is
 // inside the instrumented code region.
+// Details:
+// 1. This class creates a task (like ones created by PostTask calls or IPC
+// message handlers). This task can be seen in chrome://profiler and is sent as
+// a part of profiler data to the UMA server. See profiler_event.proto.
+// 2. That task's lifetime is same as the lifetime of the ScopedTracker
+// instance.
+// 3. The execution time associated with the task is the wallclock time between
+// its constructor and destructor, minus wallclock times of directly nested
+// tasks.
+// 4. Task creation that this class utilizes is highly optimized.
+// 5. The class doesn't create a task unless this was enabled for the current
+// process. Search for ScopedTracker::Enable for the current list of processes
+// and channels where it's activated.
+// 6. The class is designed for temporarily instrumenting code to find
+// performance problems, after which the instrumentation must be removed.
 class BASE_EXPORT ScopedTracker {
  public:
   ScopedTracker(const Location& location);
@@ -32,10 +48,24 @@ class BASE_EXPORT ScopedTracker {
   // many possible callbacks, but they come from a relatively small number of
   // places. We can instrument these few places and at least know which one
   // passes the janky callback.
-  static base::Closure TrackCallback(const Location& location,
-                                     const base::Closure& callback);
+  template <typename P1>
+  static base::Callback<void(P1)> TrackCallback(
+      const Location& location,
+      const base::Callback<void(P1)>& callback) {
+    return base::Bind(&ScopedTracker::ExecuteAndTrackCallback<P1>, location,
+                      callback);
+  }
 
  private:
+  // Executes |callback|, augmenting it with provided |location|.
+  template <typename P1>
+  static void ExecuteAndTrackCallback(const Location& location,
+                                      const base::Callback<void(P1)>& callback,
+                                      P1 p1) {
+    ScopedTracker tracking_profile(location);
+    callback.Run(p1);
+  }
+
   const ScopedProfile scoped_profile_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedTracker);

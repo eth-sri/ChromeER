@@ -81,7 +81,11 @@ BrowserCdmManager::~BrowserCdmManager() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(g_browser_cdm_manager_map.Get().count(render_process_id_));
 
-  g_browser_cdm_manager_map.Get().erase(render_process_id_);
+  // If an entry of |render_process_id| was overwritten, we shouldn't remove
+  // the entry. For example, see FrameTreeBrowserTest.FrameTreeAfterCrash test,
+  // and http://crbug.com/430251.
+  if (g_browser_cdm_manager_map.Get()[render_process_id_] == this)
+    g_browser_cdm_manager_map.Get().erase(render_process_id_);
 }
 
 // Makes sure BrowserCdmManager is always deleted on the Browser UI thread.
@@ -122,16 +126,14 @@ media::BrowserCdm* BrowserCdmManager::GetCdm(int render_frame_id, int cdm_id) {
 }
 
 void BrowserCdmManager::RenderFrameDeleted(int render_frame_id) {
-  DCHECK(task_runner_->RunsTasksOnCurrentThread());
-
-  std::vector<uint64> ids_to_remove;
-  for (CdmMap::iterator it = cdm_map_.begin(); it != cdm_map_.end(); ++it) {
-    if (IdBelongsToFrame(it->first, render_frame_id))
-      ids_to_remove.push_back(it->first);
+  if (!task_runner_->RunsTasksOnCurrentThread()) {
+    task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&BrowserCdmManager::RemoveAllCdmForFrame,
+                   this, render_frame_id));
+    return;
   }
-
-  for (size_t i = 0; i < ids_to_remove.size(); ++i)
-    RemoveCdm(ids_to_remove[i]);
+  RemoveAllCdmForFrame(render_frame_id);
 }
 
 void BrowserCdmManager::OnSessionCreated(int render_frame_id,
@@ -343,6 +345,19 @@ void BrowserCdmManager::AddCdm(int render_frame_id,
   uint64 id = GetId(render_frame_id, cdm_id);
   cdm_map_.add(id, cdm.Pass());
   cdm_security_origin_map_[id] = security_origin;
+}
+
+void BrowserCdmManager::RemoveAllCdmForFrame(int render_frame_id) {
+  DCHECK(task_runner_->RunsTasksOnCurrentThread());
+
+  std::vector<uint64> ids_to_remove;
+  for (CdmMap::iterator it = cdm_map_.begin(); it != cdm_map_.end(); ++it) {
+    if (IdBelongsToFrame(it->first, render_frame_id))
+      ids_to_remove.push_back(it->first);
+  }
+
+  for (size_t i = 0; i < ids_to_remove.size(); ++i)
+    RemoveCdm(ids_to_remove[i]);
 }
 
 void BrowserCdmManager::RemoveCdm(uint64 id) {

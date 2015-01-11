@@ -178,7 +178,7 @@ class ExtensionLoadedNotificationObserver
   [self removePageActionPreviewIfNecessary];
   extension_ = NULL;
   browser_ = NULL;
-
+  [closeButton_ setTrackingEnabled:NO];
   [super windowWillClose:notification];
 }
 
@@ -260,7 +260,7 @@ class ExtensionLoadedNotificationObserver
       BrowserActionsController* controller =
           [[window->cocoa_controller() toolbarController]
               browserActionsController];
-      arrowPoint = [controller popupPointForBrowserAction:extension_];
+      arrowPoint = [controller popupPointForId:extension_->id()];
       break;
     }
     case extension_installed_bubble::kPageAction: {

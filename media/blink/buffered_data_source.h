@@ -42,8 +42,8 @@ class MEDIA_EXPORT BufferedDataSourceHost {
 // A data source capable of loading URLs and buffering the data using an
 // in-memory sliding window.
 //
-// BufferedDataSource must be created and initialized on the render thread
-// before being passed to other threads. It may be deleted on any thread.
+// BufferedDataSource must be created and destroyed on the thread associated
+// with the |task_runner| passed in the constructor.
 class MEDIA_EXPORT BufferedDataSource : public DataSource {
  public:
   // Used to specify video preload states. They are "hints" to the browser about
@@ -234,6 +234,11 @@ class MEDIA_EXPORT BufferedDataSource : public DataSource {
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<BufferedDataSource> weak_factory_;
+
+  // Disallow rebinding WeakReference ownership to a different thread by keeping
+  // a persistent reference. This avoids problems with the thread-safety of
+  // reaching into this class from multiple threads to attain a WeakPtr.
+  const base::WeakPtr<BufferedDataSource> weak_ptr_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferedDataSource);
 };

@@ -993,6 +993,7 @@ void ProfileManager::DoFinalInit(Profile* profile, bool go_off_the_record) {
 void ProfileManager::DoFinalInitForServices(Profile* profile,
                                             bool go_off_the_record) {
 #if defined(ENABLE_EXTENSIONS)
+  ProfileInfoCache& cache = GetProfileInfoCache();
   extensions::ExtensionSystem::Get(profile)->InitForRegularProfile(
       !go_off_the_record);
   // During tests, when |profile| is an instance of TestingProfile,
@@ -1001,6 +1002,16 @@ void ProfileManager::DoFinalInitForServices(Profile* profile,
     extensions::ExtensionSystem::Get(profile)->extension_service()->
         RegisterContentSettings(profile->GetHostContentSettingsMap());
   }
+  // Set the block extensions bit on the ExtensionService. There likely are no
+  // blockable extensions to block.
+  size_t profile_index = cache.GetIndexOfProfileWithPath(profile->GetPath());
+  if (profile_index != std::string::npos &&
+      cache.ProfileIsSigninRequiredAtIndex(profile_index)) {
+    extensions::ExtensionSystem::Get(profile)
+        ->extension_service()
+        ->BlockAllExtensions();
+  }
+
 #endif
 #if defined(ENABLE_MANAGED_USERS) && !defined(OS_ANDROID)
   // Initialization needs to happen after extension system initialization (for
@@ -1202,6 +1213,7 @@ void ProfileManager::SetGuestProfilePrefs(Profile* profile) {
   prefs->SetBoolean(prefs::kSigninAllowed, false);
   prefs->SetBoolean(bookmarks::prefs::kEditBookmarksEnabled, false);
   prefs->SetBoolean(bookmarks::prefs::kShowBookmarkBar, false);
+  prefs->ClearPref(DefaultSearchManager::kDefaultSearchProviderDataPrefName);
   // This can be removed in the future but needs to be present through
   // a release (or two) so that any existing installs get switched to
   // the new state and away from the previous "forced" state.

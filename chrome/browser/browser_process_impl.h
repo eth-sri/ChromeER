@@ -98,7 +98,7 @@ class BrowserProcessImpl : public BrowserProcess,
   void CreateDevToolsHttpProtocolHandler(
       chrome::HostDesktopType host_desktop_type,
       const std::string& ip,
-      int port) override;
+      uint16 port) override;
   unsigned int AddRefModule() override;
   unsigned int ReleaseModule() override;
   bool IsShuttingDown() override;
@@ -204,7 +204,7 @@ class BrowserProcessImpl : public BrowserProcess,
   scoped_ptr<RemoteDebuggingServer> remote_debugging_server_;
 #endif
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   scoped_refptr<printing::PrintPreviewDialogController>
       print_preview_dialog_controller_;
 

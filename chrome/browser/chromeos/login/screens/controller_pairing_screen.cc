@@ -16,12 +16,13 @@ namespace chromeos {
 
 ControllerPairingScreen::ControllerPairingScreen(
     BaseScreenDelegate* base_screen_delegate,
+    Delegate* delegate,
     ControllerPairingScreenActor* actor,
     ControllerPairingController* shark_controller)
     : BaseScreen(base_screen_delegate),
+      delegate_(delegate),
       actor_(actor),
       shark_controller_(shark_controller),
-      delegate_(nullptr),
       current_stage_(ControllerPairingController::STAGE_NONE),
       device_preselected_(false) {
   actor_->SetDelegate(this);
@@ -32,10 +33,6 @@ ControllerPairingScreen::~ControllerPairingScreen() {
   if (actor_)
     actor_->SetDelegate(NULL);
   shark_controller_->RemoveObserver(this);
-}
-
-void ControllerPairingScreen::SetDelegate(Delegate* delegate) {
-  delegate_ = delegate;
 }
 
 void ControllerPairingScreen::CommitContextChanges() {
@@ -118,8 +115,7 @@ void ControllerPairingScreen::PairingStageChanged(Stage new_stage) {
     }
     case ControllerPairingController::STAGE_WAITING_FOR_CREDENTIALS: {
       shark_controller_->RemoveObserver(this);
-      get_base_screen_delegate()->OnExit(
-          WizardController::CONTROLLER_PAIRING_FINISHED);
+      Finish(WizardController::CONTROLLER_PAIRING_FINISHED);
       desired_page = kPageEnrollmentIntroduction;
       break;
     }

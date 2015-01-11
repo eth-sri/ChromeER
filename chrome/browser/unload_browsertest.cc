@@ -18,8 +18,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/app_modal_dialogs/javascript_app_modal_dialog.h"
-#include "components/app_modal_dialogs/native_app_modal_dialog.h"
+#include "components/app_modal/javascript_app_modal_dialog.h"
+#include "components/app_modal/native_app_modal_dialog.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -178,10 +178,10 @@ class UnloadTest : public InProcessBrowserTest {
   // If |accept| is true, simulates user clicking OK, otherwise simulates
   // clicking Cancel.
   void ClickModalDialogButton(bool accept) {
-    AppModalDialog* dialog = ui_test_utils::WaitForAppModalDialog();
+    app_modal::AppModalDialog* dialog = ui_test_utils::WaitForAppModalDialog();
     ASSERT_TRUE(dialog->IsJavaScriptModalDialog());
-    JavaScriptAppModalDialog* js_dialog =
-        static_cast<JavaScriptAppModalDialog*>(dialog);
+    app_modal::JavaScriptAppModalDialog* js_dialog =
+        static_cast<app_modal::JavaScriptAppModalDialog*>(dialog);
     if (accept)
       js_dialog->native_dialog()->AcceptAppModalDialog();
     else

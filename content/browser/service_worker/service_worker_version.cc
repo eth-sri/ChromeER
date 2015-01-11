@@ -7,6 +7,8 @@
 #include "base/command_line.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
+#include "content/browser/message_port_message_filter.h"
+#include "content/browser/message_port_service.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -85,6 +87,17 @@ void RunErrorFetchCallback(const ServiceWorkerVersion::FetchCallback& callback,
   callback.Run(status,
                SERVICE_WORKER_FETCH_EVENT_RESULT_FALLBACK,
                ServiceWorkerResponse());
+}
+
+void RunErrorMessageCallback(
+    const std::vector<int>& sent_message_port_ids,
+    const ServiceWorkerVersion::StatusCallback& callback,
+    ServiceWorkerStatusCode status) {
+  // Transfering the message ports failed, so destroy the ports.
+  for (int message_port_id : sent_message_port_ids) {
+    MessagePortService::GetInstance()->ClosePort(message_port_id);
+  }
+  callback.Run(status);
 }
 
 }  // namespace
@@ -247,6 +260,43 @@ void ServiceWorkerVersion::SendMessage(
   RunSoon(base::Bind(callback, status));
 }
 
+void ServiceWorkerVersion::DispatchMessageEvent(
+    const base::string16& message,
+    const std::vector<int>& sent_message_port_ids,
+    const StatusCallback& callback) {
+  for (int message_port_id : sent_message_port_ids) {
+    MessagePortService::GetInstance()->HoldMessages(message_port_id);
+  }
+
+  DispatchMessageEventInternal(message, sent_message_port_ids, callback);
+}
+
+void ServiceWorkerVersion::DispatchMessageEventInternal(
+    const base::string16& message,
+    const std::vector<int>& sent_message_port_ids,
+    const StatusCallback& callback) {
+  if (running_status() != RUNNING) {
+    // Schedule calling this method after starting the worker.
+    StartWorker(base::Bind(
+        &RunTaskAfterStartWorker, weak_factory_.GetWeakPtr(),
+        base::Bind(&RunErrorMessageCallback, sent_message_port_ids, callback),
+        base::Bind(&self::DispatchMessageEventInternal,
+                   weak_factory_.GetWeakPtr(), message, sent_message_port_ids,
+                   callback)));
+    return;
+  }
+
+  MessagePortMessageFilter* filter =
+      embedded_worker_->message_port_message_filter();
+  std::vector<int> new_routing_ids;
+  filter->UpdateMessagePortsWithNewRoutes(sent_message_port_ids,
+                                          &new_routing_ids);
+  ServiceWorkerStatusCode status =
+      embedded_worker_->SendMessage(ServiceWorkerMsg_MessageToWorker(
+          message, sent_message_port_ids, new_routing_ids));
+  RunSoon(base::Bind(callback, status));
+}
+
 void ServiceWorkerVersion::DispatchInstallEvent(
     int active_version_id,
     const StatusCallback& callback) {
@@ -341,6 +391,37 @@ void ServiceWorkerVersion::DispatchSyncEvent(const StatusCallback& callback) {
       ServiceWorkerMsg_SyncEvent(request_id));
   if (status != SERVICE_WORKER_OK) {
     sync_callbacks_.Remove(request_id);
+    RunSoon(base::Bind(callback, status));
+  }
+}
+
+void ServiceWorkerVersion::DispatchNotificationClickEvent(
+    const StatusCallback& callback,
+    const std::string& notification_id) {
+  DCHECK_EQ(ACTIVATED, status()) << status();
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableExperimentalWebPlatformFeatures)) {
+    callback.Run(SERVICE_WORKER_ERROR_ABORT);
+    return;
+  }
+
+  if (running_status() != RUNNING) {
+    // Schedule calling this method after starting the worker.
+    StartWorker(base::Bind(&RunTaskAfterStartWorker,
+                           weak_factory_.GetWeakPtr(), callback,
+                           base::Bind(&self::DispatchNotificationClickEvent,
+                                      weak_factory_.GetWeakPtr(),
+                                      callback, notification_id)));
+    return;
+  }
+
+  int request_id =
+      notification_click_callbacks_.Add(new StatusCallback(callback));
+  ServiceWorkerStatusCode status = embedded_worker_->SendMessage(
+      ServiceWorkerMsg_NotificationClickEvent(request_id, notification_id));
+  if (status != SERVICE_WORKER_OK) {
+    notification_click_callbacks_.Remove(request_id);
     RunSoon(base::Bind(callback, status));
   }
 }
@@ -545,6 +626,8 @@ bool ServiceWorkerVersion::OnMessageReceived(const IPC::Message& message) {
                         OnFetchEventFinished)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_SyncEventFinished,
                         OnSyncEventFinished)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_NotificationClickEventFinished,
+                        OnNotificationClickEventFinished)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_PushEventFinished,
                         OnPushEventFinished)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_GeofencingEventFinished,
@@ -686,8 +769,25 @@ void ServiceWorkerVersion::OnSyncEventFinished(
   sync_callbacks_.Remove(request_id);
 }
 
-void ServiceWorkerVersion::OnPushEventFinished(
+void ServiceWorkerVersion::OnNotificationClickEventFinished(
     int request_id) {
+  TRACE_EVENT1("ServiceWorker",
+               "ServiceWorkerVersion::OnNotificationClickEventFinished",
+               "Request id", request_id);
+  StatusCallback* callback = notification_click_callbacks_.Lookup(request_id);
+  if (!callback) {
+    NOTREACHED() << "Got unexpected message: " << request_id;
+    return;
+  }
+
+  scoped_refptr<ServiceWorkerVersion> protect(this);
+  callback->Run(SERVICE_WORKER_OK);
+  notification_click_callbacks_.Remove(request_id);
+}
+
+void ServiceWorkerVersion::OnPushEventFinished(
+    int request_id,
+    blink::WebServiceWorkerEventResult result) {
   TRACE_EVENT1("ServiceWorker",
                "ServiceWorkerVersion::OnPushEventFinished",
                "Request id", request_id);
@@ -696,9 +796,12 @@ void ServiceWorkerVersion::OnPushEventFinished(
     NOTREACHED() << "Got unexpected message: " << request_id;
     return;
   }
+  ServiceWorkerStatusCode status = SERVICE_WORKER_OK;
+  if (result == blink::WebServiceWorkerEventResultRejected)
+    status = SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED;
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
-  callback->Run(SERVICE_WORKER_OK);
+  callback->Run(status);
   push_callbacks_.Remove(request_id);
 }
 

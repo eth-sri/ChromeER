@@ -88,14 +88,13 @@ class WebKitTestRunner : public RenderViewObserver,
   void EvaluateInWebInspector(long call_id, const std::string& script) override;
   void ClearAllDatabases() override;
   void SetDatabaseQuota(int quota) override;
-  blink::WebNotificationPresenter::Permission CheckWebNotificationPermission(
-      const GURL& origin) override;
   void GrantWebNotificationPermission(const GURL& origin,
                                       bool permission_granted) override;
   void ClearWebNotificationPermissions() override;
   void SimulateWebNotificationClick(const std::string& title) override;
   void SetDeviceScaleFactor(float factor) override;
   void SetDeviceColorProfile(const std::string& name) override;
+  void SetBluetoothMockDataSet(const std::string& name) override;
   void SetFocus(WebTestProxyBase* proxy, bool focus) override;
   void SetAcceptAllCookies(bool accept) override;
   std::string PathToLocalResource(const std::string& resource) override;

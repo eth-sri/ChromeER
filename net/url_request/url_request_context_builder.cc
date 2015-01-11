@@ -122,11 +122,6 @@ class BasicNetworkDelegate : public NetworkDelegate {
     return true;
   }
 
-  int OnBeforeSocketStreamConnect(SocketStream* stream,
-                                  const CompletionCallback& callback) override {
-    return OK;
-  }
-
   DISALLOW_COPY_AND_ASSIGN(BasicNetworkDelegate);
 };
 
@@ -214,7 +209,8 @@ URLRequestContextBuilder::URLRequestContextBuilder()
       ftp_enabled_(false),
 #endif
       http_cache_enabled_(true),
-      throttling_enabled_(false) {
+      throttling_enabled_(false),
+      channel_id_enabled_(true) {
 }
 
 URLRequestContextBuilder::~URLRequestContextBuilder() {}
@@ -296,12 +292,14 @@ URLRequestContext* URLRequestContextBuilder::Build() {
   storage->set_http_auth_handler_factory(http_auth_handler_registry_factory);
   storage->set_cookie_store(new CookieMonster(NULL, NULL));
 
-  // TODO(mmenke):  This always creates a file thread, even when it ends up
-  // not being used.  Consider lazily creating the thread.
-  storage->set_channel_id_service(
-      new ChannelIDService(
-          new DefaultChannelIDStore(NULL),
-          context->GetFileThread()->message_loop_proxy()));
+  if (channel_id_enabled_) {
+    // TODO(mmenke):  This always creates a file thread, even when it ends up
+    // not being used.  Consider lazily creating the thread.
+    storage->set_channel_id_service(
+        new ChannelIDService(
+            new DefaultChannelIDStore(NULL),
+            context->GetFileThread()->message_loop_proxy()));
+  }
 
   storage->set_transport_security_state(new net::TransportSecurityState());
   if (!transport_security_persister_path_.empty()) {
@@ -351,6 +349,8 @@ URLRequestContext* URLRequestContextBuilder::Build() {
       http_network_session_params_.trusted_spdy_proxy;
   network_session_params.next_protos = http_network_session_params_.next_protos;
   network_session_params.enable_quic = http_network_session_params_.enable_quic;
+  network_session_params.quic_connection_options =
+      http_network_session_params_.quic_connection_options;
 
   HttpTransactionFactory* http_transaction_factory = NULL;
   if (http_cache_enabled_) {

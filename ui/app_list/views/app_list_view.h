@@ -64,6 +64,11 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
                                    views::BubbleBorder::Arrow arrow,
                                    bool border_accepts_events);
 
+  // Initializes the widget as a frameless window, not a bubble.
+  void InitAsFramelessWindow(gfx::NativeView parent,
+                             int initial_apps_page,
+                             gfx::Rect bounds);
+
   void SetBubbleArrow(views::BubbleBorder::Arrow arrow);
 
   void SetAnchorPoint(const gfx::Point& anchor_point);
@@ -121,8 +126,15 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   // Gets the PaginationModel owned by this view's apps grid.
   PaginationModel* GetAppsPaginationModel();
 
+  // Overridden from views::View:
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  void Layout() override;
+  void SchedulePaintInRect(const gfx::Rect& rect) override;
+
  private:
   friend class ::test::AppListViewTestApi;
+
+  void InitContents(gfx::NativeView parent, int initial_apps_page);
 
   void InitAsBubbleInternal(gfx::NativeView parent,
                             int initial_apps_page,
@@ -139,11 +151,6 @@ class APP_LIST_EXPORT AppListView : public views::BubbleDelegateView,
   gfx::ImageSkia GetWindowIcon() override;
   bool WidgetHasHitTestMask() const override;
   void GetWidgetHitTestMask(gfx::Path* mask) const override;
-
-  // Overridden from views::View:
-  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
-  void Layout() override;
-  void SchedulePaintInRect(const gfx::Rect& rect) override;
 
   // Overridden from views::WidgetObserver:
   void OnWidgetDestroying(views::Widget* widget) override;

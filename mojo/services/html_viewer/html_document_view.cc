@@ -8,10 +8,10 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "mojo/public/cpp/application/connect.h"
-#include "mojo/public/cpp/application/service_provider_impl.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/interfaces/application/shell.mojom.h"
 #include "mojo/services/html_viewer/blink_input_events_type_converters.h"
@@ -87,28 +87,37 @@ bool CanNavigateLocally(blink::WebFrame* frame,
 
 HTMLDocumentView::HTMLDocumentView(
     URLResponsePtr response,
-    InterfaceRequest<ServiceProvider> service_provider_request,
-    Shell* shell,
+    ShellPtr shell,
     scoped_refptr<base::MessageLoopProxy> compositor_thread,
     WebMediaPlayerFactory* web_media_player_factory)
-    : shell_(shell),
+    : response_(response.Pass()),
+      shell_(shell.Pass()),
       web_view_(NULL),
       root_(NULL),
-      view_manager_client_factory_(shell, this),
+      view_manager_client_factory_(shell_.get(), this),
       compositor_thread_(compositor_thread),
-      web_media_player_factory_(web_media_player_factory),
-      weak_factory_(this) {
-  ServiceProviderImpl* exported_services = new ServiceProviderImpl();
-  exported_services->AddService(&view_manager_client_factory_);
-  BindToRequest(exported_services, &service_provider_request);
-  Load(response.Pass());
+      web_media_player_factory_(web_media_player_factory) {
+  shell_.set_client(this);
 }
 
 HTMLDocumentView::~HTMLDocumentView() {
+  STLDeleteElements(&ax_provider_impls_);
+
   if (web_view_)
     web_view_->close();
   if (root_)
     root_->RemoveObserver(this);
+}
+
+void HTMLDocumentView::AcceptConnection(const String& requestor_url,
+                                        ServiceProviderPtr provider) {
+  exported_services_.AddService(this);
+  exported_services_.AddService(&view_manager_client_factory_);
+  WeakBindToPipe(&exported_services_, provider.PassMessagePipe());
+  Load(response_.Pass());
+}
+
+void HTMLDocumentView::Initialize(Array<String> args) {
 }
 
 void HTMLDocumentView::OnEmbed(
@@ -125,6 +134,14 @@ void HTMLDocumentView::OnEmbed(
   web_layer_tree_view_impl_->setViewportSize(root_size);
   web_layer_tree_view_impl_->set_view(root_);
   root_->AddObserver(this);
+}
+
+void HTMLDocumentView::Create(ApplicationConnection* connection,
+                              InterfaceRequest<AxProvider> request) {
+  if (!web_view_)
+    return;
+  ax_provider_impls_.insert(
+      WeakBindToRequest(new AxProviderImpl(web_view_), &request));
 }
 
 void HTMLDocumentView::OnViewManagerDisconnected(ViewManager* view_manager) {
@@ -180,7 +197,7 @@ blink::WebMediaPlayer* HTMLDocumentView::createMediaPlayer(
     const blink::WebURL& url,
     blink::WebMediaPlayerClient* client) {
   return web_media_player_factory_->CreateMediaPlayer(
-      frame, url, client, shell_);
+      frame, url, client, shell_.get());
 }
 
 blink::WebMediaPlayer* HTMLDocumentView::createMediaPlayer(

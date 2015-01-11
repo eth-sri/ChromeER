@@ -1269,6 +1269,7 @@ struct SubtreeGlobals {
   const LayerType* page_scale_application_layer;
   bool can_adjust_raster_scales;
   bool can_render_to_separate_surface;
+  bool layers_always_allowed_lcd_text;
 };
 
 template<typename LayerType>
@@ -1791,13 +1792,19 @@ static void CalculateDrawPropertiesInternal(
   // causes jank.
   bool adjust_text_aa =
       !animating_opacity_to_screen && !animating_transform_to_screen;
-  // To avoid color fringing, LCD text should only be used on opaque layers with
-  // just integral translation.
-  bool layer_can_use_lcd_text =
-      data_from_ancestor.subtree_can_use_lcd_text &&
-      accumulated_draw_opacity == 1.f &&
-      layer_draw_properties.target_space_transform.
-          IsIdentityOrIntegerTranslation();
+  bool layer_can_use_lcd_text = true;
+  bool subtree_can_use_lcd_text = true;
+  if (!globals.layers_always_allowed_lcd_text) {
+    // To avoid color fringing, LCD text should only be used on opaque layers
+    // with just integral translation.
+    subtree_can_use_lcd_text = data_from_ancestor.subtree_can_use_lcd_text &&
+                               accumulated_draw_opacity == 1.f &&
+                               layer_draw_properties.target_space_transform
+                                   .IsIdentityOrIntegerTranslation();
+    // Also disable LCD text locally for non-opaque content.
+    layer_can_use_lcd_text = subtree_can_use_lcd_text &&
+                             layer->contents_opaque();
+  }
 
   gfx::Rect content_rect(layer->content_bounds());
 
@@ -1883,6 +1890,7 @@ static void CalculateDrawPropertiesInternal(
     render_surface->SetDrawOpacityIsAnimating(animating_opacity_to_target);
     animating_opacity_to_target = false;
     layer_draw_properties.opacity = 1.f;
+    layer_draw_properties.blend_mode = SkXfermode::kSrcOver_Mode;
     layer_draw_properties.opacity_is_animating = animating_opacity_to_target;
     layer_draw_properties.screen_space_opacity_is_animating =
         animating_opacity_to_screen;
@@ -1994,7 +2002,7 @@ static void CalculateDrawPropertiesInternal(
     // If the new render surface is drawn translucent or with a non-integral
     // translation then the subtree that gets drawn on this render surface
     // cannot use LCD text.
-    data_for_children.subtree_can_use_lcd_text = layer_can_use_lcd_text;
+    data_for_children.subtree_can_use_lcd_text = subtree_can_use_lcd_text;
 
     render_surface_layer_list->push_back(layer);
   } else {
@@ -2007,6 +2015,7 @@ static void CalculateDrawPropertiesInternal(
     layer_draw_properties.screen_space_transform_is_animating =
         animating_transform_to_screen;
     layer_draw_properties.opacity = accumulated_draw_opacity;
+    layer_draw_properties.blend_mode = layer->blend_mode();
     layer_draw_properties.opacity_is_animating = animating_opacity_to_target;
     layer_draw_properties.screen_space_opacity_is_animating =
         animating_opacity_to_screen;
@@ -2372,6 +2381,8 @@ static void ProcessCalcDrawPropsInputs(
   globals->can_render_to_separate_surface =
       inputs.can_render_to_separate_surface;
   globals->can_adjust_raster_scales = inputs.can_adjust_raster_scales;
+  globals->layers_always_allowed_lcd_text =
+      inputs.layers_always_allowed_lcd_text;
 
   data_for_recursion->parent_matrix = scaled_device_transform;
   data_for_recursion->full_hierarchy_matrix = identity_matrix;

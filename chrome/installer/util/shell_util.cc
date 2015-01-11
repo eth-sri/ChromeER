@@ -460,13 +460,13 @@ class RegistryEntry {
     // strings.
     entries->push_back(new RegistryEntry(install_info, kReinstallCommand,
         quoted_exe_path + L" --" +
-        base::ASCIIToWide(switches::kMakeDefaultBrowser)));
+        base::ASCIIToUTF16(switches::kMakeDefaultBrowser)));
     entries->push_back(new RegistryEntry(install_info, L"HideIconsCommand",
         quoted_exe_path + L" --" +
-        base::ASCIIToWide(switches::kHideIcons)));
+        base::ASCIIToUTF16(switches::kHideIcons)));
     entries->push_back(new RegistryEntry(install_info, L"ShowIconsCommand",
         quoted_exe_path + L" --" +
-        base::ASCIIToWide(switches::kShowIcons)));
+        base::ASCIIToUTF16(switches::kShowIcons)));
     entries->push_back(new RegistryEntry(install_info, L"IconsVisible", 1));
 
     // Register with Default Programs.
@@ -1490,7 +1490,7 @@ bool BatchShortcutAction(
   for (base::FilePath shortcut_path = enumerator.Next();
        !shortcut_path.empty();
        shortcut_path = enumerator.Next()) {
-    if (cancel && cancel->data.IsSet())
+    if (cancel.get() && cancel->data.IsSet())
       return false;
     if (base::win::ResolveShortcut(shortcut_path, &target_path, &args)) {
       if (shortcut_filter.Run(target_path, args) &&

@@ -8,7 +8,6 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
 import android.graphics.PorterDuff;
-import android.os.Build;
 import android.util.AttributeSet;
 import android.widget.ImageButton;
 
@@ -37,17 +36,9 @@ public class TintedImageButton extends ImageButton {
 
     private void init(Context context, AttributeSet attrs, int defStyle) {
         TypedArray a = context.obtainStyledAttributes(
-                attrs, R.styleable.TintedImageButton, defStyle, 0);
-        setTintInternal(a.getColorStateList(R.styleable.TintedImageButton_tint));
+                attrs, R.styleable.TintedImage, defStyle, 0);
+        setTintInternal(a.getColorStateList(R.styleable.TintedImage_tint));
         a.recycle();
-    }
-
-    @Override
-    public void setImageResource(int resId) {
-        super.setImageResource(resId);
-        // Workaround for API 21 where the image state does not get reset correctly when image
-        // resource is changed.
-        refreshDrawableState();
     }
 
     @Override
@@ -61,21 +52,17 @@ public class TintedImageButton extends ImageButton {
      * @param tint The set of colors to use to color the ImageButton.
      */
     public void setTint(ColorStateList tint) {
+        if (mTint == tint) return;
         setTintInternal(tint);
         updateTintColor();
     }
 
     private void setTintInternal(ColorStateList tint) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            setImageTintList(tint);
-            setImageTintMode(PorterDuff.Mode.SRC_ATOP);
-        } else {
-            mTint = tint;
-        }
+        mTint = tint;
     }
 
     private void updateTintColor() {
-        if (mTint == null || !mTint.isStateful()) return;
-        setColorFilter(mTint.getColorForState(getDrawableState(), 0));
+        if (mTint == null) return;
+        setColorFilter(mTint.getColorForState(getDrawableState(), 0), PorterDuff.Mode.SRC_IN);
     }
 }

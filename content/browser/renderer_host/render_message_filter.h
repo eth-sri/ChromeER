@@ -212,8 +212,6 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                      const Referrer& referrer,
                      const base::string16& suggested_name);
   void OnSaveImageFromDataURL(int render_view_id, const std::string& url_str);
-  void OnCheckNotificationPermission(const GURL& source_origin,
-                                     int* permission_level);
 
   void OnGetAudioHardwareConfig(media::AudioParameters* input_params,
                                 media::AudioParameters* output_params);
@@ -304,8 +302,8 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                                  IPC::Message* reply);
   void GpuMemoryBufferAllocated(IPC::Message* reply,
                                 const gfx::GpuMemoryBufferHandle& handle);
-  void OnDeletedGpuMemoryBuffer(gfx::GpuMemoryBufferType type,
-                                const gfx::GpuMemoryBufferId& id);
+  void OnDeletedGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                                uint32 sync_point);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed

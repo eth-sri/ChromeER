@@ -60,20 +60,12 @@ IPC_STRUCT_TRAITS_END()
 IPC_ENUM_TRAITS_MAX_VALUE(gfx::GpuMemoryBufferType,
                           gfx::GPU_MEMORY_BUFFER_TYPE_LAST)
 
-IPC_STRUCT_TRAITS_BEGIN(gfx::GpuMemoryBufferId)
-  IPC_STRUCT_TRAITS_MEMBER(primary_id)
-  IPC_STRUCT_TRAITS_MEMBER(secondary_id)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(gfx::GpuMemoryBufferHandle)
+  IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(handle)
-  IPC_STRUCT_TRAITS_MEMBER(global_id)
 #if defined(OS_MACOSX)
   IPC_STRUCT_TRAITS_MEMBER(io_surface_id)
-#endif
-#if defined(USE_X11)
-  IPC_STRUCT_TRAITS_MEMBER(pixmap)
 #endif
 IPC_STRUCT_TRAITS_END()
 
@@ -199,8 +191,8 @@ IPC_SYNC_MESSAGE_CONTROL4_1(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
 
 // Informs the browser that the child deleted a gpu memory buffer.
 IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_DeletedGpuMemoryBuffer,
-                     gfx::GpuMemoryBufferType,
-                     gfx::GpuMemoryBufferId)
+                     gfx::GpuMemoryBufferId,
+                     uint32 /* sync_point */)
 
 // Asks the browser to create a block of discardable shared memory for the
 // child process.

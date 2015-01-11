@@ -4,85 +4,19 @@
 
 #include "content/common/gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.h"
 
-#include "base/atomic_sequence_num.h"
-#include "base/bind.h"
-#include "content/common/gpu/client/gpu_memory_buffer_factory_host.h"
-#include "ui/gl/gl_bindings.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace content {
-namespace {
-
-base::StaticAtomicSequenceNumber g_next_buffer_id;
-
-void Noop() {
-}
-
-void GpuMemoryBufferCreated(
-    const gfx::Size& size,
-    gfx::GpuMemoryBuffer::Format format,
-    const GpuMemoryBufferImpl::CreationCallback& callback,
-    const gfx::GpuMemoryBufferHandle& handle) {
-  DCHECK_EQ(gfx::OZONE_NATIVE_BUFFER, handle.type);
-
-  callback.Run(GpuMemoryBufferImplOzoneNativeBuffer::CreateFromHandle(
-      handle, size, format, base::Bind(&Noop)));
-}
-
-void GpuMemoryBufferCreatedForChildProcess(
-    const GpuMemoryBufferImpl::AllocationCallback& callback,
-    const gfx::GpuMemoryBufferHandle& handle) {
-  DCHECK_EQ(gfx::OZONE_NATIVE_BUFFER, handle.type);
-
-  callback.Run(handle);
-}
-
-}  // namespace
 
 GpuMemoryBufferImplOzoneNativeBuffer::GpuMemoryBufferImplOzoneNativeBuffer(
+    gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
     Format format,
-    const DestructionCallback& callback,
-    const gfx::GpuMemoryBufferId& id)
-    : GpuMemoryBufferImpl(size, format, callback), id_(id) {
+    const DestructionCallback& callback)
+    : GpuMemoryBufferImpl(id, size, format, callback) {
 }
 
 GpuMemoryBufferImplOzoneNativeBuffer::~GpuMemoryBufferImplOzoneNativeBuffer() {
-}
-
-// static
-void GpuMemoryBufferImplOzoneNativeBuffer::Create(
-    const gfx::Size& size,
-    Format format,
-    int client_id,
-    const CreationCallback& callback) {
-  gfx::GpuMemoryBufferHandle handle;
-  handle.global_id.primary_id = g_next_buffer_id.GetNext();
-  handle.global_id.secondary_id = client_id;
-  handle.type = gfx::OZONE_NATIVE_BUFFER;
-  GpuMemoryBufferFactoryHost::GetInstance()->CreateGpuMemoryBuffer(
-      handle,
-      size,
-      format,
-      SCANOUT,
-      base::Bind(&GpuMemoryBufferCreated, size, format, callback));
-}
-
-// static
-void GpuMemoryBufferImplOzoneNativeBuffer::AllocateForChildProcess(
-    const gfx::Size& size,
-    Format format,
-    int child_client_id,
-    const AllocationCallback& callback) {
-  gfx::GpuMemoryBufferHandle handle;
-  handle.global_id.primary_id = g_next_buffer_id.GetNext();
-  handle.global_id.secondary_id = child_client_id;
-  handle.type = gfx::OZONE_NATIVE_BUFFER;
-  GpuMemoryBufferFactoryHost::GetInstance()->CreateGpuMemoryBuffer(
-      handle,
-      size,
-      format,
-      SCANOUT,
-      base::Bind(&GpuMemoryBufferCreatedForChildProcess, callback));
 }
 
 // static
@@ -92,45 +26,9 @@ GpuMemoryBufferImplOzoneNativeBuffer::CreateFromHandle(
     const gfx::Size& size,
     Format format,
     const DestructionCallback& callback) {
-  DCHECK(IsFormatSupported(format));
-
   return make_scoped_ptr<GpuMemoryBufferImpl>(
       new GpuMemoryBufferImplOzoneNativeBuffer(
-          size, format, callback, handle.global_id));
-}
-
-// static
-bool GpuMemoryBufferImplOzoneNativeBuffer::IsFormatSupported(Format format) {
-  switch (format) {
-    case RGBA_8888:
-    case RGBX_8888:
-      return true;
-    case BGRA_8888:
-      return false;
-  }
-
-  NOTREACHED();
-  return false;
-}
-
-// static
-bool GpuMemoryBufferImplOzoneNativeBuffer::IsUsageSupported(Usage usage) {
-  switch (usage) {
-    case MAP:
-      return false;
-    case SCANOUT:
-      return true;
-  }
-
-  NOTREACHED();
-  return false;
-}
-
-// static
-bool GpuMemoryBufferImplOzoneNativeBuffer::IsConfigurationSupported(
-    Format format,
-    Usage usage) {
-  return IsFormatSupported(format) && IsUsageSupported(usage);
+          handle.id, size, format, callback));
 }
 
 void* GpuMemoryBufferImplOzoneNativeBuffer::Map() {
@@ -151,7 +49,7 @@ gfx::GpuMemoryBufferHandle GpuMemoryBufferImplOzoneNativeBuffer::GetHandle()
     const {
   gfx::GpuMemoryBufferHandle handle;
   handle.type = gfx::OZONE_NATIVE_BUFFER;
-  handle.global_id = id_;
+  handle.id = id_;
   return handle;
 }
 

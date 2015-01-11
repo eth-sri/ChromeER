@@ -362,6 +362,7 @@ fileOperationUtil.zipSelection = function(
 
 /**
  * @constructor
+ * @extends {cr.EventTarget}
  */
 function FileOperationManager() {
   this.copyTasks_ = [];
@@ -465,7 +466,7 @@ FileOperationManager.EventRouter.prototype.dispatchEntryChangedEvent_ =
  *
  * @param {string} reason Event type. One of "BEGIN", "PROGRESS", "SUCCESS",
  *     or "ERROR". TODO(hidehiko): Use enum.
- * @param {FileOperationManager.Task} task Delete task related with the event.
+ * @param {!Object} task Delete task related with the event.
  */
 FileOperationManager.EventRouter.prototype.sendDeleteEvent = function(
     reason, task) {
@@ -759,7 +760,8 @@ FileOperationManager.CopyTask.prototype.run = function(
     // Updates progress bar in limited frequency so that intervals between
     // updates have at least 200ms.
     this.updateProgressRateLimiter_.run();
-  }.bind(this);
+  };
+  updateProgress = updateProgress.bind(this);
 
   this.updateProgressRateLimiter_ = new AsyncUtil.RateLimiter(progressCallback);
 
@@ -1111,8 +1113,9 @@ FileOperationManager.Error = function(code, data) {
 /**
  * Adds an event listener for the tasks.
  * @param {string} type The name of the event.
- * @param {function(Event)} handler The handler for the event.
- *     This is called when the event is dispatched.
+ * @param {EventListenerType} handler The handler for the event.  This is called
+ *     when the event is dispatched.
+ * @override
  */
 FileOperationManager.prototype.addEventListener = function(type, handler) {
   this.eventRouter_.addEventListener(type, handler);
@@ -1121,7 +1124,8 @@ FileOperationManager.prototype.addEventListener = function(type, handler) {
 /**
  * Removes an event listener for the tasks.
  * @param {string} type The name of the event.
- * @param {function(Event)} handler The handler to be removed.
+ * @param {EventListenerType} handler The handler to be removed.
+ * @override
  */
 FileOperationManager.prototype.removeEventListener = function(type, handler) {
   this.eventRouter_.removeEventListener(type, handler);

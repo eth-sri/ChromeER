@@ -7,7 +7,6 @@
 #include "base/stl_util.h"
 #include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_connection.h"
-#include "net/quic/quic_flags.h"
 #include "net/quic/quic_flow_controller.h"
 #include "net/quic/quic_headers_stream.h"
 #include "net/ssl/ssl_info.h"
@@ -122,10 +121,6 @@ QuicSession::QuicSession(QuicConnection* connection, const QuicConfig& config)
 void QuicSession::InitializeSession() {
   connection_->set_visitor(visitor_shim_.get());
   connection_->SetFromConfig(config_);
-  if (!FLAGS_quic_unified_timeouts && connection_->connected()) {
-    connection_->SetOverallConnectionTimeout(
-        config_.max_time_before_crypto_handshake());
-  }
   headers_stream_.reset(new QuicHeadersStream(this));
 }
 
@@ -428,6 +423,8 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
 
   stream_map_.erase(it);
   stream->OnClose();
+  // Decrease the number of streams being emulated when a new one is opened.
+  connection_->SetNumOpenStreams(stream_map_.size());
 }
 
 void QuicSession::UpdateFlowControlOnFinalReceivedByteOffset(
@@ -467,20 +464,18 @@ void QuicSession::OnConfigNegotiated() {
   connection_->SetFromConfig(config_);
   QuicVersion version = connection()->version();
 
-  if (FLAGS_quic_allow_more_open_streams) {
-    uint32 max_streams = config_.MaxStreamsPerConnection();
-    if (is_server()) {
-      // A server should accept a small number of additional streams beyond the
-      // limit sent to the client. This helps avoid early connection termination
-      // when FIN/RSTs for old streams are lost or arrive out of order.
-      // Use a minimum number of additional streams, or a percentage increase,
-      // whichever is larger.
-      max_streams =
-          max(max_streams + kMaxStreamsMinimumIncrement,
-              static_cast<uint32>(max_streams * kMaxStreamsMultiplier));
-    }
-    set_max_open_streams(max_streams);
+  uint32 max_streams = config_.MaxStreamsPerConnection();
+  if (is_server()) {
+    // A server should accept a small number of additional streams beyond the
+    // limit sent to the client. This helps avoid early connection termination
+    // when FIN/RSTs for old streams are lost or arrive out of order.
+    // Use a minimum number of additional streams, or a percentage increase,
+    // whichever is larger.
+    max_streams =
+        max(max_streams + kMaxStreamsMinimumIncrement,
+            static_cast<uint32>(max_streams * kMaxStreamsMultiplier));
   }
+  set_max_open_streams(max_streams);
 
   if (version == QUIC_VERSION_19) {
     // QUIC_VERSION_19 doesn't support independent stream/session flow
@@ -565,12 +560,6 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
       // Discard originally encrypted packets, since they can't be decrypted by
       // the peer.
       connection_->NeuterUnencryptedPackets();
-      if (!FLAGS_quic_unified_timeouts) {
-        connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
-      }
-      if (!FLAGS_quic_allow_more_open_streams) {
-        max_open_streams_ = config_.MaxStreamsPerConnection();
-      }
       break;
 
     default:
@@ -595,6 +584,8 @@ void QuicSession::ActivateStream(QuicDataStream* stream) {
            << ". activating " << stream->id();
   DCHECK_EQ(stream_map_.count(stream->id()), 0u);
   stream_map_[stream->id()] = stream;
+  // Increase the number of streams being emulated when a new one is opened.
+  connection_->SetNumOpenStreams(stream_map_.size());
 }
 
 QuicStreamId QuicSession::GetNextStreamId() {

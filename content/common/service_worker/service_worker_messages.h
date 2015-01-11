@@ -61,6 +61,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerResponse)
   IPC_STRUCT_TRAITS_MEMBER(headers)
   IPC_STRUCT_TRAITS_MEMBER(blob_uuid)
   IPC_STRUCT_TRAITS_MEMBER(blob_size)
+  IPC_STRUCT_TRAITS_MEMBER(stream_url)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerCacheQueryParams)
@@ -160,6 +161,11 @@ IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_IncrementRegistrationRefCount,
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_DecrementRegistrationRefCount,
                      int /* registration_handle_id */)
 
+// Tells the browser to terminate a service worker. Used in layout tests to
+// verify behavior when a service worker isn't running.
+IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_TerminateWorker,
+                     int /* handle_id */)
+
 // Informs the browser that |provider_id| is associated
 // with a service worker script running context and
 // |version_id| identifies which ServiceWorkerVersion.
@@ -181,8 +187,11 @@ IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_FetchEventFinished,
                     content::ServiceWorkerResponse)
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_SyncEventFinished,
                     int /* request_id */)
-IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_PushEventFinished,
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_NotificationClickEventFinished,
                     int /* request_id */)
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_PushEventFinished,
+                    int /* request_id */,
+                    blink::WebServiceWorkerEventResult)
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_GeofencingEventFinished,
                     int /* request_id */)
 
@@ -352,6 +361,9 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_FetchEvent,
                      content::ServiceWorkerFetchRequest)
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_SyncEvent,
                      int /* request_id */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_NotificationClickEvent,
+                     int /* request_id */,
+                     std::string /* notification_id */);
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_PushEvent,
                      int /* request_id */,
                      std::string /* data */)

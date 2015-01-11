@@ -34,12 +34,13 @@ void WebScrollOffsetAnimationCurveImpl::setInitialValue(
 }
 
 WebFloatPoint WebScrollOffsetAnimationCurveImpl::getValue(double time) const {
-  gfx::ScrollOffset value = curve_->GetValue(time);
+  gfx::ScrollOffset value =
+      curve_->GetValue(base::TimeDelta::FromSecondsD(time));
   return WebFloatPoint(value.x(), value.y());
 }
 
 double WebScrollOffsetAnimationCurveImpl::duration() const {
-  return curve_->Duration();
+  return curve_->Duration().InSecondsF();
 }
 
 scoped_ptr<cc::AnimationCurve>

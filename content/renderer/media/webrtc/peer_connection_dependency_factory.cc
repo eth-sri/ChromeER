@@ -169,13 +169,12 @@ PeerConnectionDependencyFactory::PeerConnectionDependencyFactory(
       p2p_socket_dispatcher_(p2p_socket_dispatcher),
       signaling_thread_(NULL),
       worker_thread_(NULL),
+      chrome_signaling_thread_("Chrome_libJingle_Signaling"),
       chrome_worker_thread_("Chrome_libJingle_WorkerThread") {
 }
 
 PeerConnectionDependencyFactory::~PeerConnectionDependencyFactory() {
   CleanupPeerConnectionFactory();
-  if (aec_dump_message_filter_.get())
-    aec_dump_message_filter_->RemoveDelegate(this);
 }
 
 blink::WebRTCPeerConnectionHandler*
@@ -273,15 +272,16 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
   DCHECK(!worker_thread_);
   DCHECK(!network_manager_);
   DCHECK(!socket_factory_);
+  DCHECK(!chrome_signaling_thread_.IsRunning());
   DCHECK(!chrome_worker_thread_.IsRunning());
 
   DVLOG(1) << "PeerConnectionDependencyFactory::CreatePeerConnectionFactory()";
 
+  // To allow sending to the signaling/worker threads.
   jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
   jingle_glue::JingleThreadWrapper::current()->set_send_allowed(true);
-  signaling_thread_ = jingle_glue::JingleThreadWrapper::current();
-  CHECK(signaling_thread_);
 
+  CHECK(chrome_signaling_thread_.Start());
   CHECK(chrome_worker_thread_.Start());
 
   base::WaitableEvent start_worker_event(true, false);
@@ -290,18 +290,17 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
       base::Unretained(this),
       &worker_thread_,
       &start_worker_event));
-  start_worker_event.Wait();
-  CHECK(worker_thread_);
 
   base::WaitableEvent create_network_manager_event(true, false);
   chrome_worker_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
       &PeerConnectionDependencyFactory::CreateIpcNetworkManagerOnWorkerThread,
       base::Unretained(this),
       &create_network_manager_event));
+
+  start_worker_event.Wait();
   create_network_manager_event.Wait();
 
-  socket_factory_.reset(
-      new IpcPacketSocketFactory(p2p_socket_dispatcher_.get()));
+  CHECK(worker_thread_);
 
   // Init SSL, which will be needed by PeerConnection.
 #if defined(USE_OPENSSL)
@@ -315,19 +314,42 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
   net::EnsureNSSSSLInit();
 #endif
 
+  base::WaitableEvent start_signaling_event(true, false);
+  chrome_signaling_thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &PeerConnectionDependencyFactory::InitializeSignalingThread,
+      base::Unretained(this),
+      RenderThreadImpl::current()->GetGpuFactories(),
+      &start_signaling_event));
+
+  start_signaling_event.Wait();
+  CHECK(signaling_thread_);
+}
+
+void PeerConnectionDependencyFactory::InitializeSignalingThread(
+    const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories,
+    base::WaitableEvent* event) {
+  DCHECK(chrome_signaling_thread_.task_runner()->BelongsToCurrentThread());
+  DCHECK(worker_thread_);
+  DCHECK(p2p_socket_dispatcher_.get());
+
+  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
+  jingle_glue::JingleThreadWrapper::current()->set_send_allowed(true);
+  signaling_thread_ = jingle_glue::JingleThreadWrapper::current();
+
+  EnsureWebRtcAudioDeviceImpl();
+
+  socket_factory_.reset(
+      new IpcPacketSocketFactory(p2p_socket_dispatcher_.get()));
+
   scoped_ptr<cricket::WebRtcVideoDecoderFactory> decoder_factory;
   scoped_ptr<cricket::WebRtcVideoEncoderFactory> encoder_factory;
 
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories =
-      RenderThreadImpl::current()->GetGpuFactories();
-  if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWDecoding)) {
-    if (gpu_factories.get())
+  if (gpu_factories.get()) {
+    if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWDecoding))
       decoder_factory.reset(new RTCVideoDecoderFactory(gpu_factories));
-  }
 
-  if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWEncoding)) {
-    if (gpu_factories.get())
+    if (!cmd_line->HasSwitch(switches::kDisableWebRtcHWEncoding))
       encoder_factory.reset(new RTCVideoEncoderFactory(gpu_factories));
   }
 
@@ -336,33 +358,18 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
     encoder_factory.reset();
 #endif
 
-  EnsureWebRtcAudioDeviceImpl();
+  pc_factory_ = webrtc::CreatePeerConnectionFactory(
+      worker_thread_, signaling_thread_, audio_device_.get(),
+      encoder_factory.release(), decoder_factory.release());
+  CHECK(pc_factory_.get());
 
-  scoped_refptr<webrtc::PeerConnectionFactoryInterface> factory(
-      webrtc::CreatePeerConnectionFactory(worker_thread_,
-                                          signaling_thread_,
-                                          audio_device_.get(),
-                                          encoder_factory.release(),
-                                          decoder_factory.release()));
-  CHECK(factory.get());
-
-  pc_factory_ = factory;
   webrtc::PeerConnectionFactoryInterface::Options factory_options;
   factory_options.disable_sctp_data_channels = false;
   factory_options.disable_encryption =
       cmd_line->HasSwitch(switches::kDisableWebRtcEncryption);
   pc_factory_->SetOptions(factory_options);
 
-  // TODO(xians): Remove the following code after kDisableAudioTrackProcessing
-  // is removed.
-  if (!MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled()) {
-    aec_dump_message_filter_ = AecDumpMessageFilter::Get();
-    // In unit tests not creating a message filter, |aec_dump_message_filter_|
-    // will be NULL. We can just ignore that. Other unit tests and browser tests
-    // ensure that we do get the filter when we should.
-    if (aec_dump_message_filter_.get())
-      aec_dump_message_filter_->AddDelegate(this);
-  }
+  event->Signal();
 }
 
 bool PeerConnectionDependencyFactory::PeerConnectionFactoryCreated() {
@@ -456,12 +463,6 @@ void PeerConnectionDependencyFactory::CreateLocalAudioTrack(
 
 void PeerConnectionDependencyFactory::StartLocalAudioTrack(
     WebRtcLocalAudioTrack* audio_track) {
-  // Add the WebRtcAudioDevice as the sink to the local audio track.
-  // TODO(xians): Remove the following line of code after the APM in WebRTC is
-  // completely deprecated. See http://crbug/365672.
-  if (!MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled())
-    audio_track->AddSink(GetWebRtcAudioDevice());
-
   // Start the audio track. This will hook the |audio_track| to the capturer
   // as the sink of the audio, and only start the source of the capturer if
   // it is the first audio track connecting to the capturer.
@@ -600,22 +601,6 @@ PeerConnectionDependencyFactory::CreateAudioCapturer(
                                              audio_source);
 }
 
-void PeerConnectionDependencyFactory::AddNativeAudioTrackToBlinkTrack(
-    webrtc::MediaStreamTrackInterface* native_track,
-    const blink::WebMediaStreamTrack& webkit_track,
-    bool is_local_track) {
-  DCHECK(!webkit_track.isNull() && !webkit_track.extraData());
-  DCHECK_EQ(blink::WebMediaStreamSource::TypeAudio,
-            webkit_track.source().type());
-  blink::WebMediaStreamTrack track = webkit_track;
-
-  DVLOG(1) << "AddNativeTrackToBlinkTrack() audio";
-  track.setExtraData(
-      new MediaStreamTrack(
-          static_cast<webrtc::AudioTrackInterface*>(native_track),
-          is_local_track));
-}
-
 scoped_refptr<base::MessageLoopProxy>
 PeerConnectionDependencyFactory::GetWebRtcWorkerThread() const {
   DCHECK(CalledOnValidThread());
@@ -625,33 +610,7 @@ PeerConnectionDependencyFactory::GetWebRtcWorkerThread() const {
 scoped_refptr<base::MessageLoopProxy>
 PeerConnectionDependencyFactory::GetWebRtcSignalingThread() const {
   DCHECK(CalledOnValidThread());
-  return RenderThreadImpl::current()->GetMessageLoop()->message_loop_proxy();
-}
-
-void PeerConnectionDependencyFactory::OnAecDumpFile(
-    const IPC::PlatformFileForTransit& file_handle) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(!MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled());
-  DCHECK(PeerConnectionFactoryCreated());
-
-  base::File file = IPC::PlatformFileForTransitToFile(file_handle);
-  DCHECK(file.IsValid());
-
-  // |pc_factory_| always takes ownership of |aec_dump_file|. If StartAecDump()
-  // fails, |aec_dump_file| will be closed.
-  if (!GetPcFactory()->StartAecDump(file.TakePlatformFile()))
-    VLOG(1) << "Could not start AEC dump.";
-}
-
-void PeerConnectionDependencyFactory::OnDisableAecDump() {
-  DCHECK(CalledOnValidThread());
-  DCHECK(!MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled());
-  // Do nothing. We never disable AEC dump for non-track-processing case.
-}
-
-void PeerConnectionDependencyFactory::OnIpcClosing() {
-  DCHECK(CalledOnValidThread());
-  aec_dump_message_filter_ = NULL;
+  return chrome_signaling_thread_.message_loop_proxy();
 }
 
 void PeerConnectionDependencyFactory::EnsureWebRtcAudioDeviceImpl() {

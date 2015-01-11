@@ -29,6 +29,7 @@
 #include "components/password_manager/content/browser/password_manager_internals_service_factory.h"
 #include "components/password_manager/content/common/credential_manager_messages.h"
 #include "components/password_manager/content/common/credential_manager_types.h"
+#include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
 #include "components/password_manager/core/browser/log_receiver.h"
 #include "components/password_manager/core/browser/password_form_manager.h"
 #include "components/password_manager/core/browser/password_manager.h"
@@ -42,10 +43,18 @@
 #include "net/base/url_util.h"
 #include "third_party/re2/re2/re2.h"
 
+#if defined(OS_ANDROID)
+#include "chrome/browser/password_manager/generated_password_saved_infobar_delegate_android.h"
+#endif
+
 using password_manager::PasswordManagerInternalsService;
 using password_manager::PasswordManagerInternalsServiceFactory;
 
 DEFINE_WEB_CONTENTS_USER_DATA_KEY(ChromePasswordManagerClient);
+
+// Shorten the name to spare line breaks. The code provides enough context
+// already.
+typedef autofill::SavePasswordProgressLogger Logger;
 
 // static
 void ChromePasswordManagerClient::CreateForWebContentsWithAutofillClient(
@@ -174,14 +183,30 @@ bool ChromePasswordManagerClient::PromptUserToSavePassword(
   return true;
 }
 
+bool ChromePasswordManagerClient::PromptUserToChooseCredentials(
+    const std::vector<autofill::PasswordForm*>& forms,
+    base::Callback<void(const password_manager::CredentialInfo&)> callback) {
+  // Take ownership of all the password form objects in the |results| vector.
+  ScopedVector<autofill::PasswordForm> entries;
+  entries.assign(forms.begin(), forms.end());
+  ManagePasswordsUIController* manage_passwords_ui_controller =
+      ManagePasswordsUIController::FromWebContents(web_contents());
+  return manage_passwords_ui_controller->OnChooseCredentials(entries.Pass(),
+                                                             callback);
+}
+
 void ChromePasswordManagerClient::AutomaticPasswordSave(
     scoped_ptr<password_manager::PasswordFormManager> saved_form) {
+#if defined(OS_ANDROID)
+  GeneratedPasswordSavedInfoBarDelegateAndroid::Create(web_contents());
+#else
   if (IsTheHotNewBubbleUIEnabled()) {
     ManagePasswordsUIController* manage_passwords_ui_controller =
         ManagePasswordsUIController::FromWebContents(web_contents());
     manage_passwords_ui_controller->OnAutomaticPasswordSave(
         saved_form.Pass());
   }
+#endif
 }
 
 void ChromePasswordManagerClient::PasswordWasAutofilled(
@@ -267,7 +292,7 @@ void ChromePasswordManagerClient::OnLogRouterAvailabilityChanged(
 }
 
 void ChromePasswordManagerClient::LogSavePasswordProgress(
-    const std::string& text) {
+    const std::string& text) const {
   if (!IsLoggingActive())
     return;
   PasswordManagerInternalsService* service =
@@ -280,6 +305,30 @@ bool ChromePasswordManagerClient::IsLoggingActive() const {
   // WebUI tabs do not need to log password saving progress. In particular, the
   // internals page itself should not send any logs.
   return can_use_log_router_ && !web_contents()->GetWebUI();
+}
+
+bool ChromePasswordManagerClient::WasLastNavigationHTTPError() const {
+  DCHECK(web_contents());
+
+  scoped_ptr<password_manager::BrowserSavePasswordProgressLogger> logger;
+  if (IsLoggingActive()) {
+    logger.reset(new password_manager::BrowserSavePasswordProgressLogger(this));
+    logger->LogMessage(
+        Logger::STRING_WAS_LAST_NAVIGATION_HTTP_ERROR_METHOD);
+  }
+
+  content::NavigationEntry* entry =
+      web_contents()->GetController().GetVisibleEntry();
+  if (!entry)
+    return false;
+  int http_status_code = entry->GetHttpStatusCode();
+
+  if (logger)
+    logger->LogNumber(Logger::STRING_HTTP_STATUS_CODE, http_status_code);
+
+  if (http_status_code >= 400 && http_status_code < 600)
+    return true;
+  return false;
 }
 
 // static

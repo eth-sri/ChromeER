@@ -49,10 +49,10 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/history_index_restore_observer.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/common/bookmark_constants.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/history/core/browser/history_constants.h"
 #include "components/history/core/browser/top_sites_observer.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/policy/core/common/policy_service.h"
@@ -466,11 +466,8 @@ void TestingProfile::CreateFaviconService() {
 
 static KeyedService* BuildHistoryService(content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
-  ChromeHistoryClient* history_client =
-      ChromeHistoryClientFactory::GetForProfile(profile);
-  HistoryService* history_service = new HistoryService(history_client, profile);
-  if (history_client)
-    history_client->SetHistoryService(history_service);
+  HistoryService* history_service = new HistoryService(
+      ChromeHistoryClientFactory::GetForProfile(profile), profile);
   return history_service;
 }
 
@@ -478,7 +475,7 @@ bool TestingProfile::CreateHistoryService(bool delete_file, bool no_db) {
   DestroyHistoryService();
   if (delete_file) {
     base::FilePath path = GetPath();
-    path = path.Append(chrome::kHistoryFilename);
+    path = path.Append(history::kHistoryFilename);
     if (!base::DeleteFile(path, false) || base::PathExists(path))
       return false;
   }
@@ -633,6 +630,11 @@ void TestingProfile::SetGuestSession(bool guest) {
 
 base::FilePath TestingProfile::GetPath() const {
   return profile_path_;
+}
+
+scoped_ptr<content::ZoomLevelDelegate> TestingProfile::CreateZoomLevelDelegate(
+    const base::FilePath& partition_path) {
+  return nullptr;
 }
 
 scoped_refptr<base::SequencedTaskRunner> TestingProfile::GetIOTaskRunner() {

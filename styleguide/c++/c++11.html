@@ -94,6 +94,27 @@ decltype specifier</a></td>
 </tr>
 
 <tr>
+<td>Default Function Creation</td>
+<td><code><i>Function</i>(<i>arguments</i>) = default;</code></td>
+<td>Instructs the compiler to generate a default version
+of the indicated function</td>
+<td><a href="http://stackoverflow.com/questions/823935/whats-the-point-in-defaulting-functions-in-c11">
+What's the point in defaulting functions in C++11?</a></td>
+<td>Doesn't work for move constructors and move assignment operators in MSVC2013.
+<a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/qgU4mh_MpGA">Discussion thread</a></td>
+</tr>
+
+<tr>
+<td>Delegated Constructors</td>
+<td><code>Class() : Class(0) {}</code><br />
+<code>Class(<i>type</i> <i>var</i>) : Class(<i>var</i>, 0)</code></td>
+<td>Allow overloaded constructors to use common initialization code</td>
+<td><a href="https://www.ibm.com/developerworks/community/blogs/5894415f-be62-4bc0-81c5-3956e82276f3/entry/introduction_to_the_c_11_feature_delegating_constructors?lang=en">
+Introduction to the C++11 feature: delegating constructors</a></td>
+<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/0zVA8Ctx3Xo">Discussion thread</a></td>
+</tr>
+
+<tr>
 <td>Enumerated Type Classes and Enum Bases</td>
 <td><code>enum class <i>classname</i></code><br>
     <code>enum class <i>classname</i> : <i>base-type</i></code><br>
@@ -113,6 +134,32 @@ enum classes and regular enums.</td>
 <td> Indicates that a class or function is final and cannot be overridden</td>
 <td><a href="http://en.cppreference.com/w/cpp/language/final">final Language Reference</a></td>
 <td>Recommended for new code. Existing uses of the <code>FINAL</code> macro will be <a href="https://crbug.com/417463">replaced throughout the codebase</a>. <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/VTNZzizN0zo">Discussion thread</a></td>
+</tr>
+
+<tr>
+<td>Function Suppression</td>
+<td><code><i>Function</i>(<i>arguments</i>) = delete;</code></td>
+<td>Suppresses the implementation of a function, especially a
+synthetic function such as a copy constructor</td>
+<td>TODO: documentation link</td>
+<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/i1o7-RNRnMs">Discussion thread</a></td>
+</tr>
+
+<tr>
+<td>Lambda Expressions</td>
+<td><code>[<i>captures</i>](<i>params</i>) -&gt; <i>ret</i> { <i>body</i> }</code></td>
+<td>Anonymous functions</td>
+<td><a href="http://en.cppreference.com/w/cpp/language/lambda">Lambda functions</a></td>
+<td>Do not bind or store lambdas; use <code>base::Bind</code> and
+<code>base::Callback</code> instead, because they offer protection against a
+large class of object lifetime mistakes. Don't use default captures
+(<code>[=]</code>, <code>[&amp;]</code> &ndash; <a
+  href="https://google-styleguide.googlecode.com/svn/trunk/cppguide.html#Lambda_expressions">Google Style Guide</a>).
+Lambdas are typically useful as a parameter to methods or
+functions that will use them immediately, such as those in
+<code>&lt;algorithm&gt;</code>. <a
+  href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/D9UnnxBnciQ">Discussion
+  thread</a></td>
 </tr>
 
 <tr>
@@ -356,16 +403,6 @@ C++11 generalized attributes</a></td>
 </tr>
 
 <tr>
-<td>Default Function Creation</td>
-<td><code><i>Function</i>(<i>arguments</i>) = default;</code></td>
-<td>Instructs the compiler to generate a default version
-of the indicated function</td>
-<td><a href="http://stackoverflow.com/questions/823935/whats-the-point-in-defaulting-functions-in-c11">
-What's the point in defaulting functions in C++11?</a></td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/qgU4mh_MpGA">Discussion thread</a></td>
-</tr>
-
-<tr>
 <td>Default Function Template Arguments</td>
 <td><code>template &lt;typename T = <i>type</i>&gt; <br />
 &nbsp;&nbsp;<i>type</i> <i>Function</i>(T <i>var</i>) {}</code></td>
@@ -373,16 +410,6 @@ What's the point in defaulting functions in C++11?</a></td>
 <td><a href="http://stackoverflow.com/questions/2447458/default-template-arguments-for-function-templates">
 Default Template Arguments for Function Templates</a></td>
 <td></td>
-</tr>
-
-<tr>
-<td>Delegated Constructors</td>
-<td><code>Class() : Class(0) {}</code><br />
-<code>Class(<i>type</i> <i>var</i>) : Class(<i>var</i>, 0)</code></td>
-<td>Allow overloaded constructors to use common initialization code</td>
-<td><a href="https://www.ibm.com/developerworks/community/blogs/5894415f-be62-4bc0-81c5-3956e82276f3/entry/introduction_to_the_c_11_feature_delegating_constructors?lang=en">
-Introduction to the C++11 feature: delegating constructors</a></td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/0zVA8Ctx3Xo">Discussion thread</a></td>
 </tr>
 
 <tr>
@@ -398,28 +425,11 @@ std::exception</a></td>
 </tr>
 
 <tr>
-<td>Function Suppression</td>
-<td><code><i>Function</i>(<i>arguments</i>) = delete;</code></td>
-<td>Suppresses the implementation of a function, especially a
-synthetic function such as a copy constructor</td>
-<td>TODO: documentation link</td>
-<td><a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/i1o7-RNRnMs">Discussion thread</a></td>
-</tr>
-
-<tr>
 <td>Inline Namespaces</td>
 <td><code>inline</code></td>
 <td>Allows better versioning of namespaces</td>
 <td><a href="http://en.cppreference.com/w/cpp/language/namespace">Namespaces</a></td>
 <td>Unclear how it will work with components</td>
-</tr>
-
-<tr>
-<td>Lambda Expressions</td>
-<td><code>[<i>captures</i>](<i>params</i>) -&gt; <i>ret</i> { <i>body</i> }</code></td>
-<td>Anonymous functions</td>
-<td><a href="http://en.cppreference.com/w/cpp/language/lambda">Lambda functions</a></td>
-<td>No default captures (<a href="https://google-styleguide.googlecode.com/svn/trunk/cppguide.html#Lambda_expressions">Google Style Guide</a>). <a href="https://groups.google.com/a/chromium.org/forum/#!topic/chromium-dev/D9UnnxBnciQ">Discussion thread</a></td>
 </tr>
 
 <tr>

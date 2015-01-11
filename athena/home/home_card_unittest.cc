@@ -7,9 +7,14 @@
 #include "athena/activity/public/activity_factory.h"
 #include "athena/home/home_card_constants.h"
 #include "athena/home/home_card_impl.h"
+#include "athena/home/home_card_view.h"
 #include "athena/test/base/athena_test_base.h"
 #include "athena/test/base/test_windows.h"
 #include "athena/wm/public/window_manager.h"
+#include "ui/app_list/app_list_model.h"
+#include "ui/app_list/app_list_view_delegate.h"
+#include "ui/app_list/views/app_list_main_view.h"
+#include "ui/app_list/views/contents_view.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/events/test/event_generator.h"
@@ -26,12 +31,6 @@ namespace athena {
 aura::Window* GetHomeCardWindow() {
   return static_cast<HomeCardImpl*>(HomeCard::Get())->
       GetHomeCardWindowForTest();
-}
-
-// Returns true if the keyboard focus is on the search box.
-bool IsSearchBoxFocused(aura::Window* home_card) {
-  return views::Widget::GetWidgetForNativeWindow(home_card)->
-      GetContentsView()->GetViewByID(kHomeCardSearchBoxId)->HasFocus();
 }
 
 typedef test::AthenaTestBase HomeCardTest;
@@ -226,10 +225,9 @@ TEST_F(HomeCardTest, Gestures) {
   EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Swipe down to the bottom state.
-  generator.GestureScrollSequence(gfx::Point(x, 10),
+  generator.GestureScrollSequence(gfx::Point(x, 50),
                                   gfx::Point(x, bottom - 120),
-                                  base::TimeDelta::FromSeconds(1),
-                                  10);
+                                  base::TimeDelta::FromSeconds(1), 10);
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
   EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
@@ -241,10 +239,8 @@ TEST_F(HomeCardTest, Gestures) {
   EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
 
   // Swipe down to the minimized state.
-  generator.GestureScrollSequence(gfx::Point(x, 10),
-                                  gfx::Point(x, bottom - 1),
-                                  base::TimeDelta::FromSeconds(1),
-                                  10);
+  generator.GestureScrollSequence(gfx::Point(x, 50), gfx::Point(x, bottom - 1),
+                                  base::TimeDelta::FromSeconds(1), 10);
   EXPECT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
   EXPECT_FALSE(WindowManager::Get()->IsOverviewModeActive());
 }
@@ -263,35 +259,6 @@ TEST_F(HomeCardTest, GesturesToFullDirectly) {
                                   10);
   EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
   EXPECT_TRUE(WindowManager::Get()->IsOverviewModeActive());
-}
-
-TEST_F(HomeCardTest, KeyboardFocus) {
-  ASSERT_EQ(HomeCard::VISIBLE_MINIMIZED, HomeCard::Get()->GetState());
-  aura::Window* home_card = GetHomeCardWindow();
-  ASSERT_FALSE(IsSearchBoxFocused(home_card));
-
-  WindowManager::Get()->EnterOverview();
-  ASSERT_FALSE(IsSearchBoxFocused(home_card));
-
-  ui::test::EventGenerator generator(root_window());
-  gfx::Rect screen_rect(root_window()->bounds());
-
-  const int bottom = screen_rect.bottom();
-  const int x = screen_rect.x() + 1;
-
-  generator.GestureScrollSequence(gfx::Point(x, bottom - 40),
-                                  gfx::Point(x, 10),
-                                  base::TimeDelta::FromSeconds(1),
-                                  10);
-  EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
-  EXPECT_TRUE(IsSearchBoxFocused(home_card));
-
-  generator.GestureScrollSequence(gfx::Point(x, 10),
-                                  gfx::Point(x, bottom - 100),
-                                  base::TimeDelta::FromSeconds(1),
-                                  10);
-  EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
-  EXPECT_FALSE(IsSearchBoxFocused(home_card));
 }
 
 TEST_F(HomeCardTest, DontMinimizeWithModalWindow) {
@@ -313,10 +280,40 @@ TEST_F(HomeCardTest, DontMinimizeWithModalWindow) {
   modal.reset();
 
   EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
+  EXPECT_TRUE(wm::IsActiveWindow(home_card));
+}
 
-  // TODO(oshima): The focus should be set to home card. Flip the
-  // condition once crbug.com/424750 is fixed.a
-  EXPECT_FALSE(wm::IsActiveWindow(home_card));
+TEST_F(HomeCardTest, AppListStates) {
+  app_list::AppListModel* model =
+      static_cast<HomeCardImpl*>(HomeCard::Get())->view_delegate_->GetModel();
+
+  WindowManager::Get()->EnterOverview();
+  ASSERT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
+  ASSERT_EQ(app_list::AppListModel::STATE_START, model->state());
+
+  // Changes the contents of the home card to "apps" view, which should change
+  // the home card state to VISIBLE_CENTERED.
+  app_list::ContentsView* contents_view =
+      static_cast<HomeCardImpl*>(HomeCard::Get())
+          ->home_card_view_->main_view_->contents_view();
+  contents_view->SetActivePage(
+      contents_view->GetPageIndexForState(app_list::AppListModel::STATE_APPS));
+  EXPECT_EQ(HomeCard::VISIBLE_CENTERED, HomeCard::Get()->GetState());
+  EXPECT_EQ(app_list::AppListModel::STATE_APPS, model->state());
+
+  // VISIBLE_BOTTOM state should always show the start page.
+  HomeCard::Get()->SetState(HomeCard::VISIBLE_BOTTOM);
+  EXPECT_EQ(app_list::AppListModel::STATE_START, model->state());
+
+  // VISIBLE_CENTERED with apps mode state to minimized -- and then back to
+  // VISIBLE_BOTTOM.
+  contents_view->SetActivePage(
+      contents_view->GetPageIndexForState(app_list::AppListModel::STATE_APPS));
+  EXPECT_EQ(app_list::AppListModel::STATE_APPS, model->state());
+  WindowManager::Get()->ExitOverview();
+  WindowManager::Get()->EnterOverview();
+  EXPECT_EQ(HomeCard::VISIBLE_BOTTOM, HomeCard::Get()->GetState());
+  EXPECT_EQ(app_list::AppListModel::STATE_START, model->state());
 }
 
 }  // namespace athena

@@ -5,6 +5,7 @@
 #include "cc/layers/layer_impl.h"
 
 #include "cc/layers/painted_scrollbar_layer_impl.h"
+#include "cc/layers/solid_color_scrollbar_layer_impl.h"
 #include "cc/output/filter_operation.h"
 #include "cc/output/filter_operations.h"
 #include "cc/test/fake_impl_proxy.h"
@@ -14,6 +15,7 @@
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
+#include "cc/trees/tree_synchronizer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
@@ -434,6 +436,8 @@ class LayerImplScrollTest : public testing::Test {
     return host_impl_.active_tree()->root_layer()->children()[0];
   }
 
+  LayerTreeHostImpl& host_impl() { return host_impl_; }
+
   LayerTreeImpl* tree() { return host_impl_.active_tree(); }
 
   LayerTreeSettings settings() {
@@ -497,7 +501,13 @@ TEST_F(LayerImplScrollTest, ScrollByWithNonZeroOffset) {
 
 class ScrollDelegateIgnore : public LayerImpl::ScrollOffsetDelegate {
  public:
-  void SetTotalScrollOffset(const gfx::ScrollOffset& new_value) override {}
+  void SetTotalScrollOffset(const gfx::ScrollOffset& new_value) override {
+    last_attempted_set_offset_ = new_value;
+  }
+  gfx::ScrollOffset last_attempted_set_offset() const {
+    return last_attempted_set_offset_;
+  }
+
   gfx::ScrollOffset GetTotalScrollOffset() override {
     return gfx::ScrollOffset(fixed_offset_);
   }
@@ -509,6 +519,7 @@ class ScrollDelegateIgnore : public LayerImpl::ScrollOffsetDelegate {
   }
 
  private:
+  gfx::ScrollOffset last_attempted_set_offset_;
   gfx::Vector2dF fixed_offset_;
 };
 
@@ -632,6 +643,8 @@ TEST_F(LayerImplScrollTest, ApplySentScrollsWithIgnoringDelegate) {
 
   layer()->ApplySentScrollDeltasFromAbortedCommit();
 
+  EXPECT_VECTOR_EQ(fixed_offset, delegate.last_attempted_set_offset());
+
   EXPECT_VECTOR_EQ(fixed_offset, layer()->TotalScrollOffset());
   EXPECT_VECTOR_EQ(gfx::ScrollOffsetWithDelta(scroll_offset, sent_scroll_delta),
                    layer()->scroll_offset());
@@ -675,6 +688,31 @@ TEST_F(LayerImplScrollTest, ScrollUserUnscrollableLayer) {
   EXPECT_VECTOR_EQ(gfx::Vector2dF(30.5f, 5), layer()->TotalScrollOffset());
 }
 
+TEST_F(LayerImplScrollTest, PushPropertiesToMirrorsTotalScrollOffset) {
+  gfx::ScrollOffset scroll_offset(10, 5);
+  gfx::Vector2dF scroll_delta(12, 18);
+
+  host_impl().CreatePendingTree();
+
+  layer()->SetScrollOffset(scroll_offset);
+  gfx::Vector2dF unscrolled = layer()->ScrollBy(scroll_delta);
+
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(0, 0), unscrolled);
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(22, 23), layer()->TotalScrollOffset());
+
+  layer()->SetSentScrollDelta(scroll_delta);
+
+  scoped_ptr<LayerImpl> pending_layer =
+      LayerImpl::Create(host_impl().sync_tree(), layer()->id());
+  pending_layer->SetScrollOffset(layer()->TotalScrollOffset());
+
+  pending_layer->PushPropertiesTo(layer());
+
+  EXPECT_VECTOR_EQ(gfx::Vector2dF(22, 23), layer()->TotalScrollOffset());
+  EXPECT_VECTOR_EQ(layer()->TotalScrollOffset(),
+                   pending_layer->TotalScrollOffset());
+}
+
 TEST_F(LayerImplScrollTest, SetNewScrollbarParameters) {
   gfx::ScrollOffset scroll_offset(10, 5);
   layer()->SetScrollOffset(scroll_offset);
@@ -698,6 +736,132 @@ TEST_F(LayerImplScrollTest, SetNewScrollbarParameters) {
       layer()->bounds().width() - tree()->root_layer()->bounds().width();
   EXPECT_EQ(expected_horizontal_maximum, horizontal_scrollbar->maximum());
   EXPECT_EQ(scroll_offset.x(), horizontal_scrollbar->current_pos());
+}
+
+class LayerImplScrollbarSyncTest : public testing::Test {
+ public:
+  enum {
+    ROOT = 1,
+    IV_CLIP = 2,
+    PAGE = 3,
+    IV_SCROLL = 4,
+    SCROLLBAR = 5,
+    OLD_ROOT = 6,
+    OV_CLIP = 7,
+    OV_SCROLL = 8,
+  };
+  enum TreeID {
+    PENDING,
+    ACTIVE
+  };
+
+  LayerImplScrollbarSyncTest()
+      : host_impl_(settings(), &proxy_, &shared_bitmap_manager_) {
+    host_impl_.CreatePendingTree();
+
+    CreateLayers(host_impl_.pending_tree());
+    CreateLayers(host_impl_.active_tree());
+  }
+
+  void CreateLayers(LayerTreeImpl * tree) {
+    tree->SetRootLayer(LayerImpl::Create(tree, ROOT));
+    LayerImpl * root = tree->root_layer();
+    ASSERT_TRUE(root != nullptr);
+
+    int hierarchy[] = {IV_CLIP, PAGE, IV_SCROLL, OLD_ROOT, OV_CLIP, OV_SCROLL};
+    LayerImpl * parent = root;
+    for (int child_id : hierarchy) {
+      parent->AddChild(LayerImpl::Create(tree, child_id));
+      parent = tree->LayerById(child_id);
+      ASSERT_TRUE(parent != nullptr);
+    }
+
+    root->AddChild(
+        SolidColorScrollbarLayerImpl::Create(tree, SCROLLBAR, HORIZONTAL,
+                                             5, 5, false, true));
+  }
+
+  LayerImpl* layer(int id, TreeID tree_id) {
+    LayerTreeImpl* tree =
+        ((tree_id == PENDING) ?
+         host_impl_.pending_tree() : host_impl_.active_tree());
+
+    assert(tree);
+    return tree->LayerById(id);
+  }
+
+  bool LayerHasScrollbar(int id, TreeID tree_id) {
+    return layer(id, tree_id)->HasScrollbar(HORIZONTAL);
+  }
+
+  ScrollbarLayerImplBase* pending_scrollbar() {
+    LayerImpl* layer_impl = layer(SCROLLBAR, PENDING);
+    assert(layer_impl);
+    return layer_impl->ToScrollbarLayer();
+  }
+
+  LayerImpl* pending_root() {
+    LayerImpl * result = layer(ROOT, PENDING);
+    assert(result);
+    return result;
+  }
+
+  LayerImpl* active_root() {
+    LayerImpl * result = layer(ROOT, ACTIVE);
+    assert(result);
+    return result;
+  }
+
+  LayerTreeSettings settings() {
+    LayerTreeSettings settings;
+    settings.use_pinch_virtual_viewport = true;
+    return settings;
+  }
+
+ private:
+  FakeImplProxy proxy_;
+  TestSharedBitmapManager shared_bitmap_manager_;
+  FakeLayerTreeHostImpl host_impl_;
+};
+
+TEST_F(LayerImplScrollbarSyncTest, LayerImplBecomesScrollable) {
+  // In the beginning IV_SCROLL layer is not scrollable.
+  ASSERT_FALSE(layer(IV_SCROLL, PENDING)->scrollable());
+
+  // For pinch virtual viewport the clip layer is the inner viewport
+  // clip layer (IV_CLIP) and the scroll one is the outer viewport
+  // scroll layer (OV_SCROLL).
+  pending_scrollbar()->SetScrollLayerAndClipLayerByIds(OV_SCROLL, IV_CLIP);
+
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, PENDING));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, PENDING));
+
+  // Synchronize with the active tree.
+  TreeSynchronizer::PushProperties(pending_root(), active_root());
+
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, ACTIVE));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, ACTIVE));
+
+  // Make IV_SCROLL layer scrollable.
+  layer(IV_SCROLL, PENDING)->SetScrollClipLayer(IV_CLIP);
+  layer(IV_SCROLL, PENDING)->SetNeedsPushProperties();
+  ASSERT_TRUE(layer(IV_SCROLL, PENDING)->scrollable());
+
+  pending_scrollbar()->SetScrollLayerAndClipLayerByIds(OV_SCROLL, IV_CLIP);
+
+  // Now IV_CLIP layer should also receive the scrollbar.
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, PENDING));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, PENDING));
+  ASSERT_TRUE(LayerHasScrollbar(IV_SCROLL, PENDING));
+
+  // Synchronize with the active tree.
+  TreeSynchronizer::PushProperties(pending_root(), active_root());
+
+  ASSERT_TRUE(layer(IV_SCROLL, ACTIVE)->scrollable());
+
+  ASSERT_TRUE(LayerHasScrollbar(OV_SCROLL, ACTIVE));
+  ASSERT_TRUE(LayerHasScrollbar(IV_CLIP, ACTIVE));
+  ASSERT_TRUE(LayerHasScrollbar(IV_SCROLL, ACTIVE));
 }
 
 }  // namespace

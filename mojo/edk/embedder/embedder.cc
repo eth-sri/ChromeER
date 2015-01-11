@@ -8,11 +8,14 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "mojo/edk/embedder/embedder_internal.h"
 #include "mojo/edk/embedder/platform_support.h"
 #include "mojo/edk/system/channel.h"
 #include "mojo/edk/system/channel_endpoint.h"
+#include "mojo/edk/system/channel_manager.h"
+#include "mojo/edk/system/configuration.h"
 #include "mojo/edk/system/core.h"
-#include "mojo/edk/system/entrypoints.h"
 #include "mojo/edk/system/message_pipe_dispatcher.h"
 #include "mojo/edk/system/platform_handle_dispatcher.h"
 #include "mojo/edk/system/raw_channel.h"
@@ -20,55 +23,43 @@
 namespace mojo {
 namespace embedder {
 
-// This is defined here (instead of a header file), since it's opaque to the
-// outside world. But we need to define it before our (internal-only) functions
-// that use it.
-struct ChannelInfo {
-  ChannelInfo() {}
-  ~ChannelInfo() {}
-
-  scoped_refptr<system::Channel> channel;
-
-  // May be null, in which case |DestroyChannelOnIOThread()| must be used (from
-  // the IO thread), instead of |DestroyChannel()|.
-  scoped_refptr<base::TaskRunner> io_thread_task_runner;
-};
-
 namespace {
 
-// Helper for |CreateChannel...()|. (Note: May return null for some failures.)
-scoped_refptr<system::Channel> MakeChannel(
-    system::Core* core,
+// Helper for |CreateChannel...()|. Returns 0 on failure. Called on the channel
+// creation thread.
+system::ChannelId MakeChannel(
     ScopedPlatformHandle platform_handle,
     scoped_refptr<system::ChannelEndpoint> channel_endpoint) {
   DCHECK(platform_handle.is_valid());
 
   // Create and initialize a |system::Channel|.
+  DCHECK(internal::g_core);
   scoped_refptr<system::Channel> channel =
-      new system::Channel(core->platform_support());
+      new system::Channel(internal::g_core->platform_support());
   if (!channel->Init(system::RawChannel::Create(platform_handle.Pass()))) {
     // This is very unusual (e.g., maybe |platform_handle| was invalid or we
     // reached some system resource limit).
     LOG(ERROR) << "Channel::Init() failed";
     // Return null, since |Shutdown()| shouldn't be called in this case.
-    return scoped_refptr<system::Channel>();
+    return 0;
   }
-  // Once |Init()| has succeeded, we have to return |channel| (since
-  // |Shutdown()| will have to be called on it).
 
   channel->AttachAndRunEndpoint(channel_endpoint, true);
-  return channel;
+
+  DCHECK(internal::g_channel_manager);
+  return internal::g_channel_manager->AddChannel(
+      channel, base::MessageLoopProxy::current());
 }
 
+// Helper for |CreateChannel()|. Called on the channel creation thread.
 void CreateChannelHelper(
-    system::Core* core,
     ScopedPlatformHandle platform_handle,
     scoped_ptr<ChannelInfo> channel_info,
     scoped_refptr<system::ChannelEndpoint> channel_endpoint,
     DidCreateChannelCallback callback,
     scoped_refptr<base::TaskRunner> callback_thread_task_runner) {
-  channel_info->channel =
-      MakeChannel(core, platform_handle.Pass(), channel_endpoint);
+  channel_info->channel_id =
+      MakeChannel(platform_handle.Pass(), channel_endpoint);
 
   // Hand the channel back to the embedder.
   if (callback_thread_task_runner.get()) {
@@ -81,8 +72,23 @@ void CreateChannelHelper(
 
 }  // namespace
 
+namespace internal {
+
+// Declared in embedder_internal.h.
+system::Core* g_core = nullptr;
+system::ChannelManager* g_channel_manager = nullptr;
+
+}  // namespace internal
+
 void Init(scoped_ptr<PlatformSupport> platform_support) {
-  system::entrypoints::SetCore(new system::Core(platform_support.Pass()));
+  DCHECK(!internal::g_core);
+  internal::g_core = new system::Core(platform_support.Pass());
+  DCHECK(!internal::g_channel_manager);
+  internal::g_channel_manager = new system::ChannelManager();
+}
+
+Configuration* GetConfiguration() {
+  return system::GetMutableConfiguration();
 }
 
 // TODO(vtl): Write tests for this.
@@ -96,14 +102,12 @@ ScopedMessagePipeHandle CreateChannelOnIOThread(
   scoped_refptr<system::MessagePipeDispatcher> dispatcher =
       system::MessagePipeDispatcher::CreateRemoteMessagePipe(&channel_endpoint);
 
-  system::Core* core = system::entrypoints::GetCore();
-  DCHECK(core);
+  DCHECK(internal::g_core);
   ScopedMessagePipeHandle rv(
-      MessagePipeHandle(core->AddDispatcher(dispatcher)));
+      MessagePipeHandle(internal::g_core->AddDispatcher(dispatcher)));
 
-  *channel_info = new ChannelInfo();
-  (*channel_info)->channel =
-      MakeChannel(core, platform_handle.Pass(), channel_endpoint);
+  *channel_info =
+      new ChannelInfo(MakeChannel(platform_handle.Pass(), channel_endpoint));
 
   return rv.Pass();
 }
@@ -114,28 +118,26 @@ ScopedMessagePipeHandle CreateChannel(
     DidCreateChannelCallback callback,
     scoped_refptr<base::TaskRunner> callback_thread_task_runner) {
   DCHECK(platform_handle.is_valid());
+  DCHECK(io_thread_task_runner.get());
+  DCHECK(!callback.is_null());
 
   scoped_refptr<system::ChannelEndpoint> channel_endpoint;
   scoped_refptr<system::MessagePipeDispatcher> dispatcher =
       system::MessagePipeDispatcher::CreateRemoteMessagePipe(&channel_endpoint);
 
-  system::Core* core = system::entrypoints::GetCore();
-  DCHECK(core);
+  DCHECK(internal::g_core);
   ScopedMessagePipeHandle rv(
-      MessagePipeHandle(core->AddDispatcher(dispatcher)));
+      MessagePipeHandle(internal::g_core->AddDispatcher(dispatcher)));
 
+  // We'll have to set |channel_info->channel_id| on the I/O thread.
   scoped_ptr<ChannelInfo> channel_info(new ChannelInfo());
-  channel_info->io_thread_task_runner = io_thread_task_runner;
 
   if (rv.is_valid()) {
-    io_thread_task_runner->PostTask(FROM_HERE,
-                                    base::Bind(&CreateChannelHelper,
-                                               base::Unretained(core),
-                                               base::Passed(&platform_handle),
-                                               base::Passed(&channel_info),
-                                               channel_endpoint,
-                                               callback,
-                                               callback_thread_task_runner));
+    io_thread_task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(&CreateChannelHelper, base::Passed(&platform_handle),
+                   base::Passed(&channel_info), channel_endpoint, callback,
+                   callback_thread_task_runner));
   } else {
     (callback_thread_task_runner.get() ? callback_thread_task_runner
                                        : io_thread_task_runner)
@@ -145,35 +147,25 @@ ScopedMessagePipeHandle CreateChannel(
   return rv.Pass();
 }
 
-void DestroyChannelOnIOThread(ChannelInfo* channel_info) {
-  DCHECK(channel_info);
-  if (!channel_info->channel.get()) {
-    // Presumably, |Init()| on the channel failed.
-    return;
-  }
-
-  channel_info->channel->Shutdown();
-  delete channel_info;
-}
-
 // TODO(vtl): Write tests for this.
 void DestroyChannel(ChannelInfo* channel_info) {
   DCHECK(channel_info);
-  DCHECK(channel_info->io_thread_task_runner.get());
-
-  if (!channel_info->channel.get()) {
+  if (!channel_info->channel_id) {
     // Presumably, |Init()| on the channel failed.
     return;
   }
 
-  channel_info->channel->WillShutdownSoon();
-  channel_info->io_thread_task_runner->PostTask(
-      FROM_HERE, base::Bind(&DestroyChannelOnIOThread, channel_info));
+  DCHECK(internal::g_channel_manager);
+  // This will destroy the channel synchronously if called from the channel
+  // thread.
+  internal::g_channel_manager->ShutdownChannel(channel_info->channel_id);
+  delete channel_info;
 }
 
 void WillDestroyChannelSoon(ChannelInfo* channel_info) {
   DCHECK(channel_info);
-  channel_info->channel->WillShutdownSoon();
+  DCHECK(internal::g_channel_manager);
+  internal::g_channel_manager->WillShutdownChannel(channel_info->channel_id);
 }
 
 MojoResult CreatePlatformHandleWrapper(
@@ -184,9 +176,8 @@ MojoResult CreatePlatformHandleWrapper(
   scoped_refptr<system::Dispatcher> dispatcher(
       new system::PlatformHandleDispatcher(platform_handle.Pass()));
 
-  system::Core* core = system::entrypoints::GetCore();
-  DCHECK(core);
-  MojoHandle h = core->AddDispatcher(dispatcher);
+  DCHECK(internal::g_core);
+  MojoHandle h = internal::g_core->AddDispatcher(dispatcher);
   if (h == MOJO_HANDLE_INVALID) {
     LOG(ERROR) << "Handle table full";
     dispatcher->Close();
@@ -201,10 +192,9 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
                                      ScopedPlatformHandle* platform_handle) {
   DCHECK(platform_handle);
 
-  system::Core* core = system::entrypoints::GetCore();
-  DCHECK(core);
+  DCHECK(internal::g_core);
   scoped_refptr<system::Dispatcher> dispatcher(
-      core->GetDispatcher(platform_handle_wrapper_handle));
+      internal::g_core->GetDispatcher(platform_handle_wrapper_handle));
   if (!dispatcher.get())
     return MOJO_RESULT_INVALID_ARGUMENT;
 

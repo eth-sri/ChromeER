@@ -30,8 +30,8 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/app_modal_dialogs/javascript_app_modal_dialog.h"
-#include "components/app_modal_dialogs/native_app_modal_dialog.h"
+#include "components/app_modal/javascript_app_modal_dialog.h"
+#include "components/app_modal/native_app_modal_dialog.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
@@ -49,11 +49,11 @@
 
 namespace {
 
-NativeAppModalDialog* GetNextDialog() {
-  AppModalDialog* dialog = ui_test_utils::WaitForAppModalDialog();
+app_modal::NativeAppModalDialog* GetNextDialog() {
+  app_modal::AppModalDialog* dialog = ui_test_utils::WaitForAppModalDialog();
   EXPECT_TRUE(dialog->IsJavaScriptModalDialog());
-  JavaScriptAppModalDialog* js_dialog =
-      static_cast<JavaScriptAppModalDialog*>(dialog);
+  app_modal::JavaScriptAppModalDialog* js_dialog =
+      static_cast<app_modal::JavaScriptAppModalDialog*>(dialog);
   CHECK(js_dialog->native_dialog());
   return js_dialog->native_dialog();
 }

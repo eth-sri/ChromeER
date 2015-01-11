@@ -82,6 +82,7 @@
       'sources': [
         'interfaces/gpu/command_buffer.mojom',
         'interfaces/gpu/gpu.mojom',
+        'interfaces/gpu/gpu_capabilities.mojom',
       ],
       'includes': [ '../../public/tools/bindings/mojom_bindings_generator.gypi' ],
       'dependencies': [
@@ -258,21 +259,6 @@
       'export_dependent_settings': [
         'mojo_input_events_bindings',
         '../../public/mojo_public.gyp:mojo_application_bindings',
-        '../../public/mojo_public.gyp:mojo_cpp_bindings',
-      ],
-    },
-    {
-      # GN version: //mojo/services/public/interfaces/window_manager2
-      'target_name': 'mojo_window_manager2_bindings',
-      'type': 'static_library',
-      'sources': [
-        'interfaces/window_manager2/window_manager2.mojom',
-      ],
-      'includes': [ '../../public/tools/bindings/mojom_bindings_generator.gypi' ],
-      'export_dependent_settings': [
-        '../../public/mojo_public.gyp:mojo_cpp_bindings',
-      ],
-      'dependencies': [
         '../../public/mojo_public.gyp:mojo_cpp_bindings',
       ],
     },

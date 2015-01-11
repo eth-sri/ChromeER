@@ -6,7 +6,6 @@
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -82,7 +81,7 @@ class MockScreenshotManager : public content::NavigationEntryScreenshotManager {
         1, 1, kAlpha_8_SkColorType, kPremul_SkAlphaType));
     bitmap.eraseARGB(0, 0, 0, 0);
     encoding_screenshot_in_progress_ = true;
-    OnScreenshotTaken(entry->GetUniqueID(), true, bitmap);
+    OnScreenshotTaken(entry->GetUniqueID(), bitmap, content::READBACK_SUCCESS);
     WaitUntilScreenshotIsReady();
   }
 
@@ -244,7 +243,7 @@ class TestWebContentsDelegate : public WebContentsDelegate {
   }
 
   // Keep track of whether the tab has notified us of a navigation state change.
-  void NavigationStateChanged(const WebContents* source,
+  void NavigationStateChanged(WebContents* source,
                               InvalidateTypes changed_flags) override {
     navigation_state_change_count_++;
   }

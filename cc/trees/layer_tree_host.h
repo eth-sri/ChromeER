@@ -34,6 +34,7 @@
 #include "cc/output/output_surface.h"
 #include "cc/resources/resource_format.h"
 #include "cc/resources/scoped_ui_resource.h"
+#include "cc/surfaces/surface_sequence.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_settings.h"
@@ -47,6 +48,7 @@ class GpuMemoryBufferManager;
 
 namespace cc {
 class AnimationRegistrar;
+class BeginFrameSource;
 class HeadsUpDisplayLayer;
 class Layer;
 class LayerTreeHostImpl;
@@ -61,6 +63,7 @@ class ResourceUpdateQueue;
 class SharedBitmapManager;
 class TopControlsManager;
 class UIResourceRequest;
+struct PendingPageScaleAnimation;
 struct RenderingStats;
 struct ScrollAndScaleSet;
 
@@ -91,7 +94,8 @@ class CC_EXPORT LayerTreeHost {
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       const LayerTreeSettings& settings,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
   static scoped_ptr<LayerTreeHost> CreateSingleThreaded(
       LayerTreeHostClient* client,
@@ -99,7 +103,8 @@ class CC_EXPORT LayerTreeHost {
       SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
       const LayerTreeSettings& settings,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
   virtual ~LayerTreeHost();
 
   void SetLayerTreeHostClientReady();
@@ -175,11 +180,14 @@ class CC_EXPORT LayerTreeHost {
   void SetRootLayer(scoped_refptr<Layer> root_layer);
   Layer* root_layer() { return root_layer_.get(); }
   const Layer* root_layer() const { return root_layer_.get(); }
+  const Layer* overscroll_elasticity_layer() const {
+    return overscroll_elasticity_layer_.get();
+  }
   const Layer* page_scale_layer() const { return page_scale_layer_.get(); }
-  void RegisterViewportLayers(
-      scoped_refptr<Layer> page_scale_layer,
-      scoped_refptr<Layer> inner_viewport_scroll_layer,
-      scoped_refptr<Layer> outer_viewport_scroll_layer);
+  void RegisterViewportLayers(scoped_refptr<Layer> overscroll_elasticity_layer,
+                              scoped_refptr<Layer> page_scale_layer,
+                              scoped_refptr<Layer> inner_viewport_scroll_layer,
+                              scoped_refptr<Layer> outer_viewport_scroll_layer);
   Layer* inner_viewport_scroll_layer() const {
     return inner_viewport_scroll_layer_.get();
   }
@@ -307,6 +315,12 @@ class CC_EXPORT LayerTreeHost {
 
   size_t num_queued_swap_promises() const { return swap_promise_list_.size(); }
 
+  void set_surface_id_namespace(uint32_t id_namespace);
+  SurfaceSequence CreateSurfaceSequence();
+
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames) const;
+  void SendBeginFramesToChildren(const BeginFrameArgs& args) const;
+
  protected:
   LayerTreeHost(LayerTreeHostClient* client,
                 SharedBitmapManager* shared_bitmap_manager,
@@ -314,10 +328,12 @@ class CC_EXPORT LayerTreeHost {
                 const LayerTreeSettings& settings);
   void InitializeThreaded(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
   void InitializeSingleThreaded(
       LayerTreeHostSingleThreadClient* single_thread_client,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
   void InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
   void SetOutputSurfaceLostForTesting(bool is_lost) {
     output_surface_lost_ = is_lost;
@@ -424,12 +440,6 @@ class CC_EXPORT LayerTreeHost {
 
   scoped_ptr<AnimationRegistrar> animation_registrar_;
 
-  struct PendingPageScaleAnimation {
-    gfx::Vector2d target_offset;
-    bool use_anchor;
-    float scale;
-    base::TimeDelta duration;
-  };
   scoped_ptr<PendingPageScaleAnimation> pending_page_scale_animation_;
 
   bool in_paint_layer_contents_;
@@ -451,6 +461,7 @@ class CC_EXPORT LayerTreeHost {
   int id_;
   bool next_commit_forces_redraw_;
 
+  scoped_refptr<Layer> overscroll_elasticity_layer_;
   scoped_refptr<Layer> page_scale_layer_;
   scoped_refptr<Layer> inner_viewport_scroll_layer_;
   scoped_refptr<Layer> outer_viewport_scroll_layer_;
@@ -463,6 +474,9 @@ class CC_EXPORT LayerTreeHost {
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
+
+  uint32_t surface_id_namespace_;
+  uint32_t next_surface_sequence_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHost);
 };

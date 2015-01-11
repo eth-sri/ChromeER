@@ -23,10 +23,8 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/media/android/renderer_demuxer_android.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
-#include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/crypto/render_cdm_factory.h"
 #include "content/renderer/media/crypto/renderer_cdm_manager.h"
-#include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -35,10 +33,13 @@
 #include "media/base/android/media_common_android.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/cdm_context.h"
+#include "media/base/key_systems.h"
 #include "media/base/media_keys.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
+#include "media/blink/webcontentdecryptionmodule_impl.h"
 #include "media/blink/webmediaplayer_delegate.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "net/base/mime_util.h"
@@ -100,10 +101,6 @@ class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
   blink::WebGraphicsContext3D* web_graphics_context_;
 };
 
-// Used for calls to decryptor_ready_cb_ where the result can be ignored.
-void DoNothing(bool) {
-}
-
 }  // namespace
 
 namespace content {
@@ -144,11 +141,12 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
               : base::MessageLoopProxy::current()),
       stream_texture_factory_(factory),
       needs_external_surface_(false),
+      is_fullscreen_(false),
       video_frame_provider_client_(NULL),
       player_type_(MEDIA_PLAYER_TYPE_URL),
       is_remote_(false),
       media_log_(media_log),
-      web_cdm_(NULL),
+      cdm_context_(NULL),
       allow_stored_credentials_(false),
       is_local_resource_(false),
       interpolator_(&default_tick_clock_),
@@ -176,9 +174,10 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
 
   // Set the initial CDM, if specified.
   if (initial_cdm) {
-    web_cdm_ = ToWebContentDecryptionModuleImpl(initial_cdm);
-    if (web_cdm_->GetCdmId() != media::MediaKeys::kInvalidCdmId)
-      player_manager_->SetCdm(player_id_, web_cdm_->GetCdmId());
+    cdm_context_ =
+        media::ToWebContentDecryptionModuleImpl(initial_cdm)->GetCdmContext();
+    if (cdm_context_->GetCdmId() != media::CdmContext::kInvalidCdmId)
+      player_manager_->SetCdm(player_id_, cdm_context_->GetCdmId());
   }
 }
 
@@ -327,7 +326,7 @@ void WebMediaPlayerAndroid::play() {
   // texture is bind to it. See http://crbug.com/400145.
 #if defined(VIDEO_HOLE)
   if ((hasVideo() || IsHLSStream()) && needs_external_surface_ &&
-      !player_manager_->IsInFullscreen(frame_)) {
+      !is_fullscreen_) {
     DCHECK(!needs_establish_peer_);
     player_manager_->RequestExternalSurface(player_id_, last_computed_rect_);
   }
@@ -337,7 +336,7 @@ void WebMediaPlayerAndroid::play() {
   // There is no need to establish the surface texture peer for fullscreen
   // video.
   if ((hasVideo() || IsHLSStream()) && needs_establish_peer_ &&
-      !player_manager_->IsInFullscreen(frame_)) {
+      !is_fullscreen_) {
     EstablishSurfaceTexturePeer();
   }
 
@@ -848,12 +847,12 @@ void WebMediaPlayerAndroid::OnVideoSizeChanged(int width, int height) {
       (media_source_delegate_ && media_source_delegate_->IsVideoEncrypted() &&
        player_manager_->ShouldUseVideoOverlayForEmbeddedEncryptedVideo())) {
     needs_external_surface_ = true;
-    if (!paused() && !player_manager_->IsInFullscreen(frame_))
+    if (!paused() && !is_fullscreen_)
       player_manager_->RequestExternalSurface(player_id_, last_computed_rect_);
-  } else if (stream_texture_proxy_ && !stream_id_) {
+  } else if (!stream_texture_proxy_) {
     // Do deferred stream texture creation finally.
-    DoCreateStreamTexture();
     SetNeedsEstablishPeer(true);
+    TryCreateStreamTextureProxyIfNeeded();
   }
 #endif  // defined(VIDEO_HOLE)
   natural_size_.width = width;
@@ -931,11 +930,6 @@ void WebMediaPlayerAndroid::OnDisconnectedFromRemoteDevice() {
   client_->disconnectedFromRemoteDevice();
 }
 
-void WebMediaPlayerAndroid::OnDidEnterFullscreen() {
-  if (!player_manager_->IsInFullscreen(frame_))
-    player_manager_->DidEnterFullscreen(frame_);
-}
-
 void WebMediaPlayerAndroid::OnDidExitFullscreen() {
   // |needs_external_surface_| is always false on non-TV devices.
   if (!needs_external_surface_)
@@ -949,8 +943,7 @@ void WebMediaPlayerAndroid::OnDidExitFullscreen() {
   if (!paused() && needs_external_surface_)
     player_manager_->RequestExternalSurface(player_id_, last_computed_rect_);
 #endif  // defined(VIDEO_HOLE)
-
-  player_manager_->DidExitFullscreen();
+  is_fullscreen_ = false;
   client_->repaint();
 }
 
@@ -1065,8 +1058,8 @@ void WebMediaPlayerAndroid::InitializePlayer(
   player_manager_->Initialize(
       player_type_, player_id_, url, first_party_for_cookies, demuxer_client_id,
       frame_->document().url(), allow_stored_credentials);
-  if (player_manager_->ShouldEnterFullscreen(frame_))
-    player_manager_->EnterFullscreen(player_id_, frame_);
+  if (is_fullscreen_)
+    player_manager_->EnterFullscreen(player_id_);
 }
 
 void WebMediaPlayerAndroid::Pause(bool is_media_related_action) {
@@ -1202,6 +1195,9 @@ void WebMediaPlayerAndroid::ReallocateVideoFrame() {
     // VideoFrame::CreateHoleFrame is only defined under VIDEO_HOLE.
 #if defined(VIDEO_HOLE)
     if (!natural_size_.isEmpty()) {
+      // Now we finally know that "stream texture" and "video frame" won't
+      // be needed. EME uses "external surface" and "video hole" instead.
+      ResetStreamTextureProxy();
       scoped_refptr<VideoFrame> new_frame =
           VideoFrame::CreateHoleFrame(natural_size_);
       SetCurrentFrameInternal(new_frame);
@@ -1281,7 +1277,7 @@ void WebMediaPlayerAndroid::ResetStreamTextureProxy() {
   }
   stream_texture_proxy_.reset();
   needs_establish_peer_ = !needs_external_surface_ && !is_remote_ &&
-                          !player_manager_->IsInFullscreen(frame_) &&
+                          !is_fullscreen_ &&
                           (hasVideo() || IsHLSStream());
 
   TryCreateStreamTextureProxyIfNeeded();
@@ -1416,7 +1412,7 @@ static void EmeUMAHistogramEnumeration(const std::string& key_system,
                                        int sample,
                                        int boundary_value) {
   base::LinearHistogram::FactoryGet(
-      kMediaEme + KeySystemNameForUMA(key_system) + "." + method,
+      kMediaEme + media::GetKeySystemNameForUMA(key_system) + "." + method,
       1, boundary_value, boundary_value + 1,
       base::Histogram::kUmaTargetedHistogramFlag)->Add(sample);
 }
@@ -1426,7 +1422,7 @@ static void EmeUMAHistogramCounts(const std::string& key_system,
                                   int sample) {
   // Use the same parameters as UMA_HISTOGRAM_COUNTS.
   base::Histogram::FactoryGet(
-      kMediaEme + KeySystemNameForUMA(key_system) + "." + method,
+      kMediaEme + media::GetKeySystemNameForUMA(key_system) + "." + method,
       1, 1000000, 50, base::Histogram::kUmaTargetedHistogramFlag)->Add(sample);
 }
 
@@ -1468,7 +1464,7 @@ bool WebMediaPlayerAndroid::IsKeySystemSupported(
     const std::string& key_system) {
   // On Android, EME only works with MSE.
   return player_type_ == MEDIA_PLAYER_TYPE_MEDIA_SOURCE &&
-         IsConcreteSupportedKeySystem(key_system);
+         media::IsConcreteSupportedKeySystem(key_system);
 }
 
 WebMediaPlayer::MediaKeyException WebMediaPlayerAndroid::generateKeyRequest(
@@ -1480,7 +1476,7 @@ WebMediaPlayer::MediaKeyException WebMediaPlayerAndroid::generateKeyRequest(
                           static_cast<size_t>(init_data_length));
 
   std::string ascii_key_system =
-      GetUnprefixedKeySystemName(ToASCIIOrEmpty(key_system));
+      media::GetUnprefixedKeySystemName(ToASCIIOrEmpty(key_system));
 
   WebMediaPlayer::MediaKeyException e =
       GenerateKeyRequestInternal(ascii_key_system, init_data, init_data_length);
@@ -1513,7 +1509,7 @@ WebMediaPlayerAndroid::GenerateKeyRequestInternal(
   // We do not support run-time switching between key systems for now.
   if (current_key_system_.empty()) {
     if (!proxy_decryptor_) {
-      proxy_decryptor_.reset(new ProxyDecryptor(
+      proxy_decryptor_.reset(new media::ProxyDecryptor(
           base::Bind(&WebMediaPlayerAndroid::OnKeyAdded,
                      weak_factory_.GetWeakPtr()),
           base::Bind(&WebMediaPlayerAndroid::OnKeyError,
@@ -1529,15 +1525,19 @@ WebMediaPlayerAndroid::GenerateKeyRequestInternal(
       return WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
     }
 
+    // Set the CDM onto the media player.
+    cdm_context_ = proxy_decryptor_->GetCdmContext();
+
     if (!decryptor_ready_cb_.is_null()) {
       base::ResetAndReturn(&decryptor_ready_cb_)
-          .Run(proxy_decryptor_->GetDecryptor(), base::Bind(DoNothing));
+          .Run(cdm_context_->GetDecryptor(),
+               base::Bind(&media::IgnoreCdmAttached));
     }
 
     // Only browser CDMs have CDM ID. Render side CDMs (e.g. ClearKey CDM) do
     // not have a CDM ID and there is no need to call player_manager_->SetCdm().
-    if (proxy_decryptor_->GetCdmId() != media::MediaKeys::kInvalidCdmId)
-      player_manager_->SetCdm(player_id_, proxy_decryptor_->GetCdmId());
+    if (cdm_context_->GetCdmId() != media::CdmContext::kInvalidCdmId)
+      player_manager_->SetCdm(player_id_, cdm_context_->GetCdmId());
 
     current_key_system_ = key_system;
   } else if (key_system != current_key_system_) {
@@ -1575,7 +1575,7 @@ WebMediaPlayer::MediaKeyException WebMediaPlayerAndroid::addKey(
            << base::string16(session_id) << "]";
 
   std::string ascii_key_system =
-      GetUnprefixedKeySystemName(ToASCIIOrEmpty(key_system));
+      media::GetUnprefixedKeySystemName(ToASCIIOrEmpty(key_system));
   std::string ascii_session_id = ToASCIIOrEmpty(session_id);
 
   WebMediaPlayer::MediaKeyException e = AddKeyInternal(ascii_key_system,
@@ -1616,7 +1616,7 @@ WebMediaPlayer::MediaKeyException WebMediaPlayerAndroid::cancelKeyRequest(
            << " [" << base::string16(session_id) << "]";
 
   std::string ascii_key_system =
-      GetUnprefixedKeySystemName(ToASCIIOrEmpty(key_system));
+      media::GetUnprefixedKeySystemName(ToASCIIOrEmpty(key_system));
   std::string ascii_session_id = ToASCIIOrEmpty(session_id);
 
   WebMediaPlayer::MediaKeyException e =
@@ -1639,27 +1639,6 @@ WebMediaPlayerAndroid::CancelKeyRequestInternal(const std::string& key_system,
 }
 
 void WebMediaPlayerAndroid::setContentDecryptionModule(
-    blink::WebContentDecryptionModule* cdm) {
-  DCHECK(main_thread_checker_.CalledOnValidThread());
-
-  // TODO(xhwang): Support setMediaKeys(0) if necessary: http://crbug.com/330324
-  if (!cdm)
-    return;
-
-  web_cdm_ = ToWebContentDecryptionModuleImpl(cdm);
-  if (!web_cdm_)
-    return;
-
-  if (!decryptor_ready_cb_.is_null()) {
-    base::ResetAndReturn(&decryptor_ready_cb_)
-        .Run(web_cdm_->GetDecryptor(), base::Bind(DoNothing));
-  }
-
-  if (web_cdm_->GetCdmId() != media::MediaKeys::kInvalidCdmId)
-    player_manager_->SetCdm(player_id_, web_cdm_->GetCdmId());
-}
-
-void WebMediaPlayerAndroid::setContentDecryptionModule(
     blink::WebContentDecryptionModule* cdm,
     blink::WebContentDecryptionModuleResult result) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
@@ -1673,24 +1652,22 @@ void WebMediaPlayerAndroid::setContentDecryptionModule(
     return;
   }
 
-  web_cdm_ = ToWebContentDecryptionModuleImpl(cdm);
-  DCHECK(web_cdm_);
+  cdm_context_ = media::ToWebContentDecryptionModuleImpl(cdm)->GetCdmContext();
 
   if (!decryptor_ready_cb_.is_null()) {
-    base::ResetAndReturn(&decryptor_ready_cb_).Run(
-        web_cdm_->GetDecryptor(),
-        media::BindToCurrentLoop(
-            base::Bind(&WebMediaPlayerAndroid::ContentDecryptionModuleAttached,
-                       weak_factory_.GetWeakPtr(),
-                       result)));
+    base::ResetAndReturn(&decryptor_ready_cb_)
+        .Run(cdm_context_->GetDecryptor(),
+             media::BindToCurrentLoop(base::Bind(
+                 &WebMediaPlayerAndroid::ContentDecryptionModuleAttached,
+                 weak_factory_.GetWeakPtr(), result)));
   } else {
     // No pipeline/decoder connected, so resolve the promise. When something
     // is connected, setting the CDM will happen in SetDecryptorReadyCB().
     ContentDecryptionModuleAttached(result, true);
   }
 
-  if (web_cdm_->GetCdmId() != media::MediaKeys::kInvalidCdmId)
-    player_manager_->SetCdm(player_id_, web_cdm_->GetCdmId());
+  if (cdm_context_->GetCdmId() != media::CdmContext::kInvalidCdmId)
+    player_manager_->SetCdm(player_id_, cdm_context_->GetCdmId());
 }
 
 void WebMediaPlayerAndroid::ContentDecryptionModuleAttached(
@@ -1711,7 +1688,7 @@ void WebMediaPlayerAndroid::OnKeyAdded(const std::string& session_id) {
   EmeUMAHistogramCounts(current_key_system_, "KeyAdded", 1);
 
   client_->keyAdded(
-      WebString::fromUTF8(GetPrefixedKeySystemName(current_key_system_)),
+      WebString::fromUTF8(media::GetPrefixedKeySystemName(current_key_system_)),
       WebString::fromUTF8(session_id));
 }
 
@@ -1730,7 +1707,7 @@ void WebMediaPlayerAndroid::OnKeyError(const std::string& session_id,
   }
 
   client_->keyError(
-      WebString::fromUTF8(GetPrefixedKeySystemName(current_key_system_)),
+      WebString::fromUTF8(media::GetPrefixedKeySystemName(current_key_system_)),
       WebString::fromUTF8(session_id),
       static_cast<blink::WebMediaPlayerClient::MediaKeyErrorCode>(error_code),
       short_system_code);
@@ -1742,7 +1719,7 @@ void WebMediaPlayerAndroid::OnKeyMessage(const std::string& session_id,
   DCHECK(destination_url.is_empty() || destination_url.is_valid());
 
   client_->keyMessage(
-      WebString::fromUTF8(GetPrefixedKeySystemName(current_key_system_)),
+      WebString::fromUTF8(media::GetPrefixedKeySystemName(current_key_system_)),
       WebString::fromUTF8(session_id),
       message.empty() ? NULL : &message[0],
       message.size(),
@@ -1783,7 +1760,7 @@ void WebMediaPlayerAndroid::SetDecryptorReadyCB(
   if (decryptor_ready_cb.is_null()) {
     if (!decryptor_ready_cb_.is_null()) {
       base::ResetAndReturn(&decryptor_ready_cb_)
-          .Run(NULL, base::Bind(DoNothing));
+          .Run(NULL, base::Bind(&media::IgnoreCdmAttached));
     }
     return;
   }
@@ -1795,17 +1772,9 @@ void WebMediaPlayerAndroid::SetDecryptorReadyCB(
   // detail.
   DCHECK(decryptor_ready_cb_.is_null());
 
-  // Mixed use of prefixed and unprefixed EME APIs is disallowed by Blink.
-  DCHECK(!proxy_decryptor_ || !web_cdm_);
-
-  if (proxy_decryptor_) {
-    decryptor_ready_cb.Run(proxy_decryptor_->GetDecryptor(),
-                           base::Bind(DoNothing));
-    return;
-  }
-
-  if (web_cdm_) {
-    decryptor_ready_cb.Run(web_cdm_->GetDecryptor(), base::Bind(DoNothing));
+  if (cdm_context_) {
+    decryptor_ready_cb.Run(cdm_context_->GetDecryptor(),
+                           base::Bind(&media::IgnoreCdmAttached));
     return;
   }
 
@@ -1813,14 +1782,9 @@ void WebMediaPlayerAndroid::SetDecryptorReadyCB(
 }
 
 void WebMediaPlayerAndroid::enterFullscreen() {
-  if (player_manager_->CanEnterFullscreen(frame_)) {
-    player_manager_->EnterFullscreen(player_id_, frame_);
-    SetNeedsEstablishPeer(false);
-  }
-}
-
-bool WebMediaPlayerAndroid::canEnterFullscreen() const {
-  return player_manager_->CanEnterFullscreen(frame_);
+  player_manager_->EnterFullscreen(player_id_);
+  SetNeedsEstablishPeer(false);
+  is_fullscreen_ = true;
 }
 
 bool WebMediaPlayerAndroid::IsHLSStream() const {

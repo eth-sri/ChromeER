@@ -16,6 +16,9 @@ PopupTouchHandleDrawable::PopupTouchHandleDrawable(
 }
 
 PopupTouchHandleDrawable::~PopupTouchHandleDrawable() {
+  // Explicitly disabling ensures that any external references to the Java
+  // object are cleared, allowing it to be GC'ed in a timely fashion.
+  SetEnabled(false);
 }
 
 void PopupTouchHandleDrawable::SetEnabled(bool enabled) {
@@ -50,7 +53,8 @@ void PopupTouchHandleDrawable::SetOrientation(
 
 void PopupTouchHandleDrawable::SetAlpha(float alpha) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  Java_PopupTouchHandleDrawable_setOpacity(env, drawable_.obj(), alpha);
+  bool visible = alpha > 0;
+  Java_PopupTouchHandleDrawable_setVisible(env, drawable_.obj(), visible);
 }
 
 void PopupTouchHandleDrawable::SetFocus(const gfx::PointF& position) {
@@ -58,11 +62,6 @@ void PopupTouchHandleDrawable::SetFocus(const gfx::PointF& position) {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_PopupTouchHandleDrawable_setFocus(
       env, drawable_.obj(), position_pix.x(), position_pix.y());
-}
-
-void PopupTouchHandleDrawable::SetVisible(bool visible) {
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_PopupTouchHandleDrawable_setVisible(env, drawable_.obj(), visible);
 }
 
 bool PopupTouchHandleDrawable::IntersectsWith(const gfx::RectF& rect) const {

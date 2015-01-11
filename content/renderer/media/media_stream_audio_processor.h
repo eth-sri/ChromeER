@@ -35,6 +35,7 @@ class TypingDetection;
 
 namespace content {
 
+class EchoInformation;
 class MediaStreamAudioBus;
 class MediaStreamAudioFifo;
 class RTCMediaConstraints;
@@ -50,10 +51,6 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
     NON_EXPORTED_BASE(public AudioProcessorInterface),
     NON_EXPORTED_BASE(public AecDumpMessageFilter::AecDumpDelegate) {
  public:
-  // Returns false if |kDisableAudioTrackProcessing| is set to true, otherwise
-  // returns true.
-  static bool IsAudioTrackProcessingEnabled();
-
   // |playout_data_source| is used to register this class as a sink to the
   // WebRtc playout data for processing AEC. If clients do not enable AEC,
   // |playout_data_source| won't be used.
@@ -201,6 +198,12 @@ class CONTENT_EXPORT MediaStreamAudioProcessor :
 
   // Flag to avoid executing Stop() more than once.
   bool stopped_;
+
+  // Object for logging echo information when the AEC is enabled. Accessible by
+  // the libjingle thread through GetStats().
+  scoped_ptr<EchoInformation> echo_information_;
+
+  DISALLOW_COPY_AND_ASSIGN(MediaStreamAudioProcessor);
 };
 
 }  // namespace content

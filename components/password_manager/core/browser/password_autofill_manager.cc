@@ -29,9 +29,8 @@ void GetSuggestions(const autofill::PasswordFormFillData& fill_data,
                     std::vector<base::string16>* realms,
                     bool show_all) {
   if (show_all ||
-      StartsWith(
-          fill_data.basic_data.fields[0].value, current_username, false)) {
-    suggestions->push_back(fill_data.basic_data.fields[0].value);
+      StartsWith(fill_data.username_field.value, current_username, false)) {
+    suggestions->push_back(fill_data.username_field.value);
     realms->push_back(base::UTF8ToUTF16(fill_data.preferred_realm));
   }
 
@@ -69,12 +68,11 @@ PasswordAutofillManager::PasswordAutofillManager(
 PasswordAutofillManager::~PasswordAutofillManager() {
 }
 
-bool PasswordAutofillManager::FillSuggestion(
-    const autofill::FormFieldData& field,
-    const base::string16& username) {
+bool PasswordAutofillManager::FillSuggestion(int key,
+                                             const base::string16& username) {
   autofill::PasswordFormFillData fill_data;
   base::string16 password;
-  if (FindLoginInfo(field, &fill_data) &&
+  if (FindLoginInfo(key, &fill_data) &&
       GetPasswordForUsername(username, fill_data, &password)) {
     PasswordManagerDriver* driver = password_manager_client_->GetDriver();
     driver->FillSuggestion(username, password);
@@ -84,11 +82,11 @@ bool PasswordAutofillManager::FillSuggestion(
 }
 
 bool PasswordAutofillManager::PreviewSuggestion(
-    const autofill::FormFieldData& field,
+    int key,
     const base::string16& username) {
   autofill::PasswordFormFillData fill_data;
   base::string16 password;
-  if (FindLoginInfo(field, &fill_data) &&
+  if (FindLoginInfo(key, &fill_data) &&
       GetPasswordForUsername(username, fill_data, &password)) {
     PasswordManagerDriver* driver = password_manager_client_->GetDriver();
     driver->PreviewSuggestion(username, password);
@@ -98,35 +96,34 @@ bool PasswordAutofillManager::PreviewSuggestion(
 }
 
 void PasswordAutofillManager::OnAddPasswordFormMapping(
-    const autofill::FormFieldData& field,
+    int key,
     const autofill::PasswordFormFillData& fill_data) {
-  if (!autofill::IsValidFormFieldData(field) ||
-      !autofill::IsValidPasswordFormFillData(fill_data))
+  if (!autofill::IsValidPasswordFormFillData(fill_data))
     return;
 
-  login_to_password_info_[field] = fill_data;
+  login_to_password_info_[key] = fill_data;
 }
 
 void PasswordAutofillManager::OnShowPasswordSuggestions(
-    const autofill::FormFieldData& field,
+    int key,
+    base::i18n::TextDirection text_direction,
     const base::string16& typed_username,
     bool show_all,
     const gfx::RectF& bounds) {
   std::vector<base::string16> suggestions;
   std::vector<base::string16> realms;
   LoginToPasswordInfoMap::const_iterator fill_data_it =
-      login_to_password_info_.find(field);
-  DCHECK(fill_data_it != login_to_password_info_.end());
+      login_to_password_info_.find(key);
+  if (fill_data_it == login_to_password_info_.end()) {
+    // Probably a compromised renderer.
+    NOTREACHED();
+    return;
+  }
   GetSuggestions(fill_data_it->second, typed_username, &suggestions, &realms,
                  show_all);
   DCHECK_EQ(suggestions.size(), realms.size());
 
-  if (!autofill::IsValidString16Vector(suggestions) ||
-      !autofill::IsValidString16Vector(realms) ||
-      suggestions.size() != realms.size())
-    return;
-
-  form_field_ = field;
+  form_data_key_ = key;
 
   if (suggestions.empty()) {
     autofill_client_->HideAutofillPopup();
@@ -137,7 +134,7 @@ void PasswordAutofillManager::OnShowPasswordSuggestions(
   std::vector<int> password_ids(suggestions.size(),
                                 autofill::POPUP_ITEM_ID_PASSWORD_ENTRY);
   autofill_client_->ShowAutofillPopup(bounds,
-                                      field.text_direction,
+                                      text_direction,
                                       suggestions,
                                       realms,
                                       empty,
@@ -150,15 +147,15 @@ void PasswordAutofillManager::Reset() {
 }
 
 bool PasswordAutofillManager::FillSuggestionForTest(
-    const autofill::FormFieldData& field,
+    int key,
     const base::string16& username) {
-  return FillSuggestion(field, username);
+  return FillSuggestion(key, username);
 }
 
 bool PasswordAutofillManager::PreviewSuggestionForTest(
-    const autofill::FormFieldData& field,
+    int key,
     const base::string16& username) {
-  return PreviewSuggestion(field, username);
+  return PreviewSuggestion(key, username);
 }
 
 void PasswordAutofillManager::OnPopupShown() {
@@ -170,13 +167,13 @@ void PasswordAutofillManager::OnPopupHidden() {
 void PasswordAutofillManager::DidSelectSuggestion(const base::string16& value,
                                                   int identifier) {
   ClearPreviewedForm();
-  bool success = PreviewSuggestion(form_field_, value);
+  bool success = PreviewSuggestion(form_data_key_, value);
   DCHECK(success);
 }
 
 void PasswordAutofillManager::DidAcceptSuggestion(const base::string16& value,
                                                   int identifier) {
-  bool success = FillSuggestion(form_field_, value);
+  bool success = FillSuggestion(form_data_key_, value);
   DCHECK(success);
   autofill_client_->HideAutofillPopup();
 }
@@ -203,8 +200,8 @@ bool PasswordAutofillManager::GetPasswordForUsername(
   // fetch the actual password. See crbug.com/178358 for more context.
 
   // Look for any suitable matches to current field text.
-  if (fill_data.basic_data.fields[0].value == current_username) {
-    *password = fill_data.basic_data.fields[1].value;
+  if (fill_data.username_field.value == current_username) {
+    *password = fill_data.password_field.value;
     return true;
   }
 
@@ -235,9 +232,9 @@ bool PasswordAutofillManager::GetPasswordForUsername(
 }
 
 bool PasswordAutofillManager::FindLoginInfo(
-    const autofill::FormFieldData& field,
+    int key,
     autofill::PasswordFormFillData* found_password) {
-  LoginToPasswordInfoMap::iterator iter = login_to_password_info_.find(field);
+  LoginToPasswordInfoMap::iterator iter = login_to_password_info_.find(key);
   if (iter == login_to_password_info_.end())
     return false;
 

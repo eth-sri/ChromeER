@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser.profiles;
 
 import org.chromium.base.CalledByNative;
+import org.chromium.base.VisibleForTesting;
 
 /**
  * Wrapper that allows passing a Profile reference around in the Java layer.
@@ -19,6 +20,15 @@ public class Profile {
 
     public static Profile getLastUsedProfile() {
         return (Profile) nativeGetLastUsedProfile();
+    }
+
+    /**
+     * Destroys the Profile.  Destruction is delayed until all associated
+     * renderers have been killed, so the profile might not be destroyed upon returning from
+     * this call.
+     */
+    public void destroyWhenAppropriate() {
+        nativeDestroyWhenAppropriate(mNativeProfileAndroid);
     }
 
     public Profile getOriginalProfile() {
@@ -37,13 +47,21 @@ public class Profile {
         return nativeIsOffTheRecord(mNativeProfileAndroid);
     }
 
+    /**
+     * @return Whether or not the native side profile exists.
+     */
+    @VisibleForTesting
+    public boolean isNativeInitialized() {
+        return mNativeProfileAndroid != 0;
+    }
+
     @CalledByNative
     private static Profile create(long nativeProfileAndroid) {
         return new Profile(nativeProfileAndroid);
     }
 
     @CalledByNative
-    private void destroy() {
+    private void onNativeDestroyed() {
         mNativeProfileAndroid = 0;
     }
 
@@ -53,12 +71,9 @@ public class Profile {
     }
 
     private static native Object nativeGetLastUsedProfile();
-    private native Object nativeGetOriginalProfile(
-            long nativeProfileAndroid);
-    private native Object nativeGetOffTheRecordProfile(
-            long nativeProfileAndroid);
-    private native boolean nativeHasOffTheRecordProfile(
-            long nativeProfileAndroid);
-    private native boolean nativeIsOffTheRecord(
-            long nativeProfileAndroid);
+    private native void nativeDestroyWhenAppropriate(long nativeProfileAndroid);
+    private native Object nativeGetOriginalProfile(long nativeProfileAndroid);
+    private native Object nativeGetOffTheRecordProfile(long nativeProfileAndroid);
+    private native boolean nativeHasOffTheRecordProfile(long nativeProfileAndroid);
+    private native boolean nativeIsOffTheRecord(long nativeProfileAndroid);
 }

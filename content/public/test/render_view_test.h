@@ -19,6 +19,8 @@
 #include "third_party/WebKit/public/platform/Platform.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 
+struct ViewMsg_Resize_Params;
+
 namespace blink {
 class WebWidget;
 }
@@ -35,6 +37,7 @@ class MockRenderProcess;
 class PageState;
 class RendererMainPlatformDelegate;
 class RendererBlinkPlatformImplNoSandboxImpl;
+class RendererScheduler;
 class RenderView;
 
 class RenderViewTest : public testing::Test {
@@ -48,6 +51,7 @@ class RenderViewTest : public testing::Test {
     blink::Platform* Get();
 
    private:
+    scoped_ptr<RendererScheduler> renderer_scheduler_;
     scoped_ptr<RendererBlinkPlatformImplNoSandboxImpl> blink_platform_impl_;
   };
 
@@ -130,6 +134,9 @@ class RenderViewTest : public testing::Test {
   virtual ContentClient* CreateContentClient();
   virtual ContentBrowserClient* CreateContentBrowserClient();
   virtual ContentRendererClient* CreateContentRendererClient();
+
+  // Allows a subclass to customize the initial size of the RenderView.
+  virtual scoped_ptr<ViewMsg_Resize_Params> InitialSizeParams();
 
   // testing::Test
   void SetUp() override;

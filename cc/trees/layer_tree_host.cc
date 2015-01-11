@@ -23,6 +23,7 @@
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/layer_selection_bound.h"
+#include "cc/input/page_scale_animation.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
@@ -32,6 +33,7 @@
 #include "cc/layers/render_surface.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/ui_resource_request.h"
+#include "cc/scheduler/begin_frame_source.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
@@ -71,12 +73,15 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     const LayerTreeSettings& settings,
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+    scoped_ptr<BeginFrameSource> external_begin_frame_source) {
   DCHECK(main_task_runner.get());
   DCHECK(impl_task_runner.get());
   scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(
       client, shared_bitmap_manager, gpu_memory_buffer_manager, settings));
-  layer_tree_host->InitializeThreaded(main_task_runner, impl_task_runner);
+  layer_tree_host->InitializeThreaded(main_task_runner,
+                                      impl_task_runner,
+                                      external_begin_frame_source.Pass());
   return layer_tree_host.Pass();
 }
 
@@ -86,11 +91,13 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
     SharedBitmapManager* shared_bitmap_manager,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     const LayerTreeSettings& settings,
-    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+    scoped_ptr<BeginFrameSource> external_begin_frame_source) {
   scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(
       client, shared_bitmap_manager, gpu_memory_buffer_manager, settings));
   layer_tree_host->InitializeSingleThreaded(single_thread_client,
-                                            main_task_runner);
+                                            main_task_runner,
+                                            external_begin_frame_source.Pass());
   return layer_tree_host.Pass();
 }
 
@@ -128,7 +135,9 @@ LayerTreeHost::LayerTreeHost(
       id_(s_layer_tree_host_sequence_number.GetNext() + 1),
       next_commit_forces_redraw_(false),
       shared_bitmap_manager_(shared_bitmap_manager),
-      gpu_memory_buffer_manager_(gpu_memory_buffer_manager) {
+      gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
+      surface_id_namespace_(0u),
+      next_surface_sequence_(1u) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
   rendering_stats_instrumentation_->set_record_rendering_stats(
@@ -137,16 +146,23 @@ LayerTreeHost::LayerTreeHost(
 
 void LayerTreeHost::InitializeThreaded(
     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  InitializeProxy(
-      ThreadProxy::Create(this, main_task_runner, impl_task_runner));
+    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+    scoped_ptr<BeginFrameSource> external_begin_frame_source) {
+  InitializeProxy(ThreadProxy::Create(this,
+                                      main_task_runner,
+                                      impl_task_runner,
+                                      external_begin_frame_source.Pass()));
 }
 
 void LayerTreeHost::InitializeSingleThreaded(
     LayerTreeHostSingleThreadClient* single_thread_client,
-    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+    scoped_ptr<BeginFrameSource> external_begin_frame_source) {
   InitializeProxy(
-      SingleThreadProxy::Create(this, single_thread_client, main_task_runner));
+      SingleThreadProxy::Create(this,
+                                single_thread_client,
+                                main_task_runner,
+                                external_begin_frame_source.Pass()));
 }
 
 void LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
@@ -167,14 +183,14 @@ void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
 
-  DCHECK(swap_promise_monitor_.empty());
-
-  BreakSwapPromises(SwapPromise::COMMIT_FAILS);
-
   overhang_ui_resource_ = nullptr;
 
   if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
+
+  DCHECK(swap_promise_monitor_.empty());
+
+  BreakSwapPromises(SwapPromise::COMMIT_FAILS);
 
   if (proxy_) {
     DCHECK(proxy_->IsMainThread());
@@ -182,7 +198,7 @@ LayerTreeHost::~LayerTreeHost() {
   }
 
   // We must clear any pointers into the layer tree prior to destroying it.
-  RegisterViewportLayers(NULL, NULL, NULL);
+  RegisterViewportLayers(NULL, NULL, NULL, NULL);
 
   if (root_layer_.get()) {
     // The layer tree must be destroyed before the layer tree host. We've
@@ -332,11 +348,12 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->set_has_transparent_background(has_transparent_background_);
 
   if (page_scale_layer_.get() && inner_viewport_scroll_layer_.get()) {
-    sync_tree->SetViewportLayersFromIds(page_scale_layer_->id(),
-                                        inner_viewport_scroll_layer_->id(),
-                                        outer_viewport_scroll_layer_.get()
-                                            ? outer_viewport_scroll_layer_->id()
-                                            : Layer::INVALID_ID);
+    sync_tree->SetViewportLayersFromIds(
+        overscroll_elasticity_layer_.get() ? overscroll_elasticity_layer_->id()
+                                           : Layer::INVALID_ID,
+        page_scale_layer_->id(), inner_viewport_scroll_layer_->id(),
+        outer_viewport_scroll_layer_.get() ? outer_viewport_scroll_layer_->id()
+                                           : Layer::INVALID_ID);
   } else {
     sync_tree->ClearViewportLayers();
   }
@@ -366,12 +383,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   host_impl->SetDeviceScaleFactor(device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
   if (pending_page_scale_animation_) {
-    sync_tree->SetPageScaleAnimation(
-        pending_page_scale_animation_->target_offset,
-        pending_page_scale_animation_->use_anchor,
-        pending_page_scale_animation_->scale,
-        pending_page_scale_animation_->duration);
-    pending_page_scale_animation_ = nullptr;
+    sync_tree->SetPendingPageScaleAnimation(
+        pending_page_scale_animation_.Pass());
   }
 
   if (!ui_resource_request_queue_.empty()) {
@@ -709,11 +722,12 @@ void LayerTreeHost::StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                             bool use_anchor,
                                             float scale,
                                             base::TimeDelta duration) {
-  pending_page_scale_animation_.reset(new PendingPageScaleAnimation);
-  pending_page_scale_animation_->target_offset = target_offset;
-  pending_page_scale_animation_->use_anchor = use_anchor;
-  pending_page_scale_animation_->scale = scale;
-  pending_page_scale_animation_->duration = duration;
+  pending_page_scale_animation_.reset(
+      new PendingPageScaleAnimation(
+          target_offset,
+          use_anchor,
+          scale,
+          duration));
 
   SetNeedsCommit();
 }
@@ -830,17 +844,12 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
     // Change this if this information is required.
     int render_surface_layer_list_id = 0;
     LayerTreeHostCommon::CalcDrawPropsMainInputs inputs(
-        root_layer,
-        device_viewport_size(),
-        gfx::Transform(),
-        device_scale_factor_,
-        page_scale_factor_,
-        page_scale_layer,
-        GetRendererCapabilities().max_texture_size,
-        settings_.can_use_lcd_text,
+        root_layer, device_viewport_size(), gfx::Transform(),
+        device_scale_factor_, page_scale_factor_, page_scale_layer,
+        GetRendererCapabilities().max_texture_size, settings_.can_use_lcd_text,
+        settings_.layers_always_allowed_lcd_text,
         can_render_to_separate_surface,
-        settings_.layer_transforms_should_scale_layer_contents,
-        &update_list,
+        settings_.layer_transforms_should_scale_layer_contents, &update_list,
         render_surface_layer_list_id);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
@@ -958,7 +967,6 @@ void LayerTreeHost::PrioritizeTextures(
 size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
     const RenderSurfaceLayerList& update_list) {
   size_t readback_bytes = 0;
-  size_t max_background_texture_bytes = 0;
   size_t contents_texture_bytes = 0;
 
   // Start iteration at 1 to skip the root surface as it does not have a texture
@@ -972,17 +980,16 @@ size_t LayerTreeHost::CalculateMemoryForRenderSurfaces(
                                   RGBA_8888);
     contents_texture_bytes += bytes;
 
-    if (render_surface_layer->background_filters().IsEmpty())
+    if (render_surface_layer->background_filters().IsEmpty() &&
+        render_surface_layer->uses_default_blend_mode())
       continue;
 
-    if (bytes > max_background_texture_bytes)
-      max_background_texture_bytes = bytes;
     if (!readback_bytes) {
       readback_bytes = Resource::MemorySizeBytes(device_viewport_size_,
                                                  RGBA_8888);
     }
   }
-  return readback_bytes + max_background_texture_bytes + contents_texture_bytes;
+  return readback_bytes + contents_texture_bytes;
 }
 
 void LayerTreeHost::PaintMasksForRenderSurface(Layer* render_surface_layer,
@@ -1280,9 +1287,11 @@ gfx::Size LayerTreeHost::GetUIResourceSize(UIResourceId uid) const {
 }
 
 void LayerTreeHost::RegisterViewportLayers(
+    scoped_refptr<Layer> overscroll_elasticity_layer,
     scoped_refptr<Layer> page_scale_layer,
     scoped_refptr<Layer> inner_viewport_scroll_layer,
     scoped_refptr<Layer> outer_viewport_scroll_layer) {
+  overscroll_elasticity_layer_ = overscroll_elasticity_layer;
   page_scale_layer_ = page_scale_layer;
   inner_viewport_scroll_layer_ = inner_viewport_scroll_layer;
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
@@ -1334,6 +1343,24 @@ void LayerTreeHost::BreakSwapPromises(SwapPromise::DidNotSwapReason reason) {
   for (size_t i = 0; i < swap_promise_list_.size(); i++)
     swap_promise_list_[i]->DidNotSwap(reason);
   swap_promise_list_.clear();
+}
+
+void LayerTreeHost::set_surface_id_namespace(uint32_t id_namespace) {
+  surface_id_namespace_ = id_namespace;
+}
+
+SurfaceSequence LayerTreeHost::CreateSurfaceSequence() {
+  return SurfaceSequence(surface_id_namespace_, next_surface_sequence_++);
+}
+
+void LayerTreeHost::SetChildrenNeedBeginFrames(
+    bool children_need_begin_frames) const {
+  proxy_->SetChildrenNeedBeginFrames(children_need_begin_frames);
+}
+
+void LayerTreeHost::SendBeginFramesToChildren(
+    const BeginFrameArgs& args) const {
+  client_->SendBeginFramesToChildren(args);
 }
 
 }  // namespace cc

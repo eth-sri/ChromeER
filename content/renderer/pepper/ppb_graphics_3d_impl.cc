@@ -14,6 +14,7 @@
 #include "content/public/common/web_preferences.h"
 #include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
+#include "content/renderer/pepper/pepper_plugin_instance_throttler.h"
 #include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -85,6 +86,7 @@ PP_Resource PPB_Graphics3D_Impl::CreateRaw(
     PP_Instance instance,
     PP_Resource share_context,
     const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
     base::SharedMemoryHandle* shared_state_handle) {
   PPB_Graphics3D_API* share_api = NULL;
   if (share_context) {
@@ -95,7 +97,8 @@ PP_Resource PPB_Graphics3D_Impl::CreateRaw(
   }
   scoped_refptr<PPB_Graphics3D_Impl> graphics_3d(
       new PPB_Graphics3D_Impl(instance));
-  if (!graphics_3d->InitRaw(share_api, attrib_list, shared_state_handle))
+  if (!graphics_3d->InitRaw(share_api, attrib_list, capabilities,
+                            shared_state_handle))
     return 0;
   return graphics_3d->GetReference();
 }
@@ -211,7 +214,7 @@ int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
 
 bool PPB_Graphics3D_Impl::Init(PPB_Graphics3D_API* share_context,
                                const int32_t* attrib_list) {
-  if (!InitRaw(share_context, attrib_list, NULL))
+  if (!InitRaw(share_context, attrib_list, NULL, NULL))
     return false;
 
   gpu::gles2::GLES2Implementation* share_gles2 = NULL;
@@ -226,6 +229,7 @@ bool PPB_Graphics3D_Impl::Init(PPB_Graphics3D_API* share_context,
 bool PPB_Graphics3D_Impl::InitRaw(
     PPB_Graphics3D_API* share_context,
     const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
     base::SharedMemoryHandle* shared_state_handle) {
   PepperPluginInstanceImpl* plugin_instance =
       HostGlobals::Get()->GetInstance(pp_instance());
@@ -237,6 +241,11 @@ bool PPB_Graphics3D_Impl::InitRaw(
           ->webkit_preferences();
   // 3D access might be disabled or blacklisted.
   if (!prefs.pepper_3d_enabled)
+    return false;
+
+  // Force SW rendering for keyframe extraction to avoid pixel reads from VRAM.
+  PepperPluginInstanceThrottler* throttler = plugin_instance->throttler();
+  if (throttler && throttler->needs_representative_keyframe())
     return false;
 
   RenderThreadImpl* render_thread = RenderThreadImpl::current();
@@ -297,6 +306,8 @@ bool PPB_Graphics3D_Impl::InitRaw(
     return false;
   if (shared_state_handle)
     *shared_state_handle = command_buffer_->GetSharedStateHandle();
+  if (capabilities)
+    *capabilities = command_buffer_->GetCapabilities();
   mailbox_ = gpu::Mailbox::Generate();
   if (!command_buffer_->ProduceFrontBuffer(mailbox_))
     return false;

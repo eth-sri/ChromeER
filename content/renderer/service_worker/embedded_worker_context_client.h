@@ -69,6 +69,7 @@ class EmbeddedWorkerContextClient
   virtual void workerReadyForInspection();
   virtual void workerContextFailedToStart();
   virtual void workerContextStarted(blink::WebServiceWorkerContextProxy* proxy);
+  virtual void didEvaluateWorkerScript(bool success);
   virtual void willDestroyWorkerContext();
   virtual void workerContextDestroyed();
   virtual void reportException(const blink::WebString& error_message,
@@ -90,6 +91,11 @@ class EmbeddedWorkerContextClient
   virtual void didHandleFetchEvent(
       int request_id,
       const blink::WebServiceWorkerResponse& response);
+  virtual void didHandleNotificationClickEvent(
+      int request_id,
+      blink::WebServiceWorkerEventResult result);
+  virtual void didHandlePushEvent(int request_id,
+                                  blink::WebServiceWorkerEventResult result);
   virtual void didHandleSyncEvent(int request_id);
   virtual blink::WebServiceWorkerNetworkProvider*
       createServiceWorkerNetworkProvider(blink::WebDataSource* data_source);

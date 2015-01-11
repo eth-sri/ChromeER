@@ -163,6 +163,9 @@ TEST(CreditCardTest, Compare) {
   EXPECT_LT(0, b.Compare(a));
 }
 
+// This method is not compiled for iOS because these resources are not used and
+// should not be shipped.
+#if !defined(OS_IOS)
 // Test we get the correct icon for each card type.
 TEST(CreditCardTest, IconResourceId) {
   EXPECT_EQ(IDR_AUTOFILL_CC_AMEX,
@@ -178,6 +181,7 @@ TEST(CreditCardTest, IconResourceId) {
   EXPECT_EQ(IDR_AUTOFILL_CC_VISA,
             CreditCard::IconResourceId(kVisaCard));
 }
+#endif  // #if !defined(OS_IOS)
 
 TEST(CreditCardTest, UpdateFromImportedCard) {
   CreditCard original_card(base::GenerateGUID(), "https://www.example.com");
@@ -524,6 +528,31 @@ TEST(CreditCardTest, GetCreditCardType) {
     EXPECT_EQ(test_cases[i].type, CreditCard::GetCreditCardType(card_number));
     EXPECT_EQ(test_cases[i].is_valid, IsValidCreditCardNumber(card_number));
   }
+}
+
+TEST(CreditCardTest, LastFourDigits) {
+  CreditCard card(base::GenerateGUID(), "https://www.example.com/");
+  ASSERT_EQ(base::string16(), card.LastFourDigits());
+
+  test::SetCreditCardInfo(&card, "Baby Face Nelson",
+                          "5212341234123489", "01", "2010");
+  ASSERT_EQ(base::ASCIIToUTF16("3489"), card.LastFourDigits());
+
+  card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("3489"));
+  ASSERT_EQ(base::ASCIIToUTF16("3489"), card.LastFourDigits());
+
+  card.SetRawInfo(CREDIT_CARD_NUMBER, ASCIIToUTF16("489"));
+  ASSERT_EQ(base::ASCIIToUTF16("489"), card.LastFourDigits());
+}
+
+TEST(CreditCardTest, CanBuildFromCardNumberAndExpirationDate) {
+  base::string16 card_number = base::ASCIIToUTF16("test");
+  int month = 1;
+  int year = 3000;
+  CreditCard card(card_number, month, year);
+  EXPECT_EQ(card_number, card.number());
+  EXPECT_EQ(month, card.expiration_month());
+  EXPECT_EQ(year, card.expiration_year());
 }
 
 }  // namespace autofill

@@ -198,13 +198,12 @@ int WebViewGuest::GetTaskPrefix() const {
 }
 
 void WebViewGuest::CreateWebContents(
-    const std::string& embedder_extension_id,
-    int embedder_render_process_id,
+    int owner_render_process_id,
     const GURL& embedder_site_url,
     const base::DictionaryValue& create_params,
     const WebContentsCreatedCallback& callback) {
-  content::RenderProcessHost* embedder_render_process_host =
-      content::RenderProcessHost::FromID(embedder_render_process_id);
+  content::RenderProcessHost* owner_render_process_host =
+      content::RenderProcessHost::FromID(owner_render_process_id);
   std::string storage_partition_id;
   bool persist_storage = false;
   std::string storage_partition_string;
@@ -217,25 +216,14 @@ void WebViewGuest::CreateWebContents(
     content::RecordAction(
         base::UserMetricsAction("BadMessageTerminate_BPGM"));
     base::KillProcess(
-        embedder_render_process_host->GetHandle(),
+        owner_render_process_host->GetHandle(),
         content::RESULT_CODE_KILLED_BAD_MESSAGE, false);
     callback.Run(NULL);
     return;
   }
   std::string url_encoded_partition = net::EscapeQueryParamValue(
       storage_partition_id, false);
-  // The SiteInstance of a given webview tag is based on the fact that it's
-  // a guest process in addition to which platform application or which WebUI
-  // page the tag belongs to and what storage partition is in use, rather than
-  // the URL that the tag is being navigated to.
-  std::string partition_domain;
-  if (embedder_extension_id.empty()) {
-    DCHECK(content::ChildProcessSecurityPolicy::GetInstance()->HasWebUIBindings(
-        embedder_render_process_id));
-    partition_domain = embedder_site_url.host();
-  } else {
-    partition_domain = embedder_extension_id;
-  }
+  std::string partition_domain = embedder_site_url.host();
   GURL guest_site(base::StringPrintf("%s://%s/%s?%s",
                                      content::kGuestScheme,
                                      partition_domain.c_str(),
@@ -247,7 +235,7 @@ void WebViewGuest::CreateWebContents(
   // the new tag can script each other.
   GuestViewManager* guest_view_manager =
       GuestViewManager::FromBrowserContext(
-          embedder_render_process_host->GetBrowserContext());
+          owner_render_process_host->GetBrowserContext());
   content::SiteInstance* guest_site_instance =
       guest_view_manager->GetGuestSiteInstance(guest_site);
   if (!guest_site_instance) {
@@ -255,10 +243,10 @@ void WebViewGuest::CreateWebContents(
     // that webview tags are also not allowed to send messages across
     // different partitions.
     guest_site_instance = content::SiteInstance::CreateForURL(
-        embedder_render_process_host->GetBrowserContext(), guest_site);
+        owner_render_process_host->GetBrowserContext(), guest_site);
   }
   WebContents::CreateParams params(
-      embedder_render_process_host->GetBrowserContext(),
+      owner_render_process_host->GetBrowserContext(),
       guest_site_instance);
   params.guest_delegate = this;
   callback.Run(WebContents::Create(params));
@@ -285,10 +273,7 @@ void WebViewGuest::DidAttachToEmbedder() {
     SetUserAgentOverride("");
   }
 
-  std::string src;
-  if (attach_params()->GetString(webview::kAttributeSrc, &src) && !src.empty())
-    NavigateGuest(src, false /* force_navigation */);
-
+  bool is_pending_new_window = false;
   if (GetOpener()) {
     // We need to do a navigation here if the target URL has changed between
     // the time the WebContents was created and the time it was attached.
@@ -300,13 +285,22 @@ void WebViewGuest::DidAttachToEmbedder() {
       const NewWindowInfo& new_window_info = it->second;
       if (new_window_info.changed || !web_contents()->HasOpener())
         NavigateGuest(new_window_info.url.spec(), false /* force_navigation */);
-    } else {
-      NOTREACHED();
-    }
 
-    // Once a new guest is attached to the DOM of the embedder page, then the
-    // lifetime of the new guest is no longer managed by the opener guest.
-    GetOpener()->pending_new_windows_.erase(this);
+      // Once a new guest is attached to the DOM of the embedder page, then the
+      // lifetime of the new guest is no longer managed by the opener guest.
+      GetOpener()->pending_new_windows_.erase(this);
+
+      is_pending_new_window = true;
+    }
+  }
+
+  // Only read the src attribute if this is not a New Window API flow.
+  if (!is_pending_new_window) {
+    std::string src;
+    if (attach_params()->GetString(webview::kAttributeSrc, &src) &&
+        !src.empty()) {
+      NavigateGuest(src, false /* force_navigation */);
+    }
   }
 
   bool allow_transparency = false;
@@ -360,7 +354,7 @@ void WebViewGuest::EmbedderWillBeDestroyed() {
           &RemoveWebViewEventListenersOnIOThread,
           browser_context(),
           embedder_extension_id(),
-          embedder_render_process_id(),
+          owner_render_process_id(),
           view_instance_id()));
 }
 
@@ -389,8 +383,6 @@ void WebViewGuest::GuestReady() {
     web_contents()->GetRenderViewHost()->GetView()->SetBackgroundColor(
         SK_ColorTRANSPARENT);
   }
-  if (web_view_guest_delegate_)
-    web_view_guest_delegate_->OnGuestReady();
 }
 
 void WebViewGuest::GuestSizeChangedDueToAutoSize(const gfx::Size& old_size,
@@ -415,7 +407,6 @@ bool WebViewGuest::IsDragAndDropEnabled() const {
 void WebViewGuest::WillDestroy() {
   if (!attached() && GetOpener())
     GetOpener()->pending_new_windows_.erase(this);
-  DestroyUnattachedWindows();
 }
 
 bool WebViewGuest::AddMessageToConsole(WebContents* source,
@@ -817,7 +808,7 @@ void WebViewGuest::PushWebViewStateToIOThread() {
   }
 
   WebViewRendererState::WebViewInfo web_view_info;
-  web_view_info.embedder_process_id = embedder_render_process_id();
+  web_view_info.embedder_process_id = owner_render_process_id();
   web_view_info.instance_id = view_instance_id();
   web_view_info.partition_id = partition_id;
   web_view_info.embedder_extension_id = embedder_extension_id();
@@ -899,8 +890,8 @@ void WebViewGuest::WillAttachToEmbedder() {
   PushWebViewStateToIOThread();
 }
 
-content::JavaScriptDialogManager*
-    WebViewGuest::GetJavaScriptDialogManager() {
+content::JavaScriptDialogManager* WebViewGuest::GetJavaScriptDialogManager(
+    WebContents* source) {
   return &javascript_dialog_helper_;
 }
 
@@ -1210,21 +1201,6 @@ void WebViewGuest::RequestNewWindowPermission(
                                    false /* allowed_by_default */);
 }
 
-void WebViewGuest::DestroyUnattachedWindows() {
-  // Destroy() reaches in and removes the WebViewGuest from its opener's
-  // pending_new_windows_ set. To avoid mutating the set while iterating, we
-  // create a copy of the pending new windows set and iterate over the copy.
-  PendingWindowMap pending_new_windows(pending_new_windows_);
-  // Clean up unattached new windows opened by this guest.
-  for (PendingWindowMap::const_iterator it = pending_new_windows.begin();
-       it != pending_new_windows.end(); ++it) {
-    it->first->Destroy();
-  }
-  // All pending windows should be removed from the set after Destroy() is
-  // called on all of them.
-  DCHECK(pending_new_windows_.empty());
-}
-
 GURL WebViewGuest::ResolveURL(const std::string& src) {
   if (!in_extension()) {
     return GURL(src);
@@ -1241,7 +1217,7 @@ void WebViewGuest::OnWebViewNewWindowResponse(
     bool allow,
     const std::string& user_input) {
   WebViewGuest* guest =
-      WebViewGuest::From(embedder_render_process_id(), new_window_instance_id);
+      WebViewGuest::From(owner_render_process_id(), new_window_instance_id);
   if (!guest)
     return;
 

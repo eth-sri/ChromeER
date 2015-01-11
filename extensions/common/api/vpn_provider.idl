@@ -1,0 +1,112 @@
+// Copyright 2014 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Use the <code>chrome.vpnProvider</code> API to implement a VPN
+// client.
+namespace vpnProvider {
+  // A parameters class for the VPN interface.
+  dictionary Parameters {
+    // IP address for the VPN interface in CIDR notation.
+    // IPv4 is currently the only supported mode.
+    DOMString address;
+    // Optional broadcast address for the VPN interface. (default: Deduced
+    // from IP address and mask)
+    DOMString? broadcastAddress;
+    // Optional MTU setting for the VPN interface. (default: 1500)
+    DOMString? mtu;
+    // Bypass network traffic to the below IPs (in CIDR notation)
+    // from the tunnel. Typically used to bypass traffic to/from
+    // VPN server.
+    DOMString[] bypassTunnelForIp;
+    // An optional list of search domains. (default: no search domain)
+    DOMString[]? domainSearch;
+    // A list of DNS servers in CIDR notation.
+    DOMString[] dnsServers;
+  };
+
+  // The enum is used by the platform to notify the client of
+  // connection and network related status.
+  // |connected| : Connected to the VPN configuration.
+  // |disconnected| : Disconnected from the VPN configuration.
+  // |error| : Used to indicate error in the VPN configuration.
+  enum PlatformMessage {
+    connected,
+    disconnected,
+    error
+  };
+
+  // The enum is used by the VPN client to inform the platform
+  // of its current state. This helps provide meaningful messages
+  // to the user. The states listed below are currently known to
+  // the platform (Shill daemon).
+  // |connected| : The VPN client is successfully connected.
+  // |failure| : The VPN client could not make the connection.
+  enum VpnConnectionState {
+    connected,
+    failure
+  };
+
+  // The callback is used by <code>setParameters, sendPacket</code>
+  // to signal completion. The callback is called with
+  // <code>chrome.runtime.lastError</code> set to error code if
+  // there is an error.
+  [inline_doc] callback CallCompleteCallback = void ();
+
+  interface Functions {
+    // Creates a new VPN configuration.
+    // |name| : The name of the VPN configuration.
+    // |callback| : Called when the configuration is created.
+    static void createConfig(DOMString name,
+                             CallCompleteCallback callback);
+
+    // Destroys a VPN configuration created by the extension.
+    // |name| : The name of the VPN configuration to destroy.
+    // |callback| : Called when the configuration is destroyed.
+    static void destroyConfig(DOMString name,
+                              optional CallCompleteCallback callback);
+
+    // Sets the parameters for a VPN configuration. This should be
+    // called after connected is received from the platform.
+    // |parameters| : The parameters for the VPN connection.
+    // |callback| : Called when the parameter setting is complete.
+    static void setParameters(Parameters parameters,
+                              CallCompleteCallback callback);
+
+    // Injects an IP packet into the network stack of Chrome OS.
+    // |data| : The IP packet to be sent to the platform.
+    // |callback| : Called when the parameter setting is complete.
+    static void sendPacket(ArrayBuffer data,
+                           optional CallCompleteCallback callback);
+
+    // Notifies the VPN connection state to Chrome OS.
+    // |state| : The connection state of the VPN client.
+    // |callback| : Called when the parameter setting is complete.
+    static void notifyConnectionStateChanged(
+        VpnConnectionState state,
+        optional CallCompleteCallback callback);
+  };
+
+  interface Events {
+    // Called when a message is received from the platform for a
+    // VPN configuration owned by the extension.
+    // |name| : Name of the configuration the message refers to.
+    // |message| : The message received from the platform.
+    // |error| : Error message when there is an error.
+    static void onPlatformMessage(DOMString name,
+                                  PlatformMessage message,
+                                  DOMString error);
+
+    // Called when an IP packet is received from the platform for a
+    // connected VPN configuration owned by the extension. This would never be
+    // called when no configuration is owned by the extension or the ones owned
+    // are not connected.
+    // |data| : The IP packet received from the platform.
+    static void onPacketReceived(ArrayBuffer data);
+
+    // Called when a configuration installed by the extension is removed by the
+    // platform.
+    // |name| : Name of the configuration removed.
+    static void onConfigRemoved(DOMString name);
+  };
+};

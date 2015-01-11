@@ -12,14 +12,16 @@ namespace media {
 
 DecoderBuffer::DecoderBuffer(int size)
     : size_(size),
-      side_data_size_(0) {
+      side_data_size_(0),
+      is_key_frame_(false) {
   Initialize();
 }
 
 DecoderBuffer::DecoderBuffer(const uint8* data, int size,
                              const uint8* side_data, int side_data_size)
     : size_(size),
-      side_data_size_(side_data_size) {
+      side_data_size_(side_data_size),
+      is_key_frame_(false) {
   if (!data) {
     CHECK_EQ(size_, 0);
     CHECK(!side_data);
@@ -27,9 +29,17 @@ DecoderBuffer::DecoderBuffer(const uint8* data, int size,
   }
 
   Initialize();
+
+  DCHECK_GE(size_, 0);
   memcpy(data_.get(), data, size_);
-  if (side_data)
-    memcpy(side_data_.get(), side_data, side_data_size_);
+
+  if (!side_data) {
+    CHECK_EQ(side_data_size, 0);
+    return;
+  }
+
+  DCHECK_GT(side_data_size_, 0);
+  memcpy(side_data_.get(), side_data, side_data_size_);
 }
 
 DecoderBuffer::~DecoderBuffer() {}
@@ -82,6 +92,7 @@ std::string DecoderBuffer::AsHumanReadableString() {
     << " duration: " << duration_.InMicroseconds()
     << " size: " << size_
     << " side_data_size: " << side_data_size_
+    << " is_key_frame: " << is_key_frame_
     << " encrypted: " << (decrypt_config_ != NULL)
     << " discard_padding (ms): (" << discard_padding_.first.InMilliseconds()
     << ", " << discard_padding_.second.InMilliseconds() << ")";

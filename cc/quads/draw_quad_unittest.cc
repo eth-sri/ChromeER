@@ -102,13 +102,13 @@ void CompareDrawQuad(DrawQuad* quad,
       render_pass->CreateAndAppendSharedQuadState();                       \
   copy_shared_state->CopyFrom(shared_state);
 
-#define QUAD_DATA \
-    gfx::Rect quad_rect(30, 40, 50, 60); \
-    gfx::Rect quad_visible_rect(40, 50, 30, 20); \
-    gfx::Rect quad_opaque_rect( 60, 55, 10, 10); \
-    ALLOW_UNUSED_LOCAL(quad_opaque_rect); \
-    bool needs_blending = true; \
-    ALLOW_UNUSED_LOCAL(needs_blending);
+#define QUAD_DATA                              \
+  gfx::Rect quad_rect(30, 40, 50, 60);         \
+  gfx::Rect quad_visible_rect(40, 50, 30, 20); \
+  gfx::Rect quad_opaque_rect(60, 55, 10, 10);  \
+  ALLOW_UNUSED_LOCAL(quad_opaque_rect);        \
+  bool needs_blending = true;                  \
+  ALLOW_UNUSED_LOCAL(needs_blending);
 
 #define SETUP_AND_COPY_QUAD_NEW(Type, quad)                                \
   DrawQuad* copy_new =                                                     \
@@ -670,18 +670,12 @@ TEST(DrawQuadTest, CopyPictureDrawQuad) {
   ResourceFormat texture_format = RGBA_8888;
   gfx::Rect content_rect(30, 40, 20, 30);
   float contents_scale = 3.141592f;
-  scoped_refptr<PicturePileImpl> picture_pile = PicturePileImpl::Create();
+  scoped_refptr<RasterSource> raster_source = PicturePileImpl::Create();
   CREATE_SHARED_STATE();
 
-  CREATE_QUAD_8_NEW(PictureDrawQuad,
-                    opaque_rect,
-                    visible_rect,
-                    tex_coord_rect,
-                    texture_size,
-                    texture_format,
-                    content_rect,
-                    contents_scale,
-                    picture_pile);
+  CREATE_QUAD_8_NEW(PictureDrawQuad, opaque_rect, visible_rect, tex_coord_rect,
+                    texture_size, texture_format, content_rect, contents_scale,
+                    raster_source);
   EXPECT_EQ(DrawQuad::PICTURE_CONTENT, copy_quad->material);
   EXPECT_RECT_EQ(opaque_rect, copy_quad->opaque_rect);
   EXPECT_RECT_EQ(visible_rect, copy_quad->visible_rect);
@@ -690,22 +684,18 @@ TEST(DrawQuadTest, CopyPictureDrawQuad) {
   EXPECT_EQ(texture_format, copy_quad->texture_format);
   EXPECT_RECT_EQ(content_rect, copy_quad->content_rect);
   EXPECT_EQ(contents_scale, copy_quad->contents_scale);
-  EXPECT_EQ(picture_pile, copy_quad->picture_pile);
+  EXPECT_EQ(raster_source, copy_quad->raster_source);
 
-  CREATE_QUAD_6_ALL(PictureDrawQuad,
-                    tex_coord_rect,
-                    texture_size,
-                    texture_format,
-                    content_rect,
-                    contents_scale,
-                    picture_pile);
+  CREATE_QUAD_6_ALL(PictureDrawQuad, tex_coord_rect, texture_size,
+                    texture_format, content_rect, contents_scale,
+                    raster_source);
   EXPECT_EQ(DrawQuad::PICTURE_CONTENT, copy_quad->material);
   EXPECT_EQ(tex_coord_rect, copy_quad->tex_coord_rect);
   EXPECT_EQ(texture_size, copy_quad->texture_size);
   EXPECT_EQ(texture_format, copy_quad->texture_format);
   EXPECT_RECT_EQ(content_rect, copy_quad->content_rect);
   EXPECT_EQ(contents_scale, copy_quad->contents_scale);
-  EXPECT_EQ(picture_pile, copy_quad->picture_pile);
+  EXPECT_EQ(raster_source, copy_quad->raster_source);
 }
 
 class DrawQuadIteratorTest : public testing::Test {
@@ -922,18 +912,12 @@ TEST_F(DrawQuadIteratorTest, DISABLED_PictureDrawQuad) {
   ResourceFormat texture_format = RGBA_8888;
   gfx::Rect content_rect(30, 40, 20, 30);
   float contents_scale = 3.141592f;
-  scoped_refptr<PicturePileImpl> picture_pile = PicturePileImpl::Create();
+  scoped_refptr<PicturePileImpl> raster_source = PicturePileImpl::Create();
 
   CREATE_SHARED_STATE();
-  CREATE_QUAD_8_NEW(PictureDrawQuad,
-                    opaque_rect,
-                    visible_rect,
-                    tex_coord_rect,
-                    texture_size,
-                    texture_format,
-                    content_rect,
-                    contents_scale,
-                    picture_pile);
+  CREATE_QUAD_8_NEW(PictureDrawQuad, opaque_rect, visible_rect, tex_coord_rect,
+                    texture_size, texture_format, content_rect, contents_scale,
+                    raster_source);
   EXPECT_EQ(0, IterateAndCount(quad_new));
 }
 
@@ -979,14 +963,14 @@ TEST(DrawQuadTest, LargestQuadType) {
         break;
     }
   }
-  EXPECT_EQ(sizeof(kLargestDrawQuad), largest);
+  EXPECT_EQ(LargestDrawQuadSize(), largest);
 
   if (!HasFailure())
     return;
 
   // On failure, output the size of all quads for debugging.
   LOG(ERROR) << "largest " << largest;
-  LOG(ERROR) << "kLargestDrawQuad " << sizeof(kLargestDrawQuad);
+  LOG(ERROR) << "kLargestDrawQuad " << LargestDrawQuadSize();
   for (int i = 0; i <= DrawQuad::MATERIAL_LAST; ++i) {
     switch (static_cast<DrawQuad::Material>(i)) {
       case DrawQuad::CHECKERBOARD:

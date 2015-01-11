@@ -3,18 +3,25 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Closure builder for Javascript."""
+
 import argparse
 import json
 import os
 import re
-import sys
 
-_BASE_REGEX_STRING = '^\s*goog\.%s\(\s*[\'"](.+)[\'"]\s*\)'
+_BASE_REGEX_STRING = r'^\s*goog\.%s\(\s*[\'"](.+)[\'"]\s*\)'
 require_regex = re.compile(_BASE_REGEX_STRING % 'require')
 provide_regex = re.compile(_BASE_REGEX_STRING % 'provide')
 
+base = os.path.join('third_party',
+                    'closure_library',
+                    'closure',
+                    'goog',
+                    'base.js')
 
-def ProcessFile(filename):
+
+def process_file(filename):
   """Extracts provided and required namespaces.
 
   Description:
@@ -39,7 +46,7 @@ def ProcessFile(filename):
   return provides, requires
 
 
-def ExtractDependencies(filename, providers, requirements):
+def extract_dependencies(filename, providers, requirements):
   """Extracts provided and required namespaces for a file.
 
   Description:
@@ -51,17 +58,17 @@ def ExtractDependencies(filename, providers, requirements):
     requirements: Mapping of filename to a list of prerequisite namespaces.
   """
 
-  p, r = ProcessFile(filename)
+  p, r = process_file(filename)
 
   for name in p:
     providers[name] = filename
   for name in r:
-    if not filename in requirements:
+    if filename not in requirements:
       requirements[filename] = []
     requirements[filename].append(name)
 
 
-def Export(target_file, source_filename, providers, requirements, processed):
+def export(target_file, source_filename, providers, requirements, processed):
   """Writes the contents of a file.
 
   Description:
@@ -92,10 +99,11 @@ def Export(target_file, source_filename, providers, requirements, processed):
       if namespace in providers:
         dependency = providers[namespace]
         if dependency:
-          Export(target_file, dependency, providers, requirements, processed)
+          export(target_file, dependency, providers, requirements, processed)
+
+  processed.add(source_filename)
 
   # Export file
-  processed.add(source_filename)
   for name in providers:
     if providers[name] == source_filename:
       target_file.write('// %s%s' % (name, os.linesep))
@@ -103,9 +111,8 @@ def Export(target_file, source_filename, providers, requirements, processed):
   try:
     comment_block = False
     for line in source_file:
-      # Skip require and provide statements.
-      if (not re.match(require_regex, line) and not
-          re.match(provide_regex, line)):
+      # Skip require statements.
+      if not re.match(require_regex, line):
         formatted = line.rstrip()
         if comment_block:
           # Scan for trailing */ in multi-line comment.
@@ -115,17 +122,16 @@ def Export(target_file, source_filename, providers, requirements, processed):
             comment_block = False
           else:
             formatted = ''
-        # Remove // style comments.
-        index = formatted.find('//')
-        if index >= 0:
-          formatted = formatted[:index]
+        # Remove full-line // style comments.
+        if formatted.lstrip().startswith('//'):
+          formatted = ''
         # Remove /* */ style comments.
         start_comment = formatted.find('/*')
         end_comment = formatted.find('*/')
         while start_comment >= 0:
           if end_comment > start_comment:
             formatted = (formatted[:start_comment]
-                + formatted[end_comment + 2:])
+                         + formatted[end_comment + 2:])
             start_comment = formatted.find('/*')
             end_comment = formatted.find('*/')
           else:
@@ -139,7 +145,7 @@ def Export(target_file, source_filename, providers, requirements, processed):
   target_file.write('\n')
 
 
-def ExtractSources(options):
+def extract_sources(options):
   """Extracts list of sources based on command line options.
 
   Args:
@@ -159,7 +165,7 @@ def ExtractSources(options):
       for line in json_file:
         if not line.startswith('#'):
           data.append(line)
-      json_object =  json.loads(os.linesep.join(data).replace('\'', '\"'))
+      json_object = json.loads(os.linesep.join(data).replace('\'', '\"'))
       path = options.json_sources.split('.')
       sources = json_object
       for key in path:
@@ -180,19 +186,24 @@ def main():
   parser.add_argument('--json_sources', nargs='?')
   parser.add_argument('--path', nargs='?')
   options = parser.parse_args()
-  
-  sources = ExtractSources(options)
+
+  sources = extract_sources(options)
   assert sources, 'Missing source files.'
 
   providers = {}
   requirements = {}
-  for file in sources:
-    ExtractDependencies(file, providers, requirements)
+  for filename in sources:
+    extract_dependencies(filename, providers, requirements)
 
   with open(options.target[0], 'w') as target_file:
+    target_file.write('var CLOSURE_NO_DEPS=true;%s' % os.linesep)
     processed = set()
+    base_path = base
+    if options.path:
+      base_path = os.path.join(options.path, base_path)
+    export(target_file, base_path, providers, requirements, processed)
     for source_filename in sources:
-      Export(target_file, source_filename, providers, requirements, processed)
+      export(target_file, source_filename, providers, requirements, processed)
 
 if __name__ == '__main__':
   main()

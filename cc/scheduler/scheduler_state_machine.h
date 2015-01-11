@@ -95,7 +95,6 @@ class CC_EXPORT SchedulerStateMachine {
     ACTION_ANIMATE,
     ACTION_SEND_BEGIN_MAIN_FRAME,
     ACTION_COMMIT,
-    ACTION_UPDATE_VISIBLE_TILES,
     ACTION_ACTIVATE_SYNC_TREE,
     ACTION_DRAW_AND_SWAP_IF_POSSIBLE,
     ACTION_DRAW_AND_SWAP_FORCED,
@@ -248,8 +247,14 @@ class CC_EXPORT SchedulerStateMachine {
   // We should remove it afterwards.
   std::string GetStatesForDebugging() const;
 
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames);
+  bool children_need_begin_frames() const {
+    return children_need_begin_frames_;
+  }
+
  protected:
   bool BeginFrameNeededToAnimateOrDraw() const;
+  bool BeginFrameNeededForChildren() const;
   bool ProactiveBeginFrameWanted() const;
 
   // True if we need to force activations to make forward progress.
@@ -260,7 +265,6 @@ class CC_EXPORT SchedulerStateMachine {
   bool ShouldDrawForced() const;
   bool ShouldDraw() const;
   bool ShouldActivatePendingTree() const;
-  bool ShouldUpdateVisibleTiles() const;
   bool ShouldSendBeginMainFrame() const;
   bool ShouldCommit() const;
   bool ShouldManageTiles() const;
@@ -268,7 +272,6 @@ class CC_EXPORT SchedulerStateMachine {
   void AdvanceCurrentFrameNumber();
   bool HasAnimatedThisFrame() const;
   bool HasSentBeginMainFrameThisFrame() const;
-  bool HasUpdatedVisibleTilesThisFrame() const;
   bool HasRequestedSwapThisFrame() const;
   bool HasSwappedThisFrame() const;
 
@@ -292,7 +295,6 @@ class CC_EXPORT SchedulerStateMachine {
   int last_frame_number_swap_performed_;
   int last_frame_number_swap_requested_;
   int last_frame_number_begin_main_frame_sent_;
-  int last_frame_number_update_visible_tiles_was_called_;
 
   // manage_tiles_funnel_ is "filled" each time ManageTiles is called
   // and "drained" on each BeginImplFrame. If the funnel gets too full,
@@ -305,7 +307,6 @@ class CC_EXPORT SchedulerStateMachine {
   bool needs_redraw_;
   bool needs_animate_;
   bool needs_manage_tiles_;
-  bool swap_used_incomplete_tile_;
   bool needs_commit_;
   bool inside_poll_for_anticipated_draw_triggers_;
   bool visible_;
@@ -321,6 +322,7 @@ class CC_EXPORT SchedulerStateMachine {
   bool skip_begin_main_frame_to_reduce_latency_;
   bool continuous_painting_;
   bool impl_latency_takes_priority_on_battery_;
+  bool children_need_begin_frames_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SchedulerStateMachine);

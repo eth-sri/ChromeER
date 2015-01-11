@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
@@ -201,7 +200,7 @@ void PluginServiceImpl::StartWatchingPlugins() {
                        KEY_NOTIFY) == ERROR_SUCCESS) {
     base::win::RegKey::ChangeCallback callback =
         base::Bind(&PluginServiceImpl::OnKeyChanged, base::Unretained(this),
-                   base::Unretained(&hkcu_key_));
+                   base::Unretained(&hklm_key_));
     hklm_key_.StartWatching(callback);
   }
 #endif
@@ -631,7 +630,7 @@ void PluginServiceImpl::GetPluginsOnIOThread(
 void PluginServiceImpl::OnKeyChanged(base::win::RegKey* key) {
   key->StartWatching(base::Bind(&PluginServiceImpl::OnKeyChanged,
                                 base::Unretained(this),
-                                base::Unretained(&hkcu_key_)));
+                                base::Unretained(key)));
 
   PluginList::Singleton()->RefreshPlugins();
   PurgePluginListCache(NULL, false);

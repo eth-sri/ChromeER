@@ -55,6 +55,11 @@ class ServiceWorkerScriptContext {
   void DidHandleFetchEvent(int request_id,
                            ServiceWorkerFetchEventResult result,
                            const ServiceWorkerResponse& response);
+  void DidHandleNotificationClickEvent(
+      int request_id,
+      blink::WebServiceWorkerEventResult result);
+  void DidHandlePushEvent(int request_id,
+                          blink::WebServiceWorkerEventResult result);
   void DidHandleSyncEvent(int request_id);
   void GetClientDocuments(
       blink::WebServiceWorkerClientsCallbacks* callbacks);
@@ -83,6 +88,8 @@ class ServiceWorkerScriptContext {
   void OnInstallEvent(int request_id, int active_version_id);
   void OnFetchEvent(int request_id, const ServiceWorkerFetchRequest& request);
   void OnSyncEvent(int request_id);
+  void OnNotificationClickEvent(int request_id,
+                                const std::string& notification_id);
   void OnPushEvent(int request_id, const std::string& data);
   void OnGeofencingEvent(int request_id,
                          blink::WebGeofencingEventType event_type,
@@ -114,6 +121,8 @@ class ServiceWorkerScriptContext {
   std::map<int, base::TimeTicks> activate_start_timings_;
   std::map<int, base::TimeTicks> fetch_start_timings_;
   std::map<int, base::TimeTicks> install_start_timings_;
+  std::map<int, base::TimeTicks> notification_click_start_timings_;
+  std::map<int, base::TimeTicks> push_start_timings_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerScriptContext);
 };

@@ -32,6 +32,7 @@ class PlatformSupport;
 namespace system {
 
 class ChannelEndpoint;
+class ChannelManager;
 
 // This class is mostly thread-safe. It must be created on an I/O thread.
 // |Init()| must be called on that same thread before it becomes thread-safe (in
@@ -61,6 +62,11 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   // failure, no other methods should be called (including |Shutdown()|).
   bool Init(scoped_ptr<RawChannel> raw_channel);
 
+  // Sets the channel manager associated with this channel. This should be set
+  // at most once and only called before |WillShutdownSoon()| (and
+  // |Shutdown()|).
+  void SetChannelManager(ChannelManager* channel_manager);
+
   // This must be called on the creation thread before destruction (which can
   // happen on any thread).
   void Shutdown();
@@ -69,6 +75,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   // thread, unlike |Shutdown()|). Warnings will be issued if, e.g., messages
   // are written after this is called; other warnings may be suppressed. (This
   // may be called multiple times, or not at all.)
+  //
+  // If set, the channel manager associated with this channel will be reset.
   void WillShutdownSoon();
 
   // Attaches the given endpoint to this channel and runs it. |is_bootstrap|
@@ -175,6 +183,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
   // Set when |WillShutdownSoon()| is called.
   bool is_shutting_down_;
 
+  // Has a reference to us.
+  ChannelManager* channel_manager_;
+
   typedef base::hash_map<ChannelEndpointId, scoped_refptr<ChannelEndpoint>>
       IdToEndpointMap;
   // Map from local IDs to endpoints. If the endpoint is null, this means that
@@ -185,8 +196,15 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
 
   typedef base::hash_map<ChannelEndpointId, scoped_refptr<MessagePipe>>
       IdToMessagePipeMap;
-  // Map from local IDs to pending/incoming endpoints (i.e., those which do not
-  // yet have a dispatcher attached).
+  // Map from local IDs to pending/incoming message pipes (i.e., those which do
+  // not yet have a dispatcher attached).
+  // TODO(vtl): This is a layering violation, since |Channel| shouldn't know
+  // about |MessagePipe|. However, we can't just hang on to |ChannelEndpoint|s
+  // (even if they have a reference to the |MessagePipe|) since their lifetimes
+  // are tied to the "remote" side. When |ChannelEndpoint::DetachFromChannel()|
+  // (eventually) results in |ChannelEndpoint::DetachFromClient()| being called.
+  // We really need to hang on to the "local" side of the message pipe, to which
+  // dispatchers will be "attached".
   IdToMessagePipeMap incoming_message_pipes_;
   // TODO(vtl): We need to keep track of remote IDs (so that we don't collide
   // if/when we wrap).

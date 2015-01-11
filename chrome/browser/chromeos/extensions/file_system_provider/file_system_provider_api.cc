@@ -31,10 +31,6 @@ namespace {
 
 typedef std::vector<linked_ptr<api::file_system_provider::Change>> IDLChanges;
 
-const char kNotifyFailedErrorMessage[] =
-    "Sending a response for the request failed.";
-const char kInvalidNotificationErrorMessage[] = "The notification is invalid.";
-
 // Converts the change type from the IDL type to a native type. |changed_type|
 // must be specified (not CHANGE_TYPE_NONE).
 storage::WatcherManager::ChangeType ParseChangeType(
@@ -81,25 +77,18 @@ bool FileSystemProviderMountFunction::RunSync() {
 
   // It's an error if the file system Id is empty.
   if (params->options.file_system_id.empty()) {
-    base::ListValue* const result = new base::ListValue();
-    result->Append(CreateError(kSecurityErrorName, kEmptyIdErrorMessage));
-    SetResult(result);
-    return true;
+    SetError(FileErrorToString(base::File::FILE_ERROR_INVALID_OPERATION));
+    return false;
   }
 
   // It's an error if the display name is empty.
   if (params->options.display_name.empty()) {
-    base::ListValue* const result = new base::ListValue();
-    result->Append(CreateError(kSecurityErrorName,
-                               kEmptyNameErrorMessage));
-    SetResult(result);
-    return true;
+    SetError(FileErrorToString(base::File::FILE_ERROR_INVALID_OPERATION));
+    return false;
   }
 
   Service* const service = Service::Get(GetProfile());
   DCHECK(service);
-  if (!service)
-    return false;
 
   MountOptions options;
   options.file_system_id = params->options.file_system_id;
@@ -107,16 +96,13 @@ bool FileSystemProviderMountFunction::RunSync() {
   options.writable = params->options.writable;
   options.supports_notify_tag = params->options.supports_notify_tag;
 
-  // TODO(mtomasz): Pass more detailed errors, rather than just a bool.
-  if (!service->MountFileSystem(extension_id(), options)) {
-    base::ListValue* const result = new base::ListValue();
-    result->Append(CreateError(kSecurityErrorName, kMountFailedErrorMessage));
-    SetResult(result);
-    return true;
+  const base::File::Error result =
+      service->MountFileSystem(extension_id(), options);
+  if (result != base::File::FILE_OK) {
+    SetError(FileErrorToString(result));
+    return false;
   }
 
-  base::ListValue* result = new base::ListValue();
-  SetResult(result);
   return true;
 }
 
@@ -127,41 +113,57 @@ bool FileSystemProviderUnmountFunction::RunSync() {
 
   Service* const service = Service::Get(GetProfile());
   DCHECK(service);
-  if (!service)
-    return false;
 
-  if (!service->UnmountFileSystem(extension_id(),
-                                  params->options.file_system_id,
-                                  Service::UNMOUNT_REASON_USER)) {
-    // TODO(mtomasz): Pass more detailed errors, rather than just a bool.
-    base::ListValue* result = new base::ListValue();
-    result->Append(CreateError(kSecurityErrorName, kUnmountFailedErrorMessage));
-    SetResult(result);
-    return true;
+  const base::File::Error result =
+      service->UnmountFileSystem(extension_id(), params->options.file_system_id,
+                                 Service::UNMOUNT_REASON_USER);
+  if (result != base::File::FILE_OK) {
+    SetError(FileErrorToString(result));
+    return false;
   }
 
-  base::ListValue* const result = new base::ListValue();
-  SetResult(result);
   return true;
 }
 
 bool FileSystemProviderGetAllFunction::RunSync() {
   using api::file_system_provider::FileSystemInfo;
+  using api::file_system_provider::Watcher;
   Service* const service = Service::Get(GetProfile());
   DCHECK(service);
-  if (!service)
-    return false;
 
   const std::vector<ProvidedFileSystemInfo> file_systems =
       service->GetProvidedFileSystemInfoList();
-  std::vector<linked_ptr<FileSystemInfo> > items;
+  std::vector<linked_ptr<FileSystemInfo>> items;
 
-  for (size_t i = 0; i < file_systems.size(); ++i) {
-    if (file_systems[i].extension_id() == extension_id()) {
-      linked_ptr<FileSystemInfo> item(new FileSystemInfo);
-      item->file_system_id = file_systems[i].file_system_id();
-      item->display_name = file_systems[i].display_name();
-      item->writable = file_systems[i].writable();
+  for (const auto& file_system_info : file_systems) {
+    if (file_system_info.extension_id() == extension_id()) {
+      const linked_ptr<FileSystemInfo> item(new FileSystemInfo);
+      item->file_system_id = file_system_info.file_system_id();
+      item->display_name = file_system_info.display_name();
+      item->writable = file_system_info.writable();
+
+      chromeos::file_system_provider::ProvidedFileSystemInterface* const
+          file_system =
+              service->GetProvidedFileSystem(file_system_info.extension_id(),
+                                             file_system_info.file_system_id());
+      DCHECK(file_system);
+
+      std::vector<linked_ptr<Watcher>> watcher_items;
+      chromeos::file_system_provider::Watchers* const watchers =
+          file_system->GetWatchers();
+      DCHECK(watchers);
+
+      for (const auto& watcher : *watchers) {
+        const linked_ptr<Watcher> watcher_item(new Watcher);
+        watcher_item->entry_path = watcher.second.entry_path.value();
+        watcher_item->recursive = watcher.second.recursive;
+        if (!watcher.second.last_tag.empty())
+          watcher_item->last_tag.reset(
+              new std::string(watcher.second.last_tag));
+        watcher_items.push_back(watcher_item);
+      }
+
+      item->watchers = watcher_items;
       items.push_back(item);
     }
   }
@@ -170,44 +172,43 @@ bool FileSystemProviderGetAllFunction::RunSync() {
   return true;
 }
 
-bool FileSystemProviderNotifyFunction::RunSync() {
+bool FileSystemProviderNotifyFunction::RunAsync() {
   using api::file_system_provider::Notify::Params;
   scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
   Service* const service = Service::Get(GetProfile());
   DCHECK(service);
-  if (!service)
-    return false;
 
   ProvidedFileSystemInterface* const file_system =
       service->GetProvidedFileSystem(extension_id(),
                                      params->options.file_system_id);
   if (!file_system) {
-    base::ListValue* const result = new base::ListValue();
-    result->Append(CreateError(kNotFoundErrorName, kNotifyFailedErrorMessage));
-    SetResult(result);
-    return true;
+    SetError(FileErrorToString(base::File::FILE_ERROR_NOT_FOUND));
+    return false;
   }
 
-  if (!file_system->Notify(
-          base::FilePath::FromUTF8Unsafe(params->options.observed_path),
-          params->options.recursive,
-          ParseChangeType(params->options.change_type),
-          params->options.changes.get()
-              ? ParseChanges(*params->options.changes.get())
-              : make_scoped_ptr(new ProvidedFileSystemObserver::Changes),
-          params->options.tag.get() ? *params->options.tag.get() : "")) {
-    base::ListValue* const result = new base::ListValue();
-    result->Append(
-        CreateError(kSecurityErrorName, kInvalidNotificationErrorMessage));
-    SetResult(result);
-    return true;
-  }
+  file_system->Notify(
+      base::FilePath::FromUTF8Unsafe(params->options.observed_path),
+      params->options.recursive, ParseChangeType(params->options.change_type),
+      params->options.changes.get()
+          ? ParseChanges(*params->options.changes.get())
+          : make_scoped_ptr(new ProvidedFileSystemObserver::Changes),
+      params->options.tag.get() ? *params->options.tag.get() : "",
+      base::Bind(&FileSystemProviderNotifyFunction::OnNotifyCompleted, this));
 
-  base::ListValue* const result = new base::ListValue();
-  SetResult(result);
   return true;
+}
+
+void FileSystemProviderNotifyFunction::OnNotifyCompleted(
+    base::File::Error result) {
+  if (result != base::File::FILE_OK) {
+    SetError(FileErrorToString(result));
+    SendResponse(false);
+    return;
+  }
+
+  SendResponse(true);
 }
 
 bool FileSystemProviderInternalUnmountRequestedSuccessFunction::RunWhenValid() {
@@ -215,9 +216,8 @@ bool FileSystemProviderInternalUnmountRequestedSuccessFunction::RunWhenValid() {
   scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  FulfillRequest(RequestValue::CreateForUnmountSuccess(params.Pass()),
-                 false /* has_more */);
-  return true;
+  return FulfillRequest(RequestValue::CreateForUnmountSuccess(params.Pass()),
+                        false /* has_more */);
 }
 
 bool
@@ -226,9 +226,9 @@ FileSystemProviderInternalGetMetadataRequestedSuccessFunction::RunWhenValid() {
   scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  FulfillRequest(RequestValue::CreateForGetMetadataSuccess(params.Pass()),
-                 false /* has_more */);
-  return true;
+  return FulfillRequest(
+      RequestValue::CreateForGetMetadataSuccess(params.Pass()),
+      false /* has_more */);
 }
 
 bool FileSystemProviderInternalReadDirectoryRequestedSuccessFunction::
@@ -239,9 +239,8 @@ bool FileSystemProviderInternalReadDirectoryRequestedSuccessFunction::
   EXTENSION_FUNCTION_VALIDATE(params);
 
   const bool has_more = params->has_more;
-  FulfillRequest(RequestValue::CreateForReadDirectorySuccess(params.Pass()),
-                 has_more);
-  return true;
+  return FulfillRequest(
+      RequestValue::CreateForReadDirectorySuccess(params.Pass()), has_more);
 }
 
 bool
@@ -253,9 +252,8 @@ FileSystemProviderInternalReadFileRequestedSuccessFunction::RunWhenValid() {
   EXTENSION_FUNCTION_VALIDATE(params);
 
   const bool has_more = params->has_more;
-  FulfillRequest(RequestValue::CreateForReadFileSuccess(params.Pass()),
-                 has_more);
-  return true;
+  return FulfillRequest(RequestValue::CreateForReadFileSuccess(params.Pass()),
+                        has_more);
 }
 
 bool
@@ -264,10 +262,10 @@ FileSystemProviderInternalOperationRequestedSuccessFunction::RunWhenValid() {
   scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  FulfillRequest(scoped_ptr<RequestValue>(
-                     RequestValue::CreateForOperationSuccess(params.Pass())),
-                 false /* has_more */);
-  return true;
+  return FulfillRequest(
+      scoped_ptr<RequestValue>(
+          RequestValue::CreateForOperationSuccess(params.Pass())),
+      false /* has_more */);
 }
 
 bool FileSystemProviderInternalOperationRequestedErrorFunction::RunWhenValid() {
@@ -276,8 +274,8 @@ bool FileSystemProviderInternalOperationRequestedErrorFunction::RunWhenValid() {
   EXTENSION_FUNCTION_VALIDATE(params);
 
   const base::File::Error error = ProviderErrorToFileError(params->error);
-  RejectRequest(RequestValue::CreateForOperationError(params.Pass()), error);
-  return true;
+  return RejectRequest(RequestValue::CreateForOperationError(params.Pass()),
+                       error);
 }
 
 }  // namespace extensions

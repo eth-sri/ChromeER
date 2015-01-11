@@ -11,7 +11,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/shell/browser/shell_browser_context.h"
-#include "content/shell/browser/shell_devtools_delegate.h"
+#include "content/shell/browser/shell_devtools_manager_delegate.h"
 #include "extensions/browser/extension_message_filter.h"
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extension_registry.h"
@@ -23,6 +23,7 @@
 #include "extensions/shell/browser/shell_browser_context.h"
 #include "extensions/shell/browser/shell_browser_main_parts.h"
 #include "extensions/shell/browser/shell_extension_system.h"
+#include "extensions/shell/browser/shell_speech_recognition_manager_delegate.h"
 #include "url/gurl.h"
 
 #if !defined(DISABLE_NACL)
@@ -69,7 +70,7 @@ content::BrowserContext* ShellContentBrowserClient::GetBrowserContext() {
 content::BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
   browser_main_parts_ =
-      new ShellBrowserMainParts(parameters, browser_main_delegate_);
+      CreateShellBrowserMainParts(parameters, browser_main_delegate_);
   return browser_main_parts_;
 }
 
@@ -192,6 +193,11 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     AppendRendererSwitches(command_line);
 }
 
+content::SpeechRecognitionManagerDelegate*
+ShellContentBrowserClient::CreateSpeechRecognitionManagerDelegate() {
+  return new speech::ShellSpeechRecognitionManagerDelegate();
+}
+
 content::BrowserPpapiHost*
 ShellContentBrowserClient::GetExternalBrowserPpapiHost(int plugin_process_id) {
 #if !defined(DISABLE_NACL)
@@ -215,6 +221,17 @@ void ShellContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
   ContentBrowserClient::GetAdditionalAllowedSchemesForFileSystem(
       additional_allowed_schemes);
   additional_allowed_schemes->push_back(kExtensionScheme);
+}
+
+content::DevToolsManagerDelegate*
+ShellContentBrowserClient::GetDevToolsManagerDelegate() {
+  return new content::ShellDevToolsManagerDelegate(GetBrowserContext());
+}
+
+ShellBrowserMainParts* ShellContentBrowserClient::CreateShellBrowserMainParts(
+    const content::MainFunctionParams& parameters,
+    ShellBrowserMainDelegate* browser_main_delegate) {
+  return new ShellBrowserMainParts(parameters, browser_main_delegate);
 }
 
 void ShellContentBrowserClient::AppendRendererSwitches(
@@ -242,11 +259,6 @@ const Extension* ShellContentBrowserClient::GetExtension(
       ExtensionRegistry::Get(site_instance->GetBrowserContext());
   return registry->enabled_extensions().GetExtensionOrAppByURL(
       site_instance->GetSiteURL());
-}
-
-content::DevToolsManagerDelegate*
-ShellContentBrowserClient::GetDevToolsManagerDelegate() {
-  return new content::ShellDevToolsManagerDelegate(GetBrowserContext());
 }
 
 }  // namespace extensions

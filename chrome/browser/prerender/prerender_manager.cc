@@ -191,9 +191,10 @@ class PrerenderManager::OnCloseWebContentsDeleter
     ScheduleWebContentsForDeletion(false);
   }
 
-  bool ShouldSuppressDialogs() override {
+  bool ShouldSuppressDialogs(WebContents* source) override {
     // Use this as a proxy for getting statistics on how often we fail to honor
     // the beforeunload event.
+    DCHECK_EQ(tab_, source);
     suppressed_dialog_ = true;
     return true;
   }
@@ -1080,8 +1081,12 @@ void PrerenderManager::PendingSwap::BeginSwap() {
       this, &PrerenderManager::PendingSwap::OnMergeTimeout);
 }
 
-void PrerenderManager::PendingSwap::AboutToNavigateRenderView(
-    RenderViewHost* render_view_host) {
+void PrerenderManager::PendingSwap::AboutToNavigateRenderFrame(
+    RenderFrameHost* render_frame_host) {
+  // TODO(davidben): Update prerendering for --site-per-process.
+  if (render_frame_host->GetParent())
+    return;
+
   if (seen_target_route_id_) {
     // A second navigation began browser-side.
     prerender_data_->ClearPendingSwap();
@@ -1090,8 +1095,8 @@ void PrerenderManager::PendingSwap::AboutToNavigateRenderView(
 
   seen_target_route_id_ = true;
   target_route_id_ = PrerenderTracker::ChildRouteIdPair(
-      render_view_host->GetMainFrame()->GetProcess()->GetID(),
-      render_view_host->GetMainFrame()->GetRoutingID());
+      render_frame_host->GetProcess()->GetID(),
+      render_frame_host->GetRoutingID());
   manager_->prerender_tracker()->AddPrerenderPendingSwap(
       target_route_id_, url_);
 }

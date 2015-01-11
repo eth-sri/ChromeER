@@ -19,8 +19,7 @@ class HttpStreamFactoryImplRequestTest
 INSTANTIATE_TEST_CASE_P(
     NextProto,
     HttpStreamFactoryImplRequestTest,
-    testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
+    testing::Values(kProtoSPDY31, kProtoSPDY4_14, kProtoSPDY4_15));
 
 namespace {
 
@@ -33,7 +32,7 @@ class DoNothingRequestDelegate : public HttpStreamRequest::Delegate {
   // HttpStreamRequest::Delegate
   void OnStreamReady(const SSLConfig& used_ssl_config,
                      const ProxyInfo& used_proxy_info,
-                     HttpStreamBase* stream) override {}
+                     HttpStream* stream) override {}
   void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
@@ -51,7 +50,7 @@ class DoNothingRequestDelegate : public HttpStreamRequest::Delegate {
   void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
                                   const SSLConfig& used_ssl_config,
                                   const ProxyInfo& used_proxy_info,
-                                  HttpStreamBase* stream) override {}
+                                  HttpStream* stream) override {}
 };
 
 }  // namespace

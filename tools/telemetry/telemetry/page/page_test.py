@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry.core import command_line
 from telemetry.page import test_expectations
 from telemetry.page.actions import action_runner as action_runner_module
 
@@ -23,7 +22,7 @@ class MeasurementFailure(Failure):
   designed-for problem."""
 
 
-class PageTest(command_line.Command):
+class PageTest(object):
   """A class styled on unittest.TestCase for creating page-specific tests.
 
   Test should override ValidateAndMeasurePage to perform test
@@ -35,19 +34,6 @@ class PageTest(command_line.Command):
              'document.body.children.length')
          results.AddValue(scalar.ScalarValue(
              page, 'body_children', 'count', body_child_count))
-
-  The class also provide hooks to add test-specific options. Here is
-  an example:
-
-     class BodyChildElementMeasurement(PageTest):
-       def AddCommandLineArgs(parser):
-         parser.add_option('--element', action='store', default='body')
-
-       def ValidateAndMeasurePage(self, page, tab, results):
-         body_child_count = tab.EvaluateJavaScript(
-             'document.querySelector('%s').children.length')
-         results.AddValue(scalar.ScalarValue(
-             page, 'children', 'count', child_count))
 
   Args:
     action_name_to_run: This is the method name in telemetry.page.Page
@@ -62,8 +48,6 @@ class PageTest(command_line.Command):
         is_action_name_to_run_optional is True, otherwise the page
         will fail.
   """
-
-  options = {}
 
   def __init__(self,
                action_name_to_run='',
@@ -98,10 +82,6 @@ class PageTest(command_line.Command):
     # _exit_requested is set to true when the test requests an early exit.
     self._exit_requested = False
 
-  @classmethod
-  def SetArgumentDefaults(cls, parser):
-    parser.set_defaults(**cls.options)
-
   @property
   def discard_first_result(self):
     """When set to True, the first run of the test is discarded.  This is
@@ -130,12 +110,6 @@ class PageTest(command_line.Command):
     self._close_tabs_before_run = close_tabs
 
   @property
-  def attempts(self):
-    """Maximum number of times test will be attempted."""
-    # Do NOT override this method (crbug.com/422339).
-    return 1
-
-  @property
   def max_failures(self):
     """Maximum number of failures allowed for the page set."""
     return self._max_failures
@@ -143,11 +117,6 @@ class PageTest(command_line.Command):
   @max_failures.setter
   def max_failures(self, count):
     self._max_failures = count
-
-  def Run(self, args):
-    # Define this method to avoid pylint errors.
-    # TODO(dtu): Make this actually run the test with args.page_set.
-    pass
 
   def RestartBrowserBeforeEachPage(self):
     """ Should the browser be restarted for the page?

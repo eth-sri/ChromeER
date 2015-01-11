@@ -129,11 +129,14 @@ class ChromeTests:
       # TODO(timurrrr): also check TSan and MSan?
       # `nm` might not be available, so use try-except.
       try:
-        nm_output = subprocess.check_output(["nm", exe_path])
-        if nm_output.find("__asan_init") != -1:
-          raise BadBinary("You're trying to run an executable instrumented "
-                          "with AddressSanitizer under %s. Please provide "
-                          "an uninstrumented executable." % tool_name)
+        # Do not perform this check on OS X, as 'nm' on 10.6 can't handle
+        # binaries built with Clang 3.5+.
+        if not common.IsMac():
+          nm_output = subprocess.check_output(["nm", exe_path])
+          if nm_output.find("__asan_init") != -1:
+            raise BadBinary("You're trying to run an executable instrumented "
+                            "with AddressSanitizer under %s. Please provide "
+                            "an uninstrumented executable." % tool_name)
       except OSError:
         pass
 
@@ -148,6 +151,8 @@ class ChromeTests:
       cmd.append("--gtest_repeat=%s" % self._options.gtest_repeat)
     if self._options.gtest_shuffle:
       cmd.append("--gtest_shuffle")
+    if self._options.gtest_break_on_failure:
+      cmd.append("--gtest_break_on_failure")
     if self._options.brave_new_test_launcher:
       cmd.append("--brave-new-test-launcher")
     if self._options.test_launcher_bot_mode:
@@ -465,8 +470,8 @@ class ChromeTests:
   def TestUIBaseUnit(self):
     return self.SimpleTest("chrome", "ui_base_unittests")
 
-  def TestUIUnit(self):
-    return self.SimpleTest("chrome", "ui_unittests")
+  def TestUIChromeOS(self):
+    return self.SimpleTest("chrome", "ui_chromeos_unittests")
 
   def TestURL(self):
     return self.SimpleTest("chrome", "url_unittests")
@@ -710,7 +715,7 @@ class ChromeTests:
     "sync_integration_tests": TestSyncIntegration,
     "sync_integration": TestSyncIntegration,
     "ui_base_unit": TestUIBaseUnit,       "ui_base_unittests": TestUIBaseUnit,
-    "ui_unit": TestUIUnit,       "ui_unittests": TestUIUnit,
+    "ui_chromeos": TestUIChromeOS, "ui_chromeos_unittests": TestUIChromeOS,
     "unit": TestUnit,            "unit_tests": TestUnit,
     "url": TestURL,              "url_unittests": TestURL,
     "views": TestViews,          "views_unittests": TestViews,
@@ -737,6 +742,12 @@ def _main():
   parser.add_option("--gtest_repeat", help="argument for --gtest_repeat")
   parser.add_option("--gtest_shuffle", action="store_true", default=False,
                     help="Randomize tests' orders on every iteration.")
+  parser.add_option("--gtest_break_on_failure", action="store_true",
+                    default=False,
+                    help="Drop in to debugger on assertion failure. Also "
+                         "useful for forcing tests to exit with a stack dump "
+                         "on the first assertion failure when running with "
+                         "--gtest_repeat=-1")
   parser.add_option("-v", "--verbose", action="store_true", default=False,
                     help="verbose output - enable debug log messages")
   parser.add_option("--tool", dest="valgrind_tool", default="memcheck",

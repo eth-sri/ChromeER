@@ -153,38 +153,63 @@ FileSelection.prototype.cancelComputing_ = function() {
  * @param {FileManager} fileManager File manager instance.
  * @extends {cr.EventTarget}
  * @constructor
+ * @struct
+ * @suppress {checkStructDictInheritance}
  */
 function FileSelectionHandler(fileManager) {
+  cr.EventTarget.call(this);
+
   this.fileManager_ = fileManager;
   // TODO(dgozman): create a shared object with most of UI elements.
-  this.okButton_ = fileManager.ui.dialogFooter.okButton;
-  this.filenameInput_ = fileManager.ui.dialogFooter.filenameInput;
-  this.previewPanel_ = fileManager.previewPanel_;
-  this.taskItems_ = fileManager.taskItems_;
+  this.previewPanel_ = fileManager.ui.previewPanel;
+  this.taskMenuButton_ = fileManager.ui.taskMenuButton;
+  this.selection = new FileSelection(this.fileManager_, []);
+
+  /**
+   * @private
+   * @type {number}
+   */
+  this.selectionUpdateTimer_ = 0;
+
+  /**
+   * @private
+   * @type {!Date}
+   */
+  this.lastFileSelectionTime_ = new Date();
+
+  util.addEventListenerToBackgroundComponent(
+      assert(fileManager.fileOperationManager),
+      'entries-changed',
+      this.onFileSelectionChanged.bind(this));
+  // Register evnets to update file selections.
+  fileManager.directoryModel.addEventListener(
+      'directory-changed', this.onFileSelectionChanged.bind(this));
 }
 
 /**
- * Create the temporary disabled action menu item.
+ * Create the temporary disabled action item.
  * @return {Object} Created disabled item.
  * @private
  */
-FileSelectionHandler.createTemporaryDisabledActionMenuItem_ = function() {
-  if (!FileSelectionHandler.cachedDisabledActionMenuItem_) {
-    FileSelectionHandler.cachedDisabledActionMenuItem_ = {
-      label: str('ACTION_OPEN'),
-      disabled: true
+FileSelectionHandler.createTemporaryDisabledActionItem_ = function() {
+  if (!FileSelectionHandler.cachedDisabledActionItem_) {
+    FileSelectionHandler.cachedDisabledActionItem_ = {
+      title: str('ACTION_OPEN'),
+      disabled: true,
+      taskId: null
     };
   }
 
-  return FileSelectionHandler.cachedDisabledActionMenuItem_;
+  return FileSelectionHandler.cachedDisabledActionItem_;
 };
 
 /**
- * Cached the temporary disabled action menu item. Used inside
- * FileSelectionHandler.createTemporaryDisabledActionMenuItem_().
+ * Cached the temporary disabled action item. Used inside
+ * FileSelectionHandler.createTemporaryDisabledActionItem_().
+ * @type {Object}
  * @private
  */
-FileSelectionHandler.cachedDisabledActionMenuItem_ = null;
+FileSelectionHandler.cachedDisabledActionItem_ = null;
 
 /**
  * FileSelectionHandler extends cr.EventTarget.
@@ -214,21 +239,10 @@ FileSelectionHandler.IMAGE_HOVER_PREVIEW_SIZE = 200;
 FileSelectionHandler.prototype.onFileSelectionChanged = function() {
   var indexes =
       this.fileManager_.getCurrentList().selectionModel.selectedIndexes;
-  if (this.selection) this.selection.cancelComputing_();
+  if (this.selection)
+    this.selection.cancelComputing_();
   var selection = new FileSelection(this.fileManager_, indexes);
   this.selection = selection;
-
-  if (this.fileManager_.dialogType == DialogType.SELECT_SAVEAS_FILE) {
-    // If this is a save-as dialog, copy the selected file into the filename
-    // input text box.
-    if (this.selection.totalCount == 1 &&
-        this.selection.entries[0].isFile &&
-        this.filenameInput_.value != this.selection.entries[0].name) {
-      this.filenameInput_.value = this.selection.entries[0].name;
-    }
-  }
-
-  this.updateOkButton();
 
   if (this.selectionUpdateTimer_) {
     clearTimeout(this.selectionUpdateTimer_);
@@ -252,10 +266,10 @@ FileSelectionHandler.prototype.onFileSelectionChanged = function() {
     // Show disabled items for position calculation of the menu. They will be
     // overridden in this.updateFileSelectionAsync().
     this.fileManager_.updateContextMenuActionItems(
-        FileSelectionHandler.createTemporaryDisabledActionMenuItem_(), true);
+        [FileSelectionHandler.createTemporaryDisabledActionItem_()]);
   } else {
     // Update context menu.
-    this.fileManager_.updateContextMenuActionItems(null, false);
+    this.fileManager_.updateContextMenuActionItems();
   }
 
   this.selectionUpdateTimer_ = setTimeout(function() {
@@ -263,61 +277,8 @@ FileSelectionHandler.prototype.onFileSelectionChanged = function() {
     if (this.selection == selection)
       this.updateFileSelectionAsync(selection);
   }.bind(this), updateDelay);
-};
 
-/**
- * Updates the Ok button enabled state.
- *
- * @return {boolean} Whether button is enabled.
- */
-FileSelectionHandler.prototype.updateOkButton = function() {
-  var selectable;
-  var dialogType = this.fileManager_.dialogType;
-
-  if (DialogType.isFolderDialog(dialogType)) {
-    // In SELECT_FOLDER mode, we allow to select current directory
-    // when nothing is selected.
-    selectable = this.selection.directoryCount <= 1 &&
-        this.selection.fileCount == 0;
-  } else if (dialogType == DialogType.SELECT_OPEN_FILE) {
-    selectable = (this.isFileSelectionAvailable() &&
-                  this.selection.directoryCount == 0 &&
-                  this.selection.fileCount == 1);
-  } else if (dialogType == DialogType.SELECT_OPEN_MULTI_FILE) {
-    selectable = (this.isFileSelectionAvailable() &&
-                  this.selection.directoryCount == 0 &&
-                  this.selection.fileCount >= 1);
-  } else if (dialogType == DialogType.SELECT_SAVEAS_FILE) {
-    if (this.fileManager_.isOnReadonlyDirectory()) {
-      selectable = false;
-    } else {
-      selectable = !!this.filenameInput_.value;
-    }
-  } else if (dialogType == DialogType.FULL_PAGE) {
-    // No "select" buttons on the full page UI.
-    selectable = true;
-  } else {
-    throw new Error('Unknown dialog type');
-  }
-
-  this.okButton_.disabled = !selectable;
-  return selectable;
-};
-
-/**
-  * Check if all the files in the current selection are available. The only
-  * case when files might be not available is when the selection contains
-  * uncached Drive files and the browser is offline.
-  *
-  * @return {boolean} True if all files in the current selection are
-  *                   available.
-  */
-FileSelectionHandler.prototype.isFileSelectionAvailable = function() {
-  var isDriveOffline =
-      this.fileManager_.volumeManager.getDriveConnectionState().type ===
-          VolumeManagerCommon.DriveConnectionType.OFFLINE;
-  return !this.fileManager_.isOnDrive() || !isDriveOffline ||
-      this.selection.allDriveFilesPresent;
+  cr.dispatchSimpleEvent(this, 'change');
 };
 
 /**
@@ -334,11 +295,11 @@ FileSelectionHandler.prototype.updateFileSelectionAsync = function(selection) {
     selection.createTasks(function() {
       if (this.selection != selection)
         return;
-      selection.tasks.display(this.taskItems_);
+      selection.tasks.display(this.taskMenuButton_);
       selection.tasks.updateMenuItem();
     }.bind(this));
   } else {
-    this.taskItems_.hidden = true;
+    this.taskMenuButton_.hidden = true;
   }
 
   // Update preview panels.
@@ -356,7 +317,6 @@ FileSelectionHandler.prototype.updateFileSelectionAsync = function(selection) {
     this.fileManager_.commandHandler.updateAvailability();
 
   // Inform tests it's OK to click buttons now.
-  if (selection.totalCount > 0) {
+  if (selection.totalCount > 0)
     util.testSendMessage('selection-change-complete');
-  }
 };

@@ -16,26 +16,20 @@ public abstract class ChromiumApplication extends ContentApplication {
      * Opens a protected content settings page, if available.
      */
     @CalledByNative
-    protected abstract void openProtectedContentSettings();
+    protected void openProtectedContentSettings() {}
 
     @CalledByNative
-    protected abstract void showSyncSettings();
+    protected void showAutofillSettings() {}
 
     @CalledByNative
-    protected abstract void showAutofillSettings();
-
-    @CalledByNative
-    protected abstract void showPasswordSettings();
-
-    @CalledByNative
-    protected abstract void showTermsOfServiceDialog();
+    protected void showPasswordSettings() {}
 
     /**
      * Opens the UI to clear browsing data.
      * @param tab The tab that triggered the request.
      */
     @CalledByNative
-    protected abstract void openClearBrowsingData(Tab tab);
+    protected void openClearBrowsingData(Tab tab) {}
 
     /**
      * @return Whether parental controls are enabled.  Returning true will disable

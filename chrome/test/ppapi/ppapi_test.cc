@@ -175,8 +175,6 @@ void PPAPITestBase::RunTest(const std::string& test_case) {
 void PPAPITestBase::RunTestViaHTTP(const std::string& test_case) {
   base::FilePath document_root;
   ASSERT_TRUE(ui_test_utils::GetRelativeBuildDirectory(&document_root));
-  base::FilePath http_document_root;
-  ASSERT_TRUE(ui_test_utils::GetRelativeBuildDirectory(&http_document_root));
   net::SpawnedTestServer http_server(net::SpawnedTestServer::TYPE_HTTP,
                                      net::SpawnedTestServer::kLocalhost,
                                      document_root);
@@ -336,9 +334,8 @@ void OutOfProcessPPAPIPrivateTest::SetUpCommandLine(
 }
 
 void PPAPINaClTest::SetUpCommandLine(base::CommandLine* command_line) {
-#if !defined(DISABLE_NACL)
   PPAPITestBase::SetUpCommandLine(command_line);
-
+#if !defined(DISABLE_NACL)
   // Enable running (non-portable) NaCl outside of the Chrome web store.
   command_line->AppendSwitch(switches::kEnableNaCl);
   command_line->AppendSwitchASCII(switches::kAllowNaClSocketAPI, "127.0.0.1");
@@ -429,8 +426,8 @@ void PPAPIPrivateNaClPNaClTest::SetUpCommandLine(
 
 void PPAPINaClPNaClNonSfiTest::SetUpCommandLine(
     base::CommandLine* command_line) {
-#if !defined(DISABLE_NACL)
   PPAPINaClTest::SetUpCommandLine(command_line);
+#if !defined(DISABLE_NACL)
   command_line->AppendSwitch(switches::kEnableNaClNonSfiMode);
 #endif
 }
@@ -442,10 +439,26 @@ std::string PPAPINaClPNaClNonSfiTest::BuildQuery(
                             base.c_str(), test_case.c_str());
 }
 
+void PPAPINaClPNaClTransitionalNonSfiTest::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  PPAPINaClPNaClNonSfiTest::SetUpCommandLine(command_line);
+#if !defined(DISABLE_NACL)
+  command_line->AppendSwitch(switches::kUseNaClHelperNonSfi);
+#endif
+}
+
 void PPAPIPrivateNaClPNaClNonSfiTest::SetUpCommandLine(
     base::CommandLine* command_line) {
   PPAPINaClPNaClNonSfiTest::SetUpCommandLine(command_line);
   AddPrivateSwitches(command_line);
+}
+
+void PPAPIPrivateNaClPNaClTransitionalNonSfiTest::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  PPAPIPrivateNaClPNaClNonSfiTest::SetUpCommandLine(command_line);
+#if !defined(DISABLE_NACL)
+  command_line->AppendSwitch(switches::kUseNaClHelperNonSfi);
+#endif
 }
 
 void PPAPINaClTestDisallowedSockets::SetUpCommandLine(

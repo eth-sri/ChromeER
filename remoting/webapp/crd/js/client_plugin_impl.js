@@ -56,6 +56,14 @@ remoting.ClientPluginImpl = function(container, onExtensionMessage) {
    * @private
    */
   this.onConnectionStatusUpdateHandler_ = function(state, error) {};
+
+  /**
+   * @param {string} channel The channel name.
+   * @param {string} connectionType The connection type.
+   * @private
+   */
+  this.onRouteChangedHandler_ = function(channel, connectionType) {};
+
   /**
    * @param {boolean} ready Connection ready state.
    * @private
@@ -72,6 +80,11 @@ remoting.ClientPluginImpl = function(container, onExtensionMessage) {
     tokenUrl, hostPublicKey, scope) {};
   /** @private */
   this.onDesktopSizeUpdateHandler_ = function () {};
+  /**
+   * @param {Array.<Array.<number>>} rects
+   * @private
+   */
+  this.onDesktopShapeUpdateHandler_ = function (rects) {};
   /**
    * @param {!Array.<string>} capabilities The negotiated capabilities.
    * @private
@@ -225,6 +238,13 @@ remoting.ClientPluginImpl.prototype.setConnectionStatusUpdateHandler =
 };
 
 /**
+ * @param {function(string, string):void} handler
+ */
+remoting.ClientPluginImpl.prototype.setRouteChangedHandler = function(handler) {
+  this.onRouteChangedHandler_ =  handler;
+};
+
+/**
  * @param {function(boolean):void} handler
  */
 remoting.ClientPluginImpl.prototype.setConnectionReadyHandler =
@@ -238,6 +258,14 @@ remoting.ClientPluginImpl.prototype.setConnectionReadyHandler =
 remoting.ClientPluginImpl.prototype.setDesktopSizeUpdateHandler =
     function(handler) {
   this.onDesktopSizeUpdateHandler_ = handler;
+};
+
+/**
+ * @param {function():void} handler
+ */
+remoting.ClientPluginImpl.prototype.setDesktopShapeUpdateHandler =
+    function(handler) {
+  this.onDesktopShapeUpdateHandler_ = handler;
 };
 
 /**
@@ -394,10 +422,15 @@ remoting.ClientPluginImpl.prototype.handleMessageMethod_ = function(message) {
 
   } else if (message.method == 'onConnectionStatus') {
     var state = remoting.ClientSession.State.fromString(
-        getStringAttr(message.data, 'state'))
+        getStringAttr(message.data, 'state'));
     var error = remoting.ClientSession.ConnectionError.fromString(
         getStringAttr(message.data, 'error'));
     this.onConnectionStatusUpdateHandler_(state, error);
+
+  } else if (message.method == 'onRouteChanged') {
+    var channel = getStringAttr(message.data, 'channel');
+    var connectionType = getStringAttr(message.data, 'connectionType');
+    this.onRouteChangedHandler_(channel, connectionType);
 
   } else if (message.method == 'onDesktopSize') {
     this.desktopWidth_ = getNumberAttr(message.data, 'width');
@@ -405,6 +438,17 @@ remoting.ClientPluginImpl.prototype.handleMessageMethod_ = function(message) {
     this.desktopXDpi_ = getNumberAttr(message.data, 'x_dpi', 96);
     this.desktopYDpi_ = getNumberAttr(message.data, 'y_dpi', 96);
     this.onDesktopSizeUpdateHandler_();
+
+  } else if (message.method == 'onDesktopShape') {
+    var rects = getArrayAttr(message.data, 'rects');
+    for (var i = 0; i < rects.length; ++i) {
+      /** @type {Array.<number>} */
+      var rect = rects[i];
+      if (typeof rect != 'object' || rect.length != 4) {
+        throw 'Received invalid onDesktopShape message';
+      }
+    }
+    this.onDesktopShapeUpdateHandler_(rects);
 
   } else if (message.method == 'onPerfStats') {
     // Return value is ignored. These calls will throw an error if the value
@@ -828,6 +872,14 @@ remoting.ClientPluginImpl.prototype.useAsyncPinDialog =
   }
   this.plugin_.postMessage(JSON.stringify(
       { method: 'useAsyncPinDialog', data: {} }));
+};
+
+/**
+ * Allows automatic mouse-lock.
+ */
+remoting.ClientPluginImpl.prototype.allowMouseLock = function() {
+  this.plugin_.postMessage(JSON.stringify(
+      { method: 'allowMouseLock', data: {} }));
 };
 
 /**

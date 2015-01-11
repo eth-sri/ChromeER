@@ -75,6 +75,8 @@
 #include "content/renderer/dom_storage/dom_storage_dispatcher.h"
 #include "content/renderer/dom_storage/webstoragearea_impl.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
+#include "content/renderer/gpu/compositor_external_begin_frame_source.h"
+#include "content/renderer/gpu/compositor_forwarding_message_filter.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
 #include "content/renderer/input/input_event_filter.h"
 #include "content/renderer/input/input_handler_manager.h"
@@ -84,6 +86,7 @@
 #include "content/renderer/media/audio_renderer_mixer_manager.h"
 #include "content/renderer/media/media_stream_center.h"
 #include "content/renderer/media/midi_message_filter.h"
+#include "content/renderer/media/render_media_client.h"
 #include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
 #include "content/renderer/media/video_capture_message_filter.h"
@@ -93,11 +96,12 @@
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_blink_platform_impl.h"
+#include "content/renderer/scheduler/renderer_scheduler.h"
 #include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
+#include "gin/public/debug.h"
 #include "ipc/ipc_channel_handle.h"
-#include "ipc/ipc_forwarding_message_filter.h"
 #include "ipc/ipc_platform_file.h"
 #include "ipc/mojo/ipc_channel_mojo.h"
 #include "media/base/audio_hardware_config.h"
@@ -157,6 +161,10 @@
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc_identity_service.h"
+#endif
+
+#ifdef ENABLE_VTUNE_JIT_INTERFACE
+#include "v8/src/third_party/vtune/v8-vtune.h"
 #endif
 
 using base::ThreadRestrictions;
@@ -407,6 +415,13 @@ RenderThreadImpl::RenderThreadImpl(const std::string& channel_name)
   Init();
 }
 
+RenderThreadImpl::RenderThreadImpl(
+    scoped_ptr<base::MessageLoop> main_message_loop)
+    : ChildThread(Options(ShouldUseMojoChannel())),
+      main_message_loop_(main_message_loop.Pass()) {
+  Init();
+}
+
 void RenderThreadImpl::Init() {
   TRACE_EVENT_BEGIN_ETW("RenderThreadImpl::Init", 0, "");
 
@@ -439,6 +454,7 @@ void RenderThreadImpl::Init() {
   dom_storage_dispatcher_.reset(new DomStorageDispatcher());
   main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher(
       thread_safe_sender()));
+  renderer_scheduler_ = RendererScheduler::Create();
   embedded_worker_dispatcher_.reset(new EmbeddedWorkerDispatcher());
 
   media_stream_center_ = NULL;
@@ -493,10 +509,18 @@ void RenderThreadImpl::Init() {
   cc_blink::WebLayerImpl::SetImplSidePaintingEnabled(
       is_impl_side_painting_enabled_);
 
-  is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy) &&
-                          !command_line.HasSwitch(switches::kDisableZeroCopy);
+  is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy);
 
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+  // TODO(danakj): If changing these also update NumberOfRendererRasterThreads
+  // in compositor_util.cc. We should be using methods from compositor_util here
+  // instead of inspecting flags.
   is_one_copy_enabled_ = command_line.HasSwitch(switches::kEnableOneCopy);
+#else
+  is_one_copy_enabled_ = !command_line.HasSwitch(switches::kDisableOneCopy);
+#endif
+
+  use_image_external_ = command_line.HasSwitch(switches::kUseImageExternal);
 
   if (command_line.HasSwitch(switches::kDisableLCDText)) {
     is_lcd_text_enabled_ = false;
@@ -618,8 +642,11 @@ void RenderThreadImpl::Shutdown() {
 
 #if defined(ENABLE_WEBRTC)
   RTCPeerConnectionHandler::DestructAllHandlers();
-
-  peer_connection_factory_.reset();
+  // |peer_connection_factory_| cannot be deleted until after the main message
+  // loop has been destroyed.  This is because there may be pending tasks that
+  // hold on to objects produced by the PC factory that depend on threads owned
+  // by the PC factory.  Once those tasks have been freed, the factory can be
+  // deleted.
 #endif
   RemoveFilter(vc_manager_->video_capture_message_filter());
   vc_manager_.reset();
@@ -631,9 +658,9 @@ void RenderThreadImpl::Shutdown() {
   if (file_thread_)
     file_thread_->Stop();
 
-  if (compositor_output_surface_filter_.get()) {
-    RemoveFilter(compositor_output_surface_filter_.get());
-    compositor_output_surface_filter_ = NULL;
+  if (compositor_message_filter_.get()) {
+    RemoveFilter(compositor_message_filter_.get());
+    compositor_message_filter_ = NULL;
   }
 
   media_thread_.reset();
@@ -660,16 +687,25 @@ void RenderThreadImpl::Shutdown() {
 
   main_thread_compositor_task_runner_ = NULL;
 
-  if (blink_platform_impl_)
-    blink::shutdown();
-
-  lazy_tls.Pointer()->Set(NULL);
+  if (gpu_channel_.get())
+    gpu_channel_->DestroyChannel();
 
   // TODO(port)
 #if defined(OS_WIN)
   // Clean up plugin channels before this thread goes away.
   NPChannelBase::CleanupChannels();
 #endif
+
+  // Shut down the message loop before shutting down Blink.
+  // This prevents a scenario where a pending task in the message loop accesses
+  // Blink objects after Blink shuts down.
+  // This must be at the very end of the shutdown sequence. You must not touch
+  // the message loop after this.
+  main_message_loop_.reset();
+  if (blink_platform_impl_)
+    blink::shutdown();
+
+  lazy_tls.Pointer()->Set(NULL);
 }
 
 bool RenderThreadImpl::Send(IPC::Message* msg) {
@@ -840,7 +876,15 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (blink_platform_impl_)
     return;
 
-  blink_platform_impl_.reset(new RendererBlinkPlatformImpl);
+const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+
+#ifdef ENABLE_VTUNE_JIT_INTERFACE
+  if (command_line.HasSwitch(switches::kEnableVtune))
+    gin::Debug::SetJitCodeEventHandler(vTune::GetVtuneCodeEventHandler());
+#endif
+
+  blink_platform_impl_.reset(
+      new RendererBlinkPlatformImpl(renderer_scheduler_.get()));
   blink::initialize(blink_platform_impl_.get());
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
@@ -849,9 +893,8 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   isolate->SetCreateHistogramFunction(CreateHistogram);
   isolate->SetAddHistogramSampleFunction(AddHistogramSample);
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  main_thread_compositor_task_runner_ = base::MessageLoopProxy::current();
+  main_thread_compositor_task_runner_ =
+      renderer_scheduler()->CompositorTaskRunner();
 
   bool enable = !command_line.HasSwitch(switches::kDisableThreadedCompositing);
   if (enable) {
@@ -890,20 +933,20 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       AddFilter(input_event_filter_.get());
       input_handler_manager_client = input_event_filter_.get();
     }
-    input_handler_manager_.reset(
-        new InputHandlerManager(compositor_message_loop_proxy_,
-                                input_handler_manager_client));
+    input_handler_manager_.reset(new InputHandlerManager(
+        compositor_message_loop_proxy_, input_handler_manager_client,
+        renderer_scheduler()));
   }
 
-  scoped_refptr<base::MessageLoopProxy> output_surface_loop;
+  scoped_refptr<base::MessageLoopProxy> compositor_impl_side_loop;
   if (enable)
-    output_surface_loop = compositor_message_loop_proxy_;
+    compositor_impl_side_loop = compositor_message_loop_proxy_;
   else
-    output_surface_loop = base::MessageLoopProxy::current();
+    compositor_impl_side_loop = base::MessageLoopProxy::current();
 
-  compositor_output_surface_filter_ =
-      CompositorOutputSurface::CreateFilter(output_surface_loop.get());
-  AddFilter(compositor_output_surface_filter_.get());
+  compositor_message_filter_ = new CompositorForwardingMessageFilter(
+      compositor_impl_side_loop.get());
+  AddFilter(compositor_message_filter_.get());
 
   RenderThreadImpl::RegisterSchemes();
 
@@ -915,6 +958,8 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (!media::IsMediaLibraryInitialized()) {
     WebRuntimeFeatures::enableWebAudio(false);
   }
+
+  RenderMediaClient::Initialize();
 
   FOR_EACH_OBSERVER(RenderProcessObserver, observers_, WebKitInitialized());
 
@@ -1323,22 +1368,7 @@ void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& scheme,
 void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
   EnsureWebKitInitialized();
   // When bringing in render_view, also bring in webkit's glue and jsbindings.
-  RenderViewImpl::Create(params.opener_route_id,
-                         params.window_was_created_with_opener,
-                         params.renderer_preferences,
-                         params.web_preferences,
-                         params.view_id,
-                         params.main_frame_routing_id,
-                         params.surface_id,
-                         params.session_storage_namespace_id,
-                         params.frame_name,
-                         false,
-                         params.swapped_out,
-                         params.proxy_routing_id,
-                         params.hidden,
-                         params.never_visible,
-                         params.next_page_id,
-                         params.screen_info);
+  RenderViewImpl::Create(params, false);
 }
 
 GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
@@ -1457,6 +1487,8 @@ void RenderThreadImpl::OnTempCrashWithData(const GURL& data) {
 }
 
 void RenderThreadImpl::OnUpdateTimezone() {
+  if (!blink_platform_impl_)
+    return;
   NotifyTimezoneChange();
 }
 

@@ -133,6 +133,10 @@
     "includes": [23000],
     "structures": [23200],
   },
+  "chrome/browser/resources/options_test_resources.grd": {
+    "includes": [23400],
+    "structures": [23450],
+  },
   "cloud_print/virtual_driver/win/install/virtual_driver_setup_resources.grd": {
     "messages": [23500],
     "includes": [23550],
@@ -236,6 +240,7 @@
   "android_webview/java/strings/android_webview_strings.grd": {},
   "chrome/android/java/strings/android_chrome_strings.grd": {},
   "content/public/android/java/strings/android_content_strings.grd": {},
+  "ui/accessibility/extensions/strings/accessibility_extensions_strings.grd": {},
   "ui/android/java/strings/android_ui_strings.grd": {},
 
   # Resource ids starting at 31000 are reserved for projects built on Chromium.

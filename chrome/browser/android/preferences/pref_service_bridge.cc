@@ -33,6 +33,7 @@
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/translate/core/browser/translate_prefs.h"
 #include "components/translate/core/common/translate_pref_names.h"
+#include "components/web_resource/web_resource_pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/user_agent.h"
 #include "jni/PrefServiceBridge_jni.h"
@@ -43,6 +44,7 @@ using base::android::CheckException;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
+using base::android::ScopedJavaGlobalRef;
 using content::BrowserThread;
 
 namespace {
@@ -98,25 +100,21 @@ bool IsContentSettingManaged(HostContentSettingsMap* content_settings,
   return provider == HostContentSettingsMap::POLICY_PROVIDER;
 }
 
-void ReturnAbsoluteProfilePathValue(std::string path_value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+void OnGotProfilePath(ScopedJavaGlobalRef<jobject>* callback,
+                      std::string path) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jstring> j_path_value =
-      ConvertUTF8ToJavaString(env, path_value);
-  Java_PrefServiceBridge_setProfilePathValue(env, j_path_value.obj());
+  ScopedJavaLocalRef<jstring> j_path = ConvertUTF8ToJavaString(env, path);
+  Java_PrefServiceBridge_onGotProfilePath(env, j_path.obj(), callback->obj());
 }
 
-void GetAbsolutePath(Profile* profile) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  if (profile) {
-    base::FilePath profile_path = profile->GetPath();
-    profile_path = base::MakeAbsoluteFilePath(profile_path);
-    if (!profile_path.empty()) {
-      BrowserThread::PostTask(
-          BrowserThread::UI, FROM_HERE,
-          base::Bind(&ReturnAbsoluteProfilePathValue, profile_path.value()));
-    }
-  }
+std::string GetProfilePathOnFileThread(Profile* profile) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  if (!profile)
+    return std::string();
+
+  base::FilePath profile_path = profile->GetPath();
+  return base::MakeAbsoluteFilePath(profile_path).value();
 }
 
 PrefService* GetPrefService() {
@@ -192,6 +190,14 @@ static jboolean GetAcceptCookiesManaged(JNIEnv* env, jobject obj) {
       CONTENT_SETTINGS_TYPE_COOKIES);
 }
 
+static jboolean GetBlockThirdPartyCookiesEnabled(JNIEnv* env, jobject obj) {
+  return GetPrefService()->GetBoolean(prefs::kBlockThirdPartyCookies);
+}
+
+static jboolean GetBlockThirdPartyCookiesManaged(JNIEnv* env, jobject obj) {
+  return GetPrefService()->IsManagedPreference(prefs::kBlockThirdPartyCookies);
+}
+
 static jboolean GetRememberPasswordsEnabled(JNIEnv* env, jobject obj) {
   return GetPrefService()->GetBoolean(
       password_manager::prefs::kPasswordManagerSavingEnabled);
@@ -220,6 +226,10 @@ static jboolean GetPasswordEchoEnabled(JNIEnv* env, jobject obj) {
 }
 
 static jboolean GetPrintingEnabled(JNIEnv* env, jobject obj) {
+  return GetPrefService()->GetBoolean(prefs::kPrintingEnabled);
+}
+
+static jboolean GetPrintingManaged(JNIEnv* env, jobject obj) {
   return GetPrefService()->IsManagedPreference(prefs::kPrintingEnabled);
 }
 
@@ -354,19 +364,17 @@ static void ClearBrowsingData(JNIEnv* env, jobject obj, jboolean history,
                                 BrowsingDataHelper::UNPROTECTED_WEB);
 }
 
-static jboolean GetAllowCookiesEnabled(JNIEnv* env, jobject obj) {
-  HostContentSettingsMap* content_settings =
-      GetOriginalProfile()->GetHostContentSettingsMap();
-  return GetBooleanForContentSetting(
-      content_settings, CONTENT_SETTINGS_TYPE_COOKIES);
-}
-
 static void SetAllowCookiesEnabled(JNIEnv* env, jobject obj, jboolean allow) {
   HostContentSettingsMap* host_content_settings_map =
       GetOriginalProfile()->GetHostContentSettingsMap();
   host_content_settings_map->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_COOKIES,
       allow ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK);
+}
+
+static void SetBlockThirdPartyCookiesEnabled(JNIEnv* env, jobject obj,
+                                             jboolean enabled) {
+  GetPrefService()->SetBoolean(prefs::kBlockThirdPartyCookies, enabled);
 }
 
 static void SetRememberPasswordsEnabled(JNIEnv* env, jobject obj,
@@ -471,6 +479,13 @@ static void SetAllowPopupsEnabled(JNIEnv* env, jobject obj, jboolean allow) {
       allow ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK);
 }
 
+static jboolean GetCameraMicEnabled(JNIEnv* env, jobject obj) {
+  HostContentSettingsMap* content_settings =
+      GetOriginalProfile()->GetHostContentSettingsMap();
+  return GetBooleanForContentSetting(content_settings,
+      CONTENT_SETTINGS_TYPE_MEDIASTREAM);
+}
+
 static jboolean GetAutologinEnabled(JNIEnv* env, jobject obj) {
   return GetPrefService()->GetBoolean(prefs::kAutologinEnabled);
 }
@@ -529,6 +544,11 @@ static jstring GetContextualSearchPreference(JNIEnv* env, jobject obj) {
   return ConvertUTF8ToJavaString(
       env, GetPrefService()->GetString(prefs::kContextualSearchEnabled)).
           Release();
+}
+
+static jboolean GetContextualSearchPreferenceIsManaged(JNIEnv* env,
+                                                       jobject obj) {
+  return GetPrefService()->IsManagedPreference(prefs::kContextualSearchEnabled);
 }
 
 static void SetContextualSearchPreference(JNIEnv* env, jobject obj,
@@ -642,9 +662,13 @@ static jobject GetAboutVersionStrings(JNIEnv* env, jobject obj) {
       ConvertUTF8ToJavaString(env, os_version).obj()).Release();
 }
 
-static void SetPathValuesForAboutChrome(JNIEnv* env, jobject obj) {
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                          base::Bind(&GetAbsolutePath, GetOriginalProfile()));
+static void GetProfilePath(JNIEnv* env, jobject obj, jobject j_callback) {
+  ScopedJavaGlobalRef<jobject>* callback = new ScopedJavaGlobalRef<jobject>();
+  callback->Reset(env, j_callback);
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&GetProfilePathOnFileThread, GetOriginalProfile()),
+      base::Bind(&OnGotProfilePath, base::Owned(callback)));
 }
 
 static jstring GetSupervisedUserCustodianName(JNIEnv* env, jobject obj) {

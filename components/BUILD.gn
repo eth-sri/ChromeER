@@ -56,7 +56,7 @@ group("all_components") {
     "//components/navigation_interception",
     "//components/navigation_metrics",
     "//components/network_time",
-    "//components/omaha_query_params",
+    "//components/omaha_client",
     "//components/omnibox",
     "//components/onc",
     "//components/os_crypt",
@@ -106,6 +106,7 @@ group("all_components") {
     "//components/web_cache/renderer",
     "//components/web_modal",
     "//components/webdata/common",
+    "//components/web_resource",
     "//components/wifi",
   ]
 
@@ -195,13 +196,14 @@ group("all_components") {
     ]
   }
 
+  if (!is_ios) {
+    deps += [ "//components/app_modal" ]
+  }
+
   if (toolkit_views) {
     deps += [ "//components/constrained_window" ]
   }
 }
-
-# TODO(GYP) enable when it links.
-if (false) {
 
 # To add a unit test to this target, make a "unit_test" source_set in your
 # component (it's important to use a source_set instead of a static library or
@@ -231,12 +233,20 @@ test("components_unittests") {
     "//components/data_reduction_proxy/core/common:unit_tests",
     "//components/dom_distiller/core:unit_tests",
     "//components/domain_reliability:unit_tests",
+    "//components/google/core/browser:unit_tests",
     "//components/login:unit_tests",
     "//components/metrics:unit_tests",
     "//components/omnibox:unit_tests",
     "//components/ownership:unit_tests",
     "//components/proximity_auth:unit_tests",
     "//components/variations:unit_tests",
+    "//components/web_resource:unit_tests",
+
+    # These are the deps required by the code in this target.
+    "//base",
+    "//base/test:test_support",
+    "//content/test:test_support",
+    "//ui/base",
   ]
 
   # TODO(GYP) need this target.
@@ -246,8 +256,7 @@ test("components_unittests") {
   #configs += [ "//components/precache/core:precache_config" ]
 
   if (toolkit_views) {
-    deps += [ "//components/constrained_window:unit_tests" ]
+    # TODO(GYP) enable this as above.
+    #deps += [ "//components/constrained_window:unit_tests" ]
   }
-}
-
 }

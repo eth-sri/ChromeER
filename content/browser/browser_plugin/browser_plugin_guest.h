@@ -28,6 +28,7 @@
 #include "content/common/edit_command.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
+#include "content/public/browser/readback_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
@@ -128,23 +129,18 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   bool OnMessageReceivedFromEmbedder(const IPC::Message& message);
 
   WebContentsImpl* embedder_web_contents() const {
-    return embedder_web_contents_;
+    return attached_ ? owner_web_contents_ : NULL;
   }
 
   // Returns the embedder's RenderWidgetHostView if it is available.
   // Returns NULL otherwise.
-  RenderWidgetHostView* GetEmbedderRenderWidgetHostView();
+  RenderWidgetHostView* GetOwnerRenderWidgetHostView();
 
   bool focused() const { return focused_; }
   bool visible() const { return guest_visible_; }
   bool is_in_destruction() { return is_in_destruction_; }
 
   void UpdateVisibility();
-
-  void CopyFromCompositingSurface(
-      gfx::Rect src_subrect,
-      gfx::Size dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback);
 
   BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
@@ -170,7 +166,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   void SendMessageToEmbedder(IPC::Message* msg);
 
   // Returns whether the guest is attached to an embedder.
-  bool attached() const { return embedder_web_contents_ != NULL; }
+  bool attached() const { return attached_; }
 
   // Attaches this BrowserPluginGuest to the provided |embedder_web_contents|
   // and initializes the guest with the provided |params|. Attaching a guest
@@ -210,7 +206,7 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
             const blink::WebFindOptions& options);
 
  private:
-  class EmbedderWebContentsObserver;
+  class EmbedderVisibilityObserver;
 
   // BrowserPluginGuest is a WebContentsObserver of |web_contents| and
   // |web_contents| has to stay valid for the lifetime of BrowserPluginGuest.
@@ -227,13 +223,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   bool InAutoSizeBounds(const gfx::Size& size) const;
 
   // Message handlers for messages from embedder.
-
   void OnCompositorFrameSwappedACK(
       int instance_id,
       const FrameHostMsg_CompositorFrameSwappedACK_Params& params);
-  void OnCopyFromCompositingSurfaceAck(int instance_id,
-                                       int request_id,
-                                       const SkBitmap& bitmap);
+
   // Handles drag events from the embedder.
   // When dragging, the drag events go to the embedder first, and if the drag
   // happens on the browser plugin, then the plugin sends a corresponding
@@ -333,8 +326,11 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   // The last tooltip that was set with SetTooltipText().
   base::string16 current_tooltip_text_;
 
-  scoped_ptr<EmbedderWebContentsObserver> embedder_web_contents_observer_;
-  WebContentsImpl* embedder_web_contents_;
+  scoped_ptr<EmbedderVisibilityObserver> embedder_visibility_observer_;
+  WebContentsImpl* owner_web_contents_;
+
+  // Indicates whether this guest has been attached to a container.
+  bool attached_;
 
   // An identifier that uniquely identifies a browser plugin within an embedder.
   int browser_plugin_instance_id_;
@@ -347,13 +343,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public WebContentsObserver {
   bool embedder_visible_;
   // Whether the browser plugin is inside a plugin document.
   bool is_full_page_plugin_;
-
-  // Each copy-request is identified by a unique number. The unique number is
-  // used to keep track of the right callback.
-  int copy_request_id_;
-  typedef base::Callback<void(bool, const SkBitmap&)> CopyRequestCallback;
-  typedef std::map<int, const CopyRequestCallback> CopyRequestMap;
-  CopyRequestMap copy_request_callbacks_;
 
   // Indicates that this BrowserPluginGuest has associated renderer-side state.
   // This is used to determine whether or not to create a new RenderView when

@@ -56,6 +56,9 @@
     show,                      // Remove: http://crbug.com/392502
     text_changed,
     text_selection_changed,
+    tree_changed,              // Accessibility tree changed. Don't
+                               // explicitly fire an accessibility event,
+                               // only implicitly due to the change.
     value_changed
   };
 
@@ -67,7 +70,6 @@
     article,
     banner,
     blockquote,
-    browser,
     busy_indicator,
     button,
     button_drop_down,
@@ -94,7 +96,6 @@
     disclosure_triangle,
     div,
     document,
-    drawer,
     editable_text,
     embedded_object,
     figcaption,
@@ -105,14 +106,11 @@
     group,
     grow_area,
     heading,
-    help_tag,
-    horizontal_rule,
     iframe,
     ignored,
     image_map_link,
     image_map,
     image,
-    incrementor,
     inline_text_box,
     label_text,
     legend,
@@ -126,9 +124,7 @@
     log,
     main,
     marquee,
-    math_element,
     math,
-    matte,
     menu_bar,
     menu_button,
     menu_item,
@@ -153,14 +149,13 @@
     root_web_area,
     row_header,
     row,
-    ruler_marker,
+    ruby,
     ruler,
     svg_root,
     scroll_area,
     scroll_bar,
     seamless_web_area,
     search,
-    sheet,
     slider,
     slider_thumb,
     spin_button_part,
@@ -169,7 +164,6 @@
     splitter,
     static_text,
     status,
-    system_wide,
     tab_group,
     tab_list,
     tab_panel,
@@ -188,8 +182,8 @@
     tree,
     unknown,
     tooltip,
-    value_indicator,
     web_area,
+    web_view,
     window
   };
 
@@ -294,7 +288,13 @@
     color_value_blue,
 
     // Inline text attributes.
-    text_direction
+    text_direction,
+
+    // Uniquely identifies an AXTree.
+    tree_id,
+
+    // Identifies a child tree which this node hosts.
+    child_tree_id
   };
 
   [cpp_enum_prefix_override="ax_attr"] enum AXFloatAttribute {

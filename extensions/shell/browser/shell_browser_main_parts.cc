@@ -7,20 +7,24 @@
 #include "base/command_line.h"
 #include "base/run_loop.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/omaha_query_params/omaha_query_params.h"
+#include "components/omaha_client/omaha_query_params.h"
+#include "components/storage_monitor/storage_monitor.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/context_factory.h"
+#include "content/public/browser/devtools_http_handler.h"
 #include "content/public/common/result_codes.h"
-#include "content/shell/browser/shell_devtools_delegate.h"
+#include "content/shell/browser/shell_devtools_manager_delegate.h"
 #include "content/shell/browser/shell_net_log.h"
 #include "extensions/browser/app_window/app_window_client.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/updater/update_service.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/switches.h"
 #include "extensions/shell/browser/shell_browser_context.h"
+#include "extensions/shell/browser/shell_browser_context_keyed_service_factories.h"
 #include "extensions/shell/browser/shell_browser_main_delegate.h"
-#include "extensions/shell/browser/shell_desktop_controller.h"
+#include "extensions/shell/browser/shell_desktop_controller_aura.h"
 #include "extensions/shell/browser/shell_device_client.h"
 #include "extensions/shell/browser/shell_extension_system.h"
 #include "extensions/shell/browser/shell_extension_system_factory.h"
@@ -29,13 +33,11 @@
 #include "extensions/shell/browser/shell_omaha_query_params_delegate.h"
 #include "extensions/shell/common/shell_extensions_client.h"
 #include "extensions/shell/common/switches.h"
-#include "ui/aura/env.h"
-#include "ui/aura/window_tree_host.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/resource/resource_bundle.h"
 
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
-#include "components/storage_monitor/storage_monitor.h"
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -62,16 +64,25 @@ using content::BrowserThread;
 
 namespace extensions {
 
+namespace {
+
+void CrxInstallComplete(bool success) {
+  VLOG(1) << "CRX download complete. Success: " << success;
+}
+}
+
 ShellBrowserMainParts::ShellBrowserMainParts(
     const content::MainFunctionParams& parameters,
     ShellBrowserMainDelegate* browser_main_delegate)
-    : extension_system_(NULL),
+    : devtools_http_handler_(nullptr),
+      extension_system_(nullptr),
       parameters_(parameters),
       run_message_loop_(true),
       browser_main_delegate_(browser_main_delegate) {
 }
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
+  DCHECK(!devtools_http_handler_);
 }
 
 void ShellBrowserMainParts::PreMainMessageLoopStart() {
@@ -118,11 +129,11 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   // Initialize our "profile" equivalent.
   browser_context_.reset(new ShellBrowserContext(net_log_.get()));
 
+#if defined(USE_AURA)
   aura::Env::GetInstance()->set_context_factory(content::GetContextFactory());
-
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
-  storage_monitor::StorageMonitor::Create();
 #endif
+
+  storage_monitor::StorageMonitor::Create();
 
   desktop_controller_.reset(browser_main_delegate_->CreateDesktopController());
 
@@ -132,15 +143,15 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 
   device_client_.reset(new ShellDeviceClient);
 
-  extensions_client_.reset(new ShellExtensionsClient());
+  extensions_client_.reset(CreateExtensionsClient());
   ExtensionsClient::Set(extensions_client_.get());
 
   extensions_browser_client_.reset(
-      new ShellExtensionsBrowserClient(browser_context_.get()));
+      CreateExtensionsBrowserClient(browser_context_.get()));
   ExtensionsBrowserClient::Set(extensions_browser_client_.get());
 
   omaha_query_params_delegate_.reset(new ShellOmahaQueryParamsDelegate);
-  omaha_query_params::OmahaQueryParams::SetDelegate(
+  omaha_client::OmahaQueryParams::SetDelegate(
       omaha_query_params_delegate_.get());
 
   // Create our custom ExtensionSystem first because other
@@ -175,8 +186,20 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
       base::Bind(nacl::NaClProcessHost::EarlyStartup));
 #endif
 
-  devtools_delegate_.reset(
-      new content::ShellDevToolsDelegate(browser_context_.get()));
+  // TODO(rockot): Remove this temporary hack test.
+  std::string install_crx_id =
+      cmd->GetSwitchValueASCII(switches::kAppShellInstallCrx);
+  if (install_crx_id.size() != 0) {
+    CHECK(install_crx_id.size() == 32)
+        << "Extension ID must be exactly 32 characters long.";
+    UpdateService* update_service = UpdateService::Get(browser_context_.get());
+    update_service->DownloadAndInstall(install_crx_id,
+                                       base::Bind(CrxInstallComplete));
+  }
+
+  devtools_http_handler_.reset(
+      content::ShellDevToolsManagerDelegate::CreateHttpHandler(
+          browser_context_.get()));
   if (parameters_.ui_task) {
     // For running browser tests.
     parameters_.ui_task->Run();
@@ -199,6 +222,7 @@ bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code) {
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
   browser_main_delegate_->Shutdown();
+  devtools_http_handler_.reset();
 
 #if !defined(DISABLE_NACL)
   task_tracker_.TryCancelAll();
@@ -215,9 +239,7 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
 
   desktop_controller_.reset();
 
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
   storage_monitor::StorageMonitor::Destroy();
-#endif
 }
 
 void ShellBrowserMainParts::PostDestroyThreads() {
@@ -228,6 +250,15 @@ void ShellBrowserMainParts::PostDestroyThreads() {
   chromeos::NetworkHandler::Shutdown();
   chromeos::DBusThreadManager::Shutdown();
 #endif
+}
+
+ExtensionsClient* ShellBrowserMainParts::CreateExtensionsClient() {
+  return new ShellExtensionsClient();
+}
+
+ExtensionsBrowserClient* ShellBrowserMainParts::CreateExtensionsBrowserClient(
+    content::BrowserContext* context) {
+  return new ShellExtensionsBrowserClient(context);
 }
 
 void ShellBrowserMainParts::CreateExtensionSystem() {

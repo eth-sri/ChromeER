@@ -41,6 +41,7 @@
 #include "ppapi/cpp/resource.h"
 #include "ppapi/cpp/url_request_info.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "v8/include/v8.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -216,9 +217,21 @@ void Transform(PP_Instance instance, PP_PrivatePageTransformType type) {
   }
 }
 
+PP_Bool GetPrintPresetOptionsFromDocument(
+    PP_Instance instance,
+    PP_PdfPrintPresetOptions_Dev* options) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (object) {
+    Instance* obj_instance = static_cast<Instance*>(object);
+    obj_instance->GetPrintPresetOptionsFromDocument(options);
+  }
+  return PP_TRUE;
+}
+
 const PPP_Pdf ppp_private = {
   &GetLinkAtPosition,
-  &Transform
+  &Transform,
+  &GetPrintPresetOptionsFromDocument
 };
 
 int ExtractPrintPreviewPageIndex(const std::string& src_url) {
@@ -319,6 +332,15 @@ Instance::~Instance() {
 }
 
 bool Instance::Init(uint32_t argc, const char* argn[], const char* argv[]) {
+  v8::StartupData natives;
+  v8::StartupData snapshot;
+  pp::PDF::GetV8ExternalSnapshotData(this, &natives.data, &natives.raw_size,
+                                     &snapshot.data, &snapshot.raw_size);
+  if (natives.data) {
+    v8::V8::SetNativesDataBlob(&natives);
+    v8::V8::SetSnapshotDataBlob(&snapshot);
+  }
+
   // For now, we hide HiDPI support behind a flag.
   if (pp::PDF::IsFeatureEnabled(this, PP_PDFFEATURE_HIDPI))
     hidpi_enabled_ = true;
@@ -597,7 +619,8 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
           engine_->SelectAll();
           return true;
       }
-    } else if (modifier & PP_INPUTEVENT_MODIFIER_CONTROLKEY) {
+    }
+    if (modifier & PP_INPUTEVENT_MODIFIER_CONTROLKEY) {
       switch (keyboard_event.GetKeyCode()) {
         case ui::VKEY_OEM_4:
           // Left bracket.
@@ -656,6 +679,12 @@ pp::Var Instance::GetInstanceObject() {
   }
 
   return instance_object_;
+}
+
+void Instance::GetPrintPresetOptionsFromDocument(
+    PP_PdfPrintPresetOptions_Dev* options) {
+  options->is_scaling_disabled = PP_FromBool(IsPrintScalingDisabled());
+  options->copies = engine_->GetCopiesToPrint();
 }
 
 pp::Var Instance::GetLinkAtPosition(const pp::Point& point) {
@@ -1285,6 +1314,7 @@ void Instance::NotifyNumberOfFindResultsChanged(int total, bool final_result) {
 }
 
 void Instance::NotifySelectedFindResultChanged(int current_find_index) {
+  DCHECK_GE(current_find_index, 0);
   SelectedFindResultChanged(current_find_index);
 }
 

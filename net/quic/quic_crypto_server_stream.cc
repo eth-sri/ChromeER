@@ -6,11 +6,12 @@
 
 #include "base/base64.h"
 #include "crypto/secure_hash.h"
+#include "net/quic/crypto/cached_network_parameters.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
-#include "net/quic/crypto/source_address_token.h"
 #include "net/quic/quic_config.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
 
@@ -119,8 +120,7 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
   session()->connection()->SetEncrypter(
       ENCRYPTION_INITIAL,
       crypto_negotiated_params_.initial_crypters.encrypter.release());
-  session()->connection()->SetDefaultEncryptionLevel(
-      ENCRYPTION_INITIAL);
+  session()->connection()->SetDefaultEncryptionLevel(ENCRYPTION_INITIAL);
   // Set the decrypter immediately so that we no longer accept unencrypted
   // packets.
   session()->connection()->SetDecrypter(
@@ -140,8 +140,10 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
   session()->connection()->SetEncrypter(
       ENCRYPTION_FORWARD_SECURE,
       crypto_negotiated_params_.forward_secure_crypters.encrypter.release());
-  session()->connection()->SetDefaultEncryptionLevel(
-      ENCRYPTION_FORWARD_SECURE);
+  if (!FLAGS_enable_quic_delay_forward_security) {
+    session()->connection()->SetDefaultEncryptionLevel(
+        ENCRYPTION_FORWARD_SECURE);
+  }
   session()->connection()->SetAlternativeDecrypter(
       crypto_negotiated_params_.forward_secure_crypters.decrypter.release(),
       ENCRYPTION_FORWARD_SECURE, false /* don't latch */);
@@ -243,8 +245,8 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
 void QuicCryptoServerStream::OverrideQuicConfigDefaults(QuicConfig* config) {
 }
 
-CachedNetworkParameters*
-QuicCryptoServerStream::get_previous_cached_network_params() {
+const CachedNetworkParameters*
+QuicCryptoServerStream::previous_cached_network_params() const {
   return previous_cached_network_params_.get();
 }
 

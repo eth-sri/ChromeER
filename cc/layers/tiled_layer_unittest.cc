@@ -18,7 +18,6 @@
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
-#include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/tiled_layer_test_common.h"
@@ -83,7 +82,8 @@ class SynchronousOutputSurfaceLayerTreeHost : public LayerTreeHost {
       : LayerTreeHost(client, manager, NULL, settings),
         output_surface_created_(false) {
     LayerTreeHost::InitializeThreaded(base::MessageLoopProxy::current(),
-                                      impl_task_runner);
+                                      impl_task_runner,
+                                      nullptr);
   }
 
   bool output_surface_created_;
@@ -103,7 +103,7 @@ class TiledLayerTest : public testing::Test {
     settings_.layer_transforms_should_scale_layer_contents = true;
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     impl_thread_.Start();
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
     layer_tree_host_ = SynchronousOutputSurfaceLayerTreeHost::Create(
@@ -1664,8 +1664,7 @@ class UpdateTrackingTiledLayer : public FakeTiledLayer {
       : FakeTiledLayer(manager) {
     scoped_ptr<TrackingLayerPainter> painter(TrackingLayerPainter::Create());
     tracking_layer_painter_ = painter.get();
-    layer_updater_ = BitmapContentLayerUpdater::Create(
-        painter.Pass(), &stats_instrumentation_, 0);
+    layer_updater_ = BitmapContentLayerUpdater::Create(painter.Pass(), 0);
   }
 
   TrackingLayerPainter* tracking_layer_painter() const {
@@ -1678,7 +1677,6 @@ class UpdateTrackingTiledLayer : public FakeTiledLayer {
 
   TrackingLayerPainter* tracking_layer_painter_;
   scoped_refptr<BitmapContentLayerUpdater> layer_updater_;
-  FakeRenderingStatsInstrumentation stats_instrumentation_;
 };
 
 TEST_F(TiledLayerTest, NonIntegerContentsScaleIsNotDistortedDuringPaint) {

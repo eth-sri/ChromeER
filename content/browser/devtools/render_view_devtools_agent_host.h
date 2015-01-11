@@ -22,6 +22,7 @@ class CompositorFrameMetadata;
 
 namespace content {
 
+class BrowserContext;
 class DevToolsProtocolHandlerImpl;
 class RenderViewHost;
 class RenderViewHostImpl;
@@ -33,6 +34,7 @@ class PowerSaveBlockerImpl;
 namespace devtools {
 namespace dom { class DOMHandler; }
 namespace input { class InputHandler; }
+namespace inspector { class InspectorHandler; }
 namespace network { class NetworkHandler; }
 namespace page { class PageHandler; }
 namespace power { class PowerHandler; }
@@ -55,6 +57,7 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   // DevTooolsAgentHost overrides.
   void DisconnectWebContents() override;
   void ConnectWebContents(WebContents* web_contents) override;
+  BrowserContext* GetBrowserContext() override;
   WebContents* GetWebContents() override;
   Type GetType() override;
   std::string GetTitle() override;
@@ -73,7 +76,7 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   void OnClientDetached() override;
 
   // WebContentsObserver overrides.
-  void AboutToNavigateRenderView(RenderViewHost* dest_rvh) override;
+  void AboutToNavigateRenderFrame(RenderFrameHost* render_frame_host) override;
   void RenderViewHostChanged(RenderViewHost* old_host,
                              RenderViewHost* new_host) override;
   void RenderViewDeleted(RenderViewHost* rvh) override;
@@ -96,8 +99,6 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   void ConnectRenderViewHost(RenderViewHost* rvh);
   void ReattachToRenderViewHost(RenderViewHost* rvh);
 
-  bool DispatchIPCMessage(const IPC::Message& message);
-
   void SetRenderViewHost(RenderViewHost* rvh);
   void ClearRenderViewHost();
 
@@ -118,6 +119,7 @@ class CONTENT_EXPORT RenderViewDevToolsAgentHost
   RenderViewHostImpl* render_view_host_;
   scoped_ptr<devtools::dom::DOMHandler> dom_handler_;
   scoped_ptr<devtools::input::InputHandler> input_handler_;
+  scoped_ptr<devtools::inspector::InspectorHandler> inspector_handler_;
   scoped_ptr<devtools::network::NetworkHandler> network_handler_;
   scoped_ptr<devtools::page::PageHandler> page_handler_;
   scoped_ptr<devtools::power::PowerHandler> power_handler_;

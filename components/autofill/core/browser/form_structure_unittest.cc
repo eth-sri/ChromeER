@@ -133,14 +133,14 @@ TEST(FormStructureTest, AutofillCount) {
 
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes(TestAutofillMetrics());
-  EXPECT_EQ(1U, form_structure->autofill_count());
+  EXPECT_EQ(2U, form_structure->autofill_count());
 
   CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kIgnoreAutocompleteOffForAutofill);
+      switches::kRespectAutocompleteOffForAutofill);
 
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes(TestAutofillMetrics());
-  EXPECT_EQ(2U, form_structure->autofill_count());
+  EXPECT_EQ(1U, form_structure->autofill_count());
 }
 
 TEST(FormStructureTest, SourceURL) {
@@ -1046,14 +1046,14 @@ TEST(FormStructureTest, ThreeAddressLines) {
   form_structure->DetermineHeuristicTypes(TestAutofillMetrics());
   EXPECT_TRUE(form_structure->IsAutofillable());
   ASSERT_EQ(4U, form_structure->field_count());
-  ASSERT_EQ(3U, form_structure->autofill_count());
+  ASSERT_EQ(4U, form_structure->autofill_count());
 
   // Address Line 1.
   EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(0)->heuristic_type());
   // Address Line 2.
   EXPECT_EQ(ADDRESS_HOME_LINE2, form_structure->field(1)->heuristic_type());
   // Address Line 3.
-  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(2)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_LINE3, form_structure->field(2)->heuristic_type());
   // City.
   EXPECT_EQ(ADDRESS_HOME_CITY, form_structure->field(3)->heuristic_type());
 }
@@ -1085,22 +1085,22 @@ TEST(FormStructureTest, SurplusAddressLinesIgnored) {
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes(TestAutofillMetrics());
   ASSERT_EQ(4U, form_structure->field_count());
-  ASSERT_EQ(2U, form_structure->autofill_count());
+  ASSERT_EQ(3U, form_structure->autofill_count());
 
   // Address Line 1.
   EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(0)->heuristic_type());
   // Address Line 2.
   EXPECT_EQ(ADDRESS_HOME_LINE2, form_structure->field(1)->heuristic_type());
-  // Address Line 3 (ignored).
-  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(2)->heuristic_type());
+  // Address Line 3.
+  EXPECT_EQ(ADDRESS_HOME_LINE3, form_structure->field(2)->heuristic_type());
   // Address Line 4 (ignored).
   EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(3)->heuristic_type());
 }
 
-// This example comes from expedia.com where they use a "Suite" label to
-// indicate a suite or apartment number.  We interpret this as address line 2.
-// And the following "Street address second line" we interpret as address line
-// 3 and discard.
+// This example comes from expedia.com where they used to use a "Suite" label
+// to indicate a suite or apartment number (the form has changed since this
+// test was written). We interpret this as address line 2. And the following
+// "Street address second line" we interpret as address line 3.
 // See http://crbug.com/48197 for details.
 TEST(FormStructureTest, ThreeAddressLinesExpedia) {
   scoped_ptr<FormStructure> form_structure;
@@ -1129,14 +1129,14 @@ TEST(FormStructureTest, ThreeAddressLinesExpedia) {
   form_structure->DetermineHeuristicTypes(TestAutofillMetrics());
   EXPECT_TRUE(form_structure->IsAutofillable());
   ASSERT_EQ(4U, form_structure->field_count());
-  EXPECT_EQ(3U, form_structure->autofill_count());
+  EXPECT_EQ(4U, form_structure->autofill_count());
 
   // Address Line 1.
   EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(0)->heuristic_type());
   // Suite / Apt.
   EXPECT_EQ(ADDRESS_HOME_LINE2, form_structure->field(1)->heuristic_type());
   // Address Line 3.
-  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(2)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_LINE3, form_structure->field(2)->heuristic_type());
   // City.
   EXPECT_EQ(ADDRESS_HOME_CITY, form_structure->field(3)->heuristic_type());
 }
@@ -2296,12 +2296,12 @@ TEST(FormStructureTest, ToFormData) {
   field.form_control_type = "submit";
   form.fields.push_back(field);
 
-  EXPECT_EQ(form, FormStructure(form).ToFormData());
+  EXPECT_TRUE(form.SameFormAs(FormStructure(form).ToFormData()));
 
   // Currently |FormStructure(form_data)ToFormData().user_submitted| is always
   // false. This forces a future author that changes this to update this test.
   form.user_submitted = true;
-  EXPECT_NE(form, FormStructure(form).ToFormData());
+  EXPECT_FALSE(form.SameFormAs(FormStructure(form).ToFormData()));
 }
 
 TEST(FormStructureTest, SkipFieldTest) {

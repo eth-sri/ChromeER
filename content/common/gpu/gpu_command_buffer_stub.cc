@@ -15,7 +15,6 @@
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
-#include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_memory_tracking.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -23,19 +22,18 @@
 #include "content/common/gpu/image_transport_surface.h"
 #include "content/common/gpu/media/gpu_video_decode_accelerator.h"
 #include "content/common/gpu/media/gpu_video_encode_accelerator.h"
-#include "content/common/gpu/sync_point_manager.h"
 #include "content/public/common/content_client.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gl_state_restorer_impl.h"
-#include "gpu/command_buffer/service/image_factory.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
+#include "gpu/command_buffer/service/sync_point_manager.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_switches.h"
 
@@ -227,10 +225,15 @@ bool GpuCommandBufferStub::OnMessageReceived(const IPC::Message& message) {
   // handler can assume that the context is current (not necessary for
   // RetireSyncPoint or WaitSyncPoint).
   if (decoder_.get() &&
+      message.type() != GpuCommandBufferMsg_SetGetBuffer::ID &&
       message.type() != GpuCommandBufferMsg_WaitForTokenInRange::ID &&
       message.type() != GpuCommandBufferMsg_WaitForGetOffsetInRange::ID &&
+      message.type() != GpuCommandBufferMsg_RegisterTransferBuffer::ID &&
+      message.type() != GpuCommandBufferMsg_DestroyTransferBuffer::ID &&
       message.type() != GpuCommandBufferMsg_RetireSyncPoint::ID &&
-      message.type() != GpuCommandBufferMsg_SignalSyncPoint::ID) {
+      message.type() != GpuCommandBufferMsg_SignalSyncPoint::ID &&
+      message.type() !=
+          GpuCommandBufferMsg_SetClientHasMemoryAllocationChangedCallback::ID) {
     if (!MakeCurrent())
       return false;
     have_context = true;
@@ -341,7 +344,7 @@ void GpuCommandBufferStub::PollWork() {
 bool GpuCommandBufferStub::HasUnprocessedCommands() {
   if (command_buffer_) {
     gpu::CommandBuffer::State state = command_buffer_->GetLastState();
-    return state.put_offset != state.get_offset &&
+    return command_buffer_->GetPutOffset() != state.get_offset &&
         !gpu::error::IsError(state.error);
   }
   return false;
@@ -767,7 +770,7 @@ void GpuCommandBufferStub::OnAsyncFlush(
 
 void GpuCommandBufferStub::OnRescheduled() {
   gpu::CommandBuffer::State pre_state = command_buffer_->GetLastState();
-  command_buffer_->Flush(pre_state.put_offset);
+  command_buffer_->Flush(command_buffer_->GetPutOffset());
   gpu::CommandBuffer::State post_state = command_buffer_->GetLastState();
 
   if (pre_state.get_offset != post_state.get_offset)
@@ -956,12 +959,8 @@ void GpuCommandBufferStub::OnCreateImage(int32 id,
     return;
   }
 
-  GpuChannelManager* manager = channel_->gpu_channel_manager();
-  scoped_refptr<gfx::GLImage> image =
-      manager->gpu_memory_buffer_factory()
-          ->AsImageFactory()
-          ->CreateImageForGpuMemoryBuffer(
-              handle, size, format, internalformat, channel()->client_id());
+  scoped_refptr<gfx::GLImage> image = channel()->CreateImageForGpuMemoryBuffer(
+      handle, size, format, internalformat);
   if (!image.get())
     return;
 

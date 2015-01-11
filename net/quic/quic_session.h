@@ -209,6 +209,11 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // Returns true if any stream is flow controller blocked.
   bool IsStreamFlowControlBlocked();
 
+  // Returns true if this is a secure QUIC session.
+  bool IsSecure() const {
+    return connection()->is_secure();
+  }
+
   size_t get_max_open_streams() const { return max_open_streams_; }
 
  protected:
@@ -325,6 +330,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   // Used for session level flow control.
   scoped_ptr<QuicFlowController> flow_controller_;
+
+  // True if this is a secure (HTTPS) QUIC session.
+  bool is_secure_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSession);
 };

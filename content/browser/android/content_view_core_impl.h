@@ -51,14 +51,13 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual WebContents* GetWebContents() const override;
   virtual ui::ViewAndroid* GetViewAndroid() const override;
   virtual ui::WindowAndroid* GetWindowAndroid() const override;
-  virtual scoped_refptr<cc::Layer> GetLayer() const override;
+  virtual const scoped_refptr<cc::Layer>& GetLayer() const override;
   virtual void ShowPastePopup(int x, int y) override;
   virtual void GetScaledContentBitmap(
       float scale,
       SkColorType color_type,
       gfx::Rect src_subrect,
-      const base::Callback<void(bool, const SkBitmap&)>& result_callback)
-      override;
+      ReadbackRequestCallback& result_callback) override;
   virtual float GetDpiScale() const override;
   virtual void PauseOrResumeGeolocation(bool should_pause) override;
   virtual void RequestTextSurroundingSelection(
@@ -143,7 +142,10 @@ class ContentViewCoreImpl : public ContentViewCore,
                                 jfloat x1, jfloat y1,
                                 jfloat x2, jfloat y2);
   void MoveCaret(JNIEnv* env, jobject obj, jfloat x, jfloat y);
-  void HideTextHandles(JNIEnv* env, jobject obj);
+  void DismissTextHandles(JNIEnv* env, jobject obj);
+  void SetTextHandlesTemporarilyHidden(JNIEnv* env,
+                                       jobject obj,
+                                       jboolean hidden);
 
   void ResetGestureDetection(JNIEnv* env, jobject obj);
   void SetDoubleTapSupportEnabled(JNIEnv* env, jobject obj, jboolean enabled);
@@ -270,8 +272,10 @@ class ContentViewCoreImpl : public ContentViewCore,
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
 
-  void SelectBetweenCoordinates(const gfx::PointF& start,
-                                const gfx::PointF& end);
+  void MoveRangeSelectionExtent(const gfx::PointF& extent);
+
+  void SelectBetweenCoordinates(const gfx::PointF& base,
+                                const gfx::PointF& extent);
 
  private:
   class ContentViewUserData;
@@ -291,7 +295,7 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   void InitWebContents();
 
-  RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid();
+  RenderWidgetHostViewAndroid* GetRenderWidgetHostViewAndroid() const;
 
   blink::WebGestureEvent MakeGestureEvent(
       blink::WebInputEvent::Type type, int64 time_ms, float x, float y) const;

@@ -4,14 +4,12 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/path_service.h"
 #include "base/run_loop.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/screens/mock_base_screen_delegate.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/test/wizard_in_process_browser_test.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/chromeos_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -20,6 +18,7 @@
 
 using testing::InvokeWithoutArgs;
 using testing::Mock;
+using testing::_;
 
 namespace chromeos {
 
@@ -49,7 +48,7 @@ IN_PROC_BROWSER_TEST_F(EnrollmentScreenTest, TestCancel) {
             enrollment_screen);
 
   EXPECT_CALL(mock_base_screen_delegate,
-              OnExit(BaseScreenDelegate::ENTERPRISE_ENROLLMENT_COMPLETED))
+              OnExit(_, BaseScreenDelegate::ENTERPRISE_ENROLLMENT_COMPLETED, _))
       .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
   enrollment_screen->OnCancel();
   content::RunThisRunLoop(&run_loop);
@@ -76,8 +75,7 @@ IN_PROC_BROWSER_TEST_F(EnrollmentScreenTest, DISABLED_TestSuccess) {
   ASSERT_EQ(WizardController::default_controller()->current_screen(),
             enrollment_screen);
 
-  enrollment_screen->ReportEnrollmentStatus(policy::EnrollmentStatus::ForStatus(
-      policy::EnrollmentStatus::STATUS_SUCCESS));
+  enrollment_screen->OnDeviceEnrolled("");
   run_loop.RunUntilIdle();
   EXPECT_TRUE(StartupUtils::IsOobeCompleted());
 
@@ -119,7 +117,7 @@ IN_PROC_BROWSER_TEST_F(ProvisionedEnrollmentScreenTest, TestBackButton) {
             enrollment_screen);
 
   EXPECT_CALL(mock_base_screen_delegate,
-              OnExit(BaseScreenDelegate::ENTERPRISE_ENROLLMENT_BACK))
+              OnExit(_, BaseScreenDelegate::ENTERPRISE_ENROLLMENT_BACK, _))
       .WillOnce(InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit));
   enrollment_screen->OnCancel();
   content::RunThisRunLoop(&run_loop);

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ash/accelerators/accelerator_commands.h"
+#include "ash/accelerators/debug_commands.h"
 
-#include "ash/accelerators/accelerator_table.h"
+#include "ash/accelerators/accelerator_commands.h"
 #include "ash/ash_switches.h"
 #include "ash/debug.h"
 #include "ash/desktop_background/desktop_background_controller.h"
@@ -139,9 +139,9 @@ bool DebugAcceleratorsEnabled() {
       switches::kAshDebugShortcuts);
 }
 
-void PerformDebugAction(int action) {
+bool PerformDebugAction(AcceleratorAction action) {
   if (!DebugAcceleratorsEnabled())
-    return;
+    return false;
 
   switch (action) {
 #if defined(OS_CHROMEOS)
@@ -177,8 +177,9 @@ void PerformDebugAction(int action) {
       ToggleShowPaintRects();
       break;
     default:
-      break;
+      return false;
   }
+  return true;
 }
 
 }  // namespace debug

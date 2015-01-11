@@ -11,6 +11,7 @@
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/char_iterator.h"
 #include "base/lazy_instance.h"
+#include "base/profiler/scoped_tracker.h"
 #include "third_party/harfbuzz-ng/src/hb.h"
 #include "third_party/icu/source/common/unicode/ubidi.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -835,6 +836,11 @@ void RenderTextHarfBuzz::ResetLayout() {
 }
 
 void RenderTextHarfBuzz::EnsureLayout() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 RenderTextHarfBuzz::EnsureLayout"));
+
   if (needs_layout_) {
     runs_.clear();
     grapheme_iterator_.reset();
@@ -883,6 +889,7 @@ void RenderTextHarfBuzz::EnsureLayout() {
 
       paint.setTypeface(run.skia_face.get());
       paint.setTextSize(SkIntToScalar(run.font_size));
+      paint.setAntiAlias(run.render_params.antialiasing);
       SkPaint::FontMetrics metrics;
       paint.getFontMetrics(&metrics);
 
@@ -1161,6 +1168,11 @@ void RenderTextHarfBuzz::ShapeRun(internal::TextRunHarfBuzz* run) {
 bool RenderTextHarfBuzz::ShapeRunWithFont(internal::TextRunHarfBuzz* run,
                                           const std::string& font_family,
                                           const FontRenderParams& params) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 RenderTextHarfBuzz::ShapeRunWithFont"));
+
   const base::string16& text = GetLayoutText();
   skia::RefPtr<SkTypeface> skia_face =
       internal::CreateSkiaTypeface(font_family, run->font_style);
@@ -1206,11 +1218,9 @@ bool RenderTextHarfBuzz::ShapeRunWithFont(internal::TextRunHarfBuzz* run,
     const SkScalar y_offset = SkFixedToScalar(hb_positions[i].y_offset);
     run->positions[i].set(run->width + x_offset, -y_offset);
     run->width += SkFixedToScalar(hb_positions[i].x_advance);
-#if defined(OS_LINUX)
-    // Match Pango's glyph rounding logic on Linux.
+    // Round run widths if subpixel positioning is off to match native behavior.
     if (!run->render_params.subpixel_positioning)
       run->width = std::floor(run->width + 0.5f);
-#endif
   }
 
   hb_buffer_destroy(buffer);

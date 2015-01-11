@@ -38,6 +38,9 @@
         <item name="android:textAlignment">viewStart</item>
         <item name="android:textStyle">bold</item>
         <item name="android:paddingTop">10dp</item>
+        <!-- These aren't really clickable, this is just a hack to make labels
+             accessibility focusable. -->
+        <item name="android:clickable">true</item>
     </style>
     <style name="OverflowMenuThemeBase" parent="Theme.AppCompat.Light">
         <item name="android:popupBackground">@null</item>

@@ -4,7 +4,14 @@
 
 #include "content/child/webcrypto/status.h"
 
+#include "base/format_macros.h"
+#include "base/strings/stringprintf.h"
+
 namespace content {
+
+// TODO(eroman): The error text for JWK uses the terminology "property" however
+// it should instead call it a "member". Changing this needs to coordinate with
+// the Blink LayoutTests as they depend on the old names.
 
 namespace webcrypto {
 
@@ -33,22 +40,23 @@ Status Status::ErrorJwkNotDictionary() {
                 "JWK input could not be parsed to a JSON dictionary");
 }
 
-Status Status::ErrorJwkPropertyMissing(const std::string& property) {
-  return Status(blink::WebCryptoErrorTypeData,
-                "The required JWK property \"" + property + "\" was missing");
-}
-
-Status Status::ErrorJwkPropertyWrongType(const std::string& property,
-                                         const std::string& expected_type) {
+Status Status::ErrorJwkMemberMissing(const std::string& member_name) {
   return Status(
       blink::WebCryptoErrorTypeData,
-      "The JWK property \"" + property + "\" must be a " + expected_type);
+      "The required JWK property \"" + member_name + "\" was missing");
 }
 
-Status Status::ErrorJwkBase64Decode(const std::string& property) {
+Status Status::ErrorJwkMemberWrongType(const std::string& member_name,
+                                       const std::string& expected_type) {
   return Status(
       blink::WebCryptoErrorTypeData,
-      "The JWK property \"" + property + "\" could not be base64 decoded");
+      "The JWK property \"" + member_name + "\" must be a " + expected_type);
+}
+
+Status Status::ErrorJwkBase64Decode(const std::string& member_name) {
+  return Status(
+      blink::WebCryptoErrorTypeData,
+      "The JWK property \"" + member_name + "\" could not be base64 decoded");
 }
 
 Status Status::ErrorJwkExtInconsistent() {
@@ -105,15 +113,16 @@ Status Status::ErrorJwkIncorrectKeyLength() {
                 "of key data for the given algorithm.");
 }
 
-Status Status::ErrorJwkEmptyBigInteger(const std::string& property) {
+Status Status::ErrorJwkEmptyBigInteger(const std::string& member_name) {
   return Status(blink::WebCryptoErrorTypeData,
-                "The JWK \"" + property + "\" property was empty.");
+                "The JWK \"" + member_name + "\" property was empty.");
 }
 
-Status Status::ErrorJwkBigIntegerHasLeadingZero(const std::string& property) {
+Status Status::ErrorJwkBigIntegerHasLeadingZero(
+    const std::string& member_name) {
   return Status(
       blink::WebCryptoErrorTypeData,
-      "The JWK \"" + property + "\" property contained a leading zero.");
+      "The JWK \"" + member_name + "\" property contained a leading zero.");
 }
 
 Status Status::ErrorJwkDuplicateKeyOps() {
@@ -138,7 +147,12 @@ Status Status::ErrorUnsupportedExportKeyFormat() {
 
 Status Status::ErrorImportAesKeyLength() {
   return Status(blink::WebCryptoErrorTypeData,
-                "AES key data must be 128, 192 or 256 bits");
+                "AES key data must be 128 or 256 bits");
+}
+
+Status Status::ErrorGenerateAesKeyLength() {
+  return Status(blink::WebCryptoErrorTypeOperation,
+                "AES key length must be 128 or 256 bits");
 }
 
 Status Status::ErrorAes192BitUnsupported() {
@@ -232,15 +246,80 @@ Status Status::ErrorKeyNotExtractable() {
                 "They key is not extractable");
 }
 
-Status Status::ErrorGenerateKeyLength() {
+Status Status::ErrorGenerateHmacKeyLengthPartialByte() {
+  // TODO(eroman): This message needs to be fixed (however appears in a
+  // LayoutTest).
+  //   * The error type is no longer spec compliant
+  //   * The message text is poor
+  //   * In fact the spec no longer requires key lengths to be multiples of 8
+  //     bits so this message is bogus (http://crbug.com/431085)
   return Status(blink::WebCryptoErrorTypeData,
                 "Invalid key length: it is either zero or not a multiple of 8 "
                 "bits");
 }
 
+Status Status::ErrorGenerateHmacKeyLengthZero() {
+  return Status(blink::WebCryptoErrorTypeOperation,
+                "HMAC key length must be not be zero");
+}
+
 Status Status::ErrorCreateKeyBadUsages() {
-  return Status(blink::WebCryptoErrorTypeData,
+  return Status(blink::WebCryptoErrorTypeSyntax,
                 "Cannot create a key using the specified key usages.");
+}
+
+Status Status::ErrorImportedEcKeyIncorrectCurve() {
+  return Status(
+      blink::WebCryptoErrorTypeData,
+      "The imported EC key specifies a different curve than requested");
+}
+
+Status Status::ErrorJwkIncorrectCrv() {
+  return Status(
+      blink::WebCryptoErrorTypeData,
+      "The JWK's \"crv\" member specifies a different curve than requested");
+}
+
+Status Status::ErrorEcKeyInvalid() {
+  return Status(blink::WebCryptoErrorTypeData,
+                "The imported EC key is invalid");
+}
+
+Status Status::JwkOctetStringWrongLength(const std::string& member_name,
+                                         size_t expected_length,
+                                         size_t actual_length) {
+  return Status(
+      blink::WebCryptoErrorTypeData,
+      base::StringPrintf(
+          "The JWK's \"%s\" member defines an octet string of length %" PRIuS
+          " bytes but should be %" PRIuS,
+          member_name.c_str(), actual_length, expected_length));
+}
+
+Status Status::ErrorEcdhPublicKeyWrongType() {
+  return Status(
+      blink::WebCryptoErrorTypeInvalidAccess,
+      "The public parameter for ECDH key derivation is not a public EC key");
+}
+
+Status Status::ErrorEcdhPublicKeyWrongAlgorithm() {
+  return Status(
+      blink::WebCryptoErrorTypeInvalidAccess,
+      "The public parameter for ECDH key derivation must be for ECDH");
+}
+
+Status Status::ErrorEcdhCurveMismatch() {
+  return Status(blink::WebCryptoErrorTypeInvalidAccess,
+                "The public parameter for ECDH key derivation is for a "
+                "different named curve");
+}
+
+Status Status::ErrorEcdhLengthTooBig(unsigned int max_length_bits) {
+  return Status(blink::WebCryptoErrorTypeInvalidAccess,
+                base::StringPrintf(
+                    "Length specified for ECDH key derivation is too large. "
+                    "Maximum allowed is %u bits",
+                    max_length_bits));
 }
 
 Status::Status(blink::WebCryptoErrorType error_type,

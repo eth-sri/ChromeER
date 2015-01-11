@@ -1,7 +1,6 @@
 # Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
 import logging as real_logging
 import os
 import sys
@@ -19,22 +18,11 @@ _host_platform = None
 _remote_platforms = {}
 
 
-def _IsRunningOnCrosDevice():
-  """Returns True if we're on a ChromeOS device."""
-  lsb_release = '/etc/lsb-release'
-  if sys.platform.startswith('linux') and os.path.exists(lsb_release):
-    with open(lsb_release, 'r') as f:
-      res = f.read()
-      if res.count('CHROMEOS_RELEASE_NAME'):
-        return True
-  return False
-
-
 def _InitHostPlatformIfNeeded():
   global _host_platform
   if _host_platform:
     return
-  if _IsRunningOnCrosDevice():
+  if util.IsRunningOnCrosDevice():
     from telemetry.core.platform import cros_platform_backend
     backend = cros_platform_backend.CrosPlatformBackend()
   elif sys.platform.startswith('linux'):
@@ -96,6 +84,10 @@ class Platform(object):
         self._platform_backend.tracing_controller_backend)
     self._profiling_controller = profiling_controller.ProfilingController(
         self._platform_backend.profiling_controller_backend)
+
+  @property
+  def is_host_platform(self):
+    return self == GetHostPlatform()
 
   @property
   def network_controller(self):
@@ -322,3 +314,24 @@ class Platform(object):
       }
     """
     return self._platform_backend.StopMonitoringPower()
+
+  def IsCooperativeShutdownSupported(self):
+    """Indicates whether CooperativelyShutdown, below, is supported.
+    It is not necessary to implement it on all platforms."""
+    return self._platform_backend.IsCooperativeShutdownSupported()
+
+  def CooperativelyShutdown(self, proc, app_name):
+    """Cooperatively shut down the given process from subprocess.Popen.
+
+    Currently this is only implemented on Windows. See
+    crbug.com/424024 for background on why it was added.
+
+    Args:
+      proc: a process object returned from subprocess.Popen.
+      app_name: on Windows, is the prefix of the application's window
+          class name that should be searched for. This helps ensure
+          that only the application's windows are closed.
+
+    Returns True if it is believed the attempt succeeded.
+    """
+    return self._platform_backend.CooperativelyShutdown(proc, app_name)

@@ -257,7 +257,8 @@ void GpuVideoDecodeAccelerator::Initialize(
 #elif defined(OS_MACOSX)
   video_decode_accelerator_.reset(new VTVideoDecodeAccelerator(
       static_cast<CGLContextObj>(
-          stub_->decoder()->GetGLContext()->GetHandle())));
+          stub_->decoder()->GetGLContext()->GetHandle()),
+      make_context_current_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
   scoped_ptr<V4L2Device> device = V4L2Device::Create(V4L2Device::kDecoder);
   if (!device.get()) {
@@ -376,12 +377,12 @@ void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
       texture_manager->SetLevelInfo(texture_ref,
                                     texture_target_,
                                     0,
-                                    0,
+                                    GL_RGBA,
                                     texture_dimensions_.width(),
                                     texture_dimensions_.height(),
                                     1,
                                     0,
-                                    0,
+                                    GL_RGBA,
                                     0,
                                     false);
     } else {

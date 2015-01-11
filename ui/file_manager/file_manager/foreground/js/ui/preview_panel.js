@@ -9,13 +9,15 @@
  *     visibility type.
  * @param {MetadataCache} metadataCache Metadata cache.
  * @param {VolumeManagerWrapper} volumeManager Volume manager.
+ * @param {!importer.HistoryLoader} historyLoader
  * @constructor
  * @extends {cr.EventTarget}
  */
 var PreviewPanel = function(element,
                             visibilityType,
                             metadataCache,
-                            volumeManager) {
+                            volumeManager,
+                            historyLoader) {
   /**
    * The cached height of preview panel.
    * @type {number}
@@ -50,7 +52,8 @@ var PreviewPanel = function(element,
   this.thumbnails = new PreviewPanel.Thumbnails(
       element.querySelector('.preview-thumbnails'),
       metadataCache,
-      volumeManager);
+      volumeManager,
+      historyLoader);
 
   /**
    * @type {Element}
@@ -261,7 +264,8 @@ PreviewPanel.prototype.updatePreviewArea_ = function() {
     this.thumbnails.selection = selection;
     this.calculatingSizeLabel_.hidden = true;
     this.previewText_.textContent = util.getEntryLabel(
-        this.volumeManager_, selection.entries[0]);
+        this.volumeManager_.getLocationInfo(selection.entries[0]),
+        selection.entries[0]);
     return;
   }
 
@@ -378,13 +382,27 @@ PreviewPanel.CalculatingSizeLabel.prototype.onStep_ = function() {
  * @param {Element} element DOM Element of thumbnail container.
  * @param {MetadataCache} metadataCache MetadataCache.
  * @param {VolumeManagerWrapper} volumeManager Volume manager instance.
+ * @param {!importer.HistoryLoader} historyLoader
  * @constructor
  */
-PreviewPanel.Thumbnails = function(element, metadataCache, volumeManager) {
+PreviewPanel.Thumbnails = function(
+    element, metadataCache, volumeManager, historyLoader) {
+
+  /** @private {Element} */
   this.element_ = element;
+
+  /** @private {MetadataCache} */
   this.metadataCache_ = metadataCache;
+
+  /** @private {VolumeManagerWrapper} */
   this.volumeManager_ = volumeManager;
-  this.sequence_ = 0;
+
+  /** @private {!importer.HistoryLoader} */
+  this.historyLoader_ = historyLoader;
+
+  /** @private {string} */
+  this.lastEntriesHash_ = '';
+
   Object.seal(this);
 };
 
@@ -412,8 +430,15 @@ PreviewPanel.Thumbnails.prototype = {
    * @param {FileSelection} value Entries.
    */
   set selection(value) {
-    this.sequence_++;
-    this.loadThumbnails_(value);
+    // Create hash for the selection.
+    var hash = value.entries.slice(
+        0, PreviewPanel.Thumbnails.MAX_THUMBNAIL_COUNT).map(function(entry) {
+      return entry.toURL();
+    }).sort().join('\n');
+    if (hash !== this.lastEntriesHash_) {
+      this.lastEntriesHash_ = hash;
+      this.loadThumbnails_(value);
+    }
   },
 
   /**
@@ -451,14 +476,19 @@ PreviewPanel.Thumbnails.prototype.loadThumbnails_ = function(selection) {
           entries[i],
           this.metadataCache_,
           this.volumeManager_,
+          this.historyLoader_,
           ThumbnailLoader.FillMode.FILL,
           FileGrid.ThumbnailQuality.LOW,
+          /* animation */ true,
           i == 0 && length == 1 ? this.setZoomedImage_.bind(this) : undefined);
     }
 
     // Register the click handler.
-    if (clickHandler)
-      box.addEventListener('click', clickHandler);
+    if (clickHandler) {
+      box.addEventListener('click', function(event) {
+        clickHandler();
+      });
+    }
 
     // Append
     this.element_.appendChild(box);
@@ -470,7 +500,8 @@ PreviewPanel.Thumbnails.prototype.loadThumbnails_ = function(selection) {
  * zoomed image.
  *
  * @param {HTMLImageElement} image Image to be source of the zoomed image.
- * @param {Object=} opt_transform Transformation to be applied to the image.
+ * @param {util.Transform=} opt_transform Transformation to be applied to the
+ *     image.
  * @private
  */
 PreviewPanel.Thumbnails.prototype.setZoomedImage_ = function(image,

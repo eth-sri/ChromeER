@@ -49,13 +49,12 @@ void HttpServerPropertiesImpl::InitializeSpdyServers(
 
 void HttpServerPropertiesImpl::InitializeAlternateProtocolServers(
     AlternateProtocolMap* alternate_protocol_map) {
-  // Keep all the ALTERNATE_PROTOCOL_BROKEN ones since those don't
-  // get persisted.
+  // Keep all the broken ones since those don't get persisted.
   for (AlternateProtocolMap::iterator it = alternate_protocol_map_.begin();
        it != alternate_protocol_map_.end();) {
     AlternateProtocolMap::iterator old_it = it;
     ++it;
-    if (old_it->second.protocol != ALTERNATE_PROTOCOL_BROKEN) {
+    if (!old_it->second.is_broken) {
       alternate_protocol_map_.Erase(old_it);
     }
   }
@@ -68,7 +67,7 @@ void HttpServerPropertiesImpl::InitializeAlternateProtocolServers(
   }
 
   // Attempt to find canonical servers.
-  int canonical_ports[] = { 80, 443 };
+  uint16 canonical_ports[] = { 80, 443 };
   for (size_t i = 0; i < canonical_suffixes_.size(); ++i) {
     std::string canonical_suffix = canonical_suffixes_[i];
     for (size_t j = 0; j < arraysize(canonical_ports); ++j) {
@@ -251,10 +250,6 @@ void HttpServerPropertiesImpl::SetAlternateProtocol(
     uint16 alternate_port,
     AlternateProtocol alternate_protocol,
     double alternate_probability) {
-  if (alternate_protocol == ALTERNATE_PROTOCOL_BROKEN) {
-    LOG(DFATAL) << "Call SetBrokenAlternateProtocol() instead.";
-    return;
-  }
 
   AlternateProtocolInfo alternate(alternate_port,
                                   alternate_protocol,
@@ -263,13 +258,12 @@ void HttpServerPropertiesImpl::SetAlternateProtocol(
     const AlternateProtocolInfo existing_alternate =
         GetAlternateProtocol(server);
 
-    if (existing_alternate.protocol == ALTERNATE_PROTOCOL_BROKEN) {
+    if (existing_alternate.is_broken) {
       DVLOG(1) << "Ignore alternate protocol since it's known to be broken.";
       return;
     }
 
-    if (alternate_protocol != ALTERNATE_PROTOCOL_BROKEN &&
-        !existing_alternate.Equals(alternate)) {
+    if (!existing_alternate.Equals(alternate)) {
       LOG(WARNING) << "Changing the alternate protocol for: "
                    << server.ToString()
                    << " from [Port: " << existing_alternate.port
@@ -306,14 +300,17 @@ void HttpServerPropertiesImpl::SetAlternateProtocol(
 void HttpServerPropertiesImpl::SetBrokenAlternateProtocol(
     const HostPortPair& server) {
   AlternateProtocolMap::iterator it = alternate_protocol_map_.Get(server);
-  if (it != alternate_protocol_map_.end()) {
-    it->second.protocol = ALTERNATE_PROTOCOL_BROKEN;
-  } else {
-    AlternateProtocolInfo alternate(server.port(),
-                                    ALTERNATE_PROTOCOL_BROKEN,
-                                    1);
-    alternate_protocol_map_.Put(server, alternate);
+  if (it == alternate_protocol_map_.end()) {
+    if (!HasAlternateProtocol(server)) {
+      LOG(DFATAL) << "Trying to mark unknown alternate protocol broken.";
+      return;
+    }
+    // This server's alternate protocol information is coming from a canonical
+    // server. Add an entry in the map for this server explicitly so that
+    // it can be marked as broken.
+    it = alternate_protocol_map_.Put(server, GetAlternateProtocol(server));
   }
+  it->second.is_broken = true;
   int count = ++broken_alternate_protocol_map_[server];
   base::TimeDelta delay =
       base::TimeDelta::FromSeconds(kBrokenAlternateProtocolDelaySecs);

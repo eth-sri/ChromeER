@@ -51,6 +51,8 @@ class FakeUserManager : public ChromeUserManager {
   virtual const user_manager::UserList& GetUsers() const override;
   virtual user_manager::UserList GetUsersAllowedForMultiProfile()
       const override;
+  virtual user_manager::UserList GetUsersAllowedForSupervisedUsersCreation()
+      const override;
   virtual const user_manager::UserList& GetLoggedInUsers() const override;
 
   // Set the user as logged in.
@@ -101,7 +103,7 @@ class FakeUserManager : public ChromeUserManager {
   virtual bool IsCurrentUserNonCryptohomeDataEphemeral() const override;
   virtual bool CanCurrentUserLock() const override;
   virtual bool IsUserLoggedIn() const override;
-  virtual bool IsLoggedInAsRegularUser() const override;
+  virtual bool IsLoggedInAsUserWithGaiaAccount() const override;
   virtual bool IsLoggedInAsDemoUser() const override;
   virtual bool IsLoggedInAsPublicAccount() const override;
   virtual bool IsLoggedInAsGuest() const override;

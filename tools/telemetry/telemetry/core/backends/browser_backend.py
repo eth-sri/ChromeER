@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
-
 from telemetry import decorators
 from telemetry.core import platform
 from telemetry.core import web_contents
@@ -20,17 +18,14 @@ class BrowserBackend(app_backend.AppBackend):
 
   def __init__(self, supports_extensions, browser_options, tab_list_backend):
     assert browser_options.browser_type
-    super(BrowserBackend, self).__init__()
-    self.browser_type = browser_options.browser_type
+    super(BrowserBackend, self).__init__(app_type=browser_options.browser_type)
     self._supports_extensions = supports_extensions
     self.browser_options = browser_options
-    self._browser = None
     self._tab_list_backend_class = tab_list_backend
     self._forwarder_factory = None
-    self._wpr_ca_cert_path = None
 
   def SetBrowser(self, browser):
-    self._browser = browser
+    super(BrowserBackend, self).SetApp(app=browser)
     if self.browser_options.netsim:
       host_platform = platform.GetHostPlatform()
       if not host_platform.CanLaunchApplication('ipfw'):
@@ -38,7 +33,11 @@ class BrowserBackend(app_backend.AppBackend):
 
   @property
   def browser(self):
-    return self._browser
+    return self.app
+
+  @property
+  def browser_type(self):
+    return self.app_type
 
   @property
   def supports_extensions(self):
@@ -50,14 +49,8 @@ class BrowserBackend(app_backend.AppBackend):
     return self.browser_options.wpr_mode
 
   @property
-  def wpr_ca_cert_path(self):
-    """Path to root certificate installed on browser (or None).
-
-    If this is set, web page replay will use it to sign HTTPS responses.
-    """
-    if self._wpr_ca_cert_path:
-      assert os.path.isfile(self._wpr_ca_cert_path)
-    return self._wpr_ca_cert_path
+  def should_ignore_certificate_errors(self):
+    return True
 
   @property
   def supports_tab_control(self):
@@ -101,6 +94,9 @@ class BrowserBackend(app_backend.AppBackend):
 
   def IsBrowserRunning(self):
     raise NotImplementedError()
+
+  def IsAppRunning(self):
+    return self.IsBrowserRunning()
 
   def GetStandardOutput(self):
     raise NotImplementedError()

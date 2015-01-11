@@ -11,8 +11,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "base/single_thread_task_runner.h"
+#include "base/threading/thread.h"
+#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/webrtc/media_stream_track_metrics.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandler.h"
 #include "third_party/WebKit/public/platform/WebRTCStatsRequest.h"
 #include "third_party/WebKit/public/platform/WebRTCStatsResponse.h"
@@ -28,6 +33,7 @@ namespace content {
 class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
 class RemoteMediaStreamImpl;
+class RtcDataChannelHandler;
 class RTCMediaConstraints;
 class WebRtcMediaStreamAdapter;
 
@@ -72,7 +78,6 @@ class CONTENT_EXPORT LocalRTCStatsRequest
 
  private:
   blink::WebRTCStatsRequest impl_;
-  rtc::scoped_refptr<LocalRTCStatsResponse> response_;
 };
 
 // RTCPeerConnectionHandler is a delegate for the RTC PeerConnection API
@@ -82,8 +87,7 @@ class CONTENT_EXPORT LocalRTCStatsRequest
 // Callbacks to the webrtc::PeerConnectionObserver implementation also occur on
 // the main render thread.
 class CONTENT_EXPORT RTCPeerConnectionHandler
-    : NON_EXPORTED_BASE(public blink::WebRTCPeerConnectionHandler),
-      NON_EXPORTED_BASE(public webrtc::PeerConnectionObserver) {
+    : NON_EXPORTED_BASE(public blink::WebRTCPeerConnectionHandler) {
  public:
   RTCPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandlerClient* client,
@@ -103,7 +107,7 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   bool InitializeForTest(
       const blink::WebRTCConfiguration& server_configuration,
       const blink::WebMediaConstraints& options,
-      PeerConnectionTracker* peer_connection_tracker);
+      const base::WeakPtr<PeerConnectionTracker>& peer_connection_tracker);
 
   // blink::WebRTCPeerConnectionHandler implementation
   virtual bool initialize(
@@ -158,58 +162,67 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
       const blink::WebMediaStreamTrack& track) override;
   virtual void stop() override;
 
-  // webrtc::PeerConnectionObserver implementation
-  void OnError() override;
-  // Triggered when the SignalingState changed.
-  void OnSignalingChange(
-      webrtc::PeerConnectionInterface::SignalingState new_state) override;
-  void OnAddStream(webrtc::MediaStreamInterface* stream) override;
-  void OnRemoveStream(webrtc::MediaStreamInterface* stream) override;
-  void OnIceCandidate(const webrtc::IceCandidateInterface* candidate) override;
-  void OnIceConnectionChange(
-      webrtc::PeerConnectionInterface::IceConnectionState new_state) override;
-  void OnIceGatheringChange(
-      webrtc::PeerConnectionInterface::IceGatheringState new_state) override;
-
-  void OnDataChannel(webrtc::DataChannelInterface* data_channel) override;
-  void OnRenegotiationNeeded() override;
-
   // Delegate functions to allow for mocking of WebKit interfaces.
   // getStats takes ownership of request parameter.
-  virtual void getStats(LocalRTCStatsRequest* request);
+  virtual void getStats(const scoped_refptr<LocalRTCStatsRequest>& request);
 
-  // Calls GetStats on |native_peer_connection_|.
+  // Asynchronously calls native_peer_connection_->getStats on the signaling
+  // thread.  If the |track_id| is empty, the |track_type| parameter is ignored.
   void GetStats(webrtc::StatsObserver* observer,
-                webrtc::MediaStreamTrackInterface* track,
-                webrtc::PeerConnectionInterface::StatsOutputLevel level);
+                webrtc::PeerConnectionInterface::StatsOutputLevel level,
+                const std::string& track_id,
+                blink::WebMediaStreamSource::Type track_type);
 
   // Tells the |client_| to close RTCPeerConnection.
   void CloseClientPeerConnection();
-
-  PeerConnectionTracker* peer_connection_tracker();
 
  protected:
   webrtc::PeerConnectionInterface* native_peer_connection() {
     return native_peer_connection_.get();
   }
 
+  class Observer;
+  friend class Observer;
+
+  void OnSignalingChange(
+      webrtc::PeerConnectionInterface::SignalingState new_state);
+  void OnIceConnectionChange(
+      webrtc::PeerConnectionInterface::IceConnectionState new_state);
+  void OnIceGatheringChange(
+      webrtc::PeerConnectionInterface::IceGatheringState new_state);
+  void OnRenegotiationNeeded();
+  void OnAddStream(scoped_ptr<RemoteMediaStreamImpl> stream);
+  void OnRemoveStream(
+      const scoped_refptr<webrtc::MediaStreamInterface>& stream);
+  void OnDataChannel(scoped_ptr<RtcDataChannelHandler> handler);
+  void OnIceCandidate(const std::string& sdp, const std::string& sdp_mid,
+      int sdp_mline_index, int component, int address_family);
+
  private:
   webrtc::SessionDescriptionInterface* CreateNativeSessionDescription(
-      const blink::WebRTCSessionDescription& description,
+      const std::string& sdp, const std::string& type,
       webrtc::SdpParseError* error);
+
+  // Virtual to allow mocks to override.
+  virtual scoped_refptr<base::SingleThreadTaskRunner> signaling_thread() const;
+
+  void RunSynchronousClosureOnSignalingThread(const base::Closure& closure,
+                                              const char* trace_event_name);
+
+  base::ThreadChecker thread_checker_;
 
   // |client_| is a weak pointer, and is valid until stop() has returned.
   blink::WebRTCPeerConnectionHandlerClient* client_;
 
   // |dependency_factory_| is a raw pointer, and is valid for the lifetime of
   // RenderThreadImpl.
-  PeerConnectionDependencyFactory* dependency_factory_;
+  PeerConnectionDependencyFactory* const dependency_factory_;
 
   blink::WebFrame* frame_;
 
   ScopedVector<WebRtcMediaStreamAdapter> local_streams_;
 
-  PeerConnectionTracker* peer_connection_tracker_;
+  base::WeakPtr<PeerConnectionTracker> peer_connection_tracker_;
 
   MediaStreamTrackMetrics track_metrics_;
 
@@ -220,6 +233,10 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   int num_local_candidates_ipv4_;
   int num_local_candidates_ipv6_;
 
+  // To make sure the observer is released after the native_peer_connection_,
+  // it has to come first.
+  scoped_refptr<Observer> peer_connection_observer_;
+
   // |native_peer_connection_| is the libjingle native PeerConnection object.
   scoped_refptr<webrtc::PeerConnectionInterface> native_peer_connection_;
 
@@ -228,6 +245,7 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   RemoteStreamMap remote_streams_;
   scoped_refptr<webrtc::UMAObserver> uma_observer_;
   base::TimeTicks ice_connection_checking_start_;
+  base::WeakPtrFactory<RTCPeerConnectionHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCPeerConnectionHandler);
 };

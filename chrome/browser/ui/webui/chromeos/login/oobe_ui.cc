@@ -13,10 +13,13 @@
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/enrollment/auto_enrollment_check_screen_actor.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
+#include "chrome/browser/chromeos/login/screens/error_screen.h"
+#include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/consumer_management_service.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/extensions/signin/gaia_auth_extension_loader.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/about_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/app_launch_splash_screen_handler.h"
@@ -24,6 +27,7 @@
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/controller_pairing_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/device_disabled_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/enable_debugging_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/error_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/eula_screen_handler.h"
@@ -112,6 +116,7 @@ content::WebUIDataSource* CreateOobeUIDataSource(
       base::StringPrintf(
           "frame-src chrome://terms/ %s/;",
           extensions::kGaiaAuthExtensionOrigin));
+  source->OverrideContentSecurityPolicyObjectSrc("object-src *;");
 
   // Serve deferred resources.
   source->AddResourcePath(kEnrollmentHTMLPath, IDR_OOBE_ENROLLMENT_HTML);
@@ -156,6 +161,7 @@ const char OobeUI::kAppLaunchSplashDisplay[] = "app-launch-splash";
 // static
 const char OobeUI::kScreenOobeHIDDetection[] = "hid-detection";
 const char OobeUI::kScreenOobeNetwork[] = "connect";
+const char OobeUI::kScreenOobeEnableDebugging[] = "debugging";
 const char OobeUI::kScreenOobeEula[] = "eula";
 const char OobeUI::kScreenOobeUpdate[] = "update";
 const char OobeUI::kScreenOobeEnrollment[] = "oauth-enrollment";
@@ -187,7 +193,8 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
       network_dropdown_handler_(NULL),
       update_screen_handler_(NULL),
       network_screen_actor_(NULL),
-      eula_screen_actor_(NULL),
+      debugging_screen_actor_(NULL),
+      eula_view_(NULL),
       hid_detection_screen_actor_(NULL),
       reset_screen_actor_(NULL),
       autolaunch_screen_actor_(NULL),
@@ -231,8 +238,13 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
     AddScreenHandler(network_screen_handler);
   }
 
+  EnableDebuggingScreenHandler* debugging_screen_handler =
+      new EnableDebuggingScreenHandler();
+  debugging_screen_actor_ = debugging_screen_handler;
+  AddScreenHandler(debugging_screen_handler);
+
   EulaScreenHandler* eula_screen_handler = new EulaScreenHandler(core_handler_);
-  eula_screen_actor_ = eula_screen_handler;
+  eula_view_ = eula_screen_handler;
   AddScreenHandler(eula_screen_handler);
 
   ResetScreenHandler* reset_screen_handler = new ResetScreenHandler();
@@ -272,6 +284,15 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
 
   error_screen_handler_ = new ErrorScreenHandler(network_state_informer_);
   AddScreenHandler(error_screen_handler_);
+
+  // Initialize ErrorScreen if it hasn't initialized.
+  if (WizardController::default_controller()) {
+    BaseScreen* screen = WizardController::default_controller()->GetScreen(
+        WizardController::kErrorScreenName);
+    CHECK(screen);
+  } else {
+    error_screen_.reset(new ErrorScreen(nullptr, error_screen_handler_));
+  }
 
   EnrollmentScreenHandler* enrollment_screen_handler =
       new EnrollmentScreenHandler(network_state_informer_,
@@ -353,6 +374,10 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   options::UserImageSource* user_image_source =
       new options::UserImageSource();
   content::URLDataSource::Add(profile, user_image_source);
+
+  // TabHelper is required for OOBE webui to make webview working on it.
+  content::WebContents* contents = web_ui->GetWebContents();
+  extensions::TabHelper::CreateForWebContents(contents);
 }
 
 OobeUI::~OobeUI() {
@@ -372,8 +397,12 @@ NetworkScreenActor* OobeUI::GetNetworkScreenActor() {
   return network_screen_actor_;
 }
 
-EulaScreenActor* OobeUI::GetEulaScreenActor() {
-  return eula_screen_actor_;
+EulaView* OobeUI::GetEulaView() {
+  return eula_view_;
+}
+
+EnableDebuggingScreenActor* OobeUI::GetEnableDebuggingScreenActor() {
+  return debugging_screen_actor_;
 }
 
 EnrollmentScreenActor* OobeUI::GetEnrollmentScreenActor() {
@@ -433,6 +462,10 @@ SupervisedUserCreationScreenHandler*
   return supervised_user_creation_screen_actor_;
 }
 
+GaiaScreenHandler* OobeUI::GetGaiaScreenActor() {
+  return gaia_screen_handler_;
+}
+
 AppLaunchSplashScreenActor*
       OobeUI::GetAppLaunchSplashScreenActor() {
   return app_launch_splash_screen_actor_;
@@ -476,6 +509,7 @@ void OobeUI::InitializeScreenMaps() {
   screen_names_[SCREEN_OOBE_EULA] = kScreenOobeEula;
   screen_names_[SCREEN_OOBE_UPDATE] = kScreenOobeUpdate;
   screen_names_[SCREEN_OOBE_ENROLLMENT] = kScreenOobeEnrollment;
+  screen_names_[SCREEN_OOBE_ENABLE_DEBUGGING] = kScreenOobeEnableDebugging;
   screen_names_[SCREEN_OOBE_RESET] = kScreenOobeReset;
   screen_names_[SCREEN_GAIA_SIGNIN] = kScreenGaiaSignin;
   screen_names_[SCREEN_ACCOUNT_PICKER] = kScreenAccountPicker;

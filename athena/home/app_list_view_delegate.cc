@@ -22,10 +22,6 @@
 #include "ui/app_list/search_result.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/resources/grit/ui_resources.h"
-#include "ui/views/controls/image_view.h"
 
 namespace athena {
 
@@ -144,19 +140,15 @@ void AppListViewDelegate::ShowForProfileByPath(
 
 views::View* AppListViewDelegate::CreateStartPageWebView(
     const gfx::Size& size) {
-  // A static image of the logo. This needs to support dynamic Doodles
-  // eventually.
-  views::ImageView* logo_image = new views::ImageView();
-  logo_image->SetImage(ui::ResourceBundle::GetSharedInstance().
-                       GetImageSkiaNamed(IDR_LOCAL_NTP_IMAGES_LOGO_PNG));
-  logo_image->SetHorizontalAlignment(views::ImageView::CENTER);
-  logo_image->SetVerticalAlignment(views::ImageView::CENTER);
-  return logo_image;
+  return nullptr;
 }
 
 std::vector<views::View*> AppListViewDelegate::CreateCustomPageWebViews(
     const gfx::Size& size) {
   return std::vector<views::View*>();
+}
+
+void AppListViewDelegate::CustomLauncherPageAnimationChanged(double progress) {
 }
 
 bool AppListViewDelegate::IsSpeechRecognitionEnabled() {

@@ -12,7 +12,6 @@
 #include "components/autofill/content/renderer/test_password_autofill_agent.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
-#include "components/autofill/core/common/password_autofill_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
@@ -36,6 +35,8 @@ using blink::WebString;
 using blink::WebView;
 
 namespace {
+
+const int kPasswordFillFormDataId = 1234;
 
 // The name of the username/password element in the form.
 const char kUsernameName[] = "username";
@@ -176,7 +177,7 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
   // protected.
   void SimulateOnFillPasswordForm(
       const PasswordFormFillData& fill_data) {
-    AutofillMsg_FillPasswordForm msg(0, fill_data);
+    AutofillMsg_FillPasswordForm msg(0, kPasswordFillFormDataId, fill_data);
     static_cast<content::RenderViewObserver*>(password_autofill_agent_)
         ->OnMessageReceived(msg);
   }
@@ -201,13 +202,13 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     FormFieldData username_field;
     username_field.name = ASCIIToUTF16(kUsernameName);
     username_field.value = username1_;
-    fill_data_.basic_data.fields.push_back(username_field);
+    fill_data_.username_field = username_field;
 
     FormFieldData password_field;
     password_field.name = ASCIIToUTF16(kPasswordName);
     password_field.value = password1_;
     password_field.form_control_type = "password";
-    fill_data_.basic_data.fields.push_back(password_field);
+    fill_data_.password_field = password_field;
 
     PasswordAndRealm password2;
     password2.password = password2_;
@@ -225,7 +226,7 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
     // We need to set the origin so it matches the frame URL and the action so
     // it matches the form action, otherwise we won't autocomplete.
     UpdateOriginForHTML(kFormHTML);
-    fill_data_.basic_data.action = GURL("http://www.bidule.com");
+    fill_data_.action = GURL("http://www.bidule.com");
 
     LoadHTML(kFormHTML);
 
@@ -241,7 +242,7 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
 
   void UpdateOriginForHTML(const std::string& html) {
     std::string origin = "data:text/html;charset=utf-8," + html;
-    fill_data_.basic_data.origin = GURL(origin);
+    fill_data_.origin = GURL(origin);
   }
 
   void UpdateUsernameAndPasswordElements() {
@@ -325,37 +326,6 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
                                   is_user_input);
   }
 
-  // Tests that no suggestion popup is generated when the username_element_ is
-  // edited.
-  void ExpectNoSuggestionsPopup() {
-    // The first test below ensures that the suggestions have been handled by
-    // the password_autofill_agent, even though autocomplete='off' is set. The
-    // second check ensures that, although handled, no "show suggestions" IPC to
-    // the browser was generated.
-    //
-    // This is interesting in the specific case of an autocomplete='off' form
-    // that also has a remembered username and password
-    // (http://crbug.com/326679). To fix the DCHECK that this case used to hit,
-    // |true| is returned from ShowSuggestions for all forms with valid
-    // usersnames that are autocomplete='off', prentending that a selection box
-    // has been shown to the user. Of course, it hasn't, so a message is never
-    // sent to the browser on acceptance, and the DCHECK isn't hit (and nothing
-    // is filled).
-    //
-    // These tests only make sense in the context of not ignoring
-    // autocomplete='off', so only test them if the disable autocomplete='off'
-    // flag is not enabled.
-    // TODO(jww): Remove this function and callers once autocomplete='off' is
-    // permanently ignored.
-    if (!ShouldIgnoreAutocompleteOffForPasswordFields()) {
-      EXPECT_TRUE(
-          password_autofill_agent_->ShowSuggestions(username_element_, false));
-
-      EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
-          AutofillHostMsg_ShowPasswordSuggestions::ID));
-    }
-  }
-
   void SimulateKeyDownEvent(const WebInputElement& element,
                             ui::KeyboardCode key_code) {
     blink::WebKeyboardEvent key_event;
@@ -426,25 +396,27 @@ class PasswordAutofillAgentTest : public ChromeRenderViewTest {
         render_thread_->sink().GetFirstMessageMatching(
             AutofillHostMsg_ShowPasswordSuggestions::ID);
     EXPECT_TRUE(message);
-    Tuple4<autofill::FormFieldData, base::string16, bool, gfx::RectF> args;
+    Tuple5<int, base::i18n::TextDirection, base::string16, bool, gfx::RectF>
+        args;
     AutofillHostMsg_ShowPasswordSuggestions::Read(message, &args);
-    EXPECT_EQ(2u, fill_data_.basic_data.fields.size());
-    EXPECT_EQ(fill_data_.basic_data.fields[0].name, args.a.name);
-    EXPECT_EQ(ASCIIToUTF16(username), args.a.value);
-    EXPECT_EQ(ASCIIToUTF16(username), args.b);
-    EXPECT_EQ(show_all, args.c);
+    EXPECT_EQ(kPasswordFillFormDataId, args.a);
+    EXPECT_EQ(ASCIIToUTF16(username), args.c);
+    EXPECT_EQ(show_all, args.d);
 
     render_thread_->sink().ClearMessages();
   }
 
-  void ExpectFormSubmittedWithPasswords(const std::string& password_value,
-                                        const std::string& new_password_value) {
+  void ExpectFormSubmittedWithUsernameAndPasswords(
+      const std::string& username_value,
+      const std::string& password_value,
+      const std::string& new_password_value) {
     const IPC::Message* message =
         render_thread_->sink().GetFirstMessageMatching(
             AutofillHostMsg_PasswordFormSubmitted::ID);
     ASSERT_TRUE(message);
     Tuple1<autofill::PasswordForm> args;
     AutofillHostMsg_PasswordFormSubmitted::Read(message, &args);
+    EXPECT_EQ(ASCIIToUTF16(username_value), args.a.username_value);
     EXPECT_EQ(ASCIIToUTF16(password_value), args.a.password_value);
     EXPECT_EQ(ASCIIToUTF16(new_password_value), args.a.new_password_value);
   }
@@ -520,7 +492,7 @@ TEST_F(PasswordAutofillAgentTest, InitialAutocompleteForEmptyAction) {
 
   // Set the expected form origin and action URLs.
   UpdateOriginForHTML(kEmptyActionFormHTML);
-  fill_data_.basic_data.action = fill_data_.basic_data.origin;
+  fill_data_.action = fill_data_.origin;
 
   // Simulate the browser sending back the login info, it triggers the
   // autocomplete.
@@ -880,8 +852,8 @@ TEST_F(PasswordAutofillAgentTest, IframeNoFillTest) {
   LoadHTML(page_html.c_str());
 
   // Set the expected form origin and action URLs.
-  fill_data_.basic_data.origin = GURL(origin);
-  fill_data_.basic_data.action = GURL(origin);
+  fill_data_.origin = GURL(origin);
+  fill_data_.action = GURL(origin);
 
   SimulateOnFillPasswordForm(fill_data_);
 
@@ -943,68 +915,6 @@ TEST_F(PasswordAutofillAgentTest, NoDOMActivationTest) {
 
   ExecuteJavaScript(kJavaScriptClick);
   CheckTextFieldsDOMState(kAliceUsername, true, "", true);
-}
-
-// Regression test for http://crbug.com/326679
-TEST_F(PasswordAutofillAgentTest, SelectUsernameWithUsernameAutofillOff) {
-  // Simulate the browser sending back the login info.
-  SimulateOnFillPasswordForm(fill_data_);
-
-  // Set the username element to autocomplete='off'
-  username_element_.setAttribute(WebString::fromUTF8("autocomplete"),
-                                 WebString::fromUTF8("off"));
-
-  // Simulate the user changing the username to some known username.
-  SimulateUsernameChange(kAliceUsername, true);
-
-  ExpectNoSuggestionsPopup();
-}
-
-// Regression test for http://crbug.com/326679
-TEST_F(PasswordAutofillAgentTest,
-       SelectUnknownUsernameWithUsernameAutofillOff) {
-  // Simulate the browser sending back the login info.
-  SimulateOnFillPasswordForm(fill_data_);
-
-  // Set the username element to autocomplete='off'
-  username_element_.setAttribute(WebString::fromUTF8("autocomplete"),
-                                 WebString::fromUTF8("off"));
-
-  // Simulate the user changing the username to some unknown username.
-  SimulateUsernameChange("foo", true);
-
-  ExpectNoSuggestionsPopup();
-}
-
-// Regression test for http://crbug.com/326679
-TEST_F(PasswordAutofillAgentTest, SelectUsernameWithPasswordAutofillOff) {
-  // Simulate the browser sending back the login info.
-  SimulateOnFillPasswordForm(fill_data_);
-
-  // Set the main password element to autocomplete='off'
-  password_element_.setAttribute(WebString::fromUTF8("autocomplete"),
-                                 WebString::fromUTF8("off"));
-
-  // Simulate the user changing the username to some known username.
-  SimulateUsernameChange(kAliceUsername, true);
-
-  ExpectNoSuggestionsPopup();
-}
-
-// Regression test for http://crbug.com/326679
-TEST_F(PasswordAutofillAgentTest,
-       SelectUnknownUsernameWithPasswordAutofillOff) {
-  // Simulate the browser sending back the login info.
-  SimulateOnFillPasswordForm(fill_data_);
-
-  // Set the main password element to autocomplete='off'
-  password_element_.setAttribute(WebString::fromUTF8("autocomplete"),
-                                 WebString::fromUTF8("off"));
-
-  // Simulate the user changing the username to some unknown username.
-  SimulateUsernameChange("foo", true);
-
-  ExpectNoSuggestionsPopup();
 }
 
 // Verifies that password autofill triggers onChange events in JavaScript for
@@ -1417,6 +1327,9 @@ TEST_F(PasswordAutofillAgentTest, SendsLoggingStateUpdatePingOnConstruction) {
   EXPECT_TRUE(message);
 }
 
+// TODO(gcasto): Re-enabled these tests after crbug.com/430318 has been fixed.
+#if !defined(OS_ANDROID)
+
 // Tests that one user click on a username field is sufficient to bring up a
 // credential suggestion popup, and the user can autocomplete the password by
 // selecting the credential from the popup.
@@ -1478,38 +1391,45 @@ TEST_F(PasswordAutofillAgentTest, CredentialsOnClick) {
   CheckSuggestions(kAliceUsername, true);
 }
 
-// The user types in a password, but then just before sending the form off, a
-// script clears that password. This test checks that PasswordAutofillAgent can
-// still remember the password typed by the user.
+#endif  // !defined(OS_ANDROID)
+
+// The user types in a username and a password, but then just before sending
+// the form off, a script clears them. This test checks that
+// PasswordAutofillAgent can still remember the username and the password
+// typed by the user.
 TEST_F(PasswordAutofillAgentTest,
-       RememberLastNonEmptyPasswordOnSubmit_ScriptCleared) {
+       RememberLastNonEmptyUsernameAndPasswordOnSubmit_ScriptCleared) {
   SimulateInputChangeForElement(
       "temp", true, GetMainFrame(), username_element_, true);
   SimulateInputChangeForElement(
       "random", true, GetMainFrame(), password_element_, true);
 
-  // Simulate that the password value was cleared by the site's JavaScript
-  // before submit.
+  // Simulate that the username and the password value was cleared by the
+  // site's JavaScript before submit.
+  username_element_.setValue(WebString());
   password_element_.setValue(WebString());
   static_cast<content::RenderViewObserver*>(password_autofill_agent_)
       ->WillSubmitForm(GetMainFrame(), username_element_.form());
 
   // Observe that the PasswordAutofillAgent still remembered the last non-empty
-  // password and sent that to the browser.
-  ExpectFormSubmittedWithPasswords("random", "");
+  // username and password and sent that to the browser.
+  ExpectFormSubmittedWithUsernameAndPasswords("temp", "random", "");
 }
 
 // Similar to RememberLastNonEmptyPasswordOnSubmit_ScriptCleared, but this time
-// it's the user who clears the password. This test checks that in that case,
-// the last non-empty password is not remembered.
+// it's the user who clears the username and the password. This test checks
+// that in that case, the last non-empty username and password are not
+// remembered.
 TEST_F(PasswordAutofillAgentTest,
-       RememberLastNonEmptyPasswordOnSubmit_UserCleared) {
+       RememberLastNonEmptyUsernameAndPasswordOnSubmit_UserCleared) {
   SimulateInputChangeForElement(
       "temp", true, GetMainFrame(), username_element_, true);
   SimulateInputChangeForElement(
       "random", true, GetMainFrame(), password_element_, true);
 
-  // Simulate that the user actually cleared the password again.
+  // Simulate that the user actually cleared the username and password again.
+  SimulateInputChangeForElement("", true, GetMainFrame(), username_element_,
+                                true);
   SimulateInputChangeForElement(
       "", true, GetMainFrame(), password_element_, true);
   static_cast<content::RenderViewObserver*>(password_autofill_agent_)
@@ -1517,13 +1437,13 @@ TEST_F(PasswordAutofillAgentTest,
 
   // Observe that the PasswordAutofillAgent respects the user having cleared the
   // password.
-  ExpectFormSubmittedWithPasswords("", "");
+  ExpectFormSubmittedWithUsernameAndPasswords("", "", "");
 }
 
 // Similar to RememberLastNonEmptyPasswordOnSubmit_ScriptCleared, but uses the
 // new password instead of the current password.
 TEST_F(PasswordAutofillAgentTest,
-       RememberLastNonEmptyPasswordOnSubmit_NewPassword) {
+       RememberLastNonEmptyUsernameAndPasswordOnSubmit_New) {
   const char kNewPasswordFormHTML[] =
       "<FORM name='LoginTestForm'>"
       "  <INPUT type='text' id='username' autocomplete='username'/>"
@@ -1538,15 +1458,16 @@ TEST_F(PasswordAutofillAgentTest,
   SimulateInputChangeForElement(
       "random", true, GetMainFrame(), password_element_, true);
 
-  // Simulate that the password value was cleared by the site's JavaScript
-  // before submit.
+  // Simulate that the username and the password value was cleared by
+  // the site's JavaScript before submit.
+  username_element_.setValue(WebString());
   password_element_.setValue(WebString());
   static_cast<content::RenderViewObserver*>(password_autofill_agent_)
       ->WillSubmitForm(GetMainFrame(), username_element_.form());
 
   // Observe that the PasswordAutofillAgent still remembered the last non-empty
   // password and sent that to the browser.
-  ExpectFormSubmittedWithPasswords("", "random");
+  ExpectFormSubmittedWithUsernameAndPasswords("temp", "", "random");
 }
 
 // The user first accepts a suggestion, but then overwrites the password. This

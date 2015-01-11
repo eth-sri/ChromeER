@@ -7,17 +7,27 @@
 namespace autofill {
 namespace switches {
 
-// Forces the password manager to not ignore autocomplete='off' for password
-// forms.
-const char kDisableIgnoreAutocompleteOff[]  = "do-not-ignore-autocomplete-off";
-
 // Disables password generation when we detect that the user is going through
 // account creation.
 const char kDisablePasswordGeneration[]     = "disable-password-generation";
 
+// The "disable" flag for kEnableSingleClickAutofill.
+const char kDisableSingleClickAutofill[]    = "disable-single-click-autofill";
+
+// Local heuristics override server predictions for name types.
+const char kDisambiguateAutofillServerNameTypes[] =
+    "disambiguate-autofill-server-name-types";
+
+// Enables using device's camera to scan a new credit card when filling out a
+// credit card form.
+const char kEnableCreditCardScan[]          = "enable-credit-card-scan";
+
 // Enables password generation when we detect that the user is going through
 // account creation.
 const char kEnablePasswordGeneration[]      = "enable-password-generation";
+
+// Enables/disables suggestions without typing anything (on first click).
+const char kEnableSingleClickAutofill[]     = "enable-single-click-autofill";
 
 // Ignores autocomplete="off" for Autofill data (profiles + credit cards).
 const char kIgnoreAutocompleteOffForAutofill[] =
@@ -28,8 +38,15 @@ const char kIgnoreAutocompleteOffForAutofill[] =
 const char kLocalHeuristicsOnlyForPasswordGeneration[] =
     "local-heuristics-only-for-password-generation";
 
+// The "disable" flag for kIgnoreAutocompleteOffForAutofill.
+const char kRespectAutocompleteOffForAutofill[] =
+    "respect-autocomplete-off-autofill";
+
 // Annotates forms with Autofill field type predictions.
 const char kShowAutofillTypePredictions[]   = "show-autofill-type-predictions";
+
+// Always trust server predictions for name types.
+const char kTrustAutofillServerNameTypes[] = "trust-autofill-server-name-types";
 
 // Secure service URL for Online Wallet service. Used as the base url to escrow
 // credit card numbers.

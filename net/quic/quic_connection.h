@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "net/base/iovec.h"
 #include "net/base/ip_endpoint.h"
@@ -251,11 +252,20 @@ class NET_EXPORT_PRIVATE QuicConnection
                  const PacketWriterFactory& writer_factory,
                  bool owns_writer,
                  bool is_server,
+                 bool is_secure,
                  const QuicVersionVector& supported_versions);
   ~QuicConnection() override;
 
   // Sets connection parameters from the supplied |config|.
   void SetFromConfig(const QuicConfig& config);
+
+  // Called by the Session when the client has provided CachedNetworkParameters.
+  // Returns true if this changes the initial connection state.
+  virtual bool ResumeConnectionState(
+      const CachedNetworkParameters& cached_network_params);
+
+  // Sets the number of active streams on the connection for congestion control.
+  void SetNumOpenStreams(size_t num_streams);
 
   // Send the data in |data| to the peer in as few packets as possible.
   // Returns a pair with the number of bytes consumed from data, and a boolean
@@ -372,7 +382,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   void OnSerializedPacket(const SerializedPacket& packet) override;
 
   // QuicSentPacketManager::NetworkChangeVisitor
-  void OnCongestionWindowChange(QuicByteCount congestion_window) override;
+  void OnCongestionWindowChange() override;
 
   // Called by the crypto stream when the handshake completes. In the server's
   // case this is when the SHLO has been ACKed. Clients call this on receipt of
@@ -394,8 +404,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicConnectionId connection_id() const { return connection_id_; }
   const QuicClock* clock() const { return clock_; }
   QuicRandom* random_generator() const { return random_generator_; }
-  size_t max_packet_length() const;
-  void set_max_packet_length(size_t length);
+  QuicByteCount max_packet_length() const;
+  void set_max_packet_length(QuicByteCount length);
 
   bool connected() const { return connected_; }
 
@@ -422,19 +432,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Returns true if the connection has queued packets or frames.
   bool HasQueuedData() const;
 
-  // TODO(ianswett): Remove when quic_unified_timeouts is removed.
-  // Sets (or resets) the idle state connection timeout. Also, checks and times
-  // out the connection if network timer has expired for |timeout|.
-  void SetIdleNetworkTimeout(QuicTime::Delta timeout);
-  // Sets (or resets) the total time delta the connection can be alive for.
-  // Also, checks and times out the connection if timer has expired for
-  // |timeout|. Used to limit the time a connection can be alive before crypto
-  // handshake finishes.
-  void SetOverallConnectionTimeout(QuicTime::Delta timeout);
-
   // Sets the overall and idle state connection timeouts.
-  // Times out the connection if the timeout has been reached and
-  // the quic_timeouts_only_from_alarms flag is false.
   void SetNetworkTimeouts(QuicTime::Delta overall_timeout,
                           QuicTime::Delta idle_timeout);
 
@@ -526,6 +524,13 @@ class NET_EXPORT_PRIVATE QuicConnection
     bool already_in_batch_mode_;
   };
 
+  QuicPacketSequenceNumber sequence_number_of_last_sent_packet() const {
+    return sequence_number_of_last_sent_packet_;
+  }
+  const QuicPacketWriter* writer() const { return writer_; }
+
+  bool is_secure() const { return is_secure_; }
+
  protected:
   // Packets which have not been written to the wire.
   // Owns the QuicPacket* packet.
@@ -562,13 +567,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   bool SelectMutualVersion(const QuicVersionVector& available_versions);
 
   QuicPacketWriter* writer() { return writer_; }
-  const QuicPacketWriter* writer() const { return writer_; }
 
   bool peer_port_changed() const { return peer_port_changed_; }
-
-  QuicPacketSequenceNumber sequence_number_of_last_sent_packet() const {
-    return sequence_number_of_last_sent_packet_;
-  }
 
  private:
   friend class test::QuicConnectionPeer;
@@ -678,7 +678,14 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicConnectionHelperInterface* helper_;  // Not owned.
   QuicPacketWriter* writer_;  // Owned or not depending on |owns_writer_|.
   bool owns_writer_;
+  // Encryption level for new packets. Should only be changed via
+  // SetDefaultEncryptionLevel().
   EncryptionLevel encryption_level_;
+  bool has_forward_secure_encrypter_;
+  // The sequence number of the first packet which will be encrypted with the
+  // foward-secure encrypter, even if the peer has not started sending
+  // forward-secure packets.
+  QuicPacketSequenceNumber first_required_forward_secure_packet_;
   const QuicClock* clock_;
   QuicRandom* random_generator_;
 
@@ -688,13 +695,13 @@ class NET_EXPORT_PRIVATE QuicConnection
   IPEndPoint self_address_;
   IPEndPoint peer_address_;
   // Used to store latest peer port to possibly migrate to later.
-  int migrating_peer_port_;
+  uint16 migrating_peer_port_;
 
   // True if the last packet has gotten far enough in the framer to be
   // decrypted.
   bool last_packet_decrypted_;
   bool last_packet_revived_;  // True if the last packet was revived from FEC.
-  size_t last_size_;  // Size of the last received packet.
+  QuicByteCount last_size_;  // Size of the last received packet.
   EncryptionLevel last_decrypted_packet_level_;
   QuicPacketHeader last_header_;
   std::vector<QuicStreamFrame> last_stream_frames_;
@@ -782,8 +789,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   // This is used for timeouts, and does not indicate the packet was processed.
   QuicTime time_of_last_received_packet_;
 
-  // The last time a new (non-retransmitted) packet was sent for this
-  // connection.
+  // The last time this connection began sending a new (non-retransmitted)
+  // packet.
   QuicTime time_of_last_sent_new_packet_;
 
   // Sequence number of the last sent packet.  Packets are guaranteed to be sent
@@ -828,6 +835,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // If non-empty this contains the set of versions received in a
   // version negotiation packet.
   QuicVersionVector server_supported_versions_;
+
+  // True if this is a secure QUIC connection.
+  bool is_secure_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

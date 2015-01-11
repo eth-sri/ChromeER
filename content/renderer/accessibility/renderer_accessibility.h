@@ -56,6 +56,15 @@ class CONTENT_EXPORT RendererAccessibility : public RenderFrameObserver {
   void HandleWebAccessibilityEvent(const blink::WebAXObject& obj,
                                    blink::WebAXEvent event);
 
+  // Called when a new find in page result is highlighted.
+  void HandleAccessibilityFindInPageResult(
+      int identifier,
+      int match_index,
+      const blink::WebAXObject& start_object,
+      int start_offset,
+      const blink::WebAXObject& end_object,
+      int end_offset);
+
   void FocusedNodeChanged(const blink::WebNode& node);
 
   // This can be called before deleting a RendererAccessibility instance due
@@ -87,11 +96,13 @@ class CONTENT_EXPORT RendererAccessibility : public RenderFrameObserver {
   void OnEventsAck();
   void OnFatalError();
   void OnHitTest(gfx::Point point);
+  void OnSetAccessibilityFocus(int acc_obj_id);
   void OnReset(int reset_token);
   void OnScrollToMakeVisible(int acc_obj_id, gfx::Rect subfocus);
   void OnScrollToPoint(int acc_obj_id, gfx::Point point);
   void OnSetFocus(int acc_obj_id);
   void OnSetTextSelection(int acc_obj_id, int start_offset, int end_offset);
+  void OnSetValue(int acc_obj_id, base::string16 value);
 
   // Events from Blink are collected until they are ready to be
   // sent to the browser.

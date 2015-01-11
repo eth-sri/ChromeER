@@ -32,8 +32,17 @@ function consentRequired_(authContinue) {
     dialog.hidden = true;
     button.removeEventListener('click', consentGranted, false);
     authContinue();
+    remoting.windowShape.updateClientWindowShape();
   };
   dialog.hidden = false;
+
+  /** @type {HTMLElement} */
+  var dialog_border = document.getElementById('auth-dialog-border');
+  // TODO(garykac): Refactor to remove auth dialog from the main html file
+  // and place in a separate window.
+  remoting.authDialog = new remoting.AuthDialog(dialog_border);
+  remoting.windowShape.addCallback(remoting.authDialog);
+
   button.addEventListener('click', consentGranted, false);
 }
 
@@ -107,6 +116,8 @@ remoting.init = function() {
   }
   remoting.identity.getEmail(remoting.onEmail, onGetEmailError);
 
+  remoting.windowShape.updateClientWindowShape();
+
   remoting.showOrHideIT2MeUi();
   remoting.showOrHideMe2MeUi();
 
@@ -117,13 +128,17 @@ remoting.init = function() {
 
   remoting.initModalDialogs();
 
-  if (isHostModeSupported_()) {
-    var noShare = document.getElementById('chrome-os-no-share');
-    noShare.parentNode.removeChild(noShare);
-  } else {
-    var button = document.getElementById('share-button');
-    button.disabled = true;
-  }
+  isHostModeSupported_().then(
+    /** @param {Boolean} supported */
+    function(supported){
+      if (supported) {
+        var noShare = document.getElementById('chrome-os-no-share');
+        noShare.parentNode.removeChild(noShare);
+      } else {
+        var button = document.getElementById('share-button');
+        button.disabled = true;
+      }
+    });
 
   /**
    * @return {Promise} A promise that resolves to the id of the current
@@ -204,16 +219,6 @@ remoting.init = function() {
 };
 
 /**
- * Returns whether or not IT2Me is supported via the host NPAPI plugin.
- *
- * @return {boolean}
- */
-function isIT2MeSupported_() {
-  // Currently, IT2Me on Chromebooks is not supported.
-  return !remoting.runningOnChromeOS();
-}
-
-/**
  * Returns true if the current platform is fully supported. It's only used when
  * we detect that host native messaging components are not installed. In that
  * case the result of this function determines if the webapp should show the
@@ -249,7 +254,6 @@ remoting.onEmail = function(email) {
  */
 remoting.initHomeScreenUi = function() {
   remoting.hostController = new remoting.HostController();
-  document.getElementById('share-button').disabled = !isIT2MeSupported_();
   remoting.setMode(remoting.AppMode.HOME);
   remoting.hostSetupDialog =
       new remoting.HostSetupDialog(remoting.hostController);
@@ -401,13 +405,20 @@ function pluginGotCopy_(eventUncast) {
 }
 
 /**
- * Returns whether Host mode is supported on this platform.
+ * Returns whether Host mode is supported on this platform for It2me.
+ * TODO(kelvinp): Remove this function once It2me is enabled on Chrome OS (See
+ * crbug.com/429860).
  *
- * @return {boolean} True if Host mode is supported.
+ * @return {Promise} Resolves to true if Host mode is supported.
  */
 function isHostModeSupported_() {
-  // Currently, sharing on Chromebooks is not supported.
-  return !remoting.runningOnChromeOS();
+  if (!remoting.platformIsChromeOS()) {
+    return Promise.resolve(true);
+  }
+  // Sharing on Chrome OS is currently behind a flag.
+  // isInstalled() will return false if the flag is disabled.
+  var hostInstaller = new remoting.HostInstaller();
+  return hostInstaller.isInstalled();
 }
 
 /**
@@ -513,42 +524,4 @@ function migrateLocalToChromeStorage_() {
       window.localStorage.removeItem(setting);
     }
   }
-}
-
-/**
- * Tests whether we are running on Mac.
- *
- * @return {boolean} True if the platform is Mac.
- */
-remoting.platformIsMac = function() {
-  return navigator.platform.indexOf('Mac') != -1;
-}
-
-/**
- * Tests whether we are running on Windows.
- *
- * @return {boolean} True if the platform is Windows.
- */
-remoting.platformIsWindows = function() {
-  return (navigator.platform.indexOf('Win32') != -1) ||
-         (navigator.platform.indexOf('Win64') != -1);
-}
-
-/**
- * Tests whether we are running on Linux.
- *
- * @return {boolean} True if the platform is Linux.
- */
-remoting.platformIsLinux = function() {
-  return (navigator.platform.indexOf('Linux') != -1) &&
-         !remoting.platformIsChromeOS();
-}
-
-/**
- * Tests whether we are running on ChromeOS.
- *
- * @return {boolean} True if the platform is ChromeOS.
- */
-remoting.platformIsChromeOS = function() {
-  return navigator.userAgent.match(/\bCrOS\b/) != null;
 }

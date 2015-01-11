@@ -76,6 +76,7 @@ class MockCopresenceManager : public CopresenceManager {
   void ExecuteReportRequest(
       const ReportRequest& request,
       const std::string& app_id,
+      const std::string& /* auth_token */,
       const copresence::StatusCallback& status_callback) override {
     request_ = request;
     app_id_ = app_id;
@@ -174,7 +175,7 @@ TEST_F(CopresenceApiUnittest, Subscribe) {
   scoped_ptr<SubscribeOperation> subscribe(CreateSubscribe("sub"));
   subscribe->strategies.reset(new Strategy);
   subscribe->strategies->only_broadcast.reset(new bool(true));  // Not default
-  subscribe->strategies->audible.reset(new bool(true)); // Not default
+  subscribe->strategies->audible.reset(new bool(true));  // Not default
 
   scoped_ptr<Operation> operation(new Operation);
   operation->subscribe = subscribe.Pass();
@@ -213,6 +214,21 @@ TEST_F(CopresenceApiUnittest, DefaultStrategies) {
             request_sent().manage_messages_request().message_to_publish(0)
                 .token_exchange_strategy().broadcast_scan_configuration());
   EXPECT_EQ(SCAN_ONLY,
+            request_sent().manage_subscriptions_request().subscription(0)
+                .token_exchange_strategy().broadcast_scan_configuration());
+}
+
+TEST_F(CopresenceApiUnittest, LowPowerStrategy) {
+  scoped_ptr<Operation> subscribe_operation(new Operation);
+  subscribe_operation->subscribe.reset(CreateSubscribe("sub"));
+  subscribe_operation->subscribe->strategies.reset(new Strategy);
+  subscribe_operation->subscribe->strategies->low_power.reset(new bool(true));
+
+  ListValue* operation_list = new ListValue;
+  operation_list->Append(subscribe_operation->ToValue().release());
+  EXPECT_TRUE(ExecuteOperations(operation_list));
+
+  EXPECT_EQ(copresence::BROADCAST_SCAN_CONFIGURATION_UNKNOWN,
             request_sent().manage_subscriptions_request().subscription(0)
                 .token_exchange_strategy().broadcast_scan_configuration());
 }
@@ -271,3 +287,5 @@ TEST_F(CopresenceApiUnittest, MultipleOperations) {
 }
 
 }  // namespace extensions
+
+// TODO(ckehoe): add tests for auth tokens and api key functionality

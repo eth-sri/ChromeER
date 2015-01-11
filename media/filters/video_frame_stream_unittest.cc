@@ -79,11 +79,7 @@ class VideoFrameStreamTest
     decoders.push_back(decoder_);
 
     video_frame_stream_.reset(new VideoFrameStream(
-        message_loop_.message_loop_proxy(),
-        decoders.Pass(),
-        base::Bind(&VideoFrameStreamTest::SetDecryptorReadyCallback,
-                   base::Unretained(this)),
-        new MediaLog()));
+        message_loop_.message_loop_proxy(), decoders.Pass(), new MediaLog()));
 
     // Decryptor can only decrypt (not decrypt-and-decode) so that
     // DecryptingDemuxerStream will be used.
@@ -131,10 +127,11 @@ class VideoFrameStreamTest
   void InitializeVideoFrameStream() {
     pending_initialize_ = true;
     video_frame_stream_->Initialize(
-        demuxer_stream_.get(),
-        false,
-        base::Bind(&VideoFrameStreamTest::OnStatistics, base::Unretained(this)),
-        base::Bind(&VideoFrameStreamTest::OnInitialized,
+        demuxer_stream_.get(), base::Bind(&VideoFrameStreamTest::OnInitialized,
+                                          base::Unretained(this)),
+        base::Bind(&VideoFrameStreamTest::SetDecryptorReadyCallback,
+                   base::Unretained(this)),
+        base::Bind(&VideoFrameStreamTest::OnStatistics,
                    base::Unretained(this)));
     message_loop_.RunUntilIdle();
   }
@@ -153,6 +150,8 @@ class VideoFrameStreamTest
     DCHECK_EQ(stream_type, Decryptor::kVideo);
     scoped_refptr<DecoderBuffer> decrypted =
         DecoderBuffer::CopyFrom(encrypted->data(), encrypted->data_size());
+    if (encrypted->is_key_frame())
+      decrypted->set_is_key_frame(true);
     decrypted->set_timestamp(encrypted->timestamp());
     decrypted->set_duration(encrypted->duration());
     decrypt_cb.Run(Decryptor::kSuccess, decrypted);

@@ -20,7 +20,6 @@ class SkBitmap;
 
 namespace blink {
 class WebFrame;
-class WebNotificationPresenter;
 class WebPermissionClient;
 class WebString;
 class WebView;
@@ -35,7 +34,6 @@ class Arguments;
 namespace content {
 
 class InvokeCallbackTask;
-class NotificationPresenter;
 class TestInterfaces;
 class TestPageOverlay;
 class WebPermissions;
@@ -117,7 +115,6 @@ class TestRunner : public WebTestRunner,
   bool policyDelegateShouldNotifyDone() const;
   bool shouldInterceptPostMessage() const;
   bool shouldDumpResourcePriorities() const;
-  blink::WebNotificationPresenter* notification_presenter() const;
   bool RequestPointerLock();
   void RequestPointerUnlock();
   bool isPointerLocked();
@@ -510,6 +507,9 @@ class TestRunner : public WebTestRunner,
   void SetColorProfile(const std::string& name,
                        v8::Handle<v8::Function> callback);
 
+  // Change the bluetooth test data while running a layout test.
+  void SetBluetoothMockDataSet(const std::string& name);
+
   // Calls setlocale(LC_ALL, ...) for a specified locale.
   // Resets between tests.
   void SetPOSIXLocale(const std::string& locale);
@@ -525,7 +525,7 @@ class TestRunner : public WebTestRunner,
   // Clears all previously granted Web Notification permissions.
   void ClearWebNotificationPermissions();
 
-  // Simulates a click on a desktop notification.
+  // Simulates a click on a Web Notification.
   void SimulateWebNotificationClick(const std::string& title);
 
   // Speech recognition related functions.
@@ -587,6 +587,9 @@ class TestRunner : public WebTestRunner,
   // page has finished loading. From here, we can generate the dump for the
   // test.
   void LocationChangeDone();
+
+  // Sets a flag causing the next call to WebGLRenderingContext::create to fail.
+  void ForceNextWebGLContextCreationToFail();
 
   bool test_is_running_;
 
@@ -763,8 +766,6 @@ class TestRunner : public WebTestRunner,
 
   // WebPermissionClient mock object.
   scoped_ptr<WebPermissions> web_permissions_;
-
-  scoped_ptr<NotificationPresenter> notification_presenter_;
 
   bool pointer_locked_;
   enum {

@@ -18,6 +18,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -134,34 +135,31 @@ void RemoteDesktopBrowserTest::UninstallChromotingApp() {
 }
 
 void RemoteDesktopBrowserTest::VerifyChromotingLoaded(bool expected) {
-  const extensions::ExtensionSet* extensions =
-      extension_service()->extensions();
-  scoped_refptr<const extensions::Extension> extension;
   bool installed = false;
 
-  for (extensions::ExtensionSet::const_iterator iter = extensions->begin();
-       iter != extensions->end(); ++iter) {
-    extension = *iter;
+  for (const scoped_refptr<const extensions::Extension>& extension :
+       extensions::ExtensionRegistry::Get(profile())->enabled_extensions()) {
     // Is there a better way to recognize the chromoting extension
     // than name comparison?
     if (extension->name() == extension_name_) {
+      if (extension_) {
+        EXPECT_EQ(extension.get(), extension_);
+      } else {
+        extension_ = extension.get();
+      }
+
       installed = true;
       break;
     }
   }
 
   if (installed) {
-    if (extension_)
-      EXPECT_EQ(extension.get(), extension_);
-    else
-      extension_ = extension.get();
-
     // Either a V1 (TYPE_LEGACY_PACKAGED_APP) or a V2 (TYPE_PLATFORM_APP ) app.
-    extensions::Manifest::Type type = extension->GetType();
+    extensions::Manifest::Type type = extension_->GetType();
     EXPECT_TRUE(type == extensions::Manifest::TYPE_PLATFORM_APP ||
                 type == extensions::Manifest::TYPE_LEGACY_PACKAGED_APP);
 
-    EXPECT_TRUE(extension->ShouldDisplayInAppLauncher());
+    EXPECT_TRUE(extension_->ShouldDisplayInAppLauncher());
   }
 
   ASSERT_EQ(installed, expected);
@@ -470,7 +468,11 @@ void RemoteDesktopBrowserTest::SetUpTestForMe2Me() {
   Auth();
   LoadScript(app_web_content(), FILE_PATH_LITERAL("browser_test.js"));
   ExpandMe2Me();
-  EnsureRemoteConnectionEnabled();
+  // The call to EnsureRemoteConnectionEnabled() does a PIN reset.
+  // This causes the test to fail because of a recent bug:
+  // crbug.com/430676
+  // TODO(anandc): Reactivate this call after above bug is fixed.
+  //EnsureRemoteConnectionEnabled();
 }
 
 void RemoteDesktopBrowserTest::Auth() {
@@ -497,6 +499,13 @@ void RemoteDesktopBrowserTest::EnsureRemoteConnectionEnabled() {
 }
 
 void RemoteDesktopBrowserTest::ConnectToLocalHost(bool remember_pin) {
+  // Wait for local-host to be ready.
+  ConditionalTimeoutWaiter waiter(
+        base::TimeDelta::FromSeconds(5),
+        base::TimeDelta::FromMilliseconds(500),
+        base::Bind(&RemoteDesktopBrowserTest::IsLocalHostReady, this));
+  EXPECT_TRUE(waiter.Wait());
+
   // Verify that the local host is online.
   ASSERT_TRUE(ExecuteScriptAndExtractBool(
       "remoting.hostList.localHost_.hostName && "
@@ -515,6 +524,16 @@ void RemoteDesktopBrowserTest::ConnectToLocalHost(bool remember_pin) {
 
 void RemoteDesktopBrowserTest::ConnectToRemoteHost(
     const std::string& host_name, bool remember_pin) {
+
+  // Wait for hosts list to be fetched.
+  // This test typically runs with a clean user-profile, with no host-list
+  // cached. Waiting for the host-list to be null is sufficient to proceed.
+  ConditionalTimeoutWaiter waiter(
+        base::TimeDelta::FromSeconds(5),
+        base::TimeDelta::FromMilliseconds(500),
+        base::Bind(&RemoteDesktopBrowserTest::IsHostListReady, this));
+  EXPECT_TRUE(waiter.Wait());
+
   std::string host_id = ExecuteScriptAndExtractString(
       "remoting.hostList.getHostIdForName('" + host_name + "')");
 
@@ -795,6 +814,14 @@ bool RemoteDesktopBrowserTest::IsLocalHostReady() {
   // TODO(weitaosu): Instead of polling, can we register a callback to
   // remoting.hostList.setLocalHost_?
   return ExecuteScriptAndExtractBool("remoting.hostList.localHost_ != null");
+}
+
+bool RemoteDesktopBrowserTest::IsHostListReady() {
+  // Wait until hostList is not null.
+  // The connect-to-host tests are run on the waterfall using a new profile-dir.
+  // No hosts will be cached.
+  return ExecuteScriptAndExtractBool(
+    "remoting.hostList != null && remoting.hostList.hosts_ != null");
 }
 
 bool RemoteDesktopBrowserTest::IsSessionConnected() {

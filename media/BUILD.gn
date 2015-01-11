@@ -48,14 +48,14 @@ if (use_ozone) {
     # object MediaOzonePlatform.
     script = "../ui/ozone/generate_constructor_list.py"
 
-    platform_list_txt_file = "$target_gen_dir/ui/ozone/platform_list.txt"
-    constructor_list_cc_file = "$target_gen_dir/media/ozone/constructor_list.cc"
+    platform_list_txt_file = "$target_gen_dir/../ui/ozone/platform_list.txt"
+    constructor_list_cc_file = "$target_gen_dir/../media/ozone/constructor_list.cc"
 
     sources = [ platform_list_txt_file ]
     outputs = [ constructor_list_cc_file ]
     args = [
-      "--platform_list=$platform_list_txt_file",
-      "--output_cc=$constructor_list_cc_file",
+      "--platform_list=" + rebase_path(platform_list_txt_file, root_build_dir),
+      "--output_cc=" + rebase_path(constructor_list_cc_file, root_build_dir),
       "--namespace=media",
       "--typename=MediaOzonePlatform",
       "--include=\"media/ozone/media_ozone_platform.h\""
@@ -73,6 +73,8 @@ component("media") {
     "cdm/key_system_names.h",
     "cdm/player_tracker_impl.cc",
     "cdm/player_tracker_impl.h",
+    "cdm/proxy_decryptor.cc",
+    "cdm/proxy_decyrptor.h",
     "ffmpeg/ffmpeg_deleters.h",
     "filters/audio_clock.cc",
     "filters/audio_clock.h",
@@ -200,6 +202,8 @@ component("media") {
     "video/capture/win/video_capture_device_mf_win.h",
     "video/capture/win/video_capture_device_win.cc",
     "video/capture/win/video_capture_device_win.h",
+    "video/h264_poc.cc",
+    "video/h264_poc.h",
     "video/picture.cc",
     "video/picture.h",
     "video/video_decode_accelerator.cc",
@@ -254,6 +258,7 @@ component("media") {
       "filters/blocking_url_protocol.h",
       "filters/ffmpeg_audio_decoder.cc",
       "filters/ffmpeg_audio_decoder.h",
+      "filters/ffmpeg_bitstream_converter.h",
       "filters/ffmpeg_demuxer.cc",
       "filters/ffmpeg_demuxer.h",
       "filters/ffmpeg_glue.cc",
@@ -265,6 +270,8 @@ component("media") {
     ]
     if (proprietary_codecs) {
       sources += [
+        "filters/ffmpeg_aac_bitstream_converter.cc",
+        "filters/ffmpeg_aac_bitstream_converter.h",
         "filters/ffmpeg_h264_to_annex_b_bitstream_converter.cc",
         "filters/ffmpeg_h264_to_annex_b_bitstream_converter.h",
       ]
@@ -514,6 +521,7 @@ test("media_unittests") {
     "midi/usb_midi_output_stream_unittest.cc",
     "video/capture/fake_video_capture_device_unittest.cc",
     "video/capture/video_capture_device_unittest.cc",
+    "video/h264_poc_unittest.cc",
     "formats/common/offset_byte_queue_unittest.cc",
     "formats/webm/cluster_builder.cc",
     "formats/webm/cluster_builder.h",
@@ -572,6 +580,7 @@ test("media_unittests") {
 
   if (proprietary_codecs) {
     sources += [
+      "filters/ffmpeg_aac_bitstream_converter_unittest.cc",
       "filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc",
       "filters/h264_to_annex_b_bitstream_converter_unittest.cc",
       "formats/common/stream_parser_test_base.cc",
@@ -600,6 +609,12 @@ test("media_unittests") {
     cflags += [
       "/wd4267"  # TODO(wolenetz): Fix size_t to int trunctaion in win64. See
                  # http://crbug.com/171009
+    ]
+  }
+
+  if (is_mac || is_ios) {
+    deps += [
+      "//media/base/mac",
     ]
   }
 

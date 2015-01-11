@@ -33,6 +33,7 @@
     ],
     # Auth (Google account) JavaScript files.
     'remoting_webapp_js_auth_google_files': [
+      'webapp/base/js/auth_dialog.js',
       'webapp/crd/js/identity.js',
       'webapp/crd/js/oauth2.js',
       'webapp/crd/js/oauth2_api.js',
@@ -83,6 +84,7 @@
     ],
     # UI JavaScript files.
     'remoting_webapp_js_ui_files': [
+      'webapp/base/js/window_shape.js',
       'webapp/crd/js/butter_bar.js',
       'webapp/crd/js/connection_stats.js',
       'webapp/crd/js/feedback.js',
@@ -270,6 +272,7 @@
       'webapp/base/resources/open_sans.css',
       'webapp/base/resources/open_sans.woff',
       'webapp/base/resources/spinner.gif',
+      'webapp/crd/html/butter_bar.css',
       'webapp/crd/html/toolbar.css',
       'webapp/crd/html/menu_button.css',
       'webapp/crd/html/window_frame.css',
@@ -295,7 +298,7 @@
     'remoting_webapp_template_files': [
       'webapp/base/html/client_plugin.html',
       'webapp/base/html/dialog_auth.html',
-      'webapp/crd/html/butterbar.html',
+      'webapp/crd/html/butter_bar.html',
       'webapp/crd/html/dialog_client_connect_failed.html',
       'webapp/crd/html/dialog_client_connecting.html',
       'webapp/crd/html/dialog_client_host_needs_upgrade.html',

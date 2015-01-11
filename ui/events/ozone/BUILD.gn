@@ -7,6 +7,8 @@ import("//build/config/ui.gni")
 
 component("events_ozone") {
   sources = [
+    "chromeos/cursor_controller.cc",
+    "chromeos/cursor_controller.h",
     "device/device_event.cc",
     "device/device_event.h",
     "device/device_event_observer.h",
@@ -21,6 +23,7 @@ component("events_ozone") {
 
   deps = [
     "//base",
+    "//base/third_party/dynamic_annotations",
   ]
 
   defines = [
@@ -41,6 +44,12 @@ component("events_ozone") {
   }
 }
 
+config("evdev_gestures") {
+  defines = [
+    "USE_EVDEV_GESTURES"
+  ]
+}
+
 component("events_ozone_evdev") {
   sources = [
     "evdev/event_converter_evdev.cc",
@@ -54,6 +63,12 @@ component("events_ozone_evdev") {
     "evdev/event_modifiers_evdev.cc",
     "evdev/event_modifiers_evdev.h",
     "evdev/events_ozone_evdev_export.h",
+    "evdev/input_injector_evdev.cc",
+    "evdev/input_injector_evdev.h",
+    "evdev/keyboard_evdev.cc",
+    "evdev/keyboard_evdev.h",
+    "evdev/tablet_event_converter_evdev.cc",
+    "evdev/tablet_event_converter_evdev.h",
     "evdev/touch_event_converter_evdev.cc",
     "evdev/touch_event_converter_evdev.h",
   ]
@@ -65,15 +80,10 @@ component("events_ozone_evdev") {
   deps = [
     ":events_ozone",
     "//base",
+    "//ui/events/devices",
     "//ui/events/platform",
     "//ui/gfx",
   ]
-
-  if (use_ozone_evdev) {
-    defines += [
-      "USE_OZONE_EVDEV=1"
-    ]
-  }
 
   if (use_ozone_evdev && use_evdev_gestures) {
     sources += [
@@ -83,12 +93,14 @@ component("events_ozone_evdev") {
       "evdev/libgestures_glue/gesture_interpreter_libevdev_cros.h",
       "evdev/libgestures_glue/gesture_logging.cc",
       "evdev/libgestures_glue/gesture_logging.h",
+      "evdev/libgestures_glue/gesture_property_provider.cc",
+      "evdev/libgestures_glue/gesture_property_provider.h",
       "evdev/libgestures_glue/gesture_timer_provider.cc",
       "evdev/libgestures_glue/gesture_timer_provider.h",
     ]
 
-    defines += [
-      "USE_EVDEV_GESTURES",
+    public_configs = [
+      ":evdev_gestures",
     ]
 
     configs += [

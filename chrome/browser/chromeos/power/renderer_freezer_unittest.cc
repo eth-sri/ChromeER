@@ -176,38 +176,11 @@ TEST_F(RendererFreezerTest, SuspendResume) {
   Init();
 
   power_manager_client_->SendSuspendImminent();
-
-  // The RendererFreezer should have grabbed an asynchronous callback and done
-  // nothing else.
-  EXPECT_EQ(1, power_manager_client_->GetNumPendingSuspendReadinessCallbacks());
-  EXPECT_EQ(kNoActions, test_delegate_->GetActions());
-
-  // The RendererFreezer should eventually freeze the renderers and run the
-  // callback.
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(0, power_manager_client_->GetNumPendingSuspendReadinessCallbacks());
   EXPECT_EQ(kFreezeRenderers, test_delegate_->GetActions());
 
   // The renderers should be thawed when we resume.
   power_manager_client_->SendSuspendDone();
   EXPECT_EQ(kThawRenderers, test_delegate_->GetActions());
-}
-
-// Tests that the RendereFreezer doesn't freeze renderers if the suspend attempt
-// was canceled before it had a chance to complete.
-TEST_F(RendererFreezerTest, SuspendCanceled) {
-  Init();
-
-  // We shouldn't do anything yet.
-  power_manager_client_->SendSuspendImminent();
-  EXPECT_EQ(kNoActions, test_delegate_->GetActions());
-
-  // If a suspend gets canceled for any reason, we should see a SuspendDone().
-  power_manager_client_->SendSuspendDone();
-
-  // We shouldn't try to freeze the renderers now.
-  base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(kNoActions, test_delegate_->GetActions());
 }
 
 // Tests that the renderer freezer does nothing if the delegate cannot freeze
@@ -216,15 +189,8 @@ TEST_F(RendererFreezerTest, DelegateCannotFreezeRenderers) {
   test_delegate_->set_can_freeze_renderers(false);
   Init();
 
+  // Nothing happens on suspend.
   power_manager_client_->SendSuspendImminent();
-
-  // The RendererFreezer should not have grabbed a callback or done anything
-  // else.
-  EXPECT_EQ(0, power_manager_client_->GetNumPendingSuspendReadinessCallbacks());
-  EXPECT_EQ(kNoActions, test_delegate_->GetActions());
-
-  // There should be nothing in the message loop.
-  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(kNoActions, test_delegate_->GetActions());
 
   // Nothing happens on resume.
@@ -238,13 +204,9 @@ TEST_F(RendererFreezerTest, ErrorFreezingRenderers) {
   Init();
   test_delegate_->set_freeze_renderers_result(false);
 
+  // The freezing operation will fail.
   power_manager_client_->SendSuspendImminent();
-  EXPECT_EQ(1, power_manager_client_->GetNumPendingSuspendReadinessCallbacks());
-
-  // The freezing operation should fail, but we should still report readiness.
-  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(kFreezeRenderers, test_delegate_->GetActions());
-  EXPECT_EQ(0, power_manager_client_->GetNumPendingSuspendReadinessCallbacks());
 
   // Since the delegate reported that the freezing was unsuccessful, don't do
   // anything on resume.
@@ -264,7 +226,6 @@ TEST_F(RendererFreezerTest, ErrorThawingRenderers) {
   test_delegate_->set_thaw_renderers_result(false);
 
   power_manager_client_->SendSuspendImminent();
-  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(kFreezeRenderers, test_delegate_->GetActions());
 
   EXPECT_DEATH(power_manager_client_->SendSuspendDone(), "Unable to thaw");

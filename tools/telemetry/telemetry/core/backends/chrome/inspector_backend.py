@@ -29,24 +29,23 @@ class InspectorException(Exception):
 
 class InspectorBackend(inspector_websocket.InspectorWebsocket):
   def __init__(self, browser_backend, context, timeout=60):
-    super(InspectorBackend, self).__init__(self._HandleNotification,
-                                           self._HandleError)
+    super(InspectorBackend, self).__init__(self._HandleError)
+    self.RegisterDomain('Inspector', self._HandleInspectorDomainNotification)
 
     self._browser_backend = browser_backend
     self._context = context
-    self._domain_handlers = {}
 
     logging.debug('InspectorBackend._Connect() to %s', self.debugger_url)
     try:
       self.Connect(self.debugger_url)
     except (websocket.WebSocketException, util.TimeoutException):
       err_msg = sys.exc_info()[1]
-      if not self._browser_backend.IsBrowserRunning():
-        raise exceptions.BrowserGoneException(self.browser, err_msg)
+      if not self._browser_backend.IsAppRunning():
+        raise exceptions.BrowserGoneException(self.app, err_msg)
       elif not self._browser_backend.HasBrowserFinishedLaunching():
-        raise exceptions.BrowserConnectionGoneException(self.browser, err_msg)
+        raise exceptions.BrowserConnectionGoneException(self.app, err_msg)
       else:
-        raise exceptions.TabCrashException(self.browser, err_msg)
+        raise exceptions.TabCrashException(self.app, err_msg)
 
     self._console = inspector_console.InspectorConsole(self)
     self._memory = inspector_memory.InspectorMemory(self)
@@ -59,13 +58,9 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
   def __del__(self):
     self.Disconnect()
 
-  def Disconnect(self):
-    for _, handlers in self._domain_handlers.items():
-      _, will_close_handler = handlers
-      will_close_handler()
-    self._domain_handlers = {}
-
-    super(InspectorBackend, self).Disconnect()
+  @property
+  def app(self):
+    return self._browser_backend.app
 
   @property
   def browser(self):
@@ -91,7 +86,7 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
   @property
   @decorators.Cache
   def screenshot_supported(self):
-    if (self.browser.platform.GetOSName() == 'linux' and (
+    if (self.app.platform.GetOSName() == 'linux' and (
         os.getenv('DISPLAY') not in [':0', ':0.0'])):
       # Displays other than 0 mean we are likely running in something like
       # xvfb where screenshotting doesn't work.
@@ -221,33 +216,21 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
     contexts = self._browser_backend.ListInspectableContexts()
     return self._context['id'] in [c['id'] for c in contexts]
 
-  def _HandleNotification(self, res):
+  def _HandleInspectorDomainNotification(self, res):
     if (res['method'] == 'Inspector.detached' and
         res.get('params', {}).get('reason', '') == 'replaced_with_devtools'):
       self._WaitForInspectorToGoAwayAndReconnect()
       return
     if res['method'] == 'Inspector.targetCrashed':
-      raise exceptions.TabCrashException(self.browser)
-
-    mname = res['method']
-    dot_pos = mname.find('.')
-    domain_name = mname[:dot_pos]
-    if domain_name in self._domain_handlers:
-      try:
-        self._domain_handlers[domain_name][0](res)
-      except Exception:
-        import traceback
-        traceback.print_exc()
-    else:
-      logging.warn('Unhandled inspector message: %s', res)
+      raise exceptions.DevtoolsTargetCrashException(self.app)
 
   def _HandleError(self, elapsed_time):
     if self._IsInspectable():
-      raise util.TimeoutException(
+      raise exceptions.DevtoolsTargetCrashException(self.app,
           'Received a socket error in the browser connection and the tab '
           'still exists, assuming it timed out. '
           'Elapsed=%ds Error=%s' % (elapsed_time, sys.exc_info()[1]))
-    raise exceptions.TabCrashException(self.browser,
+    raise exceptions.DevtoolsTargetCrashException(self.app,
         'Received a socket error in the browser connection and the tab no '
         'longer exists, assuming it crashed. Error=%s' % sys.exc_info()[1])
 
@@ -262,7 +245,7 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
         return False
       try:
         self.Connect(self.debugger_url)
-      except exceptions.TabCrashException, ex:
+      except exceptions.DevtoolsTargetCrashException, ex:
         if ex.message.message.find('Handshake Status 500') == 0:
           return False
         raise
@@ -270,29 +253,6 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
     util.WaitFor(IsBack, 512)
     sys.stderr.write('\n')
     sys.stderr.write('Inspector\'s UI closed. Telemetry will now resume.\n')
-
-  def RegisterDomain(self,
-      domain_name, notification_handler, will_close_handler):
-    """Registers a given domain for handling notification methods.
-
-    For example, given inspector_backend:
-       def OnConsoleNotification(msg):
-          if msg['method'] == 'Console.messageAdded':
-             print msg['params']['message']
-          return
-       def OnConsoleClose(self):
-          pass
-       inspector_backend.RegisterDomain('Console',
-                                        OnConsoleNotification, OnConsoleClose)
-       """
-    assert domain_name not in self._domain_handlers
-    self._domain_handlers[domain_name] = (notification_handler,
-                                          will_close_handler)
-
-  def UnregisterDomain(self, domain_name):
-    """Unregisters a previously registered domain."""
-    assert domain_name in self._domain_handlers
-    self._domain_handlers.pop(domain_name)
 
   def CollectGarbage(self):
     self._page.CollectGarbage()

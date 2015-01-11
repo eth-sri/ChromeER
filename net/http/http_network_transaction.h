@@ -28,7 +28,7 @@ namespace net {
 class ClientSocketHandle;
 class HttpAuthController;
 class HttpNetworkSession;
-class HttpStreamBase;
+class HttpStream;
 class HttpStreamRequest;
 class IOBuffer;
 class ProxyInfo;
@@ -79,7 +79,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // HttpStreamRequest::Delegate methods:
   void OnStreamReady(const SSLConfig& used_ssl_config,
                      const ProxyInfo& used_proxy_info,
-                     HttpStreamBase* stream) override;
+                     HttpStream* stream) override;
   void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
@@ -97,7 +97,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
                                   const SSLConfig& used_ssl_config,
                                   const ProxyInfo& used_proxy_info,
-                                  HttpStreamBase* stream) override;
+                                  HttpStream* stream) override;
 
  private:
   friend class HttpNetworkTransactionSSLTest;
@@ -178,12 +178,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   void BuildRequestHeaders(bool using_proxy);
 
-  // Record histogram of time until first byte of header is received.
-  void LogTransactionConnectedMetrics();
-
-  // Record histogram of latency (durations until last byte received).
-  void LogTransactionMetrics() const;
-
   // Writes a log message to help debugging in the field when we block a proxy
   // response to a CONNECT request.
   void LogBlockedTunnelResponse(int response_code) const;
@@ -253,7 +247,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Debug helper.
   static std::string DescribeState(State state);
 
-  void SetStream(HttpStreamBase* stream);
+  void SetStream(HttpStream* stream);
 
   scoped_refptr<HttpAuthController>
       auth_controllers_[HttpAuth::AUTH_NUM_TARGETS];
@@ -277,15 +271,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   ProxyInfo proxy_info_;
 
   scoped_ptr<HttpStreamRequest> stream_request_;
-  scoped_ptr<HttpStreamBase> stream_;
+  scoped_ptr<HttpStream> stream_;
 
   // True if we've validated the headers that the stream parser has returned.
   bool headers_valid_;
-
-  // True if we've logged the time of the first response byte.  Used to
-  // prevent logging across authentication activity where we see multiple
-  // responses.
-  bool logged_response_time_;
 
   SSLConfig server_ssl_config_;
   SSLConfig proxy_ssl_config_;
@@ -309,9 +298,6 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // Total number of bytes received on streams for this transaction.
   int64 total_received_bytes_;
-
-  // The time the Start method was called.
-  base::Time start_time_;
 
   // When the transaction started / finished sending the request, including
   // the body, if present.

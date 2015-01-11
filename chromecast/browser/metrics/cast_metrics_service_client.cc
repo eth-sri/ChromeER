@@ -18,6 +18,11 @@
 #include "components/metrics/net/net_metrics_log_uploader.h"
 #include "components/metrics/net/network_metrics_provider.h"
 #include "components/metrics/profiler/profiler_metrics_provider.h"
+#include "content/public/common/content_switches.h"
+
+#if defined(OS_LINUX)
+#include "chromecast/browser/metrics/external_metrics.h"
+#endif  // defined(OS_LINUX)
 
 namespace chromecast {
 namespace metrics {
@@ -152,12 +157,17 @@ CastMetricsServiceClient::CastMetricsServiceClient(
   // value.
   metrics_state_manager_->ForceClientIdCreation();
 
+  CastStabilityMetricsProvider* stability_provider =
+      new CastStabilityMetricsProvider(metrics_service_.get());
   metrics_service_->RegisterMetricsProvider(
-      scoped_ptr< ::metrics::MetricsProvider>(
-          new CastStabilityMetricsProvider));
-  metrics_service_->RegisterMetricsProvider(
-      scoped_ptr< ::metrics::MetricsProvider>(
-          new ::metrics::GPUMetricsProvider));
+      scoped_ptr< ::metrics::MetricsProvider>(stability_provider));
+
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(switches::kDisableGpu)) {
+    metrics_service_->RegisterMetricsProvider(
+        scoped_ptr< ::metrics::MetricsProvider>(
+            new ::metrics::GPUMetricsProvider));
+  }
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr< ::metrics::MetricsProvider>(
           new ::metrics::NetworkMetricsProvider(io_task_runner)));
@@ -170,6 +180,13 @@ CastMetricsServiceClient::CastMetricsServiceClient(
 
   if (IsReportingEnabled())
     metrics_service_->Start();
+
+  // Start external metrics collection, which feeds data from external
+  // processes into the main external metrics.
+#if defined(OS_LINUX)
+  external_metrics_.reset(new ExternalMetrics(stability_provider));
+  external_metrics_->Start();
+#endif  // defined(OS_LINUX)
 }
 
 CastMetricsServiceClient::~CastMetricsServiceClient() {

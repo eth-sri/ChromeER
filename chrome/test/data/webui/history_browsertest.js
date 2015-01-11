@@ -743,7 +743,8 @@ TEST_F('RangeHistoryWebUITest', 'monthViewEmptyMonth', function() {
     // See if the correct number of days is shown.
     var resultsDisplay = $('results-display');
     assertEquals(0, resultsDisplay.querySelectorAll('.months-results').length);
-    assertEquals(1, resultsDisplay.querySelectorAll('div').length);
+    var noResults = loadTimeData.getString('noResults');
+    assertNotEquals(-1, $('results-header').textContent.indexOf(noResults));
 
     testDone();
   });
@@ -907,6 +908,59 @@ TEST_F('HistoryWebUIRealBackendTest', 'showConfirmDialogAndRemove', function() {
   enter.initKeyboardEvent('keydown', true, true, window, 'Enter');
   document.dispatchEvent(enter);
   assertFalse($('alertOverlay').classList.contains('showing'));
+});
+
+TEST_F('HistoryWebUIRealBackendTest', 'menuButtonActivatesOneRow', function() {
+  var entries = document.querySelectorAll('.entry');
+  assertEquals(3, entries.length);
+  assertTrue(entries[0].classList.contains('active'));
+  assertTrue($('action-menu').hidden);
+
+  // Show the menu via mousedown on the menu button.
+  var menuButton = entries[2].querySelector('.menu-button');
+  menuButton.dispatchEvent(new MouseEvent('mousedown'));
+  expectFalse($('action-menu').hidden);
+
+  // Check that the 'active' item hasn't changed.
+  expectTrue(entries[0].classList.contains('active'));
+  expectFalse(entries[2].classList.contains('active'));
+
+  testDone();
+});
+
+TEST_F('HistoryWebUIRealBackendTest', 'shiftClickActivatesOneRow', function() {
+  var entries = document.querySelectorAll('.entry');
+  assertEquals(3, entries.length);
+  assertTrue(entries[0].classList.contains('active'));
+
+  entries[0].visit.checkBox.focus();
+  assertEquals(entries[0].visit.checkBox, document.activeElement);
+
+  entries[0].visit.checkBox.click();
+  assertTrue(entries[0].visit.checkBox.checked);
+
+  var entryBox = entries[2].querySelector('.entry-box');
+  entryBox.dispatchEvent(new MouseEvent('click', {shiftKey: true}));
+  assertTrue(entries[1].visit.checkBox.checked);
+
+  // Focus shouldn't have changed, but the checkbox should toggle.
+  expectEquals(entries[0].visit.checkBox, document.activeElement);
+
+  expectTrue(entries[0].classList.contains('active'));
+  expectFalse(entries[2].classList.contains('active'));
+
+  var shiftDown = new MouseEvent('mousedown', {shiftKey: true, bubbles: true});
+  entries[2].visit.checkBox.dispatchEvent(shiftDown);
+  expectEquals(entries[2].visit.checkBox, document.activeElement);
+
+  // 'focusin' events aren't dispatched while tests are run in batch (e.g.
+  // --test-launcher-jobs=2). Simulate this. TODO(dbeam): fix instead.
+  cr.dispatchSimpleEvent(document.activeElement, 'focusin', true, true);
+
+  expectFalse(entries[0].classList.contains('active'));
+  expectTrue(entries[2].classList.contains('active'));
+
+  testDone();
 });
 
 /**

@@ -108,7 +108,8 @@ gfx::NativeView WebContentsViewMac::GetContentNativeView() const {
 }
 
 gfx::NativeWindow WebContentsViewMac::GetTopLevelNativeWindow() const {
-  return [cocoa_view_.get() window];
+  NSWindow* window = [cocoa_view_.get() window];
+  return window ? window : delegate_->GetNativeWindow();
 }
 
 void WebContentsViewMac::GetContainerBounds(gfx::Rect* out) const {
@@ -604,6 +605,12 @@ void WebContentsViewMac::CloseTab() {
 
   // Occlusion notification APIs are new in Mavericks.
   bool supportsOcclusionAPIs = base::mac::IsOSMavericksOrLater();
+
+  // Use of occlusion APIs is causing bugs:
+  // http://crbug.com/430968: focus set incorrectly.
+  // http://crbug.com/431272: flashes of incorrect content.
+  // http://crbug.com/310374: white flashes (comment 22).
+  supportsOcclusionAPIs = false;
 
   if (supportsOcclusionAPIs) {
     if (oldWindow) {

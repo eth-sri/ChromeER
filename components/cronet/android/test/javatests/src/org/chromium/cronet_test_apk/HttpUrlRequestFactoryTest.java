@@ -7,9 +7,12 @@ package org.chromium.cronet_test_apk;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.base.test.util.Feature;
+import org.chromium.net.HttpUrlRequest;
 import org.chromium.net.HttpUrlRequestFactory;
 import org.chromium.net.HttpUrlRequestFactoryConfig;
+import org.chromium.net.UrlRequestContextConfig;
 
+import java.util.HashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -37,8 +40,8 @@ public class HttpUrlRequestFactoryTest extends CronetTestBase {
         waitForActiveShellToBeDoneLoading();
         HttpUrlRequestFactory factory = activity.mRequestFactory;
         assertNotNull("Factory should be created", factory);
-        assertTrue("Factory should be Chromium/n.n.n.n@r but is " +
-                           factory.getName(),
+        assertTrue("Factory should be Chromium/n.n.n.n@r but is "
+                           + factory.getName(),
                    Pattern.matches("Chromium/\\d+\\.\\d+\\.\\d+\\.\\d+@\\w+",
                            factory.getName()));
     }
@@ -50,13 +53,45 @@ public class HttpUrlRequestFactoryTest extends CronetTestBase {
         config.enableLegacyMode(true);
 
         HttpUrlRequestFactory factory = HttpUrlRequestFactory.createFactory(
-                getInstrumentation().getContext(), config);
+                getInstrumentation().getTargetContext(), config);
         assertNotNull("Factory should be created", factory);
-        assertTrue("Factory should be HttpUrlConnection/n.n.n.n@r but is " +
-                           factory.getName(),
+        assertTrue("Factory should be HttpUrlConnection/n.n.n.n@r but is "
+                           + factory.getName(),
                    Pattern.matches(
                            "HttpUrlConnection/\\d+\\.\\d+\\.\\d+\\.\\d+@\\w+",
                            factory.getName()));
+        HashMap<String, String> headers = new HashMap<String, String>();
+        TestHttpUrlRequestListener listener = new TestHttpUrlRequestListener();
+        HttpUrlRequest request = factory.createRequest(
+                URL, 0, headers, listener);
+        request.start();
+        listener.blockForComplete();
+        assertEquals(200, listener.mHttpStatusCode);
+        assertEquals("OK", listener.mHttpStatusText);
+    }
+
+    @SmallTest
+    @Feature({"Cronet"})
+    public void testCreateLegacyFactoryUsingUrlRequestContextConfig() {
+        UrlRequestContextConfig config = new UrlRequestContextConfig();
+        config.enableLegacyMode(true);
+
+        HttpUrlRequestFactory factory = HttpUrlRequestFactory.createFactory(
+                getInstrumentation().getTargetContext(), config);
+        assertNotNull("Factory should be created", factory);
+        assertTrue("Factory should be HttpUrlConnection/n.n.n.n@r but is "
+                           + factory.getName(),
+                   Pattern.matches(
+                           "HttpUrlConnection/\\d+\\.\\d+\\.\\d+\\.\\d+@\\w+",
+                           factory.getName()));
+        HashMap<String, String> headers = new HashMap<String, String>();
+        TestHttpUrlRequestListener listener = new TestHttpUrlRequestListener();
+        HttpUrlRequest request = factory.createRequest(
+                URL, 0, headers, listener);
+        request.start();
+        listener.blockForComplete();
+        assertEquals(200, listener.mHttpStatusCode);
+        assertEquals("OK", listener.mHttpStatusText);
     }
 
     @SmallTest

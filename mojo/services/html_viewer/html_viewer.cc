@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
+#include "base/logging.h"
 #include "base/macros.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "mojo/application/application_runner_chromium.h"
 #include "mojo/public/c/system/main.h"
@@ -11,8 +14,8 @@
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/public/cpp/application/interface_factory_impl.h"
-#include "mojo/services/html_viewer/blink_platform_impl.h"
 #include "mojo/services/html_viewer/html_document_view.h"
+#include "mojo/services/html_viewer/mojo_blink_platform_impl.h"
 #include "mojo/services/html_viewer/webmediaplayer_factory.h"
 #include "mojo/services/public/interfaces/content_handler/content_handler.mojom.h"
 #include "third_party/WebKit/public/web/WebKit.h"
@@ -27,38 +30,31 @@
 namespace mojo {
 
 // Switches for html_viewer to be used with "--args-for". For example:
-// --args-for='mojo://html_viewer --enable-mojo-media-renderer'
+// --args-for='mojo:html_viewer --enable-mojo-media-renderer'
 
 // Enable mojo::MediaRenderer in media pipeline instead of using the internal
 // media::Renderer implementation.
-const char kEnableMojoMediaRenderer[] = "--enable-mojo-media-renderer";
+const char kEnableMojoMediaRenderer[] = "enable-mojo-media-renderer";
 
 class HTMLViewer;
 
 class ContentHandlerImpl : public InterfaceImpl<ContentHandler> {
  public:
-  ContentHandlerImpl(Shell* shell,
-                     scoped_refptr<base::MessageLoopProxy> compositor_thread,
+  ContentHandlerImpl(scoped_refptr<base::MessageLoopProxy> compositor_thread,
                      WebMediaPlayerFactory* web_media_player_factory)
-      : shell_(shell),
-        compositor_thread_(compositor_thread),
+      : compositor_thread_(compositor_thread),
         web_media_player_factory_(web_media_player_factory) {}
   ~ContentHandlerImpl() override {}
 
  private:
   // Overridden from ContentHandler:
-  void OnConnect(
-      const mojo::String& requestor_url,
-      URLResponsePtr response,
-      InterfaceRequest<ServiceProvider> service_provider_request) override {
+  void StartApplication(ShellPtr shell, URLResponsePtr response) override {
     new HTMLDocumentView(response.Pass(),
-                         service_provider_request.Pass(),
-                         shell_,
+                         shell.Pass(),
                          compositor_thread_,
                          web_media_player_factory_);
   }
 
-  Shell* shell_;
   scoped_refptr<base::MessageLoopProxy> compositor_thread_;
   WebMediaPlayerFactory* web_media_player_factory_;
 
@@ -75,9 +71,8 @@ class HTMLViewer : public ApplicationDelegate,
  private:
   // Overridden from ApplicationDelegate:
   void Initialize(ApplicationImpl* app) override {
-    shell_ = app->shell();
-    blink_platform_impl_.reset(new BlinkPlatformImpl(app));
-    blink::initialize(blink_platform_impl_.get());
+    blink_platform_.reset(new MojoBlinkPlatformImpl(app));
+    blink::initialize(blink_platform_.get());
 #if !defined(COMPONENT_BUILD)
     base::i18n::InitializeICU();
 
@@ -88,13 +83,23 @@ class HTMLViewer : public ApplicationDelegate,
     ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
 #endif
 
-    bool enable_mojo_media_renderer = false;
-    for (const auto& arg : app->args()) {
-      if (arg == kEnableMojoMediaRenderer) {
-        enable_mojo_media_renderer = true;
-        break;
-      }
-    }
+    base::CommandLine::StringVector command_line_args;
+#if defined(OS_WIN)
+    for (const auto& arg : app->args())
+      command_line_args.push_back(base::UTF8ToUTF16(arg));
+#elif defined(OS_POSIX)
+    command_line_args = app->args();
+#endif
+
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+    command_line->InitFromArgv(command_line_args);
+
+    logging::LoggingSettings settings;
+    settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+    logging::InitLogging(settings);
+
+    bool enable_mojo_media_renderer =
+        command_line->HasSwitch(kEnableMojoMediaRenderer);
 
     compositor_thread_.Start();
     web_media_player_factory_.reset(new WebMediaPlayerFactory(
@@ -110,13 +115,12 @@ class HTMLViewer : public ApplicationDelegate,
   void Create(ApplicationConnection* connection,
               InterfaceRequest<ContentHandler> request) override {
     BindToRequest(
-        new ContentHandlerImpl(shell_, compositor_thread_.message_loop_proxy(),
+        new ContentHandlerImpl(compositor_thread_.message_loop_proxy(),
                                web_media_player_factory_.get()),
         &request);
   }
 
-  scoped_ptr<BlinkPlatformImpl> blink_platform_impl_;
-  Shell* shell_;
+  scoped_ptr<MojoBlinkPlatformImpl> blink_platform_;
   base::Thread compositor_thread_;
   scoped_ptr<WebMediaPlayerFactory> web_media_player_factory_;
 

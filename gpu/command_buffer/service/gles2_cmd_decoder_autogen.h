@@ -143,13 +143,13 @@ error::Error GLES2DecoderImpl::HandleBlendEquationSeparate(
   GLenum modeRGB = static_cast<GLenum>(c.modeRGB);
   GLenum modeAlpha = static_cast<GLenum>(c.modeAlpha);
   if (!validators_->equation.IsValid(modeRGB)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glBlendEquationSeparate", modeRGB, "modeRGB");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBlendEquationSeparate", modeRGB,
+                                    "modeRGB");
     return error::kNoError;
   }
   if (!validators_->equation.IsValid(modeAlpha)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glBlendEquationSeparate", modeAlpha, "modeAlpha");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBlendEquationSeparate", modeAlpha,
+                                    "modeAlpha");
     return error::kNoError;
   }
   if (state_.blend_equation_rgb != modeRGB ||
@@ -207,13 +207,13 @@ error::Error GLES2DecoderImpl::HandleBlendFuncSeparate(
     return error::kNoError;
   }
   if (!validators_->src_blend_factor.IsValid(srcAlpha)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glBlendFuncSeparate", srcAlpha, "srcAlpha");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBlendFuncSeparate", srcAlpha,
+                                    "srcAlpha");
     return error::kNoError;
   }
   if (!validators_->dst_blend_factor.IsValid(dstAlpha)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glBlendFuncSeparate", dstAlpha, "dstAlpha");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBlendFuncSeparate", dstAlpha,
+                                    "dstAlpha");
     return error::kNoError;
   }
   if (state_.blend_source_rgb != srcRGB || state_.blend_dest_rgb != dstRGB ||
@@ -268,8 +268,8 @@ error::Error GLES2DecoderImpl::HandleCheckFramebufferStatus(
     return error::kOutOfBounds;
   }
   if (!validators_->frame_buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glCheckFramebufferStatus", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCheckFramebufferStatus", target,
+                                    "target");
     return error::kNoError;
   }
   *result_dst = DoCheckFramebufferStatus(target);
@@ -384,35 +384,56 @@ error::Error GLES2DecoderImpl::HandleCompressedTexSubImage2D(
   const void* data = GetSharedMemoryAs<const void*>(
       c.data_shm_id, c.data_shm_offset, data_size);
   if (!validators_->texture_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glCompressedTexSubImage2D", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCompressedTexSubImage2D", target,
+                                    "target");
     return error::kNoError;
   }
   if (width < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCompressedTexSubImage2D", "width < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCompressedTexSubImage2D",
+                       "width < 0");
     return error::kNoError;
   }
   if (height < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCompressedTexSubImage2D", "height < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCompressedTexSubImage2D",
+                       "height < 0");
     return error::kNoError;
   }
   if (!validators_->compressed_texture_format.IsValid(format)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glCompressedTexSubImage2D", format, "format");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCompressedTexSubImage2D", format,
+                                    "format");
     return error::kNoError;
   }
   if (imageSize < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glCompressedTexSubImage2D", "imageSize < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCompressedTexSubImage2D",
+                       "imageSize < 0");
     return error::kNoError;
   }
   if (data == NULL) {
     return error::kOutOfBounds;
   }
-  DoCompressedTexSubImage2D(
-      target, level, xoffset, yoffset, width, height, format, imageSize, data);
+  DoCompressedTexSubImage2D(target, level, xoffset, yoffset, width, height,
+                            format, imageSize, data);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleCopyBufferSubData(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::CopyBufferSubData& c =
+      *static_cast<const gles2::cmds::CopyBufferSubData*>(cmd_data);
+  (void)c;
+  GLenum readtarget = static_cast<GLenum>(c.readtarget);
+  GLenum writetarget = static_cast<GLenum>(c.writetarget);
+  GLintptr readoffset = static_cast<GLintptr>(c.readoffset);
+  GLintptr writeoffset = static_cast<GLintptr>(c.writeoffset);
+  GLsizeiptr size = static_cast<GLsizeiptr>(c.size);
+  if (size < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopyBufferSubData", "size < 0");
+    return error::kNoError;
+  }
+  glCopyBufferSubData(readtarget, writetarget, readoffset, writeoffset, size);
   return error::kNoError;
 }
 
@@ -439,8 +460,8 @@ error::Error GLES2DecoderImpl::HandleCopyTexImage2D(
     return error::kNoError;
   }
   if (!validators_->texture_internal_format.IsValid(internalformat)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glCopyTexImage2D", internalformat, "internalformat");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCopyTexImage2D", internalformat,
+                                    "internalformat");
     return error::kNoError;
   }
   if (width < 0) {
@@ -750,22 +771,22 @@ error::Error GLES2DecoderImpl::HandleFramebufferRenderbuffer(
   GLenum renderbuffertarget = static_cast<GLenum>(c.renderbuffertarget);
   GLuint renderbuffer = c.renderbuffer;
   if (!validators_->frame_buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferRenderbuffer", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferRenderbuffer", target,
+                                    "target");
     return error::kNoError;
   }
   if (!validators_->attachment.IsValid(attachment)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferRenderbuffer", attachment, "attachment");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferRenderbuffer", attachment,
+                                    "attachment");
     return error::kNoError;
   }
   if (!validators_->render_buffer_target.IsValid(renderbuffertarget)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferRenderbuffer", renderbuffertarget, "renderbuffertarget");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferRenderbuffer",
+                                    renderbuffertarget, "renderbuffertarget");
     return error::kNoError;
   }
-  DoFramebufferRenderbuffer(
-      target, attachment, renderbuffertarget, renderbuffer);
+  DoFramebufferRenderbuffer(target, attachment, renderbuffertarget,
+                            renderbuffer);
   return error::kNoError;
 }
 
@@ -785,16 +806,33 @@ error::Error GLES2DecoderImpl::HandleFramebufferTexture2D(
     return error::kNoError;
   }
   if (!validators_->attachment.IsValid(attachment)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferTexture2D", attachment, "attachment");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferTexture2D", attachment,
+                                    "attachment");
     return error::kNoError;
   }
   if (!validators_->texture_target.IsValid(textarget)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferTexture2D", textarget, "textarget");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferTexture2D", textarget,
+                                    "textarget");
     return error::kNoError;
   }
   DoFramebufferTexture2D(target, attachment, textarget, texture, level);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleFramebufferTextureLayer(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::FramebufferTextureLayer& c =
+      *static_cast<const gles2::cmds::FramebufferTextureLayer*>(cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  GLenum attachment = static_cast<GLenum>(c.attachment);
+  GLuint texture = c.texture;
+  GLint level = static_cast<GLint>(c.level);
+  GLint layer = static_cast<GLint>(c.layer);
+  DoFramebufferTextureLayer(target, attachment, texture, level, layer);
   return error::kNoError;
 }
 
@@ -1051,18 +1089,18 @@ error::Error GLES2DecoderImpl::HandleGetFramebufferAttachmentParameteriv(
       c.params_shm_id, c.params_shm_offset, Result::ComputeSize(num_values));
   GLint* params = result ? result->GetData() : NULL;
   if (!validators_->frame_buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glGetFramebufferAttachmentParameteriv", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glGetFramebufferAttachmentParameteriv",
+                                    target, "target");
     return error::kNoError;
   }
   if (!validators_->attachment.IsValid(attachment)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glGetFramebufferAttachmentParameteriv", attachment, "attachment");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glGetFramebufferAttachmentParameteriv",
+                                    attachment, "attachment");
     return error::kNoError;
   }
   if (!validators_->frame_buffer_parameter.IsValid(pname)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glGetFramebufferAttachmentParameteriv", pname, "pname");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glGetFramebufferAttachmentParameteriv",
+                                    pname, "pname");
     return error::kNoError;
   }
   if (params == NULL) {
@@ -1117,6 +1155,47 @@ error::Error GLES2DecoderImpl::HandleGetIntegerv(uint32_t immediate_data_size,
   return error::kNoError;
 }
 
+error::Error GLES2DecoderImpl::HandleGetInternalformativ(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::GetInternalformativ& c =
+      *static_cast<const gles2::cmds::GetInternalformativ*>(cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  GLenum format = static_cast<GLenum>(c.format);
+  GLenum pname = static_cast<GLenum>(c.pname);
+  GLsizei bufSize = static_cast<GLsizei>(c.bufSize);
+  typedef cmds::GetInternalformativ::Result Result;
+  GLsizei num_values = 0;
+  GetNumValuesReturnedForGLGet(pname, &num_values);
+  Result* result = GetSharedMemoryAs<Result*>(
+      c.params_shm_id, c.params_shm_offset, Result::ComputeSize(num_values));
+  GLint* params = result ? result->GetData() : NULL;
+  if (bufSize < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glGetInternalformativ",
+                       "bufSize < 0");
+    return error::kNoError;
+  }
+  if (params == NULL) {
+    return error::kOutOfBounds;
+  }
+  LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("GetInternalformativ");
+  // Check that the client initialized the result.
+  if (result->size != 0) {
+    return error::kInvalidArguments;
+  }
+  glGetInternalformativ(target, format, pname, bufSize, params);
+  GLenum error = glGetError();
+  if (error == GL_NO_ERROR) {
+    result->SetNumResults(num_values);
+  } else {
+    LOCAL_SET_GL_ERROR(error, "GetInternalformativ", "");
+  }
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderImpl::HandleGetProgramiv(uint32_t immediate_data_size,
                                                   const void* cmd_data) {
   const gles2::cmds::GetProgramiv& c =
@@ -1167,13 +1246,13 @@ error::Error GLES2DecoderImpl::HandleGetRenderbufferParameteriv(
       c.params_shm_id, c.params_shm_offset, Result::ComputeSize(num_values));
   GLint* params = result ? result->GetData() : NULL;
   if (!validators_->render_buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glGetRenderbufferParameteriv", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glGetRenderbufferParameteriv", target,
+                                    "target");
     return error::kNoError;
   }
   if (!validators_->render_buffer_parameter.IsValid(pname)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glGetRenderbufferParameteriv", pname, "pname");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glGetRenderbufferParameteriv", pname,
+                                    "pname");
     return error::kNoError;
   }
   if (params == NULL) {
@@ -1599,8 +1678,8 @@ error::Error GLES2DecoderImpl::HandleRenderbufferStorage(
     return error::kNoError;
   }
   if (!validators_->render_buffer_format.IsValid(internalformat)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glRenderbufferStorage", internalformat, "internalformat");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glRenderbufferStorage", internalformat,
+                                    "internalformat");
     return error::kNoError;
   }
   if (width < 0) {
@@ -1966,6 +2045,39 @@ error::Error GLES2DecoderImpl::HandleTexParameterivImmediate(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderImpl::HandleTexStorage3D(uint32_t immediate_data_size,
+                                                  const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::TexStorage3D& c =
+      *static_cast<const gles2::cmds::TexStorage3D*>(cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  GLsizei levels = static_cast<GLsizei>(c.levels);
+  GLenum internalFormat = static_cast<GLenum>(c.internalFormat);
+  GLsizei width = static_cast<GLsizei>(c.width);
+  GLsizei height = static_cast<GLsizei>(c.height);
+  GLsizei depth = static_cast<GLsizei>(c.depth);
+  if (levels < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glTexStorage3D", "levels < 0");
+    return error::kNoError;
+  }
+  if (width < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glTexStorage3D", "width < 0");
+    return error::kNoError;
+  }
+  if (height < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glTexStorage3D", "height < 0");
+    return error::kNoError;
+  }
+  if (depth < 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glTexStorage3D", "depth < 0");
+    return error::kNoError;
+  }
+  glTexStorage3D(target, levels, internalFormat, width, height, depth);
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderImpl::HandleUniform1f(uint32_t immediate_data_size,
                                                const void* cmd_data) {
   const gles2::cmds::Uniform1f& c =
@@ -2036,6 +2148,48 @@ error::Error GLES2DecoderImpl::HandleUniform1ivImmediate(
     return error::kOutOfBounds;
   }
   DoUniform1iv(location, count, v);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniform1ui(uint32_t immediate_data_size,
+                                                const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform1ui& c =
+      *static_cast<const gles2::cmds::Uniform1ui*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLuint x = static_cast<GLuint>(c.x);
+  GLuint temp[1] = {
+      x,
+  };
+  glUniform1uiv(location, 1, &temp[0]);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniform1uivImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform1uivImmediate& c =
+      *static_cast<const gles2::cmds::Uniform1uivImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLuint), 1, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLuint* v =
+      GetImmediateDataAs<const GLuint*>(c, data_size, immediate_data_size);
+  if (v == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniform1uiv(location, count, v);
   return error::kNoError;
 }
 
@@ -2117,6 +2271,49 @@ error::Error GLES2DecoderImpl::HandleUniform2ivImmediate(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderImpl::HandleUniform2ui(uint32_t immediate_data_size,
+                                                const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform2ui& c =
+      *static_cast<const gles2::cmds::Uniform2ui*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLuint x = static_cast<GLuint>(c.x);
+  GLuint y = static_cast<GLuint>(c.y);
+  GLuint temp[2] = {
+      x, y,
+  };
+  glUniform2uiv(location, 1, &temp[0]);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniform2uivImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform2uivImmediate& c =
+      *static_cast<const gles2::cmds::Uniform2uivImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLuint), 2, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLuint* v =
+      GetImmediateDataAs<const GLuint*>(c, data_size, immediate_data_size);
+  if (v == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniform2uiv(location, count, v);
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderImpl::HandleUniform3f(uint32_t immediate_data_size,
                                                const void* cmd_data) {
   const gles2::cmds::Uniform3f& c =
@@ -2194,6 +2391,50 @@ error::Error GLES2DecoderImpl::HandleUniform3ivImmediate(
     return error::kOutOfBounds;
   }
   DoUniform3iv(location, count, v);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniform3ui(uint32_t immediate_data_size,
+                                                const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform3ui& c =
+      *static_cast<const gles2::cmds::Uniform3ui*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLuint x = static_cast<GLuint>(c.x);
+  GLuint y = static_cast<GLuint>(c.y);
+  GLuint z = static_cast<GLuint>(c.z);
+  GLuint temp[3] = {
+      x, y, z,
+  };
+  glUniform3uiv(location, 1, &temp[0]);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniform3uivImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform3uivImmediate& c =
+      *static_cast<const gles2::cmds::Uniform3uivImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLuint), 3, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLuint* v =
+      GetImmediateDataAs<const GLuint*>(c, data_size, immediate_data_size);
+  if (v == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniform3uiv(location, count, v);
   return error::kNoError;
 }
 
@@ -2279,6 +2520,51 @@ error::Error GLES2DecoderImpl::HandleUniform4ivImmediate(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderImpl::HandleUniform4ui(uint32_t immediate_data_size,
+                                                const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform4ui& c =
+      *static_cast<const gles2::cmds::Uniform4ui*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLuint x = static_cast<GLuint>(c.x);
+  GLuint y = static_cast<GLuint>(c.y);
+  GLuint z = static_cast<GLuint>(c.z);
+  GLuint w = static_cast<GLuint>(c.w);
+  GLuint temp[4] = {
+      x, y, z, w,
+  };
+  glUniform4uiv(location, 1, &temp[0]);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniform4uivImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::Uniform4uivImmediate& c =
+      *static_cast<const gles2::cmds::Uniform4uivImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLuint), 4, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLuint* v =
+      GetImmediateDataAs<const GLuint*>(c, data_size, immediate_data_size);
+  if (v == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniform4uiv(location, count, v);
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderImpl::HandleUniformMatrix2fvImmediate(
     uint32_t immediate_data_size,
     const void* cmd_data) {
@@ -2301,6 +2587,60 @@ error::Error GLES2DecoderImpl::HandleUniformMatrix2fvImmediate(
     return error::kOutOfBounds;
   }
   DoUniformMatrix2fv(location, count, transpose, value);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniformMatrix2x3fvImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::UniformMatrix2x3fvImmediate& c =
+      *static_cast<const gles2::cmds::UniformMatrix2x3fvImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  GLboolean transpose = static_cast<GLboolean>(c.transpose);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLfloat), 6, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLfloat* value =
+      GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
+  if (value == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniformMatrix2x3fv(location, count, transpose, value);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniformMatrix2x4fvImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::UniformMatrix2x4fvImmediate& c =
+      *static_cast<const gles2::cmds::UniformMatrix2x4fvImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  GLboolean transpose = static_cast<GLboolean>(c.transpose);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLfloat), 8, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLfloat* value =
+      GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
+  if (value == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniformMatrix2x4fv(location, count, transpose, value);
   return error::kNoError;
 }
 
@@ -2329,6 +2669,60 @@ error::Error GLES2DecoderImpl::HandleUniformMatrix3fvImmediate(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderImpl::HandleUniformMatrix3x2fvImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::UniformMatrix3x2fvImmediate& c =
+      *static_cast<const gles2::cmds::UniformMatrix3x2fvImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  GLboolean transpose = static_cast<GLboolean>(c.transpose);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLfloat), 6, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLfloat* value =
+      GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
+  if (value == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniformMatrix3x2fv(location, count, transpose, value);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniformMatrix3x4fvImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::UniformMatrix3x4fvImmediate& c =
+      *static_cast<const gles2::cmds::UniformMatrix3x4fvImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  GLboolean transpose = static_cast<GLboolean>(c.transpose);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLfloat), 12, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLfloat* value =
+      GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
+  if (value == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniformMatrix3x4fv(location, count, transpose, value);
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderImpl::HandleUniformMatrix4fvImmediate(
     uint32_t immediate_data_size,
     const void* cmd_data) {
@@ -2351,6 +2745,60 @@ error::Error GLES2DecoderImpl::HandleUniformMatrix4fvImmediate(
     return error::kOutOfBounds;
   }
   DoUniformMatrix4fv(location, count, transpose, value);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniformMatrix4x2fvImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::UniformMatrix4x2fvImmediate& c =
+      *static_cast<const gles2::cmds::UniformMatrix4x2fvImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  GLboolean transpose = static_cast<GLboolean>(c.transpose);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLfloat), 8, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLfloat* value =
+      GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
+  if (value == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniformMatrix4x2fv(location, count, transpose, value);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniformMatrix4x3fvImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::UniformMatrix4x3fvImmediate& c =
+      *static_cast<const gles2::cmds::UniformMatrix4x3fvImmediate*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLsizei count = static_cast<GLsizei>(c.count);
+  GLboolean transpose = static_cast<GLboolean>(c.transpose);
+  uint32_t data_size;
+  if (!ComputeDataSize(count, sizeof(GLfloat), 12, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLfloat* value =
+      GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
+  if (value == NULL) {
+    return error::kOutOfBounds;
+  }
+  glUniformMatrix4x3fv(location, count, transpose, value);
   return error::kNoError;
 }
 
@@ -2521,6 +2969,90 @@ error::Error GLES2DecoderImpl::HandleVertexAttrib4fvImmediate(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderImpl::HandleVertexAttribI4i(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::VertexAttribI4i& c =
+      *static_cast<const gles2::cmds::VertexAttribI4i*>(cmd_data);
+  (void)c;
+  GLuint indx = static_cast<GLuint>(c.indx);
+  GLint x = static_cast<GLint>(c.x);
+  GLint y = static_cast<GLint>(c.y);
+  GLint z = static_cast<GLint>(c.z);
+  GLint w = static_cast<GLint>(c.w);
+  glVertexAttribI4i(indx, x, y, z, w);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleVertexAttribI4ivImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::VertexAttribI4ivImmediate& c =
+      *static_cast<const gles2::cmds::VertexAttribI4ivImmediate*>(cmd_data);
+  (void)c;
+  GLuint indx = static_cast<GLuint>(c.indx);
+  uint32_t data_size;
+  if (!ComputeDataSize(1, sizeof(GLint), 4, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLint* values =
+      GetImmediateDataAs<const GLint*>(c, data_size, immediate_data_size);
+  if (values == NULL) {
+    return error::kOutOfBounds;
+  }
+  glVertexAttribI4iv(indx, values);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleVertexAttribI4ui(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::VertexAttribI4ui& c =
+      *static_cast<const gles2::cmds::VertexAttribI4ui*>(cmd_data);
+  (void)c;
+  GLuint indx = static_cast<GLuint>(c.indx);
+  GLuint x = static_cast<GLuint>(c.x);
+  GLuint y = static_cast<GLuint>(c.y);
+  GLuint z = static_cast<GLuint>(c.z);
+  GLuint w = static_cast<GLuint>(c.w);
+  glVertexAttribI4ui(indx, x, y, z, w);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleVertexAttribI4uivImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::VertexAttribI4uivImmediate& c =
+      *static_cast<const gles2::cmds::VertexAttribI4uivImmediate*>(cmd_data);
+  (void)c;
+  GLuint indx = static_cast<GLuint>(c.indx);
+  uint32_t data_size;
+  if (!ComputeDataSize(1, sizeof(GLuint), 4, &data_size)) {
+    return error::kOutOfBounds;
+  }
+  if (data_size > immediate_data_size) {
+    return error::kOutOfBounds;
+  }
+  const GLuint* values =
+      GetImmediateDataAs<const GLuint*>(c, data_size, immediate_data_size);
+  if (values == NULL) {
+    return error::kOutOfBounds;
+  }
+  glVertexAttribI4uiv(indx, values);
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderImpl::HandleViewport(uint32_t immediate_data_size,
                                               const void* cmd_data) {
   const gles2::cmds::Viewport& c =
@@ -2549,8 +3081,7 @@ error::Error GLES2DecoderImpl::HandleBlitFramebufferCHROMIUM(
       *static_cast<const gles2::cmds::BlitFramebufferCHROMIUM*>(cmd_data);
   (void)c;
   if (!features().chromium_framebuffer_multisample) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glBlitFramebufferCHROMIUM",
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBlitFramebufferCHROMIUM",
                        "function not available");
     return error::kNoError;
   }
@@ -2573,12 +3104,12 @@ error::Error GLES2DecoderImpl::HandleBlitFramebufferCHROMIUM(
   GLbitfield mask = static_cast<GLbitfield>(c.mask);
   GLenum filter = static_cast<GLenum>(c.filter);
   if (!validators_->blit_filter.IsValid(filter)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glBlitFramebufferCHROMIUM", filter, "filter");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBlitFramebufferCHROMIUM", filter,
+                                    "filter");
     return error::kNoError;
   }
-  DoBlitFramebufferCHROMIUM(
-      srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
+  DoBlitFramebufferCHROMIUM(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1,
+                            dstY1, mask, filter);
   return error::kNoError;
 }
 
@@ -2602,8 +3133,8 @@ error::Error GLES2DecoderImpl::HandleRenderbufferStorageMultisampleCHROMIUM(
   GLsizei width = static_cast<GLsizei>(c.width);
   GLsizei height = static_cast<GLsizei>(c.height);
   if (!validators_->render_buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glRenderbufferStorageMultisampleCHROMIUM", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glRenderbufferStorageMultisampleCHROMIUM",
+                                    target, "target");
     return error::kNoError;
   }
   if (samples < 0) {
@@ -2614,14 +3145,12 @@ error::Error GLES2DecoderImpl::HandleRenderbufferStorageMultisampleCHROMIUM(
   }
   if (!validators_->render_buffer_format.IsValid(internalformat)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glRenderbufferStorageMultisampleCHROMIUM",
-                                    internalformat,
-                                    "internalformat");
+                                    internalformat, "internalformat");
     return error::kNoError;
   }
   if (width < 0) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,
-                       "glRenderbufferStorageMultisampleCHROMIUM",
-                       "width < 0");
+                       "glRenderbufferStorageMultisampleCHROMIUM", "width < 0");
     return error::kNoError;
   }
   if (height < 0) {
@@ -2630,8 +3159,8 @@ error::Error GLES2DecoderImpl::HandleRenderbufferStorageMultisampleCHROMIUM(
                        "height < 0");
     return error::kNoError;
   }
-  DoRenderbufferStorageMultisampleCHROMIUM(
-      target, samples, internalformat, width, height);
+  DoRenderbufferStorageMultisampleCHROMIUM(target, samples, internalformat,
+                                           width, height);
   return error::kNoError;
 }
 
@@ -2655,33 +3184,32 @@ error::Error GLES2DecoderImpl::HandleRenderbufferStorageMultisampleEXT(
   GLsizei width = static_cast<GLsizei>(c.width);
   GLsizei height = static_cast<GLsizei>(c.height);
   if (!validators_->render_buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glRenderbufferStorageMultisampleEXT", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glRenderbufferStorageMultisampleEXT",
+                                    target, "target");
     return error::kNoError;
   }
   if (samples < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleEXT", "samples < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRenderbufferStorageMultisampleEXT",
+                       "samples < 0");
     return error::kNoError;
   }
   if (!validators_->render_buffer_format.IsValid(internalformat)) {
     LOCAL_SET_GL_ERROR_INVALID_ENUM("glRenderbufferStorageMultisampleEXT",
-                                    internalformat,
-                                    "internalformat");
+                                    internalformat, "internalformat");
     return error::kNoError;
   }
   if (width < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleEXT", "width < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRenderbufferStorageMultisampleEXT",
+                       "width < 0");
     return error::kNoError;
   }
   if (height < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glRenderbufferStorageMultisampleEXT", "height < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glRenderbufferStorageMultisampleEXT",
+                       "height < 0");
     return error::kNoError;
   }
-  DoRenderbufferStorageMultisampleEXT(
-      target, samples, internalformat, width, height);
+  DoRenderbufferStorageMultisampleEXT(target, samples, internalformat, width,
+                                      height);
   return error::kNoError;
 }
 
@@ -2706,28 +3234,27 @@ error::Error GLES2DecoderImpl::HandleFramebufferTexture2DMultisampleEXT(
   GLint level = static_cast<GLint>(c.level);
   GLsizei samples = static_cast<GLsizei>(c.samples);
   if (!validators_->frame_buffer_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferTexture2DMultisampleEXT", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferTexture2DMultisampleEXT",
+                                    target, "target");
     return error::kNoError;
   }
   if (!validators_->attachment.IsValid(attachment)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferTexture2DMultisampleEXT", attachment, "attachment");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferTexture2DMultisampleEXT",
+                                    attachment, "attachment");
     return error::kNoError;
   }
   if (!validators_->texture_target.IsValid(textarget)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glFramebufferTexture2DMultisampleEXT", textarget, "textarget");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glFramebufferTexture2DMultisampleEXT",
+                                    textarget, "textarget");
     return error::kNoError;
   }
   if (samples < 0) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,
-                       "glFramebufferTexture2DMultisampleEXT",
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glFramebufferTexture2DMultisampleEXT",
                        "samples < 0");
     return error::kNoError;
   }
-  DoFramebufferTexture2DMultisample(
-      target, attachment, textarget, texture, level, samples);
+  DoFramebufferTexture2DMultisample(target, attachment, textarget, texture,
+                                    level, samples);
   return error::kNoError;
 }
 
@@ -2751,8 +3278,8 @@ error::Error GLES2DecoderImpl::HandleTexStorage2DEXT(
     return error::kNoError;
   }
   if (!validators_->texture_internal_format_storage.IsValid(internalFormat)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glTexStorage2DEXT", internalFormat, "internalFormat");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glTexStorage2DEXT", internalFormat,
+                                    "internalFormat");
     return error::kNoError;
   }
   if (width < 0) {
@@ -2956,13 +3483,13 @@ error::Error GLES2DecoderImpl::HandleGetMaxValueInBufferCHROMIUM(
     return error::kOutOfBounds;
   }
   if (count < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glGetMaxValueInBufferCHROMIUM", "count < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glGetMaxValueInBufferCHROMIUM",
+                       "count < 0");
     return error::kNoError;
   }
   if (!validators_->get_max_index_type.IsValid(type)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glGetMaxValueInBufferCHROMIUM", type, "type");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glGetMaxValueInBufferCHROMIUM", type,
+                                    "type");
     return error::kNoError;
   }
   *result_dst = DoGetMaxValueInBufferCHROMIUM(buffer_id, count, type, offset);
@@ -2981,18 +3508,18 @@ error::Error GLES2DecoderImpl::HandleTexImageIOSurface2DCHROMIUM(
   GLuint ioSurfaceId = static_cast<GLuint>(c.ioSurfaceId);
   GLuint plane = static_cast<GLuint>(c.plane);
   if (!validators_->texture_bind_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glTexImageIOSurface2DCHROMIUM", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glTexImageIOSurface2DCHROMIUM", target,
+                                    "target");
     return error::kNoError;
   }
   if (width < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glTexImageIOSurface2DCHROMIUM", "width < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glTexImageIOSurface2DCHROMIUM",
+                       "width < 0");
     return error::kNoError;
   }
   if (height < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glTexImageIOSurface2DCHROMIUM", "height < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glTexImageIOSurface2DCHROMIUM",
+                       "height < 0");
     return error::kNoError;
   }
   DoTexImageIOSurface2DCHROMIUM(target, width, height, ioSurfaceId, plane);
@@ -3012,18 +3539,17 @@ error::Error GLES2DecoderImpl::HandleCopyTextureCHROMIUM(
   GLint internalformat = static_cast<GLint>(c.internalformat);
   GLenum dest_type = static_cast<GLenum>(c.dest_type);
   if (!validators_->texture_internal_format.IsValid(internalformat)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE,
-                       "glCopyTextureCHROMIUM",
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopyTextureCHROMIUM",
                        "internalformat GL_INVALID_VALUE");
     return error::kNoError;
   }
   if (!validators_->pixel_type.IsValid(dest_type)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glCopyTextureCHROMIUM", dest_type, "dest_type");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glCopyTextureCHROMIUM", dest_type,
+                                    "dest_type");
     return error::kNoError;
   }
-  DoCopyTextureCHROMIUM(
-      target, source_id, dest_id, level, internalformat, dest_type);
+  DoCopyTextureCHROMIUM(target, source_id, dest_id, level, internalformat,
+                        dest_type);
   return error::kNoError;
 }
 
@@ -3045,8 +3571,8 @@ error::Error GLES2DecoderImpl::HandleProduceTextureCHROMIUMImmediate(
   const GLbyte* mailbox =
       GetImmediateDataAs<const GLbyte*>(c, data_size, immediate_data_size);
   if (!validators_->texture_bind_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glProduceTextureCHROMIUM", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glProduceTextureCHROMIUM", target,
+                                    "target");
     return error::kNoError;
   }
   if (mailbox == NULL) {
@@ -3075,8 +3601,8 @@ error::Error GLES2DecoderImpl::HandleProduceTextureDirectCHROMIUMImmediate(
   const GLbyte* mailbox =
       GetImmediateDataAs<const GLbyte*>(c, data_size, immediate_data_size);
   if (!validators_->texture_bind_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glProduceTextureDirectCHROMIUM", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glProduceTextureDirectCHROMIUM", target,
+                                    "target");
     return error::kNoError;
   }
   if (mailbox == NULL) {
@@ -3104,14 +3630,154 @@ error::Error GLES2DecoderImpl::HandleConsumeTextureCHROMIUMImmediate(
   const GLbyte* mailbox =
       GetImmediateDataAs<const GLbyte*>(c, data_size, immediate_data_size);
   if (!validators_->texture_bind_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glConsumeTextureCHROMIUM", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glConsumeTextureCHROMIUM", target,
+                                    "target");
     return error::kNoError;
   }
   if (mailbox == NULL) {
     return error::kOutOfBounds;
   }
   DoConsumeTextureCHROMIUM(target, mailbox);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleGenValuebuffersCHROMIUMImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::GenValuebuffersCHROMIUMImmediate& c =
+      *static_cast<const gles2::cmds::GenValuebuffersCHROMIUMImmediate*>(
+          cmd_data);
+  (void)c;
+  GLsizei n = static_cast<GLsizei>(c.n);
+  uint32_t data_size;
+  if (!SafeMultiplyUint32(n, sizeof(GLuint), &data_size)) {
+    return error::kOutOfBounds;
+  }
+  GLuint* buffers =
+      GetImmediateDataAs<GLuint*>(c, data_size, immediate_data_size);
+  if (buffers == NULL) {
+    return error::kOutOfBounds;
+  }
+  if (!GenValuebuffersCHROMIUMHelper(n, buffers)) {
+    return error::kInvalidArguments;
+  }
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleDeleteValuebuffersCHROMIUMImmediate(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::DeleteValuebuffersCHROMIUMImmediate& c =
+      *static_cast<const gles2::cmds::DeleteValuebuffersCHROMIUMImmediate*>(
+          cmd_data);
+  (void)c;
+  GLsizei n = static_cast<GLsizei>(c.n);
+  uint32_t data_size;
+  if (!SafeMultiplyUint32(n, sizeof(GLuint), &data_size)) {
+    return error::kOutOfBounds;
+  }
+  const GLuint* valuebuffers =
+      GetImmediateDataAs<const GLuint*>(c, data_size, immediate_data_size);
+  if (valuebuffers == NULL) {
+    return error::kOutOfBounds;
+  }
+  DeleteValuebuffersCHROMIUMHelper(n, valuebuffers);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleIsValuebufferCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::IsValuebufferCHROMIUM& c =
+      *static_cast<const gles2::cmds::IsValuebufferCHROMIUM*>(cmd_data);
+  (void)c;
+  GLuint valuebuffer = c.valuebuffer;
+  typedef cmds::IsValuebufferCHROMIUM::Result Result;
+  Result* result_dst = GetSharedMemoryAs<Result*>(
+      c.result_shm_id, c.result_shm_offset, sizeof(*result_dst));
+  if (!result_dst) {
+    return error::kOutOfBounds;
+  }
+  *result_dst = DoIsValuebufferCHROMIUM(valuebuffer);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleBindValuebufferCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::BindValuebufferCHROMIUM& c =
+      *static_cast<const gles2::cmds::BindValuebufferCHROMIUM*>(cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  GLuint valuebuffer = c.valuebuffer;
+  if (!validators_->value_buffer_target.IsValid(target)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBindValuebufferCHROMIUM", target,
+                                    "target");
+    return error::kNoError;
+  }
+  DoBindValueBufferCHROMIUM(target, valuebuffer);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleSubscribeValueCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::SubscribeValueCHROMIUM& c =
+      *static_cast<const gles2::cmds::SubscribeValueCHROMIUM*>(cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  GLenum subscription = static_cast<GLenum>(c.subscription);
+  if (!validators_->value_buffer_target.IsValid(target)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glSubscribeValueCHROMIUM", target,
+                                    "target");
+    return error::kNoError;
+  }
+  if (!validators_->subscription_target.IsValid(subscription)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glSubscribeValueCHROMIUM", subscription,
+                                    "subscription");
+    return error::kNoError;
+  }
+  DoSubscribeValueCHROMIUM(target, subscription);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandlePopulateSubscribedValuesCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::PopulateSubscribedValuesCHROMIUM& c =
+      *static_cast<const gles2::cmds::PopulateSubscribedValuesCHROMIUM*>(
+          cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  if (!validators_->value_buffer_target.IsValid(target)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glPopulateSubscribedValuesCHROMIUM",
+                                    target, "target");
+    return error::kNoError;
+  }
+  DoPopulateSubscribedValuesCHROMIUM(target);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleUniformValuebufferCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::UniformValuebufferCHROMIUM& c =
+      *static_cast<const gles2::cmds::UniformValuebufferCHROMIUM*>(cmd_data);
+  (void)c;
+  GLint location = static_cast<GLint>(c.location);
+  GLenum target = static_cast<GLenum>(c.target);
+  GLenum subscription = static_cast<GLenum>(c.subscription);
+  if (!validators_->value_buffer_target.IsValid(target)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glUniformValuebufferCHROMIUM", target,
+                                    "target");
+    return error::kNoError;
+  }
+  if (!validators_->subscription_target.IsValid(subscription)) {
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glUniformValuebufferCHROMIUM",
+                                    subscription, "subscription");
+    return error::kNoError;
+  }
+  DoUniformValueBufferCHROMIUM(location, target, subscription);
   return error::kNoError;
 }
 
@@ -3124,8 +3790,8 @@ error::Error GLES2DecoderImpl::HandleBindTexImage2DCHROMIUM(
   GLenum target = static_cast<GLenum>(c.target);
   GLint imageId = static_cast<GLint>(c.imageId);
   if (!validators_->texture_bind_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glBindTexImage2DCHROMIUM", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glBindTexImage2DCHROMIUM", target,
+                                    "target");
     return error::kNoError;
   }
   DoBindTexImage2DCHROMIUM(target, imageId);
@@ -3141,8 +3807,8 @@ error::Error GLES2DecoderImpl::HandleReleaseTexImage2DCHROMIUM(
   GLenum target = static_cast<GLenum>(c.target);
   GLint imageId = static_cast<GLint>(c.imageId);
   if (!validators_->texture_bind_target.IsValid(target)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glReleaseTexImage2DCHROMIUM", target, "target");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glReleaseTexImage2DCHROMIUM", target,
+                                    "target");
     return error::kNoError;
   }
   DoReleaseTexImage2DCHROMIUM(target, imageId);
@@ -3167,8 +3833,7 @@ error::Error GLES2DecoderImpl::HandleDiscardFramebufferEXTImmediate(
           cmd_data);
   (void)c;
   if (!features().ext_discard_framebuffer) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glDiscardFramebufferEXT",
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glDiscardFramebufferEXT",
                        "function not available");
     return error::kNoError;
   }
@@ -3185,8 +3850,8 @@ error::Error GLES2DecoderImpl::HandleDiscardFramebufferEXTImmediate(
   const GLenum* attachments =
       GetImmediateDataAs<const GLenum*>(c, data_size, immediate_data_size);
   if (count < 0) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_VALUE, "glDiscardFramebufferEXT", "count < 0");
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glDiscardFramebufferEXT",
+                       "count < 0");
     return error::kNoError;
   }
   if (attachments == NULL) {
@@ -3205,8 +3870,8 @@ error::Error GLES2DecoderImpl::HandleLoseContextCHROMIUM(
   GLenum current = static_cast<GLenum>(c.current);
   GLenum other = static_cast<GLenum>(c.other);
   if (!validators_->reset_status.IsValid(current)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glLoseContextCHROMIUM", current, "current");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glLoseContextCHROMIUM", current,
+                                    "current");
     return error::kNoError;
   }
   if (!validators_->reset_status.IsValid(other)) {
@@ -3251,8 +3916,7 @@ error::Error GLES2DecoderImpl::HandleMatrixLoadfCHROMIUMImmediate(
       *static_cast<const gles2::cmds::MatrixLoadfCHROMIUMImmediate*>(cmd_data);
   (void)c;
   if (!features().chromium_path_rendering) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glMatrixLoadfCHROMIUM",
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glMatrixLoadfCHROMIUM",
                        "function not available");
     return error::kNoError;
   }
@@ -3268,8 +3932,8 @@ error::Error GLES2DecoderImpl::HandleMatrixLoadfCHROMIUMImmediate(
   const GLfloat* m =
       GetImmediateDataAs<const GLfloat*>(c, data_size, immediate_data_size);
   if (!validators_->matrix_mode.IsValid(matrixMode)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glMatrixLoadfCHROMIUM", matrixMode, "matrixMode");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glMatrixLoadfCHROMIUM", matrixMode,
+                                    "matrixMode");
     return error::kNoError;
   }
   if (m == NULL) {
@@ -3286,16 +3950,15 @@ error::Error GLES2DecoderImpl::HandleMatrixLoadIdentityCHROMIUM(
       *static_cast<const gles2::cmds::MatrixLoadIdentityCHROMIUM*>(cmd_data);
   (void)c;
   if (!features().chromium_path_rendering) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glMatrixLoadIdentityCHROMIUM",
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glMatrixLoadIdentityCHROMIUM",
                        "function not available");
     return error::kNoError;
   }
 
   GLenum matrixMode = static_cast<GLenum>(c.matrixMode);
   if (!validators_->matrix_mode.IsValid(matrixMode)) {
-    LOCAL_SET_GL_ERROR_INVALID_ENUM(
-        "glMatrixLoadIdentityCHROMIUM", matrixMode, "matrixMode");
+    LOCAL_SET_GL_ERROR_INVALID_ENUM("glMatrixLoadIdentityCHROMIUM", matrixMode,
+                                    "matrixMode");
     return error::kNoError;
   }
   DoMatrixLoadIdentityCHROMIUM(matrixMode);
@@ -3309,8 +3972,8 @@ error::Error GLES2DecoderImpl::HandleBlendBarrierKHR(
       *static_cast<const gles2::cmds::BlendBarrierKHR*>(cmd_data);
   (void)c;
   if (!features().blend_equation_advanced) {
-    LOCAL_SET_GL_ERROR(
-        GL_INVALID_OPERATION, "glBlendBarrierKHR", "function not available");
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBlendBarrierKHR",
+                       "function not available");
     return error::kNoError;
   }
 

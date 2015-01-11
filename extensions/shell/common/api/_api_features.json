@@ -12,5 +12,11 @@
     "channel": "dev",
     "contexts": ["blessed_extension"],
     "extension_types": ["platform_app"]
+  },
+  // Setup related functions for a Google Cloud Devices (GCD) target device.
+  "shell.gcd": {
+    "channel": "dev",
+    "contexts": ["blessed_extension"],
+    "extension_types": ["platform_app"]    
   }
 }

@@ -31,7 +31,7 @@
       'conditions': [
         ['use_udev == 1', {
           'dependencies': [
-            '../../build/linux/system.gyp:udev',
+            '../udev_linux/udev.gyp:udev_linux',
           ],
         }, {
           'sources!': [
@@ -58,8 +58,6 @@
         '<(SHARED_INTERMEDIATE_DIR)/device/serial/serial.mojom.h',
         '<(SHARED_INTERMEDIATE_DIR)/device/serial/serial_serialization.mojom.cc',
         '<(SHARED_INTERMEDIATE_DIR)/device/serial/serial_serialization.mojom.h',
-        'async_waiter.cc',
-        'async_waiter.h',
         'buffer.cc',
         'buffer.h',
         'data_receiver.cc',

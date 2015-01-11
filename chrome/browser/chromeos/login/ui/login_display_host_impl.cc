@@ -23,7 +23,6 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/base/locale_util.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/charger_replace/charger_replacement_dialog.h"
 #include "chrome/browser/chromeos/first_run/drive_first_run_controller.h"
 #include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
@@ -59,8 +58,6 @@
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
-#include "chromeos/ime/extension_ime_util.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/settings/timezone_settings.h"
 #include "components/session_manager/core/session_manager.h"
@@ -71,6 +68,8 @@
 #include "content/public/browser/web_ui.h"
 #include "media/audio/sounds/sounds_manager.h"
 #include "ui/aura/window.h"
+#include "ui/base/ime/chromeos/extension_ime_util.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
@@ -87,7 +86,6 @@
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/wm/core/window_animations.h"
 #include "url/gurl.h"
 
 #if !defined(USE_ATHENA)
@@ -203,11 +201,10 @@ struct ShowLoginWizardSwitchLanguageCallbackData {
 
 void OnLanguageSwitchedCallback(
     scoped_ptr<ShowLoginWizardSwitchLanguageCallbackData> self,
-    const std::string& locale,
-    const std::string& loaded_locale,
-    const bool success) {
-  if (!success)
-    LOG(WARNING) << "Locale could not be found for '" << locale << "'";
+    const chromeos::locale_util::LanguageSwitchResult& result) {
+  if (!result.success)
+    LOG(WARNING) << "Locale could not be found for '" << result.requested_locale
+                 << "'";
 
   ShowLoginWizardFinish(
       self->first_screen_name, self->startup_manifest, self->display_host);
@@ -591,11 +588,18 @@ void LoginDisplayHostImpl::StartUserAdding(
       desktop_background_controller()->MoveDesktopToLockedContainer();
 #endif
 
-  sign_in_controller_.reset();  // Only one controller in a time.
-  sign_in_controller_.reset(new chromeos::ExistingUserController(this));
+  existing_user_controller_.reset();  // Only one controller in a time.
+  existing_user_controller_.reset(new chromeos::ExistingUserController(this));
+
+  if (!signin_screen_controller_.get()) {
+    OobeDisplay* oobe_display = GetOobeUI();
+    signin_screen_controller_.reset(new SignInScreenController(
+        oobe_display, webui_login_display_->delegate()));
+  }
+
   SetOobeProgressBarVisible(oobe_progress_bar_visible_ = false);
   SetStatusAreaVisible(true);
-  sign_in_controller_->Init(
+  existing_user_controller_->Init(
       user_manager::UserManager::Get()->GetUsersAllowedForMultiProfile());
   CHECK(webui_login_display_);
   GetOobeUI()->ShowSigninScreen(LoginScreenContext(),
@@ -644,18 +648,25 @@ void LoginDisplayHostImpl::StartSignInScreen(
     StartupUtils::MarkDeviceRegistered(base::Closure());
   }
 
-  sign_in_controller_.reset();  // Only one controller in a time.
-  sign_in_controller_.reset(new chromeos::ExistingUserController(this));
+  existing_user_controller_.reset();  // Only one controller in a time.
+  existing_user_controller_.reset(new chromeos::ExistingUserController(this));
+
+  if (!signin_screen_controller_.get()) {
+    OobeDisplay* oobe_display = GetOobeUI();
+    signin_screen_controller_.reset(new SignInScreenController(
+        oobe_display, webui_login_display_->delegate()));
+  }
+
   oobe_progress_bar_visible_ = !StartupUtils::IsDeviceRegistered();
   SetOobeProgressBarVisible(oobe_progress_bar_visible_);
   SetStatusAreaVisible(true);
-  sign_in_controller_->Init(users);
+  existing_user_controller_->Init(users);
 
   // We might be here after a reboot that was triggered after OOBE was complete,
   // so check for auto-enrollment again. This might catch a cached decision from
   // a previous oobe flow, or might start a new check with the server.
   if (GetAutoEnrollmentController()->ShouldEnrollSilently())
-    sign_in_controller_->DoAutoEnrollment();
+    existing_user_controller_->DoAutoEnrollment();
   else
     GetAutoEnrollmentController()->Start();
 
@@ -687,10 +698,10 @@ void LoginDisplayHostImpl::ResumeSignInScreen() {
   // was successful but was interrupted by an auto-enrollment execution; once
   // auto-enrollment is complete we resume the normal login flow from here.
   DVLOG(1) << "Resuming sign in screen";
-  CHECK(sign_in_controller_.get());
+  CHECK(existing_user_controller_.get());
   SetOobeProgressBarVisible(oobe_progress_bar_visible_);
   SetStatusAreaVisible(true);
-  sign_in_controller_->ResumeLogin();
+  existing_user_controller_->ResumeLogin();
 }
 
 
@@ -985,9 +996,9 @@ void LoginDisplayHostImpl::OnAutoEnrollmentProgress(
     policy::AutoEnrollmentState state) {
   VLOG(1) << "OnAutoEnrollmentProgress, state " << state;
 
-  if (sign_in_controller_ &&
+  if (existing_user_controller_ &&
       auto_enrollment_controller_->ShouldEnrollSilently()) {
-    sign_in_controller_->DoAutoEnrollment();
+    existing_user_controller_->DoAutoEnrollment();
   }
 }
 
@@ -996,12 +1007,6 @@ void LoginDisplayHostImpl::LoadURL(const GURL& url) {
   // Subscribe to crash events.
   content::WebContentsObserver::Observe(login_view_->GetWebContents());
   login_view_->LoadURL(url);
-
-  // LoadURL could be called after the spring charger dialog shows, and
-  // take away the focus from it. Set the focus back to the charger dialog
-  // if it is visible.
-  // See crbug.com/328538.
-  ChargerReplacementDialog::SetFocusOnChargerDialogIfVisible();
 }
 
 void LoginDisplayHostImpl::ShowWebUI() {
@@ -1016,12 +1021,6 @@ void LoginDisplayHostImpl::ShowWebUI() {
     login_view_->RequestFocus();
   login_view_->SetStatusAreaVisible(status_area_saved_visibility_);
   login_view_->OnPostponedShow();
-
-  // Login window could be shown after the spring charger dialog shows, and
-  // take away the focus from it. Set the focus back to the charger dialog
-  // if it is visible.
-  // See crbug.com/328538.
-  ChargerReplacementDialog::SetFocusOnChargerDialogIfVisible();
 
   // We should reset this flag to allow changing of status area visibility.
   initialize_webui_hidden_ = false;
@@ -1104,12 +1103,9 @@ void LoginDisplayHostImpl::InitLoginWindowAndView() {
   if (login_view_->webui_visible())
     OnLoginPromptVisible();
 
-  wm::SetWindowVisibilityAnimationDuration(
-      login_window_->GetNativeView(),
+  login_window_->SetVisibilityAnimationDuration(
       base::TimeDelta::FromMilliseconds(kLoginFadeoutTransitionDurationMs));
-  wm::SetWindowVisibilityAnimationTransition(
-      login_window_->GetNativeView(),
-      wm::ANIMATE_HIDE);
+  login_window_->SetVisibilityAnimationTransition(views::Widget::ANIMATE_HIDE);
 
   login_window_->AddRemovalsObserver(this);
   login_window_->SetContentsView(login_view_);
@@ -1318,13 +1314,12 @@ void ShowLoginWizard(const std::string& first_screen_name) {
       new ShowLoginWizardSwitchLanguageCallbackData(
           first_screen_name, startup_manifest, display_host));
 
-  scoped_ptr<locale_util::SwitchLanguageCallback> callback(
-      new locale_util::SwitchLanguageCallback(
-          base::Bind(&OnLanguageSwitchedCallback, base::Passed(data.Pass()))));
+  locale_util::SwitchLanguageCallback callback(
+      base::Bind(&OnLanguageSwitchedCallback, base::Passed(data.Pass())));
 
   // Load locale keyboards here. Hardware layout would be automatically enabled.
   locale_util::SwitchLanguage(
-      locale, true, true /* login_layouts_only */, callback.Pass());
+      locale, true, true /* login_layouts_only */, callback);
 }
 
 }  // namespace chromeos

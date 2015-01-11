@@ -8,6 +8,7 @@
 #include <cmath>
 #include <set>
 
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -61,7 +62,6 @@
 #include "ui/views/widget/widget.h"
 
 using base::UserMetricsAction;
-using content::HostZoomMap;
 using content::WebContents;
 using ui::MenuModel;
 using views::CustomButton;
@@ -494,11 +494,6 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
         decrement_button_(NULL),
         fullscreen_button_(NULL),
         zoom_label_width_(0) {
-    content_zoom_subscription_ = HostZoomMap::GetDefaultForBrowserContext(
-        menu->browser_->profile())->AddZoomLevelChangedCallback(
-            base::Bind(&WrenchMenu::ZoomView::OnZoomLevelChanged,
-                       base::Unretained(this)));
-
     browser_zoom_subscription_ = ZoomEventManager::GetForBrowserContext(
         menu->browser_->profile())->AddZoomLevelChangedCallback(
             base::Bind(&WrenchMenu::ZoomView::OnZoomLevelChanged,
@@ -634,7 +629,7 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
   void WrenchMenuDestroyed() override { WrenchMenuView::WrenchMenuDestroyed(); }
 
  private:
-  void OnZoomLevelChanged(const HostZoomMap::ZoomLevelChange& change) {
+  void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& change) {
     UpdateZoomControls();
   }
 
@@ -683,7 +678,6 @@ class WrenchMenu::ZoomView : public WrenchMenuView {
   // Index of the fullscreen menu item in the model.
   const int fullscreen_index_;
 
-  scoped_ptr<content::HostZoomMap::Subscription> content_zoom_subscription_;
   scoped_ptr<content::HostZoomMap::Subscription> browser_zoom_subscription_;
   content::NotificationRegistrar registrar_;
 
@@ -1001,6 +995,10 @@ bool WrenchMenu::IsCommandEnabled(int command_id) const {
 
 void WrenchMenu::ExecuteCommand(int command_id, int mouse_event_flags) {
   if (IsBookmarkCommand(command_id)) {
+    UMA_HISTOGRAM_TIMES("WrenchMenu.TimeToAction.BookmarkOpen",
+                        menu_opened_timer_.Elapsed());
+    UMA_HISTOGRAM_ENUMERATION("WrenchMenu.MenuAction",
+                              MENU_ACTION_BOOKMARK_OPEN, LIMIT_MENU_ACTION);
     bookmark_menu_delegate_->ExecuteCommand(command_id, mouse_event_flags);
     return;
   }

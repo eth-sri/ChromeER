@@ -68,13 +68,13 @@
 #include "chrome/browser/ui/views/frame/browser_view_layout_delegate.h"
 #include "chrome/browser/ui/views/frame/contents_layout_manager.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
-#include "chrome/browser/ui/views/frame/native_browser_frame_factory.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
 #include "chrome/browser/ui/views/fullscreen_exit_bubble_views.h"
 #include "chrome/browser/ui/views/infobars/infobar_container_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
+#include "chrome/browser/ui/views/location_bar/zoom_bubble_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 #include "chrome/browser/ui/views/profiles/avatar_menu_bubble_view.h"
 #include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
@@ -98,29 +98,27 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
-#include "components/app_modal_dialogs/app_modal_dialog.h"
-#include "components/app_modal_dialogs/app_modal_dialog_queue.h"
+#include "components/app_modal/app_modal_dialog.h"
+#include "components/app_modal/app_modal_dialog_queue.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/translate/core/browser/language_state.h"
 #include "content/app/resources/grit/content_resources.h"
 #include "content/public/browser/download_manager.h"
-#include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "grit/theme_resources.h"
 #include "ui/accessibility/ax_view_state.h"
-#include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/window.h"
-#include "ui/aura/window_tree_host.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
+#include "ui/content_accelerators/accelerator_util.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
@@ -137,6 +135,12 @@
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
+
+#if defined(USE_AURA)
+#include "ui/aura/client/window_tree_client.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -381,17 +385,17 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
 // BrowserView, public:
 
 BrowserView::BrowserView()
-    : views::ClientView(NULL, NULL),
+    : views::ClientView(nullptr, nullptr),
       last_focused_view_storage_id_(
           views::ViewStorage::GetInstance()->CreateStorageID()),
-      frame_(NULL),
-      top_container_(NULL),
-      tabstrip_(NULL),
-      toolbar_(NULL),
-      find_bar_host_view_(NULL),
-      infobar_container_(NULL),
-      contents_web_view_(NULL),
-      contents_container_(NULL),
+      frame_(nullptr),
+      top_container_(nullptr),
+      tabstrip_(nullptr),
+      toolbar_(nullptr),
+      find_bar_host_view_(nullptr),
+      infobar_container_(nullptr),
+      contents_web_view_(nullptr),
+      contents_container_(nullptr),
       initialized_(false),
       in_process_fullscreen_(false),
 #if defined(OS_WIN)
@@ -419,7 +423,7 @@ BrowserView::~BrowserView() {
 
   // Terminate the jumplist (must be called before browser_->profile() is
   // destroyed.
-  if (jumplist_) {
+  if (jumplist_.get()) {
     jumplist_->Terminate();
   }
 #endif
@@ -430,7 +434,7 @@ BrowserView::~BrowserView() {
   // notifications will call back into deleted objects).
   BrowserViewLayout* browser_view_layout = GetBrowserViewLayout();
   if (browser_view_layout)
-    browser_view_layout->set_download_shelf(NULL);
+    browser_view_layout->set_download_shelf(nullptr);
   download_shelf_.reset();
 
   // The TabStrip attaches a listener to the model. Make sure we shut down the
@@ -438,16 +442,16 @@ BrowserView::~BrowserView() {
   if (tabstrip_) {
     tabstrip_->parent()->RemoveChildView(tabstrip_);
     if (browser_view_layout)
-      browser_view_layout->set_tab_strip(NULL);
+      browser_view_layout->set_tab_strip(nullptr);
     delete tabstrip_;
-    tabstrip_ = NULL;
+    tabstrip_ = nullptr;
   }
   // Child views maintain PrefMember attributes that point to
   // OffTheRecordProfile's PrefService which gets deleted by ~Browser.
   RemoveAllChildViews(true);
-  toolbar_ = NULL;
+  toolbar_ = nullptr;
 
-  // Explicitly set browser_ to NULL.
+  // Explicitly set browser_ to null.
   browser_.reset();
 }
 
@@ -464,7 +468,7 @@ BrowserView* BrowserView::GetBrowserViewForNativeWindow(
   views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
   return widget ?
       reinterpret_cast<BrowserView*>(widget->GetNativeWindowProperty(
-          kBrowserViewKey)) : NULL;
+          kBrowserViewKey)) : nullptr;
 }
 
 // static
@@ -676,12 +680,12 @@ void BrowserView::SetAlwaysOnTop(bool always_on_top) {
   NOTIMPLEMENTED();
 }
 
-gfx::NativeWindow BrowserView::GetNativeWindow() {
+gfx::NativeWindow BrowserView::GetNativeWindow() const {
   // While the browser destruction is going on, the widget can already be gone,
   // but utility functions like FindBrowserWithWindow will come here and crash.
   // We short circuit therefore.
   if (!GetWidget())
-    return NULL;
+    return nullptr;
   return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
 }
 
@@ -775,8 +779,8 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
   // we don't want any WebContents to be attached, so that we
   // avoid an unnecessary resize and re-layout of a WebContents.
   if (change_tab_contents) {
-    contents_web_view_->SetWebContents(NULL);
-    devtools_web_view_->SetWebContents(NULL);
+    contents_web_view_->SetWebContents(nullptr);
+    devtools_web_view_->SetWebContents(nullptr);
   }
 
   // Do this before updating InfoBarContainer as the InfoBarContainer may
@@ -791,7 +795,7 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
       InfoBarService::FromWebContents(new_contents));
 
   if (old_contents && PermissionBubbleManager::FromWebContents(old_contents))
-    PermissionBubbleManager::FromWebContents(old_contents)->SetView(NULL);
+    PermissionBubbleManager::FromWebContents(old_contents)->SetView(nullptr);
 
   if (new_contents && PermissionBubbleManager::FromWebContents(new_contents)) {
     PermissionBubbleManager::FromWebContents(new_contents)->SetView(
@@ -821,6 +825,9 @@ void BrowserView::OnActiveTabChanged(content::WebContents* old_contents,
 
   // Update all the UI bits.
   UpdateTitleBar();
+
+  TranslateBubbleView::CloseBubble();
+  ZoomBubbleView::CloseBubble();
 }
 
 void BrowserView::ZoomChangedForActiveTab(bool can_show_bubble) {
@@ -866,8 +873,9 @@ void BrowserView::Restore() {
   frame_->Restore();
 }
 
-void BrowserView::EnterFullscreen(
-    const GURL& url, FullscreenExitBubbleType bubble_type) {
+void BrowserView::EnterFullscreen(const GURL& url,
+                                  FullscreenExitBubbleType bubble_type,
+                                  bool with_toolbar) {
   if (IsFullscreen())
     return;  // Nothing to do.
 
@@ -910,7 +918,20 @@ bool BrowserView::IsFullscreen() const {
 }
 
 bool BrowserView::IsFullscreenBubbleVisible() const {
-  return fullscreen_bubble_ != NULL;
+  return fullscreen_bubble_ != nullptr;
+}
+
+bool BrowserView::SupportsFullscreenWithToolbar() const {
+  return false;
+}
+
+void BrowserView::UpdateFullscreenWithToolbar(bool with_toolbar) {
+  // This is currently a Mac only feature.
+  NOTIMPLEMENTED();
+}
+
+bool BrowserView::IsFullscreenWithToolbar() const {
+  return false;
 }
 
 #if defined(OS_WIN)
@@ -1024,6 +1045,13 @@ void BrowserView::UpdateToolbar(content::WebContents* contents) {
   // We may end up here during destruction.
   if (toolbar_)
     toolbar_->Update(contents);
+  frame_->UpdateToolbar();
+}
+
+void BrowserView::ResetToolbarTabState(content::WebContents* contents) {
+  // We may end up here during destruction.
+  if (toolbar_)
+    toolbar_->ResetTabState(contents);
 }
 
 void BrowserView::FocusToolbar() {
@@ -1037,7 +1065,7 @@ void BrowserView::FocusToolbar() {
 
   // Start the traversal within the main toolbar. SetPaneFocus stores
   // the current focused view before changing focus.
-  toolbar_->SetPaneFocus(NULL);
+  toolbar_->SetPaneFocus(nullptr);
 }
 
 void BrowserView::FocusBookmarksToolbar() {
@@ -1124,8 +1152,8 @@ gfx::Rect BrowserView::GetRootWindowResizerRect() const {
 
 void BrowserView::ConfirmAddSearchProvider(TemplateURL* template_url,
                                            Profile* profile) {
-  chrome::EditSearchEngine(GetWidget()->GetNativeWindow(), template_url, NULL,
-                           profile);
+  chrome::EditSearchEngine(GetWidget()->GetNativeWindow(), template_url,
+                           nullptr, profile);
 }
 
 void BrowserView::ShowUpdateChromeDialog() {
@@ -1203,7 +1231,7 @@ void BrowserView::ShowOneClickSigninBubble(
 void BrowserView::SetDownloadShelfVisible(bool visible) {
   // This can be called from the superclass destructor, when it destroys our
   // child views. At that point, browser_ is already gone.
-  if (browser_ == NULL)
+  if (!browser_)
     return;
 
   if (visible && IsDownloadShelfVisible() != visible) {
@@ -1211,8 +1239,7 @@ void BrowserView::SetDownloadShelfVisible(bool visible) {
     GetDownloadShelf();
   }
 
-  if (browser_ != NULL)
-    browser_->UpdateDownloadShelfVisibility(visible);
+  browser_->UpdateDownloadShelfVisibility(visible);
 
   // SetDownloadShelfVisible can force-close the shelf, so make sure we lay out
   // everything correctly, as if the animation had finished. This doesn't
@@ -1262,9 +1289,15 @@ void BrowserView::ShowWebsiteSettings(Profile* profile,
                                       content::WebContents* web_contents,
                                       const GURL& url,
                                       const content::SSLStatus& ssl) {
-  WebsiteSettingsPopupView::ShowPopup(
-      GetLocationBarView()->location_icon_view(), profile,
-      web_contents, url, ssl, browser_.get());
+  // Some browser windows have a location icon embedded in the frame. Try to
+  // use that if it exists. If it doesn't exist, use the location icon from
+  // the location bar.
+  views::View* popup_anchor = frame_->GetLocationIconView();
+  if (!popup_anchor)
+    popup_anchor = GetLocationBarView()->location_icon_view();
+
+  WebsiteSettingsPopupView::ShowPopup(popup_anchor, profile, web_contents, url,
+                                      ssl, browser_.get());
 }
 
 void BrowserView::ShowAppMenu() {
@@ -1291,11 +1324,8 @@ bool BrowserView::PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
   if (focus_manager->shortcut_handling_suspended())
     return false;
 
-  ui::Accelerator accelerator(
-      static_cast<ui::KeyboardCode>(event.windowsKeyCode),
-      content::GetModifiersFromNativeWebKeyboardEvent(event));
-  if (event.type == blink::WebInputEvent::KeyUp)
-    accelerator.set_type(ui::ET_KEY_RELEASED);
+  ui::Accelerator accelerator =
+      ui::GetAcceleratorFromNativeWebKeyboardEvent(event);
 
   // What we have to do here is as follows:
   // - If the |browser_| is for an app, do nothing.
@@ -1328,7 +1358,7 @@ bool BrowserView::PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
   // command execution cannot be blocked and true is returned. However, it is
   // okay as long as is_app() is false. See comments in this function.
   const bool processed = focus_manager->ProcessAccelerator(accelerator);
-  const int id = controller->GetLastBlockedCommand(NULL);
+  const int id = controller->GetLastBlockedCommand(nullptr);
   controller->SetBlockCommandExecution(original_block_command_state);
 
   // Executing the command may cause |this| object to be destroyed.
@@ -1399,7 +1429,7 @@ BookmarkBarView* BrowserView::GetBookmarkBarView() const {
 }
 
 LocationBarView* BrowserView::GetLocationBarView() const {
-  return toolbar_ ? toolbar_->location_bar() : NULL;
+  return toolbar_ ? toolbar_->location_bar() : nullptr;
 }
 
 views::View* BrowserView::GetTabContentsContainerView() const {
@@ -1416,6 +1446,7 @@ ToolbarView* BrowserView::GetToolbarView() const {
 void BrowserView::TabInsertedAt(WebContents* contents,
                                 int index,
                                 bool foreground) {
+#if defined(USE_AURA)
   // WebContents inserted in tabs might not have been added to the root
   // window yet. Per http://crbug/342672 add them now since drawing the
   // WebContents requires root window specific data - information about
@@ -1427,6 +1458,7 @@ void BrowserView::TabInsertedAt(WebContents* contents,
         window, root_window, root_window->GetBoundsInScreen());
     DCHECK(contents->GetNativeView()->GetRootWindow());
   }
+#endif
   web_contents_close_handler_->TabInserted();
 
   if (foreground)
@@ -1435,25 +1467,25 @@ void BrowserView::TabInsertedAt(WebContents* contents,
 
 void BrowserView::TabDetachedAt(WebContents* contents, int index) {
   if (PermissionBubbleManager::FromWebContents(contents))
-    PermissionBubbleManager::FromWebContents(contents)->SetView(NULL);
+    PermissionBubbleManager::FromWebContents(contents)->SetView(nullptr);
 
   // We use index here rather than comparing |contents| because by this time
   // the model has already removed |contents| from its list, so
-  // browser_->GetActiveWebContents() will return NULL or something else.
+  // browser_->GetActiveWebContents() will return null or something else.
   if (index == browser_->tab_strip_model()->active_index()) {
-    // We need to reset the current tab contents to NULL before it gets
+    // We need to reset the current tab contents to null before it gets
     // freed. This is because the focus manager performs some operations
     // on the selected WebContents when it is removed.
     web_contents_close_handler_->ActiveTabChanged();
-    contents_web_view_->SetWebContents(NULL);
-    infobar_container_->ChangeInfoBarManager(NULL);
-    UpdateDevToolsForContents(NULL, true);
+    contents_web_view_->SetWebContents(nullptr);
+    infobar_container_->ChangeInfoBarManager(nullptr);
+    UpdateDevToolsForContents(nullptr, true);
   }
 }
 
 void BrowserView::TabDeactivated(WebContents* contents) {
   if (PermissionBubbleManager::FromWebContents(contents))
-    PermissionBubbleManager::FromWebContents(contents)->SetView(NULL);
+    PermissionBubbleManager::FromWebContents(contents)->SetView(nullptr);
 
   // We do not store the focus when closing the tab to work-around bug 4633.
   // Some reports seem to show that the focus manager and/or focused view can
@@ -1466,7 +1498,7 @@ void BrowserView::TabStripEmpty() {
   // Make sure all optional UI is removed before we are destroyed, otherwise
   // there will be consequences (since our view hierarchy will still have
   // references to freed views).
-  UpdateUIForContents(NULL);
+  UpdateUIForContents(nullptr);
 }
 
 void BrowserView::WillCloseAllTabs() {
@@ -1502,14 +1534,15 @@ bool BrowserView::CanMinimize() const {
 }
 
 bool BrowserView::CanActivate() const {
-  if (!AppModalDialogQueue::GetInstance()->active_dialog() ||
-      !AppModalDialogQueue::GetInstance()->active_dialog()->native_dialog())
+  app_modal::AppModalDialogQueue* queue =
+      app_modal::AppModalDialogQueue::GetInstance();
+  if (!queue->active_dialog() || !queue->active_dialog()->native_dialog())
     return true;
 
 #if defined(USE_AURA) && defined(OS_CHROMEOS)
   // On Aura window manager controls all windows so settings focus via PostTask
   // will make only worse because posted task will keep trying to steal focus.
-  AppModalDialogQueue::GetInstance()->ActivateModalDialog();
+  queue->ActivateModalDialog();
 #else
   // If another browser is app modal, flash and activate the modal browser. This
   // has to be done in a post task, otherwise if the user clicked on a window
@@ -1537,7 +1570,7 @@ base::string16 BrowserView::GetAccessibleWindowTitle() const {
 }
 
 views::View* BrowserView::GetInitiallyFocusedView() {
-  return NULL;
+  return nullptr;
 }
 
 bool BrowserView::ShouldShowWindowTitle() const {
@@ -1556,7 +1589,7 @@ gfx::ImageSkia BrowserView::GetWindowAppIcon() {
   if (browser_->is_app()) {
     WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
     extensions::TabHelper* extensions_tab_helper =
-        contents ? extensions::TabHelper::FromWebContents(contents) : NULL;
+        contents ? extensions::TabHelper::FromWebContents(contents) : nullptr;
     if (extensions_tab_helper && extensions_tab_helper->GetExtensionAppIcon())
       return gfx::ImageSkia::CreateFrom1xBitmap(
           *extensions_tab_helper->GetExtensionAppIcon());
@@ -1695,7 +1728,7 @@ void BrowserView::OnWidgetMove() {
   // Comment out for one cycle to see if this fixes dist tests.
   // tabstrip_->DestroyDragController();
 
-  // status_bubble_ may be NULL if this is invoked during construction.
+  // status_bubble_ may be null if this is invoked during construction.
   if (status_bubble_.get())
     status_bubble_->Reposition();
 
@@ -2011,7 +2044,7 @@ void BrowserView::LoadingAnimationCallback() {
     // ... or in the window icon area for popups and app windows.
     WebContents* web_contents =
         browser_->tab_strip_model()->GetActiveWebContents();
-    // GetActiveWebContents can return NULL for example under Purify when
+    // GetActiveWebContents can return null for example under Purify when
     // the animations are running slowly and this function is called on a timer
     // through LoadingAnimationCallback.
     frame_->UpdateThrobber(web_contents && web_contents->IsLoading());
@@ -2020,7 +2053,7 @@ void BrowserView::LoadingAnimationCallback() {
 
 void BrowserView::OnLoadCompleted() {
 #if defined(OS_WIN)
-  DCHECK(!jumplist_);
+  DCHECK(!jumplist_.get());
   jumplist_ = new JumpList(browser_->profile());
 #endif
 }
@@ -2057,7 +2090,7 @@ bool BrowserView::MaybeShowBookmarkBar(WebContents* contents) {
 
   // Update parenting for the bookmark bar. This may detach it from all views.
   bool needs_layout = false;
-  views::View* new_parent = NULL;
+  views::View* new_parent = nullptr;
   if (show_bookmark_bar) {
     if (bookmark_bar_view_->IsDetached())
       new_parent = this;
@@ -2366,24 +2399,6 @@ void BrowserView::UpdateAcceleratorMetrics(const ui::Accelerator& accelerator,
 #endif
 }
 
-// static
-BrowserWindow* BrowserWindow::CreateBrowserWindow(Browser* browser) {
-  // Create the view and the frame. The frame will attach itself via the view
-  // so we don't need to do anything with the pointer.
-  BrowserView* view = new BrowserView();
-  view->Init(browser);
-  (new BrowserFrame(view))->InitBrowserFrame();
-  view->GetWidget()->non_client_view()->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
-  return view;
-}
-
-// static
-chrome::HostDesktopType BrowserWindow::AdjustHostDesktopType(
-    chrome::HostDesktopType desktop_type) {
-  return NativeBrowserFrameFactory::AdjustHostDesktopType(desktop_type);
-}
-
 void BrowserView::ShowAvatarBubble(WebContents* web_contents,
                                    const gfx::Rect& rect) {
   gfx::Point origin(rect.origin());
@@ -2431,8 +2446,8 @@ void BrowserView::ShowAvatarBubbleFromAvatarButton(
                                       views::BubbleBorder::PAINT_NORMAL;
     AvatarMenuBubbleView::ShowBubble(anchor_view, arrow, arrow_paint_type,
                                      alignment, bounds, browser());
-    ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::ICON_AVATAR_BUBBLE);
   }
+  ProfileMetrics::LogProfileOpenMethod(ProfileMetrics::ICON_AVATAR_BUBBLE);
 }
 
 int BrowserView::GetRenderViewHeightInsetWithDetachedBookmarkBar() {
@@ -2460,7 +2475,8 @@ void BrowserView::DoCutCopyPaste(void (WebContents::*method)(),
   if (DoCutCopyPasteForWebContents(contents, method))
     return;
 
-  WebContents* devtools = DevToolsWindow::GetInTabWebContents(contents, NULL);
+  WebContents* devtools = DevToolsWindow::GetInTabWebContents(contents,
+                                                              nullptr);
   if (devtools && DoCutCopyPasteForWebContents(devtools, method))
     return;
 
@@ -2477,10 +2493,7 @@ void BrowserView::DoCutCopyPaste(void (WebContents::*method)(),
 bool BrowserView::DoCutCopyPasteForWebContents(
     WebContents* contents,
     void (WebContents::*method)()) {
-  gfx::NativeView native_view = contents->GetContentNativeView();
-  if (!native_view)
-    return false;
-  if (native_view->HasFocus()) {
+  if (contents->GetRenderWidgetHostView()->HasFocus()) {
     (contents->*method)();
     return true;
   }
@@ -2490,8 +2503,8 @@ bool BrowserView::DoCutCopyPasteForWebContents(
 
 void BrowserView::ActivateAppModalDialog() const {
   // If another browser is app modal, flash and activate the modal browser.
-  AppModalDialog* active_dialog =
-      AppModalDialogQueue::GetInstance()->active_dialog();
+  app_modal::AppModalDialog* active_dialog =
+      app_modal::AppModalDialogQueue::GetInstance()->active_dialog();
   if (!active_dialog)
     return;
 
@@ -2502,7 +2515,7 @@ void BrowserView::ActivateAppModalDialog() const {
     modal_browser->window()->Activate();
   }
 
-  AppModalDialogQueue::GetInstance()->ActivateModalDialog();
+  app_modal::AppModalDialogQueue::GetInstance()->ActivateModalDialog();
 }
 
 int BrowserView::GetMaxTopInfoBarArrowHeight() {
@@ -2514,7 +2527,7 @@ int BrowserView::GetMaxTopInfoBarArrowHeight() {
     gfx::Point icon_bottom(
         toolbar_->location_bar()->GetLocationBarAnchorPoint());
     ConvertPointToTarget(toolbar_->location_bar(), this, &icon_bottom);
-    gfx::Point infobar_top(0, infobar_container_->GetVerticalOverlap(NULL));
+    gfx::Point infobar_top(0, infobar_container_->GetVerticalOverlap(nullptr));
     ConvertPointToTarget(infobar_container_, this, &infobar_top);
     top_arrow_height = infobar_top.y() - icon_bottom.y();
   }

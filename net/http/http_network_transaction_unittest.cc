@@ -268,12 +268,15 @@ class HttpNetworkTransactionTest
     base::MessageLoop::current()->RunUntilIdle();
   }
 
+  const char* GetAlternateProtocolFromParam() {
+    return
+        AlternateProtocolToString(AlternateProtocolFromNextProto(GetParam()));
+  }
+
   // This is the expected return from a current server advertising SPDY.
   std::string GetAlternateProtocolHttpHeader() {
-    return
-        std::string("Alternate-Protocol: 443:") +
-        AlternateProtocolToString(AlternateProtocolFromNextProto(GetParam())) +
-        "\r\n\r\n";
+    return std::string("Alternate-Protocol: 443:") +
+        GetAlternateProtocolFromParam() + "\r\n\r\n";
   }
 
   // Either |write_failure| specifies a write failure or |read_failure|
@@ -407,8 +410,7 @@ class HttpNetworkTransactionTest
 INSTANTIATE_TEST_CASE_P(
     NextProto,
     HttpNetworkTransactionTest,
-    testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
+    testing::Values(kProtoSPDY31, kProtoSPDY4_14, kProtoSPDY4_15));
 
 namespace {
 
@@ -8511,7 +8513,7 @@ TEST_P(HttpNetworkTransactionTest,
   const AlternateProtocolInfo alternate =
       http_server_properties->GetAlternateProtocol(
           HostPortPair::FromURL(request.url));
-  EXPECT_EQ(ALTERNATE_PROTOCOL_BROKEN, alternate.protocol);
+  EXPECT_TRUE(alternate.is_broken);
 }
 
 TEST_P(HttpNetworkTransactionTest,
@@ -10107,10 +10109,12 @@ TEST_P(HttpNetworkTransactionTest, SpdyAlternateProtocolThroughProxy) {
   };
   MockRead data_reads_1[] = {
     MockRead(SYNCHRONOUS, ERR_TEST_PEER_CLOSE_AFTER_NEXT_MOCK_READ),
-    MockRead("HTTP/1.1 200 OK\r\n"
-             "Alternate-Protocol: 443:npn-spdy/2\r\n"
-             "Proxy-Connection: close\r\n"
-             "\r\n"),
+    MockRead("HTTP/1.1 200 OK\r\n"),
+    MockRead("Alternate-Protocol: 443:"),
+    MockRead(GetAlternateProtocolFromParam()),
+    MockRead("\r\n"),
+    MockRead("Proxy-Connection: close\r\n"),
+    MockRead("\r\n"),
   };
   StaticSocketDataProvider data_1(data_reads_1, arraysize(data_reads_1),
                                   data_writes_1, arraysize(data_writes_1));
@@ -11402,8 +11406,7 @@ TEST_P(HttpNetworkTransactionTest, DoNotUseSpdySessionForHttpOverTunnel) {
   // SPDY GET for HTTP URL (through the proxy, but not the tunnel).
   SpdyHeaderBlock req2_block;
   req2_block[spdy_util_.GetMethodKey()] = "GET";
-  req2_block[spdy_util_.GetPathKey()] =
-      spdy_util_.is_spdy2() ? http_url.c_str() : "/";
+  req2_block[spdy_util_.GetPathKey()] = "/";
   req2_block[spdy_util_.GetHostKey()] = "www.google.com:443";
   req2_block[spdy_util_.GetSchemeKey()] = "http";
   spdy_util_.MaybeAddVersionHeader(&req2_block);
@@ -12193,8 +12196,8 @@ TEST_P(HttpNetworkTransactionTest, GetFullRequestHeadersIncludesExtraHeader) {
 
 namespace {
 
-// Fake HttpStreamBase that simply records calls to SetPriority().
-class FakeStream : public HttpStreamBase,
+// Fake HttpStream that simply records calls to SetPriority().
+class FakeStream : public HttpStream,
                    public base::SupportsWeakPtr<FakeStream> {
  public:
   explicit FakeStream(RequestPriority priority) : priority_(priority) {}
@@ -12273,6 +12276,10 @@ class FakeStream : public HttpStreamBase,
   void Drain(HttpNetworkSession* session) override { ADD_FAILURE(); }
 
   void SetPriority(RequestPriority priority) override { priority_ = priority; }
+
+  UploadProgress GetUploadProgress() const override { return UploadProgress(); }
+
+  HttpStream* RenewStreamForAuth() override { return NULL; }
 
  private:
   RequestPriority priority_;

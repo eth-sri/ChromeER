@@ -136,6 +136,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   blink::WebPluginContainer* container() const { return container_; }
 
+  PepperPluginInstanceThrottler* throttler() const { return throttler_.get(); }
+
   // Returns the PP_Instance uniquely identifying this instance. Guaranteed
   // nonzero.
   PP_Instance pp_instance() const { return pp_instance_; }
@@ -253,6 +255,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   int PrintBegin(const blink::WebPrintParams& print_params);
   bool PrintPage(int page_number, blink::WebCanvas* canvas);
   void PrintEnd();
+  bool GetPrintPresetOptionsFromDocument(
+      blink::WebPrintPresetOptions* preset_options);
 
   bool CanRotateView();
   void RotateView(blink::WebPlugin::RotationType type);
@@ -687,11 +691,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
                                  int pending_host_id,
                                  const ppapi::URLResponseInfoData& data);
 
-  // Peripheral content is cross-origin plugin content determined heuristically
-  // to be not the "main attraction" of the webpage.
-  bool IsPeripheralContent() const;
-  void SetPluginThrottled(bool throttled);
-
   RenderFrameImpl* render_frame_;
   base::Closure instance_deleted_callback_;
   scoped_refptr<PluginModule> module_;
@@ -714,15 +713,6 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // Plugin URL.
   GURL plugin_url_;
-
-  // Indicates whether this plugin may be throttled to reduce power consumption.
-  bool power_saver_enabled_;
-
-  // Indicates if the plugin is currently throttled.
-  bool plugin_throttled_;
-
-  // Fake view data used by the Power Saver feature to throttle plugins.
-  const ppapi::ViewData empty_view_data_;
 
   // Responsible for turning on throttling if Power Saver is on.
   scoped_ptr<PepperPluginInstanceThrottler> throttler_;

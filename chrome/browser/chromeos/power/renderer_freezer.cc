@@ -26,9 +26,14 @@
 namespace chromeos {
 
 RendererFreezer::RendererFreezer(scoped_ptr<RendererFreezer::Delegate> delegate)
-    : frozen_(false), delegate_(delegate.Pass()), weak_factory_(this) {
+    : frozen_(false),
+      delegate_(delegate.Pass()),
+      weak_factory_(this) {
   if (delegate_->CanFreezeRenderers()) {
-    DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(this);
+    DBusThreadManager::Get()
+        ->GetPowerManagerClient()
+        ->SetRenderProcessManagerDelegate(weak_factory_.GetWeakPtr());
+
     registrar_.Add(
         this,
         content::NOTIFICATION_RENDERER_PROCESS_CREATED,
@@ -37,9 +42,6 @@ RendererFreezer::RendererFreezer(scoped_ptr<RendererFreezer::Delegate> delegate)
 }
 
 RendererFreezer::~RendererFreezer() {
-  if (delegate_->CanFreezeRenderers())
-    DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(this);
-
   for (int rph_id : gcm_extension_processes_) {
     content::RenderProcessHost* host =
         content::RenderProcessHost::FromID(rph_id);
@@ -49,26 +51,11 @@ RendererFreezer::~RendererFreezer() {
 }
 
 void RendererFreezer::SuspendImminent() {
-  // If there was already a callback pending, this will cancel it and create a
-  // new one.
-  suspend_readiness_callback_.Reset(
-      base::Bind(&RendererFreezer::OnReadyToSuspend,
-                 weak_factory_.GetWeakPtr(),
-                 DBusThreadManager::Get()
-                     ->GetPowerManagerClient()
-                     ->GetSuspendReadinessCallback()));
-
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE, suspend_readiness_callback_.callback());
+  if (delegate_->FreezeRenderers())
+    frozen_ = true;
 }
 
-void RendererFreezer::SuspendDone(const base::TimeDelta& sleep_duration) {
-  // If we get a SuspendDone before we've had a chance to run OnReadyForSuspend,
-  // we should cancel it because we no longer want to freeze the renderers.  If
-  // we've already run it then cancelling the callback shouldn't really make a
-  // difference.
-  suspend_readiness_callback_.Cancel();
-
+void RendererFreezer::SuspendDone() {
   if (!frozen_)
     return;
 
@@ -174,15 +161,6 @@ void RendererFreezer::OnRenderProcessCreated(content::RenderProcessHost* rph) {
   // We didn't find an extension in this RenderProcessHost that is using GCM so
   // we can go ahead and freeze it on suspend.
   delegate_->SetShouldFreezeRenderer(rph->GetHandle(), true);
-}
-
-void RendererFreezer::OnReadyToSuspend(
-    const base::Closure& power_manager_callback) {
-  if (delegate_->FreezeRenderers())
-    frozen_ = true;
-
-  DCHECK(!power_manager_callback.is_null());
-  power_manager_callback.Run();
 }
 
 }  // namespace chromeos

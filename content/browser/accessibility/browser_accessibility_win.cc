@@ -3439,7 +3439,7 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia2_state_ |= IA2_STATE_CHECKABLE;
       break;
     case ui::AX_ROLE_COLOR_WELL:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
+      ia_role_ = ROLE_SYSTEM_TEXT;
       ia2_role_ = IA2_ROLE_COLOR_CHOOSER;
       break;
     case ui::AX_ROLE_COLUMN:
@@ -3460,9 +3460,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia2_role_ = IA2_ROLE_PARAGRAPH;
       break;
     case ui::AX_ROLE_DATE:
-      ia_role_ = ROLE_SYSTEM_DROPLIST;
-      ia2_role_ = IA2_ROLE_DATE_EDITOR;
-      break;
     case ui::AX_ROLE_DATE_TIME:
       ia_role_ = ROLE_SYSTEM_DROPLIST;
       ia2_role_ = IA2_ROLE_DATE_EDITOR;
@@ -3479,8 +3476,8 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_DESCRIPTION_LIST_DETAIL:
       role_name_ = html_tag;
+      ia_role_ = ROLE_SYSTEM_TEXT;
       ia2_role_ = IA2_ROLE_PARAGRAPH;
-      ia_state_ |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_DESCRIPTION_LIST:
       role_name_ = html_tag;
@@ -3508,6 +3505,10 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_state_ |= STATE_SYSTEM_READONLY;
       ia_state_ |= STATE_SYSTEM_FOCUSABLE;
       break;
+    case ui::AX_ROLE_EMBEDDED_OBJECT:
+      ia_role_ = ROLE_SYSTEM_CLIENT;
+      ia2_role_ = IA2_ROLE_EMBEDDED_OBJECT;
+      break;
     case ui::AX_ROLE_EDITABLE_TEXT:
       ia_role_ = ROLE_SYSTEM_TEXT;
       ia2_state_ |= IA2_STATE_SINGLE_LINE;
@@ -3518,17 +3519,15 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia2_role_ = IA2_ROLE_CAPTION;
       break;
     case ui::AX_ROLE_FIGURE:
-      role_name_ = html_tag;
       ia_role_ = ROLE_SYSTEM_GROUPING;
-      ia2_role_ = IA2_ROLE_SECTION;
       break;
     case ui::AX_ROLE_FORM:
       role_name_ = L"form";
       ia2_role_ = IA2_ROLE_FORM;
       break;
     case ui::AX_ROLE_FOOTER:
-      ia_role_ = IA2_ROLE_FOOTER;
-      ia_state_ |= STATE_SYSTEM_READONLY;
+      ia_role_ = ROLE_SYSTEM_GROUPING;
+      ia2_role_ = IA2_ROLE_FOOTER;
       break;
     case ui::AX_ROLE_GRID:
       ia_role_ = ROLE_SYSTEM_TABLE;
@@ -3559,9 +3558,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       role_name_ = html_tag;
       ia2_role_ = IA2_ROLE_HEADING;
       break;
-    case ui::AX_ROLE_HORIZONTAL_RULE:
-      ia_role_ = ROLE_SYSTEM_SEPARATOR;
-      break;
     case ui::AX_ROLE_IFRAME:
       ia_role_ = ROLE_SYSTEM_DOCUMENT;
       ia2_role_ = IA2_ROLE_INTERNAL_FRAME;
@@ -3588,7 +3584,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
     case ui::AX_ROLE_SEARCH:
       ia_role_ = ROLE_SYSTEM_GROUPING;
       ia2_role_ = IA2_ROLE_SECTION;
-      ia_state_ |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_LINK:
       ia_role_ = ROLE_SYSTEM_LINK;
@@ -3620,9 +3615,8 @@ void BrowserAccessibilityWin::InitRoleAndState() {
     case ui::AX_ROLE_MARQUEE:
       ia_role_ = ROLE_SYSTEM_ANIMATION;
       break;
-    case ui::AX_ROLE_MATH_ELEMENT:
+    case ui::AX_ROLE_MATH:
       ia_role_ = ROLE_SYSTEM_EQUATION;
-      ia_state_ |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_MENU:
     case ui::AX_ROLE_MENU_BUTTON:
@@ -3709,6 +3703,10 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_ROW_HEADER:
       ia_role_ = ROLE_SYSTEM_ROWHEADER;
+      break;
+    case ui::AX_ROLE_RUBY:
+      ia_role_ = ROLE_SYSTEM_TEXT;
+      ia2_role_ = IA2_ROLE_TEXT_FRAME;
       break;
     case ui::AX_ROLE_RULER:
       ia_role_ = ROLE_SYSTEM_CLIENT;
@@ -3822,21 +3820,12 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
 
     // TODO(dmazzoni): figure out the proper MSAA role for all of these.
-    case ui::AX_ROLE_BROWSER:
     case ui::AX_ROLE_DIRECTORY:
-    case ui::AX_ROLE_DRAWER:
-    case ui::AX_ROLE_HELP_TAG:
     case ui::AX_ROLE_IGNORED:
-    case ui::AX_ROLE_INCREMENTOR:
     case ui::AX_ROLE_LOG:
-    case ui::AX_ROLE_MATTE:
     case ui::AX_ROLE_NONE:
     case ui::AX_ROLE_PRESENTATIONAL:
-    case ui::AX_ROLE_RULER_MARKER:
-    case ui::AX_ROLE_SHEET:
     case ui::AX_ROLE_SLIDER_THUMB:
-    case ui::AX_ROLE_SYSTEM_WIDE:
-    case ui::AX_ROLE_VALUE_INDICATOR:
     default:
       ia_role_ = ROLE_SYSTEM_CLIENT;
       break;

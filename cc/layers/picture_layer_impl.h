@@ -15,6 +15,7 @@
 #include "cc/resources/picture_layer_tiling.h"
 #include "cc/resources/picture_layer_tiling_set.h"
 #include "cc/resources/picture_pile_impl.h"
+#include "cc/resources/tiling_set_eviction_queue.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPicture.h"
 
@@ -67,39 +68,13 @@ class CC_EXPORT PictureLayerImpl
     PictureLayerTiling::TilingRasterTileIterator iterators_[NUM_ITERATORS];
   };
 
-  class CC_EXPORT LayerEvictionTileIterator {
-   public:
-    LayerEvictionTileIterator();
-    LayerEvictionTileIterator(PictureLayerImpl* layer,
-                              TreePriority tree_priority);
-    ~LayerEvictionTileIterator();
-
-    Tile* operator*();
-    const Tile* operator*() const;
-    LayerEvictionTileIterator& operator++();
-    operator bool() const;
-
-   private:
-    bool AdvanceToNextCategory();
-    bool AdvanceToNextTilingRangeType();
-    bool AdvanceToNextTiling();
-
-    PictureLayerTilingSet::TilingRange CurrentTilingRange() const;
-    size_t CurrentTilingIndex() const;
-
-    PictureLayerImpl* layer_;
-    TreePriority tree_priority_;
-
-    PictureLayerTiling::EvictionCategory current_category_;
-    PictureLayerTilingSet::TilingRangeType current_tiling_range_type_;
-    size_t current_tiling_;
-    PictureLayerTiling::TilingEvictionTileIterator current_iterator_;
-  };
-
   static scoped_ptr<PictureLayerImpl> Create(LayerTreeImpl* tree_impl, int id) {
     return make_scoped_ptr(new PictureLayerImpl(tree_impl, id));
   }
   ~PictureLayerImpl() override;
+
+  scoped_ptr<TilingSetEvictionQueue> CreateEvictionQueue(
+      TreePriority tree_priority);
 
   // LayerImpl overrides.
   const char* LayerTypeAsString() const override;
@@ -119,13 +94,13 @@ class CC_EXPORT PictureLayerImpl
   // PictureLayerTilingClient overrides.
   scoped_refptr<Tile> CreateTile(PictureLayerTiling* tiling,
                                  const gfx::Rect& content_rect) override;
-  RasterSource* GetRasterSource() override;
   gfx::Size CalculateTileSize(const gfx::Size& content_bounds) const override;
   const Region* GetPendingInvalidation() override;
   const PictureLayerTiling* GetPendingOrActiveTwinTiling(
       const PictureLayerTiling* tiling) const override;
   PictureLayerTiling* GetRecycledTwinTiling(
       const PictureLayerTiling* tiling) override;
+  TilePriority::PriorityBin GetMaxTilePriorityBin() const override;
   size_t GetMaxTilesForInterestArea() const override;
   float GetSkewportTargetTimeInSeconds() const override;
   int GetSkewportExtrapolationLimitInContentPixels() const override;
@@ -138,10 +113,13 @@ class CC_EXPORT PictureLayerImpl
   // Mask-related functions.
   void GetContentsResourceId(ResourceProvider::ResourceId* resource_id,
                              gfx::Size* resource_size) const override;
+  void set_is_mask(bool is_mask) { is_mask_ = is_mask; }
 
   size_t GPUMemoryUsageInBytes() const override;
 
   void RunMicroBenchmark(MicroBenchmarkImpl* benchmark) override;
+
+  bool CanHaveTilings() const;
 
   // Functions used by tile manager.
   PictureLayerImpl* GetPendingOrActiveTwinLayer() const;
@@ -149,13 +127,14 @@ class CC_EXPORT PictureLayerImpl
   // Virtual for testing.
   virtual bool HasValidTilePriorities() const;
   bool AllTilesRequiredForActivationAreReadyToDraw() const;
+  bool AllTilesRequiredForDrawAreReadyToDraw() const;
 
  protected:
   friend class LayerRasterTileIterator;
+  using TileRequirementCheck = bool (PictureLayerTiling::*)(const Tile*) const;
 
   PictureLayerImpl(LayerTreeImpl* tree_impl, int id);
   PictureLayerTiling* AddTiling(float contents_scale);
-  void RemoveTiling(float contents_scale);
   void RemoveAllTilings();
   void SyncFromActiveLayer(const PictureLayerImpl* other);
   void AddTilingsForRasterScale();
@@ -165,11 +144,10 @@ class CC_EXPORT PictureLayerImpl
   void CleanUpTilingsOnActiveLayer(
       std::vector<PictureLayerTiling*> used_tilings);
   float MinimumContentsScale() const;
-  float SnappedContentsScale(float new_contents_scale);
   void ResetRasterScale();
   gfx::Rect GetViewportForTilePriorityInContentSpace() const;
   PictureLayerImpl* GetRecycledTwinLayer() const;
-  void UpdatePile(scoped_refptr<PicturePileImpl> pile);
+  void UpdateRasterSource(scoped_refptr<RasterSource> raster_source);
 
   void DoPostCommitInitializationIfNeeded() {
     if (needs_post_commit_initialization_)
@@ -177,9 +155,13 @@ class CC_EXPORT PictureLayerImpl
   }
   void DoPostCommitInitialization();
 
-  bool CanHaveTilings() const;
   bool CanHaveTilingWithScale(float contents_scale) const;
   void SanityCheckTilingState() const;
+  // Checks if all tiles required for a certain action (e.g. activation) are
+  // ready to draw.  is_tile_required_callback gets called on all candidate
+  // tiles and returns true if the tile is required for the action.
+  bool AllTilesRequiredAreReadyToDraw(
+      TileRequirementCheck is_tile_required_callback) const;
 
   bool ShouldAdjustRasterScaleDuringScaleAnimations() const;
 
@@ -193,7 +175,7 @@ class CC_EXPORT PictureLayerImpl
   PictureLayerImpl* twin_layer_;
 
   scoped_ptr<PictureLayerTilingSet> tilings_;
-  scoped_refptr<PicturePileImpl> pile_;
+  scoped_refptr<RasterSource> raster_source_;
   Region invalidation_;
 
   float ideal_page_scale_;
@@ -214,6 +196,7 @@ class CC_EXPORT PictureLayerImpl
   // after a CalculateContentsScale/ManageTilings.
   bool should_update_tile_priorities_;
   bool only_used_low_res_last_append_quads_;
+  bool is_mask_;
 
   // Any draw properties derived from |transform|, |viewport|, and |clip|
   // parameters in LayerTreeHostImpl::SetExternalDrawConstraints are not valid

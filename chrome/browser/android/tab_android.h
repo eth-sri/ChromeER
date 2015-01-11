@@ -11,6 +11,8 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "chrome/browser/favicon/favicon_tab_helper_observer.h"
+#include "chrome/browser/search/instant_service_observer.h"
 #include "chrome/browser/sync/glue/synced_tab_delegate_android.h"
 #include "chrome/browser/ui/search/search_tab_helper_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper_delegate.h"
@@ -43,8 +45,10 @@ class PrerenderManager;
 }
 
 class TabAndroid : public CoreTabHelperDelegate,
+                   public InstantServiceObserver,
                    public SearchTabHelperDelegate,
-                   public content::NotificationObserver {
+                   public content::NotificationObserver,
+                   public FaviconTabHelperObserver {
  public:
   // A Java counterpart will be generated for this enum.
   // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser
@@ -112,6 +116,9 @@ class TabAndroid : public CoreTabHelperDelegate,
                                bool did_start_load,
                                bool did_finish_load) override;
 
+  // Overridden from InstantServiceObserver:
+  void DefaultSearchProviderChanged() override;
+
   // Overridden from SearchTabHelperDelegate:
   virtual void OnWebContentsInstantSupportDisabled(
       const content::WebContents* web_contents) override;
@@ -120,6 +127,9 @@ class TabAndroid : public CoreTabHelperDelegate,
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) override;
+
+  // FaviconTabHelperObserver -----------------------------------------------
+  virtual void OnFaviconAvailable(const gfx::Image& image) override;
 
   // Methods called from Java via JNI -----------------------------------------
 
@@ -149,12 +159,10 @@ class TabAndroid : public CoreTabHelperDelegate,
                                            jstring jurl,
                                            jstring jtitle);
   bool Print(JNIEnv* env, jobject obj);
-  // Called to get favicon of current tab, return null if no favicon is
-  // avaliable for current tab.
-  base::android::ScopedJavaLocalRef<jobject> GetFavicon(JNIEnv* env,
-                                                        jobject obj);
-  jboolean IsFaviconValid(JNIEnv* env, jobject jobj);
-
+  // Called to get default favicon of current tab, return null if no
+  // favicon is avaliable for current tab.
+  base::android::ScopedJavaLocalRef<jobject> GetDefaultFavicon(JNIEnv* env,
+                                                               jobject obj);
   // Register the Tab's native methods through JNI.
   static bool RegisterTabAndroid(JNIEnv* env);
 

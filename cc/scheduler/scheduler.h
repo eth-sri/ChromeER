@@ -34,14 +34,12 @@ namespace cc {
 
 class SchedulerClient {
  public:
-  virtual BeginFrameSource* ExternalBeginFrameSource() = 0;
   virtual void WillBeginImplFrame(const BeginFrameArgs& args) = 0;
   virtual void ScheduledActionSendBeginMainFrame() = 0;
   virtual DrawResult ScheduledActionDrawAndSwapIfPossible() = 0;
   virtual DrawResult ScheduledActionDrawAndSwapForced() = 0;
   virtual void ScheduledActionAnimate() = 0;
   virtual void ScheduledActionCommit() = 0;
-  virtual void ScheduledActionUpdateVisibleTiles() = 0;
   virtual void ScheduledActionActivateSyncTree() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
   virtual void ScheduledActionManageTiles() = 0;
@@ -50,6 +48,7 @@ class SchedulerClient {
   virtual base::TimeDelta BeginMainFrameToCommitDurationEstimate() = 0;
   virtual base::TimeDelta CommitToActivateDurationEstimate() = 0;
   virtual void DidBeginImplFrameDeadline() = 0;
+  virtual void SendBeginFramesToChildren(const BeginFrameArgs& args) = 0;
 
  protected:
   virtual ~SchedulerClient() {}
@@ -81,17 +80,22 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
       const SchedulerSettings& scheduler_settings,
       int layer_tree_host_id,
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-      base::PowerMonitor* power_monitor) {
+      base::PowerMonitor* power_monitor,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source) {
     SchedulerFrameSourcesConstructor frame_sources_constructor;
     return make_scoped_ptr(new Scheduler(client,
                                          scheduler_settings,
                                          layer_tree_host_id,
                                          task_runner,
                                          power_monitor,
+                                         external_begin_frame_source.Pass(),
                                          &frame_sources_constructor));
   }
 
   ~Scheduler() override;
+
+  // BeginFrameObserverMixin
+  bool OnBeginFrameMixInDelegate(const BeginFrameArgs& args) override;
 
   // base::PowerObserver method.
   void OnPowerStateChange(bool on_battery_power) override;
@@ -107,6 +111,7 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
   void SetVisible(bool visible);
   void SetCanDraw(bool can_draw);
   void NotifyReadyToActivate();
+  void NotifyReadyToDraw();
 
   void SetNeedsCommit();
 
@@ -118,7 +123,6 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
 
   void SetMaxSwapsPending(int max);
   void DidSwapBuffers();
-  void SetSwapUsedIncompleteTile(bool used_incomplete_tile);
   void DidSwapBuffersComplete();
 
   void SetImplLatencyTakesPriority(bool impl_latency_takes_priority);
@@ -164,8 +168,7 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
     state_machine_.SetContinuousPainting(continuous_painting);
   }
 
-  // BeginFrameObserverMixin
-  bool OnBeginFrameMixInDelegate(const BeginFrameArgs& args) override;
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames);
 
  protected:
   Scheduler(SchedulerClient* client,
@@ -173,6 +176,7 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
             int layer_tree_host_id,
             const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
             base::PowerMonitor* power_monitor,
+            scoped_ptr<BeginFrameSource> external_begin_frame_source,
             SchedulerFrameSourcesConstructor* frame_sources_constructor);
 
   // virtual for testing - Don't call these in the constructor or

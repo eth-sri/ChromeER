@@ -20,10 +20,10 @@ const char* const kAlternateProtocolStrings[] = {
   "npn-spdy/2",
   "npn-spdy/3",
   "npn-spdy/3.1",
-  "npn-h2-14",  // HTTP/2 draft 14. Called SPDY4 internally.
+  "npn-h2-14",  // HTTP/2 draft-14. Called SPDY4 internally.
+  "npn-h2-15",  // HTTP/2 draft-15. Called SPDY4 internally.
   "quic"
 };
-const char kBrokenAlternateProtocol[] = "Broken";
 
 COMPILE_ASSERT(
     arraysize(kAlternateProtocolStrings) == NUM_VALID_ALTERNATE_PROTOCOLS,
@@ -52,13 +52,12 @@ const char* AlternateProtocolToString(AlternateProtocol protocol) {
     case DEPRECATED_NPN_SPDY_2:
     case NPN_SPDY_3:
     case NPN_SPDY_3_1:
-    case NPN_SPDY_4:
+    case NPN_SPDY_4_14:
+    case NPN_SPDY_4_15:
     case QUIC:
       DCHECK(IsAlternateProtocolValid(protocol));
       return kAlternateProtocolStrings[
           protocol - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION];
-    case ALTERNATE_PROTOCOL_BROKEN:
-      return kBrokenAlternateProtocol;
     case UNINITIALIZED_ALTERNATE_PROTOCOL:
       return "Uninitialized";
   }
@@ -73,8 +72,6 @@ AlternateProtocol AlternateProtocolFromString(const std::string& str) {
     if (str == AlternateProtocolToString(protocol))
       return protocol;
   }
-  if (str == kBrokenAlternateProtocol)
-    return ALTERNATE_PROTOCOL_BROKEN;
   return UNINITIALIZED_ALTERNATE_PROTOCOL;
 }
 
@@ -86,8 +83,10 @@ AlternateProtocol AlternateProtocolFromNextProto(NextProto next_proto) {
       return NPN_SPDY_3;
     case kProtoSPDY31:
       return NPN_SPDY_3_1;
-    case kProtoSPDY4:
-      return NPN_SPDY_4;
+    case kProtoSPDY4_14:
+      return NPN_SPDY_4_14;
+    case kProtoSPDY4_15:
+      return NPN_SPDY_4_15;
     case kProtoQUIC1SPDY3:
       return QUIC;
 
@@ -101,9 +100,10 @@ AlternateProtocol AlternateProtocolFromNextProto(NextProto next_proto) {
 }
 
 std::string AlternateProtocolInfo::ToString() const {
-  return base::StringPrintf("%d:%s p=%f", port,
+  return base::StringPrintf("%d:%s p=%f%s", port,
                             AlternateProtocolToString(protocol),
-                            probability);
+                            probability,
+                            is_broken ? " (broken)" : "");
 }
 
 }  // namespace net

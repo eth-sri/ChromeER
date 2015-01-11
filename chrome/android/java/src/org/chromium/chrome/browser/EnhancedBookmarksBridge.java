@@ -80,20 +80,28 @@ public final class EnhancedBookmarksBridge {
     }
 
     /**
-     * Moves a Bookmark in the EnhancedBookmarkModel
+     * Moves a bookmark to another folder, and append it at the end of the list of all children.
      * @param bookmarkId The item to be be moved
      * @param newParentId The new parent of the item
-     * @param index New position index of bookmark within the parent
      */
-    public void moveBookmark(BookmarkId bookmarkId, BookmarkId newParentId, int index) {
-        nativeMoveBookmark(mNativeEnhancedBookmarksBridge, bookmarkId, newParentId, index);
+    public void moveBookmark(BookmarkId bookmarkId, BookmarkId newParentId) {
+        nativeMoveBookmark(mNativeEnhancedBookmarksBridge, bookmarkId, newParentId);
     }
 
+    /**
+     * Get descriptions of a given bookmark.
+     * @param id The id of the bookmark to look at.
+     * @return Description of the bookmark. If given a partner bookmark, this method will return an
+     *         empty list.
+     */
     public String getBookmarkDescription(BookmarkId id) {
         return nativeGetBookmarkDescription(mNativeEnhancedBookmarksBridge, id.getId(),
                 id.getType());
     }
 
+    /**
+     * Sets the description of the given bookmark.
+     */
     public void setBookmarkDescription(BookmarkId id, String description) {
         nativeSetBookmarkDescription(mNativeEnhancedBookmarksBridge, id.getId(), id.getType(),
                 description);
@@ -163,6 +171,18 @@ public final class EnhancedBookmarksBridge {
     }
 
     /**
+     * Get all filters associated with the given bookmark.
+     *
+     * @param bookmark The bookmark to find filters for.
+     * @return Array of Strings, each representing a filter. If given a partner bookmark, this
+     *         method will return an empty array.
+     */
+    public String[] getFiltersForBookmark(BookmarkId bookmark) {
+        return nativeGetFiltersForBookmark(mNativeEnhancedBookmarksBridge, bookmark.getId(),
+                bookmark.getType());
+    }
+
+    /**
      * @return Current set of known auto-filters for bookmarks.
      */
     public List<String> getFilters() {
@@ -206,10 +226,12 @@ public final class EnhancedBookmarksBridge {
     private native List<BookmarkId> nativeGetSearchResults(long nativeEnhancedBookmarksBridge,
             String query);
     private native String[] nativeGetFilters(long nativeEnhancedBookmarksBridge);
+    private native String[] nativeGetFiltersForBookmark(long nativeEnhancedBookmarksBridge, long id,
+            int type);
     private native BookmarkId nativeAddFolder(long nativeEnhancedBookmarksBridge, BookmarkId parent,
             int index, String title);
     private native void nativeMoveBookmark(long nativeEnhancedBookmarksBridge,
-            BookmarkId bookmarkId, BookmarkId newParentId, int index);
+            BookmarkId bookmarkId, BookmarkId newParentId);
     private native BookmarkId nativeAddBookmark(long nativeEnhancedBookmarksBridge,
             BookmarkId parent, int index, String title, String url);
     private native void nativeSendSearchRequest(long nativeEnhancedBookmarksBridge, String query);

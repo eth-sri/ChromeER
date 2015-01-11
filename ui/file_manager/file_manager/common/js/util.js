@@ -234,8 +234,17 @@ util.getKeyModifiers = function(event) {
 };
 
 /**
+ * @typedef {?{
+ *   scaleX: number,
+ *   scaleY: number,
+ *   rotate90: number
+ * }}
+ */
+util.Transform;
+
+/**
  * @param {Element} element Element to transform.
- * @param {Object} transform Transform object,
+ * @param {util.Transform} transform Transform object,
  *                           contains scaleX, scaleY and rotate90 properties.
  */
 util.applyTransform = function(element, transform) {
@@ -263,17 +272,17 @@ util.extractFilePath = function(url) {
 /**
  * A shortcut function to create a child element with given tag and class.
  *
- * @param {Element} parent Parent element.
+ * @param {!HTMLElement} parent Parent element.
  * @param {string=} opt_className Class name.
  * @param {string=} opt_tag Element tag, DIV is omitted.
- * @return {Element} Newly created element.
+ * @return {!HTMLElement} Newly created element.
  */
 util.createChild = function(parent, opt_className, opt_tag) {
   var child = parent.ownerDocument.createElement(opt_tag || 'div');
   if (opt_className)
     child.className = opt_className;
   parent.appendChild(child);
-  return child;
+  return /** @type {!HTMLElement} */ (child);
 };
 
 /**
@@ -917,14 +926,11 @@ util.splitExtension = function(path) {
 /**
  * Returns the localized name of the entry.
  *
- * @param {(VolumeManager|VolumeManagerWrapper)} volumeManager The volume
- *     manager.
+ * @param {EntryLocation} locationInfo
  * @param {!Entry} entry The entry to be retrieve the name of.
  * @return {?string} The localized name.
  */
-util.getEntryLabel = function(volumeManager, entry) {
-  var locationInfo = volumeManager.getLocationInfo(entry);
-
+util.getEntryLabel = function(locationInfo, entry) {
   if (locationInfo && locationInfo.isRootEntry) {
     switch (locationInfo.rootType) {
       case VolumeManagerCommon.RootType.DOWNLOADS:
@@ -1007,5 +1013,19 @@ util.validateFileName = function(parentEntry, name, filterHiddenOn) {
           else
             reject(str('ERROR_LONG_NAME'));
         });
+  });
+};
+
+/**
+ * Adds a foregorund listener to the background page components.
+ * The lisner will be removed when the foreground window is closed.
+ * @param {!cr.EventTarget} target
+ * @param {string} type
+ * @param {Function} handler
+ */
+util.addEventListenerToBackgroundComponent = function(target, type, handler) {
+  target.addEventListener(type, handler);
+  window.addEventListener('pagehide', function() {
+    target.removeEventListener(type, handler);
   });
 };

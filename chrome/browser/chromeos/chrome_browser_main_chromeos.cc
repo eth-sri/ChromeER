@@ -29,7 +29,11 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_mode_idle_app_name_notification.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/dbus/cros_dbus_service.h"
+#include "chrome/browser/chromeos/dbus/chrome_console_service_provider_delegate.h"
+#include "chrome/browser/chromeos/dbus/chrome_display_power_service_provider_delegate.h"
+#include "chrome/browser/chromeos/dbus/chrome_proxy_resolver_delegate.h"
+#include "chrome/browser/chromeos/dbus/printer_service_provider.h"
+#include "chrome/browser/chromeos/dbus/screen_lock_service_provider.h"
 #include "chrome/browser/chromeos/device/input_service_proxy.h"
 #include "chrome/browser/chromeos/events/event_rewriter.h"
 #include "chrome/browser/chromeos/events/event_rewriter_controller.h"
@@ -50,6 +54,7 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_impl.h"
+#include "chrome/browser/chromeos/net/wake_on_wifi_manager.h"
 #include "chrome/browser/chromeos/options/cert_library.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos_factory.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -90,10 +95,14 @@
 #include "chromeos/cryptohome/homedir_methods.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/power_policy_controller.h"
+#include "chromeos/dbus/services/console_service_provider.h"
+#include "chromeos/dbus/services/cros_dbus_service.h"
+#include "chromeos/dbus/services/display_power_service_provider.h"
+#include "chromeos/dbus/services/liveness_service_provider.h"
+#include "chromeos/dbus/services/proxy_resolution_service_provider.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
-#include "chromeos/ime/ime_keyboard.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
 #include "chromeos/login/user_names.h"
 #include "chromeos/login_event_recorder.h"
@@ -116,6 +125,8 @@
 #include "net/socket/ssl_server_socket.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "ui/base/ime/chromeos/ime_keyboard.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/touch/touch_device.h"
 #include "ui/events/event_utils.h"
 
@@ -161,7 +172,24 @@ class DBusServices {
     // Initialize DBusThreadManager for the browser. This must be done after
     // the main message loop is started, as it uses the message loop.
     DBusThreadManager::Initialize();
-    CrosDBusService::Initialize();
+    PowerPolicyController::Initialize(
+        DBusThreadManager::Get()->GetPowerManagerClient());
+
+    ScopedVector<CrosDBusService::ServiceProviderInterface> service_providers;
+    service_providers.push_back(ProxyResolutionServiceProvider::Create(
+        make_scoped_ptr(new ChromeProxyResolverDelegate())));
+#if !defined(USE_ATHENA)
+    // crbug.com/413897
+    service_providers.push_back(new DisplayPowerServiceProvider(
+        make_scoped_ptr(new ChromeDisplayPowerServiceProviderDelegate)));
+    // crbug.com/401285
+    service_providers.push_back(new PrinterServiceProvider);
+#endif
+    service_providers.push_back(new LivenessServiceProvider);
+    service_providers.push_back(new ScreenLockServiceProvider);
+    service_providers.push_back(new ConsoleServiceProvider(
+        make_scoped_ptr(new ChromeConsoleServiceProviderDelegate)));
+    CrosDBusService::Initialize(service_providers.Pass());
 
     // Initialize PowerDataCollector after DBusThreadManager is initialized.
     PowerDataCollector::Initialize();
@@ -219,6 +247,8 @@ class DBusServices {
 
     // Shutdown the PowerDataCollector before shutting down DBusThreadManager.
     PowerDataCollector::Shutdown();
+
+    PowerPolicyController::Shutdown();
 
     // NOTE: This must only be called if Initialize() was called.
     DBusThreadManager::Shutdown();
@@ -343,6 +373,8 @@ void ChromeBrowserMainPartsChromeos::PreMainMessageLoopRun() {
 
   DeviceOAuth2TokenServiceFactory::Initialize();
 
+  wake_on_wifi_manager_.reset(new WakeOnWifiManager());
+
   ChromeBrowserMainPartsLinux::PreMainMessageLoopRun();
 }
 
@@ -433,8 +465,7 @@ void ChromeBrowserMainPartsChromeos::PreProfileInit() {
     WizardController::SetZeroDelays();
   }
 
-  power_prefs_.reset(new PowerPrefs(
-      DBusThreadManager::Get()->GetPowerPolicyController()));
+  power_prefs_.reset(new PowerPrefs(PowerPolicyController::Get()));
 
   // In Aura builds this will initialize ash::Shell.
   ChromeBrowserMainPartsLinux::PreProfileInit();
@@ -472,9 +503,7 @@ class GuestLanguageSetCallbackData {
 
   // Must match SwitchLanguageCallback type.
   static void Callback(const scoped_ptr<GuestLanguageSetCallbackData>& self,
-                       const std::string& locale,
-                       const std::string& loaded_locale,
-                       bool success);
+                       const locale_util::LanguageSwitchResult& result);
 
   Profile* profile;
 };
@@ -482,9 +511,7 @@ class GuestLanguageSetCallbackData {
 // static
 void GuestLanguageSetCallbackData::Callback(
     const scoped_ptr<GuestLanguageSetCallbackData>& self,
-    const std::string& locale,
-    const std::string& loaded_locale,
-    bool success) {
+    const locale_util::LanguageSwitchResult& result) {
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   scoped_refptr<input_method::InputMethodManager::State> ime_state =
@@ -500,7 +527,7 @@ void GuestLanguageSetCallbackData::Callback(
   // Second, enable locale based input methods.
   const std::string locale_default_input_method =
       manager->GetInputMethodUtil()->GetLanguageDefaultInputMethodId(
-          loaded_locale);
+          result.loaded_locale);
   if (!locale_default_input_method.empty()) {
     PrefService* user_prefs = self->profile->GetPrefs();
     user_prefs->SetString(prefs::kLanguagePreviousInputMethod,
@@ -518,13 +545,12 @@ void GuestLanguageSetCallbackData::Callback(
 void SetGuestLocale(Profile* const profile) {
   scoped_ptr<GuestLanguageSetCallbackData> data(
       new GuestLanguageSetCallbackData(profile));
-  scoped_ptr<locale_util::SwitchLanguageCallback> callback(
-      new locale_util::SwitchLanguageCallback(base::Bind(
-          &GuestLanguageSetCallbackData::Callback, base::Passed(data.Pass()))));
+  locale_util::SwitchLanguageCallback callback(base::Bind(
+      &GuestLanguageSetCallbackData::Callback, base::Passed(data.Pass())));
   user_manager::User* const user =
       ProfileHelper::Get()->GetUserByProfile(profile);
   UserSessionManager::GetInstance()->RespectLocalePreference(
-      profile, user, callback.Pass());
+      profile, user, callback);
 }
 
 void ChromeBrowserMainPartsChromeos::PostProfileInit() {
@@ -590,6 +616,7 @@ void ChromeBrowserMainPartsChromeos::PostProfileInit() {
     light_bar_.reset(new LightBar());
 
   g_browser_process->platform_part()->InitializeAutomaticRebootManager();
+  g_browser_process->platform_part()->InitializeDeviceDisablingManager();
 
   // This observer cannot be created earlier because it requires the shell to be
   // available.
@@ -706,6 +733,7 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
   power_prefs_.reset();
   renderer_freezer_.reset();
   light_bar_.reset();
+  wake_on_wifi_manager_.reset();
 
   // Let the ScreenLocker unregister itself from SessionManagerClient before
   // DBusThreadManager is shut down.
@@ -749,6 +777,10 @@ void ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun() {
 #if !defined(USE_ATHENA)
   WallpaperManager::Get()->Shutdown();
 #endif
+
+  // Let the DeviceDisablingManager unregister itself as an observer of the
+  // CrosSettings singleton before it is destroyed.
+  g_browser_process->platform_part()->ShutdownDeviceDisablingManager();
 
   // Let the AutomaticRebootManager unregister itself as an observer of several
   // subsystems.

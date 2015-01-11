@@ -118,16 +118,17 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
       int route_id,
       const CreateCommandBufferCallback& callback);
 
-  // Tells the GPU process to create a new GPU memory buffer using the given
-  // handle.
-  void CreateGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+  // Tells the GPU process to create a new GPU memory buffer.
+  void CreateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                              const gfx::Size& size,
                              gfx::GpuMemoryBuffer::Format format,
                              gfx::GpuMemoryBuffer::Usage usage,
+                             int client_id,
                              const CreateGpuMemoryBufferCallback& callback);
 
   // Tells the GPU process to destroy GPU memory buffer.
-  void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                              int client_id,
                               int sync_point);
 
   // What kind of GPU process, e.g. sandboxed or unsandboxed.

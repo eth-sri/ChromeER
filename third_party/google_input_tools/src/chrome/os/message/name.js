@@ -13,6 +13,7 @@
 //
 goog.provide('i18n.input.chrome.message.Name');
 
+
 /**
  * The message attribute name.
  *
@@ -41,22 +42,24 @@ i18n.input.chrome.message.Name = {
   LANGUAGE: 'language',
   MATCHED_LENGTHS: 'matchedLengths',
   MSG: 'msg',
-  MSG_TYPE: 'type',
+  THRESHOLD: 'threshold',
+  TYPE: 'type',
   OPTION_PREFIX: 'optionPrefix',
   OPTION_TYPE: 'optionType',
   PAGE_SIZE: 'pageSize',
   POSSIBILITIES: 'possibilities',
   PROPERTIES: 'properties',
   REQUEST_ID: 'requestId',
+  SCREEN: 'screen',
   SHIFT_KEY: 'shiftKey',
   SOURCE: 'source',
   SOURCES: 'sources',
   SPATIAL_DATA: 'spatialData',
-  SCREEN: 'screen',
   STROKES: 'strokes',
   TEXT: 'text',
   VERTICAL: 'vertical',
   VISIBLE: 'visible',
   VISIBILITY: 'visibility',
-  WIDTH: 'width'
+  WIDTH: 'width',
+  SWITCHING: 'switching'
 };

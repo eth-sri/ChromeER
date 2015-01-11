@@ -29,7 +29,6 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/user_agent.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/feature_switch.h"
 #include "gpu/config/gpu_info.h"
 #include "net/http/http_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -140,11 +139,7 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       content::PepperPluginInfo pdf;
       pdf.path = path;
       pdf.name = ChromeContentClient::kPDFPluginName;
-      if (CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kOutOfProcessPdf)) {
-        // Always enable the MIME handler view flag for OOP PDF.
-        extensions::FeatureSwitch::mime_handler_view()->SetOverrideValue(
-            extensions::FeatureSwitch::OVERRIDE_ENABLED);
+      if (switches::OutOfProcessPdfEnabled()) {
         pdf.is_out_of_process = true;
         content::WebPluginMimeType pdf_mime_type(kPDFPluginOutOfProcessMimeType,
                                                  kPDFPluginExtension,
@@ -281,14 +276,8 @@ void ComputeBuiltInPlugins(std::vector<content::PepperPluginInfo>* plugins) {
       codecs.push_back(kCdmSupportedCodecVp8);
       codecs.push_back(kCdmSupportedCodecVp9);
 #if defined(USE_PROPRIETARY_CODECS)
-// TODO(ddorwin): Rename these macros to reflect their real meaning: whether the
-// CDM Chrome was built [and shipped] with support these types.
-#if defined(WIDEVINE_CDM_AAC_SUPPORT_AVAILABLE)
       codecs.push_back(kCdmSupportedCodecAac);
-#endif
-#if defined(WIDEVINE_CDM_AVC1_SUPPORT_AVAILABLE)
       codecs.push_back(kCdmSupportedCodecAvc1);
-#endif
 #endif  // defined(USE_PROPRIETARY_CODECS)
       std::string codec_string =
           JoinString(codecs, kCdmSupportedCodecsValueDelimiter);

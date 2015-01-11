@@ -6,6 +6,7 @@
 #define UI_VIEWS_COCOA_BRIDGED_NATIVE_WIDGET_H_
 
 #import <Cocoa/Cocoa.h>
+#include <vector>
 
 #import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
@@ -45,6 +46,9 @@ class VIEWS_EXPORT BridgedNativeWidget : public internal::InputMethodDelegate,
   // This does NOT take ownership of |focus_manager|.
   void SetFocusManager(FocusManager* focus_manager);
 
+  // Changes the bounds of the window and the hosted layer if present.
+  void SetBounds(const gfx::Rect& new_bounds);
+
   // Set or clears the views::View bridged by the content view. This does NOT
   // take ownership of |view|.
   void SetRootView(views::View* view);
@@ -65,6 +69,9 @@ class VIEWS_EXPORT BridgedNativeWidget : public internal::InputMethodDelegate,
   // invert the value of target_fullscreen_state().
   void ToggleDesiredFullscreenState();
 
+  // Called by the NSWindowDelegate when the size of the window changes.
+  void OnSizeChanged();
+
   // See widget.h for documentation.
   InputMethod* CreateInputMethod();
   ui::InputMethod* GetHostInputMethod();
@@ -77,6 +84,14 @@ class VIEWS_EXPORT BridgedNativeWidget : public internal::InputMethodDelegate,
   BridgedContentView* ns_view() { return bridged_view_; }
   NSWindow* ns_window() { return window_; }
 
+  // The parent widget specified in Widget::InitParams::parent. If non-null, the
+  // parent will close children before the parent closes, and children will be
+  // raised above their parent when window z-order changes.
+  BridgedNativeWidget* parent() { return parent_; }
+  const std::vector<BridgedNativeWidget*>& child_windows() {
+    return child_windows_;
+  }
+
   bool target_fullscreen_state() const { return target_fullscreen_state_; }
 
   // Overridden from internal::InputMethodDelegate:
@@ -86,12 +101,24 @@ class VIEWS_EXPORT BridgedNativeWidget : public internal::InputMethodDelegate,
   // Closes all child windows. BridgedNativeWidget children will be destroyed.
   void RemoveOrDestroyChildren();
 
+  // Remove the given |child| from |child_windows_|.
+  void RemoveChildWindow(BridgedNativeWidget* child);
+
+  // Overridden from FocusChangeListener:
+  void OnWillChangeFocus(View* focused_before,
+                         View* focused_now) override;
+  void OnDidChangeFocus(View* focused_before,
+                        View* focused_now) override;
+
   views::NativeWidgetMac* native_widget_mac_;  // Weak. Owns this.
   base::scoped_nsobject<NSWindow> window_;
   base::scoped_nsobject<ViewsNSWindowDelegate> window_delegate_;
   base::scoped_nsobject<BridgedContentView> bridged_view_;
   scoped_ptr<ui::InputMethod> input_method_;
   FocusManager* focus_manager_;  // Weak. Owned by our Widget.
+
+  BridgedNativeWidget* parent_;  // Weak. If non-null, owns this.
+  std::vector<BridgedNativeWidget*> child_windows_;
 
   // Tracks the bounds when the window last started entering fullscreen. Used to
   // provide an answer for GetRestoredBounds(), but not ever sent to Cocoa (it
@@ -106,11 +133,6 @@ class VIEWS_EXPORT BridgedNativeWidget : public internal::InputMethodDelegate,
   // can not currently be changed.
   bool in_fullscreen_transition_;
 
-  // Overridden from FocusChangeListener:
-  virtual void OnWillChangeFocus(View* focused_before,
-                                 View* focused_now) override;
-  virtual void OnDidChangeFocus(View* focused_before,
-                                View* focused_now) override;
 
   DISALLOW_COPY_AND_ASSIGN(BridgedNativeWidget);
 };

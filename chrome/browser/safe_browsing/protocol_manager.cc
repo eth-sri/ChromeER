@@ -8,7 +8,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -227,11 +226,6 @@ void SafeBrowsingProtocolManager::GetNextUpdate() {
 //              required, the SafeBrowsing servers will tell us to get it again.
 void SafeBrowsingProtocolManager::OnURLFetchComplete(
     const net::URLFetcher* source) {
-  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422577 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "422577 SafeBrowsingProtocolManager::OnURLFetchComplete"));
-
   DCHECK(CalledOnValidThread());
   scoped_ptr<const net::URLFetcher> fetcher;
 
@@ -267,12 +261,12 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
       HandleGetHashError(Time::Now());
       if (source->GetStatus().status() == net::URLRequestStatus::FAILED) {
         RecordGetHashResult(details.is_download, GET_HASH_NETWORK_ERROR);
-        VLOG(1) << "SafeBrowsing GetHash request for: " << source->GetURL()
-                << " failed with error: " << source->GetStatus().error();
+        DVLOG(1) << "SafeBrowsing GetHash request for: " << source->GetURL()
+                 << " failed with error: " << source->GetStatus().error();
       } else {
         RecordGetHashResult(details.is_download, GET_HASH_HTTP_ERROR);
-        VLOG(1) << "SafeBrowsing GetHash request for: " << source->GetURL()
-                << " failed with error: " << source->GetResponseCode();
+        DVLOG(1) << "SafeBrowsing GetHash request for: " << source->GetURL()
+                 << " failed with error: " << source->GetResponseCode();
       }
     }
 
@@ -309,8 +303,8 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
       const bool parsed_ok = HandleServiceResponse(
           source->GetURL(), data.data(), data.length());
       if (!parsed_ok) {
-        VLOG(1) << "SafeBrowsing request for: " << source->GetURL()
-                << " failed parse.";
+        DVLOG(1) << "SafeBrowsing request for: " << source->GetURL()
+                 << " failed parse.";
         chunk_request_urls_.clear();
         if (request_type_ == UPDATE_REQUEST &&
             IssueBackupUpdateRequest(BACKUP_UPDATE_REASON_HTTP)) {
@@ -344,11 +338,11 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
       }
     } else {
       if (status.status() == net::URLRequestStatus::FAILED) {
-        VLOG(1) << "SafeBrowsing request for: " << source->GetURL()
-                << " failed with error: " << source->GetStatus().error();
+        DVLOG(1) << "SafeBrowsing request for: " << source->GetURL()
+                 << " failed with error: " << source->GetStatus().error();
       } else {
-        VLOG(1) << "SafeBrowsing request for: " << source->GetURL()
-                << " failed with error: " << source->GetResponseCode();
+        DVLOG(1) << "SafeBrowsing request for: " << source->GetURL()
+                 << " failed with error: " << source->GetResponseCode();
       }
       if (request_type_ == CHUNK_REQUEST) {
         // The SafeBrowsing service error, or very bad response code: back off.

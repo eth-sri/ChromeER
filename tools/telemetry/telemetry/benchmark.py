@@ -13,7 +13,7 @@ from telemetry import decorators
 from telemetry.core import browser_finder
 from telemetry.core import command_line
 from telemetry.core import util
-from telemetry.page import page_runner
+from telemetry.user_story import user_story_runner
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.page import test_expectations
@@ -55,16 +55,13 @@ class Benchmark(command_line.Command):
 
   @classmethod
   def AddCommandLineArgs(cls, parser):
-    cls.PageTestClass().AddCommandLineArgs(parser)
-
-    if hasattr(cls, 'AddTestCommandLineArgs'):
+    if hasattr(cls, 'AddBenchmarkCommandLineArgs'):
       group = optparse.OptionGroup(parser, '%s test options' % cls.Name())
-      cls.AddTestCommandLineArgs(group)
+      cls.AddBenchmarkCommandLineArgs(group)
       parser.add_option_group(group)
 
   @classmethod
   def SetArgumentDefaults(cls, parser):
-    cls.PageTestClass().SetArgumentDefaults(parser)
     default_values = parser.get_default_values()
     invalid_options = [
         o for o in cls.options if not hasattr(default_values, o)]
@@ -75,7 +72,7 @@ class Benchmark(command_line.Command):
 
   @classmethod
   def ProcessCommandLineArgs(cls, parser, args):
-    cls.PageTestClass().ProcessCommandLineArgs(parser, args)
+    pass
 
   def CustomizeBrowserOptions(self, options):
     """Add browser options that are required by this benchmark."""
@@ -87,12 +84,14 @@ class Benchmark(command_line.Command):
     """Run this test with the given options."""
     self.CustomizeBrowserOptions(finder_options.browser_options)
 
-    pt = self.PageTestClass()()
+    pt = self.CreatePageTest(finder_options)
     pt.__name__ = self.__class__.__name__
 
     if hasattr(self, '_disabled_strings'):
+      # pylint: disable=protected-access
       pt._disabled_strings = self._disabled_strings
     if hasattr(self, '_enabled_strings'):
+      # pylint: disable=protected-access
       pt._enabled_strings = self._enabled_strings
 
     expectations = self.CreateExpectations()
@@ -103,9 +102,14 @@ class Benchmark(command_line.Command):
     benchmark_metadata = self.GetMetadata()
     results = results_options.CreateResults(benchmark_metadata, finder_options)
     try:
-      page_runner.Run(pt, us, expectations, finder_options, results)
+      user_story_runner.Run(pt, us, expectations, finder_options, results)
     except page_test.TestNotSupportedOnPlatformFailure as failure:
       logging.warning(str(failure))
+
+    bucket = cloud_storage.INTERNAL_BUCKET
+    if finder_options.upload_results:
+      results.UploadTraceFilesToCloud(bucket)
+      results.UploadProfilingFilesToCloud(bucket)
 
     results.PrintSummary()
     return len(results.failures)
@@ -173,17 +177,17 @@ class Benchmark(command_line.Command):
         extracted_profile_dir_path)
     options.browser_options.profile_dir = extracted_profile_dir_path
 
-  @classmethod
-  def PageTestClass(cls):
+  def CreatePageTest(self, options):  # pylint: disable=W0613
     """Get the PageTest for this Benchmark.
 
-    If the Benchmark has no PageTest, raises NotImplementedError.
+    By default, it will create a page test from the test's test attribute.
+    Override to generate a custom page test.
     """
-    if not hasattr(cls, 'test'):
+    if not hasattr(self, 'test'):
       raise NotImplementedError('This test has no "test" attribute.')
-    if not issubclass(cls.test, page_test.PageTest):
-      raise TypeError('"%s" is not a PageTest.' % cls.test.__name__)
-    return cls.test
+    if not issubclass(self.test, page_test.PageTest):
+      raise TypeError('"%s" is not a PageTest.' % self.test.__name__)
+    return self.test()
 
   def CreatePageSet(self, options):  # pylint: disable=W0613
     """Get the page set this test will run on.
@@ -211,8 +215,8 @@ class Benchmark(command_line.Command):
 
 
 def AddCommandLineArgs(parser):
-  page_runner.AddCommandLineArgs(parser)
+  user_story_runner.AddCommandLineArgs(parser)
 
 
 def ProcessCommandLineArgs(parser, args):
-  page_runner.ProcessCommandLineArgs(parser, args)
+  user_story_runner.ProcessCommandLineArgs(parser, args)

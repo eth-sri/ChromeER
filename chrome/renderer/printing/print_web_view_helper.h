@@ -124,10 +124,10 @@ class PrintWebViewHelper
   void DidStopLoading() override;
 
   // Message handlers ---------------------------------------------------------
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
   void OnPrintPages();
   void OnPrintForSystemDialog();
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
   void OnInitiatePrintPreview(bool selection_only);
   void OnPrintPreview(const base::DictionaryValue& settings);
   void OnPrintForPrintPreview(const base::DictionaryValue& job_settings);
@@ -265,6 +265,7 @@ class PrintWebViewHelper
       double* scale_factor,
       PageSizeMargins* page_layout_in_points);
 
+#if defined(ENABLE_PRINT_PREVIEW)
   // Given the |device| and |canvas| to draw on, prints the appropriate headers
   // and footers using strings from |header_footer_info| on to the canvas.
   static void PrintHeaderAndFooter(blink::WebCanvas* canvas,
@@ -274,6 +275,7 @@ class PrintWebViewHelper
                                    float webkit_scale_factor,
                                    const PageSizeMargins& page_layout_in_points,
                                    const PrintMsg_Print_Params& params);
+#endif  // defined(ENABLE_PRINT_PREVIEW)
 
   bool GetPrintFrame(blink::WebLocalFrame** frame);
 

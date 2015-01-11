@@ -29,13 +29,6 @@ GFX_EXPORT double RelativeLuminance(SkColor color);
 GFX_EXPORT void SkColorToHSL(SkColor c, HSL* hsl);
 GFX_EXPORT SkColor HSLToSkColor(const HSL& hsl, SkAlpha alpha);
 
-// Validates an |hsl| value passed in from an untrusted source.
-//
-// If we were starting from scratch, we'd throw some sort of exception to the
-// user here, but there's already code out there that acts as if -1 == 0 and
-// 1 == 2, so just Clamp the values to [0, 1] instead.
-GFX_EXPORT void ClampHSL(HSL* hsl);
-
 // Determines whether the given |hsl| falls within the given range for each
 // component. All components of |hsl| are expected to be in the range [0, 1].
 //
@@ -49,6 +42,11 @@ GFX_EXPORT void ClampHSL(HSL* hsl);
 GFX_EXPORT bool IsWithinHSLRange(const HSL& hsl,
                                  const HSL& lower_bound,
                                  const HSL& upper_bound);
+
+// Makes |hsl| valid input for HSLShift(). Sets values of hue, saturation
+// and luminosity which are outside of the valid range [0, 1] to -1.
+// -1 is a special value which indicates 'no change'.
+GFX_EXPORT void MakeHSLShiftValid(HSL* hsl);
 
 // HSL-Shift an SkColor. The shift values are in the range of 0-1, with the
 // option to specify -1 for 'no change'. The shift values are defined as:
@@ -69,6 +67,12 @@ GFX_EXPORT SkColor HSLShift(SkColor color, const HSL& shift);
 // Builds a histogram based on the Y' of the Y'UV representation of
 // this image.
 GFX_EXPORT void BuildLumaHistogram(const SkBitmap& bitmap, int histogram[256]);
+
+// Calculates how "boring" an image is. The boring score is the
+// 0,1 ranged percentage of pixels that are the most common
+// luma. Higher boring scores indicate that a higher percentage of a
+// bitmap are all the same brightness.
+GFX_EXPORT double CalculateBoringScore(const SkBitmap& bitmap);
 
 // Returns a blend of the supplied colors, ranging from |background| (for
 // |alpha| == 0) to |foreground| (for |alpha| == 255). The alpha channels of

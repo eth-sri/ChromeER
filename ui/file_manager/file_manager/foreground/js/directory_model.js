@@ -17,11 +17,12 @@ var SHORT_RESCAN_INTERVAL = 100;
  * @param {FileWatcher} fileWatcher Instance of FileWatcher.
  * @param {MetadataCache} metadataCache The metadata cache service.
  * @param {VolumeManagerWrapper} volumeManager The volume manager.
+ * @param {!FileOperationManager} fileOperationManager File operation manager.
  * @constructor
  * @extends {cr.EventTarget}
  */
 function DirectoryModel(singleSelection, fileFilter, fileWatcher,
-                        metadataCache, volumeManager) {
+                        metadataCache, volumeManager, fileOperationManager) {
   this.fileListSelection_ = singleSelection ?
       new cr.ui.ListSingleSelectionModel() : new cr.ui.ListSelectionModel();
 
@@ -54,6 +55,10 @@ function DirectoryModel(singleSelection, fileFilter, fileWatcher,
   this.fileWatcher_.addEventListener(
       'watcher-directory-changed',
       this.onWatcherDirectoryChanged_.bind(this));
+  util.addEventListenerToBackgroundComponent(
+      fileOperationManager,
+      'entries-changed',
+      this.onEntriesChanged_.bind(this));
 }
 
 /**
@@ -81,6 +86,17 @@ DirectoryModel.prototype.getFileList = function() {
  */
 DirectoryModel.prototype.getFileListSelection = function() {
   return this.fileListSelection_;
+};
+
+/**
+ * Obtains current volume information.
+ * @return {VolumeInfo}
+ */
+DirectoryModel.prototype.getCurrentVolumeInfo = function() {
+  var entry = this.getCurrentDirEntry();
+  if (!entry)
+    return null;
+  return this.volumeManager_.getVolumeInfo(entry);
 };
 
 /**
@@ -125,6 +141,16 @@ DirectoryModel.prototype.isScanning = function() {
  */
 DirectoryModel.prototype.isSearching = function() {
   return this.currentDirContents_.isSearch();
+};
+
+/**
+ * @return {boolean}
+ */
+DirectoryModel.prototype.isOnDrive = function() {
+  var rootType = this.getCurrentRootType();
+  return rootType != null &&
+      VolumeManagerCommon.getVolumeTypeFromRootType(rootType) ==
+      VolumeManagerCommon.VolumeType.DRIVE;
 };
 
 /**
@@ -652,10 +678,12 @@ DirectoryModel.prototype.replaceDirectoryContents_ = function(dirContents) {
 
 /**
  * Callback when an entry is changed.
- * @param {util.EntryChangedKind} kind How the entry is changed.
- * @param {Array.<Entry>} entries The changed entries.
+ * @param {Event} event Entry change event.
+ * @private
  */
-DirectoryModel.prototype.onEntriesChanged = function(kind, entries) {
+DirectoryModel.prototype.onEntriesChanged_ = function(event) {
+  var kind = event.kind;
+  var entries = event.entries;
   // TODO(hidehiko): We should update directory model even the search result
   // is shown.
   var rootType = this.getCurrentRootType();
@@ -737,10 +765,35 @@ DirectoryModel.prototype.onRenameEntry = function(
     if (util.isSameEntry(oldEntry, this.getCurrentDirEntry()))
       this.changeDirectoryEntry(newEntry);
 
-    // Replace the old item with the new item.
-    // If the entry doesn't exist in the list, it has been updated from
-    // outside (probably by directory rescan) and is just ignored.
-    this.getFileList().replaceItem(oldEntry, newEntry);
+    // Replace the old item with the new item. oldEntry instance itself may
+    // have been removed/replaced from the list during the async process, we
+    // find an entry which should be replaced by checking toURL().
+    var list = this.getFileList();
+    var oldEntryExist = false;
+    var newEntryExist = false;
+    var oldEntryUrl = oldEntry.toURL();
+    var newEntryUrl = newEntry.toURL();
+
+    for (var i = 0; i < list.length; i++) {
+      var item = list.item(i);
+      var url = item.toURL();
+      if (url === oldEntryUrl) {
+        list.replaceItem(item, newEntry);
+        oldEntryExist = true;
+        break;
+      }
+
+      if (url === newEntryUrl) {
+        newEntryExist = true;
+      }
+    }
+
+    // When both old and new entries don't exist, it may be in the middle of
+    // update process. In DirectoryContent.update deletion is executed at first
+    // and insertion is executed as a async call. There is a chance that this
+    // method is called in the middle of update process.
+    if (!oldEntryExist && !newEntryExist)
+      list.push(newEntry);
 
     // Run callback, finally.
     if (opt_callback)
@@ -864,10 +917,15 @@ DirectoryModel.prototype.changeDirectoryEntry = function(
           // For tests that open the dialog to empty directories, everything
           // is loaded at this point.
           util.testSendMessage('directory-change-complete');
-
+          var previousVolumeInfo =
+              previousDirEntry ?
+              this.volumeManager_.getVolumeInfo(previousDirEntry) : null;
+          // VolumeInfo for dirEntry.
+          var currentVolumeInfo = this.getCurrentVolumeInfo();
           var event = new Event('directory-changed');
           event.previousDirEntry = previousDirEntry;
           event.newDirEntry = dirEntry;
+          event.volumeChanged = previousVolumeInfo !== currentVolumeInfo;
           this.dispatchEvent(event);
         }.bind(this));
   }.bind(this, this.changeDirectorySequence_));

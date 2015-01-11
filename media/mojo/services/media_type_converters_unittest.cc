@@ -41,8 +41,13 @@ TEST(MediaTypeConvertersTest, ConvertDecoderBuffer_Normal) {
   EXPECT_EQ(0, memcmp(result->side_data(), kSideData, kSideDataSize));
   EXPECT_EQ(buffer->timestamp(), result->timestamp());
   EXPECT_EQ(buffer->duration(), result->duration());
+  EXPECT_EQ(buffer->is_key_frame(), result->is_key_frame());
   EXPECT_EQ(buffer->splice_timestamp(), result->splice_timestamp());
   EXPECT_EQ(buffer->discard_padding(), result->discard_padding());
+
+  // Both |buffer| and |result| are not encrypted.
+  EXPECT_FALSE(buffer->decrypt_config());
+  EXPECT_FALSE(result->decrypt_config());
 }
 
 TEST(MediaTypeConvertersTest, ConvertDecoderBuffer_EOS) {
@@ -55,6 +60,60 @@ TEST(MediaTypeConvertersTest, ConvertDecoderBuffer_EOS) {
 
   // Compare.
   EXPECT_TRUE(result->end_of_stream());
+}
+
+TEST(MediaTypeConvertersTest, ConvertDecoderBuffer_KeyFrame) {
+  const uint8 kData[] = "hello, world";
+  const int kDataSize = arraysize(kData);
+
+  // Original.
+  scoped_refptr<DecoderBuffer> buffer(DecoderBuffer::CopyFrom(
+      reinterpret_cast<const uint8*>(&kData), kDataSize));
+  buffer->set_is_key_frame(true);
+  EXPECT_TRUE(buffer->is_key_frame());
+
+  // Convert from and back.
+  MediaDecoderBufferPtr ptr(MediaDecoderBuffer::From(buffer));
+  scoped_refptr<DecoderBuffer> result(ptr.To<scoped_refptr<DecoderBuffer>>());
+
+  // Compare.
+  EXPECT_EQ(kDataSize, result->data_size());
+  EXPECT_EQ(0, memcmp(result->data(), kData, kDataSize));
+  EXPECT_TRUE(result->is_key_frame());
+}
+
+TEST(MediaTypeConvertersTest, ConvertDecoderBuffer_EncryptedBuffer) {
+  const uint8 kData[] = "hello, world";
+  const int kDataSize = arraysize(kData);
+  const char kKeyId[] = "00112233445566778899aabbccddeeff";
+  const char kIv[] = "0123456789abcdef";
+
+  std::vector<media::SubsampleEntry> subsamples;
+  subsamples.push_back(media::SubsampleEntry(10, 20));
+  subsamples.push_back(media::SubsampleEntry(30, 40));
+  subsamples.push_back(media::SubsampleEntry(50, 60));
+
+  // Original.
+  scoped_refptr<DecoderBuffer> buffer(DecoderBuffer::CopyFrom(
+      reinterpret_cast<const uint8*>(&kData), kDataSize));
+  buffer->set_decrypt_config(
+      make_scoped_ptr(new media::DecryptConfig(kKeyId, kIv, subsamples)));
+
+  // Convert from and back.
+  MediaDecoderBufferPtr ptr(MediaDecoderBuffer::From(buffer));
+  scoped_refptr<DecoderBuffer> result(ptr.To<scoped_refptr<DecoderBuffer>>());
+
+  // Compare.
+  EXPECT_EQ(kDataSize, result->data_size());
+  EXPECT_EQ(0, memcmp(result->data(), kData, kDataSize));
+  EXPECT_TRUE(buffer->decrypt_config()->Matches(*result->decrypt_config()));
+
+  // Test empty IV. This is used for clear buffer in an encrypted stream.
+  buffer->set_decrypt_config(make_scoped_ptr(new media::DecryptConfig(
+      kKeyId, "", std::vector<media::SubsampleEntry>())));
+  result = MediaDecoderBuffer::From(buffer).To<scoped_refptr<DecoderBuffer>>();
+  EXPECT_TRUE(buffer->decrypt_config()->Matches(*result->decrypt_config()));
+  EXPECT_TRUE(buffer->decrypt_config()->iv().empty());
 }
 
 // TODO(tim): Check other properties.

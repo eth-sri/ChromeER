@@ -22,6 +22,7 @@
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
+#include "chrome/browser/net/chrome_sdch_policy.h"
 #include "chrome/browser/net/connect_interceptor.h"
 #include "chrome/browser/net/cookie_store_util.h"
 #include "chrome/browser/net/http_server_properties_manager_factory.h"
@@ -35,9 +36,11 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_interceptor.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_protocol.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_pref_names.h"
 #include "components/domain_reliability/monitor.h"
 #include "content/public/browser/browser_thread.h"
@@ -48,12 +51,12 @@
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/common/constants.h"
 #include "net/base/cache_type.h"
-#include "net/base/sdch_dictionary_fetcher.h"
 #include "net/base/sdch_manager.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_server_properties_manager.h"
 #include "net/ssl/channel_id_service.h"
+#include "net/url_request/url_request_intercepting_job_factory.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "storage/browser/quota/special_storage_policy.h"
 
@@ -139,7 +142,9 @@ void ProfileImplIOData::Handle::Init(
     scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
         data_reduction_proxy_params,
     scoped_ptr<data_reduction_proxy::DataReductionProxyStatisticsPrefs>
-        data_reduction_proxy_statistics_prefs) {
+        data_reduction_proxy_statistics_prefs,
+    scoped_ptr<data_reduction_proxy::DataReductionProxyEventStore>
+        data_reduction_proxy_event_store) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!io_data_->lazy_params_);
   DCHECK(predictor);
@@ -179,6 +184,8 @@ void ProfileImplIOData::Handle::Init(
   io_data_->set_data_reduction_proxy_params(data_reduction_proxy_params.Pass());
   io_data_->set_data_reduction_proxy_statistics_prefs(
       data_reduction_proxy_statistics_prefs.Pass());
+  io_data_->set_data_reduction_proxy_event_store(
+      data_reduction_proxy_event_store.Pass());
 }
 
 content::ResourceContext*
@@ -454,7 +461,7 @@ void ProfileImplIOData::InitializeInternal(
       base::Bind(data_reduction_proxy::OnResolveProxyHandler));
   network_delegate()->set_proxy_config_getter(
       base::Bind(
-          &DataReductionProxyChromeConfigurator::GetProxyConfigOnIO,
+          &DataReductionProxyChromeConfigurator::GetProxyConfigOnIOThread,
           base::Unretained(data_reduction_proxy_chrome_configurator())));
   network_delegate()->set_predictor(predictor_.get());
 
@@ -567,6 +574,14 @@ void ProfileImplIOData::InitializeInternal(
   scoped_ptr<net::URLRequestJobFactoryImpl> main_job_factory(
       new net::URLRequestJobFactoryImpl());
   InstallProtocolHandlers(main_job_factory.get(), protocol_handlers);
+  // The data reduction proxy interceptor should be as close to the network
+  // as possible.
+  request_interceptors.insert(
+      request_interceptors.begin(),
+      new data_reduction_proxy::DataReductionProxyInterceptor(
+          data_reduction_proxy_params(),
+          data_reduction_proxy_usage_stats(),
+          data_reduction_proxy_event_store()));
   main_job_factory_ = SetUpJobFactoryDefaults(
       main_job_factory.Pass(),
       request_interceptors.Pass(),
@@ -579,11 +594,9 @@ void ProfileImplIOData::InitializeInternal(
   InitializeExtensionsRequestContext(profile_params);
 #endif
 
-  // Setup the SDCHManager for this profile.
+  // Setup SDCH for this profile.
   sdch_manager_.reset(new net::SdchManager);
-  sdch_manager_->set_sdch_fetcher(scoped_ptr<net::SdchFetcher>(
-      new net::SdchDictionaryFetcher(sdch_manager_.get(),
-                                     main_context)).Pass());
+  sdch_policy_.reset(new ChromeSdchPolicy(sdch_manager_.get(), main_context));
   main_context->set_sdch_manager(sdch_manager_.get());
 
   // Create a media request context based on the main context, but using a
@@ -722,6 +735,14 @@ net::URLRequestContext* ProfileImplIOData::InitializeAppRequestContext(
   scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
       new net::URLRequestJobFactoryImpl());
   InstallProtocolHandlers(job_factory.get(), protocol_handlers);
+  // The data reduction proxy interceptor should be as close to the network
+  // as possible.
+  request_interceptors.insert(
+      request_interceptors.begin(),
+      new data_reduction_proxy::DataReductionProxyInterceptor(
+          data_reduction_proxy_params(),
+          data_reduction_proxy_usage_stats(),
+          data_reduction_proxy_event_store()));
   scoped_ptr<net::URLRequestJobFactory> top_job_factory(
       SetUpJobFactoryDefaults(job_factory.Pass(),
                               request_interceptors.Pass(),

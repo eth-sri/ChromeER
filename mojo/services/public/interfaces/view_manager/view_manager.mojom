@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+module mojo;
+
 import "mojo/public/interfaces/application/service_provider.mojom";
 import "mojo/services/public/interfaces/geometry/geometry.mojom";
 import "mojo/services/public/interfaces/input_events/input_events.mojom";
 import "mojo/services/public/interfaces/surfaces/surface_id.mojom";
 import "mojo/services/public/interfaces/view_manager/view_manager_constants.mojom";
-
-module mojo {
 
 struct ViewData {
   uint32 parent_id;
@@ -111,8 +111,11 @@ interface ViewManagerService {
   //
   // A view may only be a root of one connection at a time. Subsequent calls to
   // Embed() for the same view result in the view being removed from the
-  // current connection. The current connection is told this by way of
+  // currently embedded app. The embedded app is told this by way of
   // OnViewDeleted().
+  //
+  // The embedder can detect when the embedded app disconnects by way of
+  // OnEmbeddedAppDisconnected().
   //
   // When a connection embeds an app the connection no longer has priviledges
   // to access or see any of the children of the view. If the view had existing
@@ -127,7 +130,7 @@ interface ViewManagerService {
   // any services it provided are not broken and continue to be valid.
   Embed(string url,
         uint32 view_id,
-        ServiceProvider? service_provider) => (bool success);
+        ServiceProvider&? service_provider) => (bool success);
 };
 
 // Changes to views are not sent to the connection that originated the
@@ -136,11 +139,16 @@ interface ViewManagerService {
 [Client=ViewManagerService]
 interface ViewManagerClient {
   // Invoked when the client application has been embedded at |root|.
-  // See Embed() on ViewManagerService for more details.
+  // See Embed() on ViewManagerService for more details. |window_manager_pipe|
+  // is a pipe to the WindowManager.
   OnEmbed(uint16 connection_id,
           string embedder_url,
           ViewData root,
-          ServiceProvider&? service_provider);
+          ServiceProvider&? parent_service_provider,
+          handle<message_pipe> window_manager_pipe);
+
+  // Invoked when the application embedded at |view| is disconnected.
+  OnEmbeddedAppDisconnected(uint32 view);
 
   // Invoked when a view's bounds have changed.
   OnViewBoundsChanged(uint32 view,
@@ -183,10 +191,8 @@ interface ViewManagerClient {
 
   // Invoked when a view property is changed. If this change is a removal,
   // |new_data| is null.
-  OnViewPropertyChanged(uint32 view, string name, array<uint8>? new_data);
+  OnViewSharedPropertyChanged(uint32 view, string name, array<uint8>? new_data);
 
   // Invoked when an event is targeted at the specified view.
   OnViewInputEvent(uint32 view, mojo.Event event) => ();
 };
-
-}

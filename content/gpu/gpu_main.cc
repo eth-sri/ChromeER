@@ -10,6 +10,7 @@
 #endif
 
 #include "base/debug/trace_event.h"
+#include "base/environment.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
@@ -212,6 +213,16 @@ int GpuMain(const MainFunctionParams& parameters) {
     watchdog_thread->StartWithOptions(options);
   }
 
+  // Temporarily disable DRI3 on desktop Linux.
+  // The GPU process is crashing on DRI3-enabled desktop Linux systems.
+  // TODO(jorgelo): remove this when crbug.com/415681 is fixed.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  {
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    env->SetVar("LIBGL_DRI3_DISABLE", "1");
+  }
+#endif
+
   gpu::GPUInfo gpu_info;
   // Get vendor_id, device_id, driver_version from browser process through
   // commandline switches.
@@ -411,7 +422,7 @@ bool CollectGraphicsInfo(gpu::GPUInfo& gpu_info) {
       res = false;
       break;
     case gpu::kCollectInfoNonFatalFailure:
-      VLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
+      DVLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
       break;
     case gpu::kCollectInfoNone:
       NOTREACHED();
@@ -430,7 +441,7 @@ bool CanAccessNvidiaDeviceFile() {
   bool res = true;
   base::ThreadRestrictions::AssertIOAllowed();
   if (access("/dev/nvidiactl", R_OK) != 0) {
-    VLOG(1) << "NVIDIA device file /dev/nvidiactl access denied";
+    DVLOG(1) << "NVIDIA device file /dev/nvidiactl access denied";
     res = false;
   }
   return res;
@@ -441,7 +452,7 @@ void CreateDummyGlContext() {
   scoped_refptr<gfx::GLSurface> surface(
       gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size()));
   if (!surface.get()) {
-    VLOG(1) << "gfx::GLSurface::CreateOffscreenGLSurface failed";
+    DVLOG(1) << "gfx::GLSurface::CreateOffscreenGLSurface failed";
     return;
   }
 
@@ -450,7 +461,7 @@ void CreateDummyGlContext() {
   scoped_refptr<gfx::GLContext> context(gfx::GLContext::CreateGLContext(
       NULL, surface.get(), gfx::PreferDiscreteGpu));
   if (!context.get()) {
-    VLOG(1) << "gfx::GLContext::CreateGLContext failed";
+    DVLOG(1) << "gfx::GLContext::CreateGLContext failed";
     return;
   }
 
@@ -458,7 +469,7 @@ void CreateDummyGlContext() {
   if (context->MakeCurrent(surface.get())) {
     context->ReleaseCurrent(surface.get());
   } else {
-    VLOG(1)  << "gfx::GLContext::MakeCurrent failed";
+    DVLOG(1)  << "gfx::GLContext::MakeCurrent failed";
   }
 }
 

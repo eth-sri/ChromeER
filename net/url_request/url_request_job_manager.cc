@@ -68,18 +68,6 @@ URLRequestJob* URLRequestJobManager::CreateJob(
 
   // See if the request should be intercepted.
   //
-
-  // TODO(pauljensen): Remove this when AppCacheInterceptor is a
-  // ProtocolHandler, see crbug.com/161547.
-  if (!(request->load_flags() & LOAD_DISABLE_INTERCEPT)) {
-    InterceptorList::const_iterator i;
-    for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-      URLRequestJob* job = (*i)->MaybeIntercept(request, network_delegate);
-      if (job)
-        return job;
-    }
-  }
-
   URLRequestJob* job = job_factory->MaybeCreateJobWithProtocolHandler(
       scheme, request, network_delegate);
   if (job)
@@ -108,7 +96,6 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptRedirect(
     const GURL& location) const {
   DCHECK(IsAllowedThread());
   if (!request->url().is_valid() ||
-      request->load_flags() & LOAD_DISABLE_INTERCEPT ||
       request->status().status() == URLRequestStatus::CANCELED) {
     return NULL;
   }
@@ -120,14 +107,12 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptRedirect(
   if (!job_factory->IsHandledProtocol(scheme))
     return NULL;
 
-  InterceptorList::const_iterator i;
-  for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-    URLRequestJob* job = (*i)->MaybeInterceptRedirect(request,
-                                                      network_delegate,
-                                                      location);
-    if (job)
-      return job;
-  }
+  URLRequestJob* job =
+      request->context()->job_factory()->MaybeInterceptRedirect(
+          request, network_delegate, location);
+  if (job)
+    return job;
+
   return NULL;
 }
 
@@ -135,7 +120,6 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptResponse(
     URLRequest* request, NetworkDelegate* network_delegate) const {
   DCHECK(IsAllowedThread());
   if (!request->url().is_valid() ||
-      request->load_flags() & LOAD_DISABLE_INTERCEPT ||
       request->status().status() == URLRequestStatus::CANCELED) {
     return NULL;
   }
@@ -147,13 +131,12 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptResponse(
   if (!job_factory->IsHandledProtocol(scheme))
     return NULL;
 
-  InterceptorList::const_iterator i;
-  for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-    URLRequestJob* job = (*i)->MaybeInterceptResponse(request,
-                                                      network_delegate);
-    if (job)
-      return job;
-  }
+  URLRequestJob* job =
+      request->context()->job_factory()->MaybeInterceptResponse(
+          request, network_delegate);
+  if (job)
+    return job;
+
   return NULL;
 }
 
@@ -165,29 +148,6 @@ bool URLRequestJobManager::SupportsScheme(const std::string& scheme) {
   }
 
   return false;
-}
-
-void URLRequestJobManager::RegisterRequestInterceptor(
-    URLRequest::Interceptor* interceptor) {
-  DCHECK(IsAllowedThread());
-
-  base::AutoLock locked(lock_);
-
-  DCHECK(std::find(interceptors_.begin(), interceptors_.end(), interceptor) ==
-         interceptors_.end());
-  interceptors_.push_back(interceptor);
-}
-
-void URLRequestJobManager::UnregisterRequestInterceptor(
-    URLRequest::Interceptor* interceptor) {
-  DCHECK(IsAllowedThread());
-
-  base::AutoLock locked(lock_);
-
-  InterceptorList::iterator i =
-      std::find(interceptors_.begin(), interceptors_.end(), interceptor);
-  DCHECK(i != interceptors_.end());
-  interceptors_.erase(i);
 }
 
 URLRequestJobManager::URLRequestJobManager()

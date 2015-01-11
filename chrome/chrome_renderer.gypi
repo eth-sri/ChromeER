@@ -30,12 +30,8 @@
       'renderer/net/net_error_helper.h',
       'renderer/net/net_error_page_controller.cc',
       'renderer/net/net_error_page_controller.h',
-      'renderer/net/predictor_queue.cc',
-      'renderer/net/predictor_queue.h',
       'renderer/net/prescient_networking_dispatcher.cc',
       'renderer/net/prescient_networking_dispatcher.h',
-      'renderer/net/renderer_net_predictor.cc',
-      'renderer/net/renderer_net_predictor.h',
       'renderer/net_benchmarking_extension.cc',
       'renderer/net_benchmarking_extension.h',
       'renderer/playback_extension.cc',
@@ -265,6 +261,7 @@
         '../components/components.gyp:autofill_content_renderer',
         '../components/components.gyp:cdm_renderer',
         '../components/components.gyp:data_reduction_proxy_core_common',
+        '../components/components.gyp:dns_prefetch_renderer',
         '../components/components.gyp:error_page_renderer',
         '../components/components.gyp:startup_metric_utils',
         '../components/components.gyp:password_manager_content_renderer',
@@ -285,7 +282,6 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/npapi/npapi.gyp:npapi',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
-        '../ui/surface/surface.gyp:surface',
       ],
       'include_dirs': [
         '..',
@@ -371,7 +367,7 @@
             '../third_party/mach_override/mach_override.gyp:mach_override',
           ],
         }],
-        ['enable_printing!=0', {
+        ['enable_basic_printing==1 or enable_print_preview==1', {
           'dependencies': [
             '../printing/printing.gyp:printing',
           ],
@@ -379,7 +375,7 @@
             '<@(chrome_renderer_printing_sources)',
           ],
         }],
-        ['enable_printing==1', {
+        ['enable_print_preview==1', {
           'sources': [
             '<@(chrome_renderer_full_printing_sources)',
           ],

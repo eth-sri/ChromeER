@@ -12,7 +12,6 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/metrics/field_trial.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "base/version.h"
@@ -375,7 +374,9 @@ void ExternalProviderImpl::CreateExternalProviders(
   const user_manager::User* user =
       chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
   policy::DeviceLocalAccount::Type account_type;
-  if (user && policy::IsDeviceLocalAccountUser(user->email(), &account_type)) {
+  if (user &&
+      connector->IsEnterpriseManaged() &&
+      policy::IsDeviceLocalAccountUser(user->email(), &account_type)) {
     if (account_type == policy::DeviceLocalAccount::TYPE_PUBLIC_SESSION)
       is_chrome_os_public_session = true;
     policy::DeviceLocalAccountPolicyBroker* broker =
@@ -464,7 +465,9 @@ void ExternalProviderImpl::CreateExternalProviders(
 #endif
 
   bool is_chromeos_demo_session = false;
+#if !defined(OS_WIN)
   int bundled_extension_creation_flags = Extension::NO_FLAGS;
+#endif
 #if defined(OS_CHROMEOS)
   user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   is_chromeos_demo_session =
@@ -472,26 +475,7 @@ void ExternalProviderImpl::CreateExternalProviders(
       connector->GetDeviceMode() == policy::DEVICE_MODE_RETAIL_KIOSK;
   bundled_extension_creation_flags = Extension::FROM_WEBSTORE |
       Extension::WAS_INSTALLED_BY_DEFAULT;
-#endif
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  if (!profile->IsSupervised()) {
-    provider_list->push_back(
-        linked_ptr<ExternalProviderInterface>(
-            new ExternalProviderImpl(
-                service,
-                new ExternalPrefLoader(
-                    chrome::DIR_STANDALONE_EXTERNAL_EXTENSIONS,
-                    ExternalPrefLoader::NONE,
-                    NULL),
-                profile,
-                Manifest::EXTERNAL_PREF,
-                Manifest::EXTERNAL_PREF_DOWNLOAD,
-                bundled_extension_creation_flags)));
-  }
-#endif
-
-#if defined(OS_CHROMEOS)
   if (!is_chromeos_demo_session && !is_chrome_os_public_session) {
     int external_apps_path_id = profile->IsSupervised() ?
         chrome::DIR_SUPERVISED_USERS_DEFAULT_APPS :
@@ -537,10 +521,35 @@ void ExternalProviderImpl::CreateExternalProviders(
               Manifest::INVALID_LOCATION,
               Extension::NO_FLAGS)));
   }
+#elif defined(OS_LINUX)
+  if (!profile->IsSupervised()) {
+    provider_list->push_back(
+        linked_ptr<ExternalProviderInterface>(
+            new ExternalProviderImpl(
+                service,
+                new ExternalPrefLoader(
+                    chrome::DIR_STANDALONE_EXTERNAL_EXTENSIONS,
+                    ExternalPrefLoader::NONE,
+                    NULL),
+                profile,
+                Manifest::EXTERNAL_PREF,
+                Manifest::EXTERNAL_PREF_DOWNLOAD,
+                bundled_extension_creation_flags)));
+  }
 #endif
 
   if (!profile->IsSupervised() && !is_chromeos_demo_session) {
-#if !defined(OS_WIN)
+#if defined(OS_WIN)
+    provider_list->push_back(
+        linked_ptr<ExternalProviderInterface>(
+            new ExternalProviderImpl(
+                service,
+                new ExternalRegistryLoader,
+                profile,
+                Manifest::EXTERNAL_REGISTRY,
+                Manifest::EXTERNAL_PREF_DOWNLOAD,
+                Extension::NO_FLAGS)));
+#else
     provider_list->push_back(
         linked_ptr<ExternalProviderInterface>(
             new ExternalProviderImpl(
@@ -552,7 +561,6 @@ void ExternalProviderImpl::CreateExternalProviders(
                 Manifest::EXTERNAL_PREF,
                 Manifest::EXTERNAL_PREF_DOWNLOAD,
                 bundled_extension_creation_flags)));
-#endif
 
     // Define a per-user source of external extensions.
 #if defined(OS_MACOSX)
@@ -568,17 +576,6 @@ void ExternalProviderImpl::CreateExternalProviders(
                 Manifest::EXTERNAL_PREF_DOWNLOAD,
                 Extension::NO_FLAGS)));
 #endif
-
-#if defined(OS_WIN)
-    provider_list->push_back(
-        linked_ptr<ExternalProviderInterface>(
-            new ExternalProviderImpl(
-                service,
-                new ExternalRegistryLoader,
-                profile,
-                Manifest::EXTERNAL_REGISTRY,
-                Manifest::EXTERNAL_PREF_DOWNLOAD,
-                Extension::NO_FLAGS)));
 #endif
 
 #if !defined(OS_CHROMEOS)

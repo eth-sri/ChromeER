@@ -283,7 +283,7 @@ class EasyUnlockPrivateGetRemoteDevicesFunction : public SyncExtensionFunction {
 };
 
 class EasyUnlockPrivateGetSignInChallengeFunction :
-    public SyncExtensionFunction {
+    public AsyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.getSignInChallenge",
                              EASYUNLOCKPRIVATE_GETSIGNINCHALLENGE)
@@ -292,8 +292,11 @@ class EasyUnlockPrivateGetSignInChallengeFunction :
  private:
   ~EasyUnlockPrivateGetSignInChallengeFunction() override;
 
-  // SyncExtensionFunction:
-  bool RunSync() override;
+  // AsyncExtensionFunction:
+  bool RunAsync() override;
+
+  // Called when the challenge and the signed nonce have been generated.
+  void OnDone(const std::string& challenge, const std::string& signed_nonce);
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetSignInChallengeFunction);
 };
@@ -327,6 +330,21 @@ class EasyUnlockPrivateGetUserInfoFunction : public SyncExtensionFunction {
   bool RunSync() override;
 
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetUserInfoFunction);
+};
+
+class EasyUnlockPrivateGetUserImageFunction : public SyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("easyUnlockPrivate.getUserImage",
+                             EASYUNLOCKPRIVATE_GETUSERIMAGE)
+  EasyUnlockPrivateGetUserImageFunction();
+
+ private:
+  ~EasyUnlockPrivateGetUserImageFunction() override;
+
+  // SyncExtensionFunction:
+  bool RunSync() override;
+
+  DISALLOW_COPY_AND_ASSIGN(EasyUnlockPrivateGetUserImageFunction);
 };
 
 }  // namespace api

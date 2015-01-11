@@ -67,9 +67,9 @@ enum FieldFilterMask {
 
 RequirementsMask ExtractionRequirements() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kIgnoreAutocompleteOffForAutofill)
-             ? REQUIRE_NONE
-             : REQUIRE_AUTOCOMPLETE;
+             switches::kRespectAutocompleteOffForAutofill)
+             ? REQUIRE_AUTOCOMPLETE
+             : REQUIRE_NONE;
 }
 
 bool IsOptionElement(const WebElement& element) {
@@ -978,6 +978,8 @@ bool WebFormElementToFormData(
     const WebFormControlElement& control_element = control_elements[i];
     if (form_fields[field_idx]->label.empty())
       form_fields[field_idx]->label = InferLabelForElement(control_element);
+    form_fields[field_idx]->label =
+        form_fields[field_idx]->label.substr(0, kMaxDataLength);
 
     if (field && form_control_element == control_element)
       *field = *form_fields[field_idx];
@@ -1095,7 +1097,7 @@ bool ClearPreviewedFormWithElement(const WebFormControlElement& element,
 
     // If the element is not auto-filled, we did not preview it,
     // so there is nothing to reset.
-    if(!control_element.isAutofilled())
+    if (!control_element.isAutofilled())
       continue;
 
     if ((IsTextInput(input_element) ||
@@ -1128,26 +1130,6 @@ bool ClearPreviewedFormWithElement(const WebFormControlElement& element,
   }
 
   return true;
-}
-
-bool FormWithElementIsAutofilled(const WebInputElement& element) {
-  WebFormElement form_element = element.form();
-  if (form_element.isNull())
-    return false;
-
-  std::vector<WebFormControlElement> control_elements;
-  ExtractAutofillableElements(
-      form_element, ExtractionRequirements(), &control_elements);
-  for (size_t i = 0; i < control_elements.size(); ++i) {
-    WebInputElement* input_element = toWebInputElement(&control_elements[i]);
-    if (!IsAutofillableInputElement(input_element))
-      continue;
-
-    if (input_element->isAutofilled())
-      return true;
-  }
-
-  return false;
 }
 
 bool IsWebpageEmpty(const blink::WebFrame* frame) {

@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
+#include "components/policy/core/common/policy_service.h"
 #include "components/search_engines/template_url_service_observer.h"
 #include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/notification_observer.h"
@@ -62,7 +63,8 @@ class BrowserOptionsHandler
 #endif
       public TemplateURLServiceObserver,
       public extensions::ExtensionRegistryObserver,
-      public content::NotificationObserver {
+      public content::NotificationObserver,
+      public policy::PolicyService::Observer {
  public:
   BrowserOptionsHandler();
   ~BrowserOptionsHandler() override;
@@ -101,13 +103,17 @@ class BrowserOptionsHandler
       const extensions::Extension* extension,
       extensions::UnloadedExtensionInfo::Reason reason) override;
 
+  // policy::PolicyService::Observer:
+  void OnPolicyUpdated(const policy::PolicyNamespace& ns,
+                       const policy::PolicyMap& previous,
+                       const policy::PolicyMap& current) override;
  private:
   // content::NotificationObserver implementation.
   void Observe(int type,
                const content::NotificationSource& source,
                const content::NotificationDetails& details) override;
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(OS_CHROMEOS)
   void OnCloudPrintPrefsChanged();
 #endif
 
@@ -270,7 +276,7 @@ class BrowserOptionsHandler
   void ShowCloudPrintDevicesPage(const base::ListValue* args);
 #endif
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   // Register localized values used by Cloud Print
   void RegisterCloudPrintValues(base::DictionaryValue* values);
 #endif

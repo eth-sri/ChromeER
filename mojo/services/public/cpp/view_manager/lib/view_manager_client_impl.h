@@ -9,11 +9,12 @@
 #include "base/callback.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
+#include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/services/public/cpp/view_manager/types.h"
 #include "mojo/services/public/cpp/view_manager/view.h"
 #include "mojo/services/public/cpp/view_manager/view_manager.h"
 #include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
-#include "mojo/services/public/interfaces/window_manager2/window_manager2.mojom.h"
+#include "mojo/services/public/interfaces/window_manager/window_manager.mojom.h"
 
 namespace mojo {
 class Shell;
@@ -23,10 +24,14 @@ class ViewManagerTransaction;
 
 // Manages the connection with the View Manager service.
 class ViewManagerClientImpl : public ViewManager,
-                              public InterfaceImpl<ViewManagerClient>,
-                              public WindowManagerClient2 {
+                              public ViewManagerClient,
+                              public WindowManagerClient,
+                              public ErrorHandler {
  public:
-  ViewManagerClientImpl(ViewManagerDelegate* delegate, Shell* shell);
+  ViewManagerClientImpl(ViewManagerDelegate* delegate,
+                        Shell* shell,
+                        ScopedMessagePipeHandle handle,
+                        bool delete_on_error);
   ~ViewManagerClientImpl() override;
 
   bool connected() const { return connected_; }
@@ -83,14 +88,13 @@ class ViewManagerClientImpl : public ViewManager,
   const std::vector<View*>& GetRoots() const override;
   View* GetViewById(Id id) override;
 
-  // Overridden from InterfaceImpl:
-  void OnConnectionEstablished() override;
-
   // Overridden from ViewManagerClient:
   void OnEmbed(ConnectionSpecificId connection_id,
                const String& creator_url,
                ViewDataPtr root,
-               InterfaceRequest<ServiceProvider> services) override;
+               InterfaceRequest<ServiceProvider> parent_services,
+               ScopedMessagePipeHandle window_manager_pipe) override;
+  void OnEmbeddedAppDisconnected(Id view_id) override;
   void OnViewBoundsChanged(Id view_id,
                            RectPtr old_bounds,
                            RectPtr new_bounds) override;
@@ -104,20 +108,22 @@ class ViewManagerClientImpl : public ViewManager,
   void OnViewDeleted(Id view_id) override;
   void OnViewVisibilityChanged(Id view_id, bool visible) override;
   void OnViewDrawnStateChanged(Id view_id, bool drawn) override;
-  void OnViewPropertyChanged(Id view_id,
-                             const String& name,
-                             Array<uint8_t> new_data) override;
+  void OnViewSharedPropertyChanged(Id view_id,
+                                   const String& name,
+                                   Array<uint8_t> new_data) override;
   void OnViewInputEvent(Id view_id,
                         EventPtr event,
                         const Callback<void()>& callback) override;
 
-  // Overridden from WindowManagerClient2:
-  void OnWindowManagerReady() override;
+  // Overridden from WindowManagerClient:
   void OnCaptureChanged(Id old_capture_view_id,
                         Id new_capture_view_id) override;
   void OnFocusChanged(Id old_focused_view_id, Id new_focused_view_id) override;
   void OnActiveWindowChanged(Id old_focused_window,
                              Id new_focused_window) override;
+
+  // ErrorHandler implementation.
+  void OnConnectionError() override;
 
   void RemoveRoot(View* root);
 
@@ -141,9 +147,11 @@ class ViewManagerClientImpl : public ViewManager,
 
   IdToViewMap views_;
 
-  ViewManagerService* service_;
+  WindowManagerPtr window_manager_;
 
-  WindowManagerService2Ptr window_manager_;
+  Binding<ViewManagerClient> binding_;
+  ViewManagerService* service_;
+  const bool delete_on_error_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewManagerClientImpl);
 };

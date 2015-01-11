@@ -140,9 +140,12 @@ ImageView.prototype.hasValidImage = function() {
 };
 
 /**
- * @return {HTMLCanvasElement} The cached thumbnail image.
+ * @return {!HTMLCanvasElement} The cached thumbnail image.
  */
-ImageView.prototype.getThumbnail = function() { return this.thumbnailCanvas_; };
+ImageView.prototype.getThumbnail = function() {
+  assert(this.thumbnailCanvas_);
+  return this.thumbnailCanvas_;
+};
 
 /**
  * @return {number} The content revision number.
@@ -390,28 +393,28 @@ ImageView.prototype.load =
 /**
  * Prefetches an image.
  * @param {Gallery.Item} item The image item.
- * @param {number} delay Image load delay in ms.
+ * @param {number=} opt_delay Image load delay in ms.
  */
-ImageView.prototype.prefetch = function(item, delay) {
+ImageView.prototype.prefetch = function(item, opt_delay) {
   if (item.contentImage)
     return;
   this.prefetchLoader_.load(item, function(canvas) {
     if (canvas.width && canvas.height && !item.contentImage)
       item.contentImage = canvas;
-  }, delay);
+  }, opt_delay);
 };
 
 /**
  * Unloads content.
- * @param {ImageRect} zoomToRect Target rectangle for zoom-out-effect.
+ * @param {ImageRect=} opt_zoomToRect Target rectangle for zoom-out-effect.
  */
-ImageView.prototype.unload = function(zoomToRect) {
+ImageView.prototype.unload = function(opt_zoomToRect) {
   if (this.unloadTimer_) {
     clearTimeout(this.unloadTimer_);
     this.unloadTimer_ = null;
   }
-  if (zoomToRect && this.screenImage_) {
-    var effect = this.createZoomEffect(zoomToRect);
+  if (opt_zoomToRect && this.screenImage_) {
+    var effect = this.createZoomEffect(opt_zoomToRect);
     this.setTransform_(this.screenImage_, this.viewport_, effect);
     this.screenImage_.setAttribute('fade', true);
     this.unloadTimer_ = setTimeout(function() {

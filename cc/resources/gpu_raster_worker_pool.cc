@@ -36,24 +36,27 @@ class RasterBufferImpl : public RasterBuffer {
   // Overridden from RasterBuffer:
   void Playback(const RasterSource* raster_source,
                 const gfx::Rect& rect,
-                float scale,
-                RenderingStatsInstrumentation* stats) override {
+                float scale) override {
     // Turn on distance fields for layers that have ever animated.
     bool use_distance_field_text =
         use_distance_field_text_ ||
-        raster_source->SuitableForDistanceFieldText();
-    SkSurface* sk_surface = lock_.GetSkSurface(use_distance_field_text);
+        raster_source->ShouldAttemptToUseDistanceFieldText();
+    SkSurface* sk_surface = lock_.GetSkSurface(use_distance_field_text,
+                                               raster_source->CanUseLCDText());
 
     if (!sk_surface)
       return;
 
     SkPictureRecorder recorder;
     gfx::Size size = resource_->size();
+    const int flags = SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag;
     skia::RefPtr<SkCanvas> canvas =
-        skia::SharePtr(recorder.beginRecording(size.width(), size.height()));
+        skia::SharePtr(recorder.beginRecording(size.width(), size.height(),
+                                               NULL, flags));
+
 
     canvas->save();
-    raster_source->PlaybackToCanvas(canvas.get(), rect, scale, stats);
+    raster_source->PlaybackToCanvas(canvas.get(), rect, scale);
     canvas->restore();
 
     // Add the canvas and recorded picture to |multi_picture_draw_|.

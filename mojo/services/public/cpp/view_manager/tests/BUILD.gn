@@ -4,7 +4,6 @@
 
 import("//build/config/ui.gni")
 
-# GYP version: mojo/mojo_services.gypi:mojo_view_manager_lib_unittests
 test("mojo_view_manager_lib_unittests") {
   sources = [
     "view_unittest.cc",
@@ -20,6 +19,8 @@ test("mojo_view_manager_lib_unittests") {
     "//mojo/application_manager",
     "//mojo/converters/geometry",
     "//mojo/environment:chromium",
+    "//mojo/public/cpp/application",
+    "//mojo/services/public/cpp/geometry",
     "//mojo/services/public/interfaces/geometry",
     "//mojo/shell:test_support",
     "//mojo/services/public/interfaces/view_manager",

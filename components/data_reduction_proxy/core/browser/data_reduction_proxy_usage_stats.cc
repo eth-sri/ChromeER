@@ -14,7 +14,6 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
-#include "net/proxy/proxy_retry_info.h"
 #include "net/proxy/proxy_server.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request.h"
@@ -168,6 +167,11 @@ void DataReductionProxyUsageStats::SetBypassType(
   triggering_request_ = true;
 }
 
+DataReductionProxyBypassType
+DataReductionProxyUsageStats::GetBypassType() const {
+  return last_bypass_type_;
+}
+
 void DataReductionProxyUsageStats::RecordBytesHistograms(
     net::URLRequest* request,
     const BooleanPrefMember& data_reduction_proxy_enabled,
@@ -250,7 +254,8 @@ void DataReductionProxyUsageStats::RecordBypassedBytesHistograms(
     return;
   }
 
-  if (data_reduction_proxy_params_->AreDataReductionProxiesBypassed(*request,
+  if (data_reduction_proxy_enabled.GetValue() &&
+      data_reduction_proxy_params_->AreDataReductionProxiesBypassed(*request,
                                                                     NULL)) {
     RecordBypassedBytes(last_bypass_type_,
                         DataReductionProxyUsageStats::NETWORK_ERROR,

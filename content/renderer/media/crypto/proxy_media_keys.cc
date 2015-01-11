@@ -9,9 +9,9 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/crypto/renderer_cdm_manager.h"
 #include "media/base/cdm_promise.h"
+#include "media/base/key_systems.h"
 
 namespace content {
 
@@ -140,6 +140,14 @@ void ProxyMediaKeys::RemoveSession(
 void ProxyMediaKeys::GetUsableKeyIds(const std::string& web_session_id,
                                      scoped_ptr<media::KeyIdsPromise> promise) {
   promise->reject(NOT_SUPPORTED_ERROR, 0, "Not yet implemented.");
+}
+
+media::CdmContext* ProxyMediaKeys::GetCdmContext() {
+  return this;
+}
+
+media::Decryptor* ProxyMediaKeys::GetDecryptor() {
+  return NULL;
 }
 
 int ProxyMediaKeys::GetCdmId() const {

@@ -89,6 +89,7 @@ class PDFiumEngine : public PDFEngine,
   virtual void OnCallback(int id);
   virtual std::string GetPageAsJSON(int index);
   virtual bool GetPrintScaling();
+  virtual int GetCopiesToPrint();
   virtual void AppendBlankPages(int num_pages);
   virtual void AppendPage(PDFEngine* engine, int index);
   virtual pp::Point GetScrollPosition();
@@ -149,6 +150,26 @@ class PDFiumEngine : public PDFEngine,
     PDFiumPage::LinkTarget target_;
 
     DISALLOW_COPY_AND_ASSIGN(MouseDownState);
+  };
+
+  // Used to store the state of a text search.
+  class FindTextIndex {
+   public:
+    FindTextIndex();
+    ~FindTextIndex();
+
+    bool valid() const { return valid_; }
+    void Invalidate();
+
+    size_t GetIndex() const;
+    void SetIndex(size_t index);
+    size_t IncrementIndex();
+
+   private:
+    bool valid_;  // Whether |index_| is valid or not.
+    size_t index_;  // The current search result, 0-based.
+
+    DISALLOW_COPY_AND_ASSIGN(FindTextIndex);
   };
 
   friend class SelectionChangeInvalidator;
@@ -391,6 +412,9 @@ class PDFiumEngine : public PDFEngine,
   // Called when the selection changes.
   void OnSelectionChanged();
 
+  // Common code shared by RotateClockwise() and RotateCounterclockwise().
+  void RotateInternal();
+
   // FPDF_FORMFILLINFO callbacks.
   static void Form_Invalidate(FPDF_FORMFILLINFO* param,
                               FPDF_PAGE page,
@@ -473,6 +497,70 @@ class PDFiumEngine : public PDFEngine,
   static void Form_GotoPage(IPDF_JSPLATFORM* param, int page_number);
   static int Form_Browse(IPDF_JSPLATFORM* param, void* file_path, int length);
 
+#ifdef PDF_USE_XFA
+  static void Form_EmailTo(FPDF_FORMFILLINFO* param,
+                           FPDF_FILEHANDLER* file_handler,
+                           FPDF_WIDESTRING to,
+                           FPDF_WIDESTRING subject,
+                           FPDF_WIDESTRING cc,
+                           FPDF_WIDESTRING bcc,
+                           FPDF_WIDESTRING message);
+  static void Form_DisplayCaret(FPDF_FORMFILLINFO* param,
+                                FPDF_PAGE page,
+                                FPDF_BOOL visible,
+                                double left,
+                                double top,
+                                double right,
+                                double bottom);
+  static void Form_SetCurrentPage(FPDF_FORMFILLINFO* param,
+                                  FPDF_DOCUMENT document,
+                                  int page);
+  static int Form_GetCurrentPageIndex(FPDF_FORMFILLINFO* param,
+                                      FPDF_DOCUMENT document);
+  static void Form_GetPageViewRect(FPDF_FORMFILLINFO* param,
+                                   FPDF_PAGE page,
+                                   double* left,
+                                   double* top,
+                                   double* right,
+                                   double* bottom);
+  static int Form_GetPlatform(FPDF_FORMFILLINFO* param,
+                              void* platform,
+                              int length);
+  static FPDF_BOOL Form_PopupMenu(FPDF_FORMFILLINFO* param,
+                                  FPDF_PAGE page,
+                                  FPDF_WIDGET widget,
+                                  int menu_flag,
+                                  float x,
+                                  float y);
+  static FPDF_BOOL Form_PostRequestURL(FPDF_FORMFILLINFO* param,
+                                       FPDF_WIDESTRING url,
+                                       FPDF_WIDESTRING data,
+                                       FPDF_WIDESTRING content_type,
+                                       FPDF_WIDESTRING encode,
+                                       FPDF_WIDESTRING header,
+                                       FPDF_BSTR* response);
+  static FPDF_BOOL Form_PutRequestURL(FPDF_FORMFILLINFO* param,
+                                      FPDF_WIDESTRING url,
+                                      FPDF_WIDESTRING data,
+                                      FPDF_WIDESTRING encode);
+  static void Form_UploadTo(FPDF_FORMFILLINFO* param,
+                            FPDF_FILEHANDLER* file_handler,
+                            int file_flag,
+                            FPDF_WIDESTRING dest);
+  static FPDF_LPFILEHANDLER Form_DownloadFromURL(FPDF_FORMFILLINFO* param,
+                                                 FPDF_WIDESTRING url);
+  static FPDF_FILEHANDLER* Form_OpenFile(FPDF_FORMFILLINFO* param,
+                                         int file_flag,
+                                         FPDF_WIDESTRING url,
+                                         const char* mode);
+  static void Form_GotoURL(FPDF_FORMFILLINFO* param,
+                           FPDF_DOCUMENT document,
+                           FPDF_WIDESTRING url);
+  static int Form_GetLanguage(FPDF_FORMFILLINFO* param,
+                              void* language,
+                              int length);
+#endif  // PDF_USE_XFA
+
   // IFSDK_PAUSE callbacks
   static FPDF_BOOL Pause_NeedToPauseNow(IFSDK_PAUSE* param);
 
@@ -540,9 +628,9 @@ class PDFiumEngine : public PDFEngine,
   int last_page_to_search_;
   int last_character_index_to_search_;  // -1 if search until end of page.
   // Which result the user has currently selected.
-  int current_find_index_;
+  FindTextIndex current_find_index_;
   // Where to resume searching.
-  int resume_find_index_;
+  FindTextIndex resume_find_index_;
 
   // Permissions bitfield.
   unsigned long permissions_;

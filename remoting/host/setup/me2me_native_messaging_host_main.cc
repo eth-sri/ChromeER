@@ -32,6 +32,10 @@
 #include "remoting/host/pairing_registry_delegate_win.h"
 #endif  // defined(OS_WIN)
 
+#if defined(OS_LINUX)
+#include <glib-object.h>
+#endif  // defined(OS_LINUX)
+
 using remoting::protocol::PairingRegistry;
 
 namespace {
@@ -69,6 +73,15 @@ int StartMe2MeNativeMessagingHost() {
   // Needed so we don't leak objects when threads are created.
   base::mac::ScopedNSAutoreleasePool pool;
 #endif  // defined(OS_MACOSX)
+
+#if defined(OS_LINUX)
+// g_type_init will be deprecated in 2.36. 2.35 is the development
+// version for 2.36, hence do not call g_type_init starting 2.35.
+// http://developer.gnome.org/gobject/unstable/gobject-Type-Information.html#g-type-init
+#if !GLIB_CHECK_VERSION(2, 35, 0)
+  g_type_init();
+#endif
+#endif  // defined(OS_LINUX)
 
   // Required to find the ICU data file, used by some file_util routines.
   base::i18n::InitializeICU();
@@ -204,24 +217,24 @@ int StartMe2MeNativeMessagingHost() {
   }
 
   base::win::RegKey unprivileged;
-  result = unprivileged.Open(root.Handle(), kPairingRegistrySecretsKeyName,
+  result = unprivileged.Open(root.Handle(), kPairingRegistryClientsKeyName,
                              needs_elevation ? KEY_READ : KEY_READ | KEY_WRITE);
   if (result != ERROR_SUCCESS) {
     SetLastError(result);
-    PLOG(ERROR) << "Failed to open HKLM\\" << kPairingRegistrySecretsKeyName
-                << "\\" << kPairingRegistrySecretsKeyName;
+    PLOG(ERROR) << "Failed to open HKLM\\" << kPairingRegistryKeyName
+                << "\\" << kPairingRegistryClientsKeyName;
     return kInitializationFailed;
   }
 
   // Only try to open the privileged key if the current process is elevated.
   base::win::RegKey privileged;
   if (!needs_elevation) {
-    result = privileged.Open(root.Handle(), kPairingRegistryClientsKeyName,
+    result = privileged.Open(root.Handle(), kPairingRegistrySecretsKeyName,
                              KEY_READ | KEY_WRITE);
     if (result != ERROR_SUCCESS) {
       SetLastError(result);
       PLOG(ERROR) << "Failed to open HKLM\\" << kPairingRegistryKeyName << "\\"
-                  << kPairingRegistryClientsKeyName;
+                  << kPairingRegistrySecretsKeyName;
       return kInitializationFailed;
     }
   }

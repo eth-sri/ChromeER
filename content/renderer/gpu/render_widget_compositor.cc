@@ -33,8 +33,10 @@
 #include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/common/content_switches.h"
+#include "content/renderer/gpu/compositor_external_begin_frame_source.h"
 #include "content/renderer/input/input_handler_manager.h"
 #include "content/renderer/render_thread_impl.h"
+#include "content/renderer/scheduler/renderer_scheduler.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/WebKit/public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "third_party/WebKit/public/platform/WebSelectionBound.h"
@@ -174,7 +176,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   settings.throttle_frame_production =
       !cmd->HasSwitch(switches::kDisableGpuVsync);
-  settings.begin_frame_scheduling_enabled =
+  settings.use_external_begin_frame_source =
       cmd->HasSwitch(switches::kEnableBeginFrameScheduling);
   settings.main_frame_before_activation_enabled =
       cmd->HasSwitch(cc::switches::kEnableMainFrameBeforeActivation) &&
@@ -233,6 +235,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
         render_thread->is_distance_field_text_enabled();
     settings.use_zero_copy = render_thread->is_zero_copy_enabled();
     settings.use_one_copy = render_thread->is_one_copy_enabled();
+    settings.use_image_external = render_thread->use_image_external();
   }
 
   settings.calculate_top_controls_position =
@@ -273,7 +276,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 
   settings.use_pinch_virtual_viewport =
       cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport);
-  settings.allow_antialiasing &=
+  settings.renderer_settings.allow_antialiasing &=
       !cmd->HasSwitch(cc::switches::kDisableCompositedAntialiasing);
   settings.single_thread_proxy_scheduler =
       !cmd->HasSwitch(switches::kDisableSingleThreadProxyScheduler);
@@ -361,7 +364,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
     settings.scrollbar_fade_duration_ms = 300;
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   }
-  settings.highp_threshold_min = 2048;
+  settings.renderer_settings.highp_threshold_min = 2048;
   // Android WebView handles root layer flings itself.
   settings.ignore_root_layer_flings =
       synchronous_compositor_factory;
@@ -371,7 +374,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
       base::SysInfo::IsLowEndDevice() && !synchronous_compositor_factory;
   // RGBA_4444 textures are only enabled for low end devices
   // and are disabled for Android WebView as it doesn't support the format.
-  settings.use_rgba_4444_textures = is_low_end_device;
+  settings.renderer_settings.use_rgba_4444_textures = is_low_end_device;
   if (is_low_end_device) {
     // On low-end we want to be very carefull about killing other
     // apps. So initially we use 50% more memory to avoid flickering
@@ -384,7 +387,7 @@ scoped_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
     settings.max_memory_for_prepaint_percentage = 50;
   }
   // Webview does not own the surface so should not clear it.
-  settings.should_clear_root_render_pass =
+  settings.renderer_settings.should_clear_root_render_pass =
       !synchronous_compositor_factory;
 
   // TODO(danakj): Only do this on low end devices.
@@ -534,6 +537,21 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
     main_thread_compositor_task_runner =
         render_thread->main_thread_compositor_task_runner();
   }
+  scoped_ptr<cc::BeginFrameSource> external_begin_frame_source;
+#if defined(OS_ANDROID)
+  if (SynchronousCompositorFactory* factory =
+      SynchronousCompositorFactory::GetInstance()) {
+    DCHECK(settings.use_external_begin_frame_source);
+    external_begin_frame_source =
+        factory->CreateExternalBeginFrameSource(widget_->routing_id());
+  }
+#endif
+  if (render_thread &&
+      !external_begin_frame_source.get() &&
+      settings.use_external_begin_frame_source) {
+    external_begin_frame_source.reset(new CompositorExternalBeginFrameSource(
+                                              widget_->routing_id()));
+  }
   if (compositor_message_loop_proxy.get()) {
     layer_tree_host_ =
         cc::LayerTreeHost::CreateThreaded(this,
@@ -541,15 +559,17 @@ void RenderWidgetCompositor::Initialize(cc::LayerTreeSettings settings) {
                                           gpu_memory_buffer_manager,
                                           settings,
                                           main_thread_compositor_task_runner,
-                                          compositor_message_loop_proxy);
+                                          compositor_message_loop_proxy,
+                                          external_begin_frame_source.Pass());
   } else {
     layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this,
-        this,
-        shared_bitmap_manager,
-        gpu_memory_buffer_manager,
-        settings,
-        main_thread_compositor_task_runner);
+                           this,
+                           this,
+                           shared_bitmap_manager,
+                           gpu_memory_buffer_manager,
+                           settings,
+                           main_thread_compositor_task_runner,
+                           external_begin_frame_source.Pass());
   }
   DCHECK(layer_tree_host_);
 }
@@ -662,24 +682,32 @@ void RenderWidgetCompositor::registerForAnimations(blink::WebLayer* layer) {
 }
 
 void RenderWidgetCompositor::registerViewportLayers(
+    const blink::WebLayer* overscrollElasticityLayer,
     const blink::WebLayer* pageScaleLayer,
     const blink::WebLayer* innerViewportScrollLayer,
     const blink::WebLayer* outerViewportScrollLayer) {
   layer_tree_host_->RegisterViewportLayers(
+      // The scroll elasticity layer will only exist when using pinch virtual
+      // viewports.
+      overscrollElasticityLayer
+          ? static_cast<const cc_blink::WebLayerImpl*>(
+                overscrollElasticityLayer)->layer()
+          : NULL,
       static_cast<const cc_blink::WebLayerImpl*>(pageScaleLayer)->layer(),
       static_cast<const cc_blink::WebLayerImpl*>(innerViewportScrollLayer)
           ->layer(),
       // The outer viewport layer will only exist when using pinch virtual
       // viewports.
-      outerViewportScrollLayer ? static_cast<const cc_blink::WebLayerImpl*>(
-                                     outerViewportScrollLayer)->layer()
-                               : NULL);
+      outerViewportScrollLayer
+          ? static_cast<const cc_blink::WebLayerImpl*>(outerViewportScrollLayer)
+                ->layer()
+          : NULL);
 }
 
 void RenderWidgetCompositor::clearViewportLayers() {
-  layer_tree_host_->RegisterViewportLayers(scoped_refptr<cc::Layer>(),
-                                           scoped_refptr<cc::Layer>(),
-                                           scoped_refptr<cc::Layer>());
+  layer_tree_host_->RegisterViewportLayers(
+      scoped_refptr<cc::Layer>(), scoped_refptr<cc::Layer>(),
+      scoped_refptr<cc::Layer>(), scoped_refptr<cc::Layer>());
 }
 
 void RenderWidgetCompositor::registerSelection(
@@ -783,6 +811,9 @@ void RenderWidgetCompositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
   double interval_sec = args.interval.InSecondsF();
   WebBeginFrameArgs web_begin_frame_args =
       WebBeginFrameArgs(frame_time_sec, deadline_sec, interval_sec);
+  RenderThreadImpl* render_thread = RenderThreadImpl::current();
+  if (render_thread)  // Can be null in tests.
+    render_thread->renderer_scheduler()->WillBeginFrame(args);
   widget_->webwidget()->beginFrame(web_begin_frame_args);
 }
 
@@ -846,7 +877,9 @@ void RenderWidgetCompositor::DidCommit() {
 
   widget_->DidCommitCompositorFrame();
   widget_->didBecomeReadyForAdditionalInput();
-  widget_->webwidget()->didCommitFrameToCompositor();
+  RenderThreadImpl* render_thread = RenderThreadImpl::current();
+  if (render_thread)  // Can be null in tests.
+    render_thread->renderer_scheduler()->DidCommitFrameToCompositor();
 }
 
 void RenderWidgetCompositor::DidCommitAndDrawFrame() {

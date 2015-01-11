@@ -20,6 +20,7 @@ import android.net.http.SslCertificate;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Message;
 import android.text.TextUtils;
 import android.util.Log;
@@ -48,6 +49,7 @@ import org.chromium.content.browser.ContentSettings;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.ContentViewStatics;
+import org.chromium.content.browser.SmartClipProvider;
 import org.chromium.content.browser.WebContentsObserver;
 import org.chromium.content.common.CleanupReference;
 import org.chromium.content_public.browser.GestureStateListener;
@@ -80,7 +82,7 @@ import java.util.concurrent.Callable;
  * continuous build & test in the open source SDK-based tree).
  */
 @JNINamespace("android_webview")
-public class AwContents {
+public class AwContents implements SmartClipProvider {
     private static final String TAG = "AwContents";
 
     private static final String WEB_ARCHIVE_EXTENSION = ".mht";
@@ -274,6 +276,8 @@ public class AwContents {
         private final InternalAccessDelegate mInitialInternalAccessAdapter;
         private final AwViewMethods mInitialAwViewMethods;
         private FullScreenView mFullScreenView;
+        /** Whether the initial container view was focused when we entered fullscreen */
+        private boolean mWasInitialContainerViewFocused;
 
         private FullScreenTransitionsState(ViewGroup initialContainerView,
                 InternalAccessDelegate initialInternalAccessAdapter,
@@ -283,8 +287,14 @@ public class AwContents {
             mInitialAwViewMethods = initialAwViewMethods;
         }
 
-        private void enterFullScreen(FullScreenView fullScreenView) {
+        private void enterFullScreen(FullScreenView fullScreenView,
+                boolean wasInitialContainerViewFocused) {
             mFullScreenView = fullScreenView;
+            mWasInitialContainerViewFocused = wasInitialContainerViewFocused;
+        }
+
+        private boolean wasInitialContainerViewFocused() {
+            return mWasInitialContainerViewFocused;
         }
 
         private void exitFullScreen() {
@@ -661,8 +671,14 @@ public class AwContents {
 
         // In fullscreen mode FullScreenView owns the AwViewMethodsImpl and AwContents
         // a NullAwViewMethods.
-        FullScreenView fullScreenView = new FullScreenView(mContext, mAwViewMethods);
-        mFullScreenTransitionsState.enterFullScreen(fullScreenView);
+        FullScreenView fullScreenView = new FullScreenView(mContext, mAwViewMethods, this);
+        fullScreenView.setFocusable(true);
+        fullScreenView.setFocusableInTouchMode(true);
+        boolean wasInitialContainerViewFocused = mContainerView.isFocused();
+        if (wasInitialContainerViewFocused) {
+            fullScreenView.requestFocus();
+        }
+        mFullScreenTransitionsState.enterFullScreen(fullScreenView, wasInitialContainerViewFocused);
         mAwViewMethods = new NullAwViewMethods(this, mInternalAccessAdapter, mContainerView);
         mContainerView.removeOnLayoutChangeListener(mLayoutChangeListener);
         fullScreenView.addOnLayoutChangeListener(mLayoutChangeListener);
@@ -713,6 +729,10 @@ public class AwContents {
         setInternalAccessAdapter(mFullScreenTransitionsState.getInitialInternalAccessDelegate());
         setContainerView(initialContainerView);
 
+        // Return focus to the WebView.
+        if (mFullScreenTransitionsState.wasInitialContainerViewFocused()) {
+            mContainerView.requestFocus();
+        }
         mFullScreenTransitionsState.exitFullScreen();
     }
 
@@ -791,8 +811,9 @@ public class AwContents {
 
         long nativeWebContents = nativeGetWebContents(mNativeAwContents);
 
-        mWindowAndroid = mContext instanceof Activity
-                ? new ActivityWindowAndroid((Activity) mContext)
+        Activity activity = ContentViewCore.activityFromContext(mContext);
+        mWindowAndroid = activity != null
+                ? new ActivityWindowAndroid(activity)
                 : new WindowAndroid(mContext.getApplicationContext());
         mContentViewCore = createAndInitializeContentViewCore(
                 mContainerView, mContext, mInternalAccessAdapter, nativeWebContents,
@@ -889,8 +910,19 @@ public class AwContents {
      * Destroys this object and deletes its native counterpart.
      */
     public void destroy() {
+        if (isDestroyed()) return;
+        // If we are attached, we have to call native detach to clean up
+        // hardware resources.
+        if (mIsAttachedToWindow) {
+            nativeOnDetachedFromWindow(mNativeAwContents);
+        }
         mIsDestroyed = true;
-        destroyNatives();
+        new Handler().post(new Runnable() {
+            @Override
+            public void run() {
+                destroyNatives();
+            }
+        });
     }
 
     /**
@@ -899,11 +931,6 @@ public class AwContents {
     private void destroyNatives() {
         if (mCleanupReference != null) {
             assert mNativeAwContents != 0;
-            // If we are attached, we have to call native detach to clean up
-            // hardware resources.
-            if (mIsAttachedToWindow) {
-                nativeOnDetachedFromWindow(mNativeAwContents);
-            }
 
             mWebContentsObserver.detachFromWebContents();
             mWebContentsObserver = null;
@@ -924,12 +951,7 @@ public class AwContents {
     }
 
     private boolean isDestroyed() {
-        if (mIsDestroyed) {
-            assert mContentViewCore == null;
-            assert mWebContents == null;
-            assert mNavigationController == null;
-            assert mNativeAwContents == 0;
-        } else {
+        if (!mIsDestroyed) {
             assert mContentViewCore != null;
             assert mWebContents != null;
             assert mNavigationController != null;
@@ -1751,6 +1773,35 @@ public class AwContents {
         if (!isDestroyed()) mWebContents.evaluateJavaScript(script, null);
     }
 
+    /**
+     * Post a message to a frame.
+     * TODO(sgurun) investigate if we should hardcode the source origin to some
+     * value instead.
+     *
+     * @param frameName The name of the frame. If the name is null the message is posted
+     *                  to the main frame.
+     * @param message   The message
+     * @param sourceOrigin  The source origin
+     * @param targetOrigin  The target origin
+     * @param msgPorts The sent message ports, if any. Pass null if there is no
+     *                 message ports to pass.
+     */
+    public void postMessageToFrame(String frameName, String message,
+            String sourceOrigin, String targetOrigin, int[] msgPorts) {
+        nativePostMessageToFrame(mNativeAwContents, frameName, message, sourceOrigin,
+                targetOrigin, msgPorts);
+    }
+
+    /**
+     * Creates a message channel.
+     *
+     * @param callback The message channel created.
+     */
+    public void createMessageChannel(ValueCallback<MessageChannel> callback) {
+        nativeCreateMessageChannel(mNativeAwContents, callback);
+    }
+
+
     //--------------------------------------------------------------------------------------------
     //  View and ViewGroup method implementations
     //--------------------------------------------------------------------------------------------
@@ -2163,6 +2214,12 @@ public class AwContents {
         }
     }
 
+    @CalledByNative
+    private static void onMessageChannelCreated(int portId1, int portId2,
+            ValueCallback<MessageChannel> callback) {
+        callback.onReceiveValue(new MessageChannel(portId1, portId2));
+    }
+
     // -------------------------------------------------------------------------------------------
     // Helper methods
     // -------------------------------------------------------------------------------------------
@@ -2232,12 +2289,36 @@ public class AwContents {
         return null;
     }
 
+    @Override
     public void extractSmartClipData(int x, int y, int width, int height) {
         if (!isDestroyed()) mContentViewCore.extractSmartClipData(x, y, width, height);
     }
 
-    public void setSmartClipDataListener(ContentViewCore.SmartClipDataListener listener) {
-        if (!isDestroyed()) mContentViewCore.setSmartClipDataListener(listener);
+    @Override
+    public void setSmartClipResultHandler(final Handler resultHandler) {
+        if (isDestroyed()) return;
+
+        if (resultHandler == null) {
+            mContentViewCore.setSmartClipDataListener(null);
+            return;
+        }
+        mContentViewCore.setSmartClipDataListener(new ContentViewCore.SmartClipDataListener() {
+            public void onSmartClipDataExtracted(String text, String html, Rect clipRect) {
+                Bundle bundle = new Bundle();
+                bundle.putString("url", mContentViewCore.getWebContents().getVisibleUrl());
+                bundle.putString("title", mContentViewCore.getWebContents().getTitle());
+                bundle.putParcelable("rect", clipRect);
+                bundle.putString("text", text);
+                bundle.putString("html", html);
+                try {
+                    Message msg = Message.obtain(resultHandler, 0);
+                    msg.setData(bundle);
+                    msg.sendToTarget();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error calling handler for smart clip data: ", e);
+                }
+            }
+        });
     }
 
     // --------------------------------------------------------------------------------------------
@@ -2356,13 +2437,12 @@ public class AwContents {
             mScrollOffsetManager.setProcessingTouchEvent(false);
 
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                int actionIndex = event.getActionIndex();
-
                 // Note this will trigger IPC back to browser even if nothing is
                 // hit.
                 nativeRequestNewHitTestDataAt(mNativeAwContents,
-                        (int) Math.round(event.getX(actionIndex) / mDIPScale),
-                        (int) Math.round(event.getY(actionIndex) / mDIPScale));
+                        event.getX() / (float) mDIPScale,
+                        event.getY() / (float) mDIPScale,
+                        event.getTouchMajor() / (float) mDIPScale);
             }
 
             if (mOverScrollGlow != null) {
@@ -2576,7 +2656,8 @@ public class AwContents {
     private native byte[] nativeGetCertificate(long nativeAwContents);
 
     // Coordinates in desity independent pixels.
-    private native void nativeRequestNewHitTestDataAt(long nativeAwContents, int x, int y);
+    private native void nativeRequestNewHitTestDataAt(long nativeAwContents, float x, float y,
+            float touchMajor);
     private native void nativeUpdateLastHitTestData(long nativeAwContents);
 
     private native void nativeOnSizeChanged(long nativeAwContents, int w, int h, int ow, int oh);
@@ -2616,4 +2697,10 @@ public class AwContents {
 
     private native void nativePreauthorizePermission(long nativeAwContents, String origin,
             long resources);
+
+    private native void nativePostMessageToFrame(long nativeAwContents, String frameId,
+            String message, String sourceOrigin, String targetOrigin, int[] msgPorts);
+
+    private native void nativeCreateMessageChannel(long nativeAwContents,
+            ValueCallback<MessageChannel> callback);
 }

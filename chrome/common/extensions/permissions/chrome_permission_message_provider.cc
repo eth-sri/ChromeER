@@ -157,38 +157,9 @@ std::vector<base::string16> ChromePermissionMessageProvider::GetWarningMessages(
        i != messages.end(); ++i) {
     int id = i->id();
     // Access to users' devices should provide a single warning message
-    // specifying the transport method used; USB, serial and/or Bluetooth.
+    // specifying the transport method used; serial and/or Bluetooth.
     if (id == PermissionMessage::kBluetooth ||
-        id == PermissionMessage::kSerial ||
-        id == PermissionMessage::kUsb) {
-      if (ContainsMessages(messages,
-                           PermissionMessage::kBluetooth,
-                           PermissionMessage::kSerial,
-                           PermissionMessage::kUsb)) {
-        if (id == PermissionMessage::kBluetooth) {
-          message_strings.push_back(l10n_util::GetStringUTF16(
-              IDS_EXTENSION_PROMPT_WARNING_ALL_DEVICES));
-        }
-        continue;
-      }
-      if (ContainsMessages(messages,
-                           PermissionMessage::kBluetooth,
-                           PermissionMessage::kUsb)) {
-        if (id == PermissionMessage::kBluetooth) {
-          message_strings.push_back(l10n_util::GetStringUTF16(
-              IDS_EXTENSION_PROMPT_WARNING_USB_BLUETOOTH));
-        }
-        continue;
-      }
-      if (ContainsMessages(messages,
-                           PermissionMessage::kSerial,
-                           PermissionMessage::kUsb)) {
-        if (id == PermissionMessage::kSerial) {
-          message_strings.push_back(l10n_util::GetStringUTF16(
-              IDS_EXTENSION_PROMPT_WARNING_USB_SERIAL));
-        }
-        continue;
-      }
+        id == PermissionMessage::kSerial) {
       if (ContainsMessages(messages,
                            PermissionMessage::kBluetooth,
                            PermissionMessage::kSerial)) {
@@ -382,7 +353,8 @@ ChromePermissionMessageProvider::GetHostPermissionMessages(
     std::set<std::string> hosts =
         permission_message_util::GetDistinctHosts(regular_hosts, true, true);
     if (!hosts.empty())
-      messages.insert(permission_message_util::CreateFromHostList(hosts));
+      messages.insert(permission_message_util::CreateFromHostList(
+          hosts, permission_message_util::kReadWrite));
   }
   return messages;
 }

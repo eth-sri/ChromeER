@@ -85,6 +85,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/external_provider_interface.h"
@@ -868,6 +869,39 @@ class ExtensionServiceTest : public extensions::ExtensionServiceTestBase,
       return;
     }
     service()->TrackTerminatedExtensionForTest(extension);
+  }
+
+  testing::AssertionResult IsBlocked(const std::string& id) {
+    scoped_ptr<extensions::ExtensionSet> all_unblocked_extensions =
+        registry()->GenerateInstalledExtensionsSet(
+            ExtensionRegistry::EVERYTHING & ~ExtensionRegistry::BLOCKED);
+    if (all_unblocked_extensions.get()->Contains(id))
+      return testing::AssertionFailure() << id << " is still unblocked!";
+    if (!registry()->blocked_extensions().Contains(id))
+      return testing::AssertionFailure() << id << " is not blocked!";
+    return testing::AssertionSuccess();
+  }
+
+  // Helper method to test that an extension moves through being blocked and
+  // unblocked as appropriate for its type.
+  void AssertExtensionBlocksAndUnblocks(
+      bool should_block, const std::string extension_id) {
+    // Assume we start in an unblocked state.
+    EXPECT_FALSE(IsBlocked(extension_id));
+
+    // Block the extensions.
+    service()->BlockAllExtensions();
+    base::RunLoop().RunUntilIdle();
+
+    if (should_block)
+      ASSERT_TRUE(IsBlocked(extension_id));
+    else
+      ASSERT_FALSE(IsBlocked(extension_id));
+
+    service()->UnblockAllExtensions();
+    base::RunLoop().RunUntilIdle();
+
+    ASSERT_FALSE(IsBlocked(extension_id));
   }
 
   size_t GetPrefKeyCount() {
@@ -3584,6 +3618,157 @@ TEST_F(ExtensionServiceTest, ReloadBlacklistedExtension) {
 
 #endif  // defined(ENABLE_BLACKLIST_TESTS)
 
+// Tests blocking then unblocking enabled extensions after the service has been
+// initialized.
+TEST_F(ExtensionServiceTest, BlockAndUnblockEnabledExtension) {
+  InitializeGoodInstalledExtensionService();
+  service()->Init();
+
+  AssertExtensionBlocksAndUnblocks(true, good0);
+}
+
+// Tests blocking then unblocking disabled extensions after the service has been
+// initialized.
+TEST_F(ExtensionServiceTest, BlockAndUnblockDisabledExtension) {
+  InitializeGoodInstalledExtensionService();
+  service()->Init();
+
+  service()->DisableExtension(good0, Extension::DISABLE_RELOAD);
+
+  AssertExtensionBlocksAndUnblocks(true, good0);
+}
+
+// Tests blocking then unblocking terminated extensions after the service has
+// been initialized.
+TEST_F(ExtensionServiceTest, BlockAndUnblockTerminatedExtension) {
+  InitializeGoodInstalledExtensionService();
+  service()->Init();
+
+  TerminateExtension(good0);
+
+  AssertExtensionBlocksAndUnblocks(true, good0);
+}
+
+// Tests blocking then unblocking policy-forced extensions after the service has
+// been initialized.
+TEST_F(ExtensionServiceTest, BlockAndUnblockPolicyExtension) {
+  InitializeEmptyExtensionServiceWithTestingPrefs();
+
+  {
+    ManagementPrefUpdater pref(profile_->GetTestingPrefService());
+    // // Blacklist everything.
+    // pref.SetBlacklistedByDefault(true);
+    // Mark good.crx for force-installation.
+    pref.SetIndividualExtensionAutoInstalled(
+        good_crx, "http://example.com/update_url", true);
+  }
+
+  // Have policy force-install an extension.
+  MockExtensionProvider* provider =
+      new MockExtensionProvider(service(), Manifest::EXTERNAL_POLICY_DOWNLOAD);
+  AddMockExternalProvider(provider);
+  provider->UpdateOrAddExtension(
+      good_crx, "1.0.0.0", data_dir().AppendASCII("good_crx"));
+
+  // Reloading extensions should find our externally registered extension
+  // and install it.
+  content::WindowedNotificationObserver observer(
+      extensions::NOTIFICATION_CRX_INSTALLER_DONE,
+      content::NotificationService::AllSources());
+  service()->CheckForExternalUpdates();
+  observer.Wait();
+
+  AssertExtensionBlocksAndUnblocks(false, good_crx);
+}
+
+
+#if defined(ENABLE_BLACKLIST_TESTS)
+// Tests blocking then unblocking extensions that are blacklisted both before
+// and after Init().
+TEST_F(ExtensionServiceTest, BlockAndUnblockBlacklistedExtension) {
+  extensions::TestBlacklist test_blacklist;
+
+  InitializeGoodInstalledExtensionService();
+  test_blacklist.Attach(service()->blacklist_);
+
+  test_blacklist.SetBlacklistState(
+      good0, extensions::BLACKLISTED_MALWARE, true);
+  base::RunLoop().RunUntilIdle();
+
+  service()->Init();
+
+  test_blacklist.SetBlacklistState(
+      good1, extensions::BLACKLISTED_MALWARE, true);
+  base::RunLoop().RunUntilIdle();
+
+  // Blacklisted extensions stay blacklisted.
+  AssertExtensionBlocksAndUnblocks(false, good0);
+  AssertExtensionBlocksAndUnblocks(false, good1);
+
+  service()->BlockAllExtensions();
+
+  // Remove an extension from the blacklist while the service is blocked.
+  test_blacklist.SetBlacklistState(
+      good0, extensions::NOT_BLACKLISTED, true);
+  // Add an extension to the blacklist while the service is blocked.
+  test_blacklist.SetBlacklistState(
+      good2, extensions::BLACKLISTED_MALWARE, true);
+  base::RunLoop().RunUntilIdle();
+
+  // Go directly to blocked, do not pass go, do not collect $200.
+  ASSERT_TRUE(IsBlocked(good0));
+  // Get on the blacklist - even if you were blocked!
+  ASSERT_FALSE(IsBlocked(good2));
+}
+#endif  // defined(ENABLE_BLACKLIST_TESTS)
+
+// Tests blocking then unblocking enabled component extensions after the service
+// has been initialized.
+TEST_F(ExtensionServiceTest, BlockAndUnblockEnabledComponentExtension) {
+  InitializeEmptyExtensionServiceWithTestingPrefs();
+
+  // Install a component extension.
+  base::FilePath path = data_dir()
+                            .AppendASCII("good")
+                            .AppendASCII("Extensions")
+                            .AppendASCII(good0)
+                            .AppendASCII("1.0.0.0");
+  std::string manifest;
+  ASSERT_TRUE(base::ReadFileToString(
+      path.Append(extensions::kManifestFilename), &manifest));
+  service()->component_loader()->Add(manifest, path);
+  service()->Init();
+
+  // Component extension should never block.
+  AssertExtensionBlocksAndUnblocks(false, good0);
+}
+
+// Tests blocking then unblocking a theme after the service has been
+// initialized.
+TEST_F(ExtensionServiceTest, BlockAndUnblockTheme) {
+  InitializeEmptyExtensionService();
+  service()->Init();
+
+  base::FilePath path = data_dir().AppendASCII("theme.crx");
+  InstallCRX(path, INSTALL_NEW);
+
+  AssertExtensionBlocksAndUnblocks(true, theme_crx);
+}
+
+// Tests that blocking extensions before Init() results in loading blocked
+// extensions.
+TEST_F(ExtensionServiceTest, WillNotLoadExtensionsWhenBlocked) {
+  InitializeGoodInstalledExtensionService();
+
+  service()->BlockAllExtensions();
+
+  service()->Init();
+
+  ASSERT_TRUE(IsBlocked(good0));
+  ASSERT_TRUE(IsBlocked(good0));
+  ASSERT_TRUE(IsBlocked(good0));
+}
+
 // Will not install extension blacklisted by policy.
 TEST_F(ExtensionServiceTest, BlacklistedByPolicyWillNotInstall) {
   InitializeEmptyExtensionServiceWithTestingPrefs();
@@ -3845,7 +4030,7 @@ TEST_F(ExtensionServiceTest, ManagementPolicyRequiresEnable) {
   service()->DisableExtension(good_crx, Extension::DISABLE_USER_ACTION);
   EXPECT_EQ(1u, registry()->disabled_extensions().size());
 
-  // Register an ExtensionMnagementPolicy that requires the extension to remain
+  // Register an ExtensionManagementPolicy that requires the extension to remain
   // enabled.
   GetManagementPolicy()->UnregisterAllProviders();
   extensions::TestManagementPolicyProvider provider(
@@ -3856,6 +4041,31 @@ TEST_F(ExtensionServiceTest, ManagementPolicyRequiresEnable) {
   InstallCRX(data_dir().AppendASCII("good.crx"), INSTALL_UPDATED);
   EXPECT_EQ(1u, registry()->enabled_extensions().size());
   EXPECT_EQ(0u, registry()->disabled_extensions().size());
+}
+
+// Tests that extensions disabled by management policy can be installed but
+// will get disabled after installing.
+TEST_F(ExtensionServiceTest, ManagementPolicyProhibitsEnableOnInstalled) {
+  InitializeEmptyExtensionService();
+
+  // Register an ExtensionManagementPolicy that disables all extensions, with
+  // a specified Extension::DisableReason.
+  GetManagementPolicy()->UnregisterAllProviders();
+  extensions::TestManagementPolicyProvider provider(
+      extensions::TestManagementPolicyProvider::MUST_REMAIN_DISABLED);
+  provider.SetDisableReason(Extension::DISABLE_NOT_VERIFIED);
+  GetManagementPolicy()->RegisterProvider(&provider);
+
+  // Attempts to install an extensions, it should be installed but disabled.
+  EXPECT_EQ(0u, registry()->enabled_extensions().size());
+  EXPECT_EQ(0u, registry()->disabled_extensions().size());
+  InstallCRX(data_dir().AppendASCII("good.crx"), INSTALL_WITHOUT_LOAD);
+  EXPECT_EQ(0u, registry()->enabled_extensions().size());
+  EXPECT_EQ(1u, registry()->disabled_extensions().size());
+
+  // Verifies that the disable reason is set properly.
+  EXPECT_EQ(Extension::DISABLE_NOT_VERIFIED,
+            service()->extension_prefs_->GetDisableReasons(kGoodId));
 }
 
 // Tests that extensions with conflicting required permissions by enterprise

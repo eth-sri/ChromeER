@@ -92,8 +92,8 @@ const CGFloat kWrenchMenuLeftPadding = 3.0;
 - (void)adjustBrowserActionsContainerForNewWindow:(NSNotification*)notification;
 - (void)browserActionsContainerWillDrag:(NSNotification*)notification;
 - (void)browserActionsContainerDragged:(NSNotification*)notification;
-- (void)browserActionsContainerDragFinished:(NSNotification*)notification;
 - (void)browserActionsVisibilityChanged:(NSNotification*)notification;
+- (void)browserActionsContainerWillAnimate:(NSNotification*)notification;
 - (void)adjustLocationSizeBy:(CGFloat)dX animate:(BOOL)animate;
 - (void)updateWrenchButtonSeverity:(WrenchIconPainter::Severity)severity
                            animate:(BOOL)animate;
@@ -447,6 +447,10 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
   [reloadButton_ setMenuEnabled:needReloadMenu];
 }
 
+- (void)resetTabState:(WebContents*)tab {
+  locationBarView_->ResetTabState(tab);
+}
+
 - (void)setStarredState:(BOOL)isStarred {
   locationBarView_->SetStarred(isStarred);
 }
@@ -594,22 +598,22 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
         addObserver:self
            selector:@selector(browserActionsContainerWillDrag:)
                name:kBrowserActionGrippyWillDragNotification
-             object:browserActionsController_];
+             object:browserActionsContainerView_];
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(browserActionsContainerDragged:)
                name:kBrowserActionGrippyDraggingNotification
-             object:browserActionsController_];
-    [[NSNotificationCenter defaultCenter]
-        addObserver:self
-           selector:@selector(browserActionsContainerDragFinished:)
-               name:kBrowserActionGrippyDragFinishedNotification
-             object:browserActionsController_];
+             object:browserActionsContainerView_];
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(browserActionsVisibilityChanged:)
                name:kBrowserActionVisibilityChangedNotification
              object:browserActionsController_];
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(browserActionsContainerWillAnimate:)
+               name:kBrowserActionsContainerWillAnimate
+             object:browserActionsContainerView_];
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(adjustBrowserActionsContainerForNewWindow:)
@@ -640,11 +644,6 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
       [browserActionsContainerView_ resizeDeltaX] animate:NO];
 }
 
-- (void)browserActionsContainerDragFinished:(NSNotification*)notification {
-  [browserActionsController_ resizeContainerAndAnimate:YES];
-  [self pinLocationBarToLeftOfBrowserActionsContainerAndAnimate:YES];
-}
-
 - (void)browserActionsContainerWillDrag:(NSNotification*)notification {
   CGFloat deltaX = [[notification.userInfo objectForKey:kTranslationWithDelta]
       floatValue];
@@ -661,8 +660,12 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
   [self pinLocationBarToLeftOfBrowserActionsContainerAndAnimate:NO];
 }
 
+- (void)browserActionsContainerWillAnimate:(NSNotification*)notification {
+  [self pinLocationBarToLeftOfBrowserActionsContainerAndAnimate:YES];
+}
+
 - (void)pinLocationBarToLeftOfBrowserActionsContainerAndAnimate:(BOOL)animate {
-  CGFloat locationBarXPos = NSMaxX([locationBar_ frame]);
+  CGFloat locationBarXPos = NSMaxX([[locationBar_ animator] frame]);
   CGFloat leftDistance;
 
   if ([browserActionsContainerView_ isHidden]) {
@@ -730,7 +733,7 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
 
 - (void)adjustLocationSizeBy:(CGFloat)dX animate:(BOOL)animate {
   // Ensure that the location bar is in its proper place.
-  NSRect locationFrame = [locationBar_ frame];
+  NSRect locationFrame = [[locationBar_ animator] frame];
   locationFrame.size.width += dX;
 
   if (!animate) {

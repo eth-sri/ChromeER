@@ -47,6 +47,10 @@
         '../components/components.gyp:url_matcher',
         '../content/content.gyp:content_common',
         '../crypto/crypto.gyp:crypto',
+        '../device/bluetooth/bluetooth.gyp:device_bluetooth',
+        # For Mojo generated headers for generated_api.cc.
+        '../device/serial/serial.gyp:device_serial_mojo',
+        '../device/usb/usb.gyp:device_usb',
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
         '../third_party/re2/re2.gyp:re2',
@@ -55,6 +59,7 @@
         '../ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
         '../url/url.gyp:url_lib',
         '../third_party/libxml/libxml.gyp:libxml',
+        'common/api/api.gyp:extensions_api',
         'extensions_resources.gyp:extensions_resources',
         'extensions_strings.gyp:extensions_strings',
         'extensions_common_constants',
@@ -157,6 +162,8 @@
         'common/manifest_handlers/background_info.h',
         'common/manifest_handlers/csp_info.cc',
         'common/manifest_handlers/csp_info.h',
+        'common/manifest_handlers/default_locale_handler.cc',
+        'common/manifest_handlers/default_locale_handler.h',
         'common/manifest_handlers/externally_connectable.cc',
         'common/manifest_handlers/externally_connectable.h',
         'common/manifest_handlers/file_handler_info.cc',
@@ -258,36 +265,6 @@
       # Disable c4267 warnings until we fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
       'conditions': [
-        ['enable_extensions==1', {
-          'dependencies': [
-            'common/api/api.gyp:extensions_api',
-            '../device/bluetooth/bluetooth.gyp:device_bluetooth',
-            # For Mojo generated headers for generated_api.cc.
-            '../device/serial/serial.gyp:device_serial_mojo',
-            '../device/usb/usb.gyp:device_usb',
-          ],
-        }, {  # enable_extensions == 0
-          'sources!': [
-            'common/api/bluetooth/bluetooth_manifest_data.cc',
-            'common/api/bluetooth/bluetooth_manifest_data.h',
-            'common/api/bluetooth/bluetooth_manifest_handler.cc',
-            'common/api/bluetooth/bluetooth_manifest_handler.h',
-            'common/api/bluetooth/bluetooth_manifest_permission.cc',
-            'common/api/bluetooth/bluetooth_manifest_permission.h',
-            'common/api/messaging/message.h',
-            'common/api/sockets/sockets_manifest_data.cc',
-            'common/api/sockets/sockets_manifest_data.h',
-            'common/api/sockets/sockets_manifest_handler.cc',
-            'common/api/sockets/sockets_manifest_handler.h',
-            'common/api/sockets/sockets_manifest_permission.cc',
-            'common/api/sockets/sockets_manifest_permission.h',
-            'common/extension_api.cc',
-            'common/manifest_handlers/externally_connectable.cc',
-            'common/manifest_handlers/externally_connectable.h',
-            'common/manifest_handlers/options_page_info.cc',
-            'common/manifest_handlers/options_page_info.h',
-          ],
-        }],
         ['disable_nacl==0', {
           # NaClModulesHandler does not use any code in NaCl, so no dependency
           # on nacl_common.
@@ -350,8 +327,6 @@
         'browser/api/app_view/app_view_guest_internal_api.h',
         'browser/api/app_window/app_window_api.cc',
         'browser/api/app_window/app_window_api.h',
-        'browser/api/guest_view/guest_view_internal_api.cc',
-        'browser/api/guest_view/guest_view_internal_api.h',
         'browser/api/async_api_function.cc',
         'browser/api/async_api_function.h',
         'browser/api/bluetooth/bluetooth_api.cc',
@@ -445,12 +420,19 @@
         'browser/api/execute_code_function.h',
         'browser/api/extensions_api_client.cc',
         'browser/api/extensions_api_client.h',
+        'browser/api/guest_view/guest_view_internal_api.cc',
+        'browser/api/guest_view/guest_view_internal_api.h',
         'browser/api/hid/hid_api.cc',
         'browser/api/hid/hid_api.h',
         'browser/api/hid/hid_connection_resource.cc',
         'browser/api/hid/hid_connection_resource.h',
         'browser/api/hid/hid_device_manager.cc',
         'browser/api/hid/hid_device_manager.h',
+        'browser/api/management/management_api.cc',
+        'browser/api/management/management_api.h',
+        'browser/api/management/management_api_delegate.h',
+        'browser/api/management/management_api_constants.cc',
+        'browser/api/management/management_api_constants.h',
         'browser/api/messaging/native_message_host.cc',
         'browser/api/power/power_api.cc',
         'browser/api/power/power_api.h',
@@ -558,6 +540,8 @@
         'browser/api/web_request/web_request_time_tracker.h',
         'browser/api/web_view/web_view_internal_api.cc',
         'browser/api/web_view/web_view_internal_api.h',
+        'browser/api/webcam_private/webcam_private_api.h',
+        'browser/api/webcam_private/webcam_private_api_chromeos.cc',
         'browser/api_activity_monitor.h',
         'browser/app_sorting.h',
         'browser/app_window/app_delegate.h',
@@ -763,6 +747,10 @@
         'browser/updater/request_queue_impl.h',
         'browser/updater/safe_manifest_parser.cc',
         'browser/updater/safe_manifest_parser.h',
+        'browser/updater/update_service.cc',
+        'browser/updater/update_service.h',
+        'browser/updater/update_service_factory.cc',
+        'browser/updater/update_service_factory.h',
         'browser/url_request_util.cc',
         'browser/url_request_util.h',
         'browser/value_store/leveldb_value_store.cc',
@@ -783,24 +771,29 @@
         'browser/view_type_utils.h',
         'browser/warning_service.cc',
         'browser/warning_service.h',
+        'browser/warning_service_factory.cc',
+        'browser/warning_service_factory.h',
         'browser/warning_set.cc',
         'browser/warning_set.h',
       ],
       'conditions': [
-        ['enable_extensions==0', {
-          # Exclude all API implementations and the ExtensionsApiClient
-          # interface. Moving an API from src/chrome to src/extensions implies
-          # it can be cleanly disabled with enable_extensions==0.
-          # TODO: Eventually the entire extensions module should not be built
-          # when enable_extensions==0.
-          'sources/': [
-            ['exclude', '^browser/'],
-          ],
+        # This condition exists only because the extensions_common_constants
+        # target is always built and thus this file gets evaluated by GYP.
+        # This does not need to be replicated into extensions/browser/BUILD.gn.
+        ['OS == "ios" or OS == "android"', {
           'dependencies!': [
             '../components/components.gyp:storage_monitor',
-            '../device/bluetooth/bluetooth.gyp:device_bluetooth',
-            '../device/serial/serial.gyp:device_serial',
           ],
+        }],
+        ['OS == "linux" and chromeos == 1', {
+          'sources': [
+            'browser/api/vpn_provider/vpn_provider_api.cc',
+            'browser/api/vpn_provider/vpn_provider_api.h',
+            'browser/api/vpn_provider/vpn_service.cc',
+            'browser/api/vpn_provider/vpn_service.h',
+            'browser/api/vpn_provider/vpn_service_factory.cc',
+            'browser/api/vpn_provider/vpn_service_factory.h'
+          ]
         }],
         ['use_openssl==1', {
           'sources': [
@@ -850,6 +843,8 @@
         # Note: sources list duplicated in GN build.
         'renderer/activity_log_converter_strategy.cc',
         'renderer/activity_log_converter_strategy.h',
+        'renderer/api/automation/automation_api_helper.cc',
+        'renderer/api/automation/automation_api_helper.h',
         'renderer/api_activity_logger.cc',
         'renderer/api_activity_logger.h',
         'renderer/api_definitions_natives.cc',
@@ -890,10 +885,14 @@
         'renderer/extensions_renderer_client.h',
         'renderer/file_system_natives.cc',
         'renderer/file_system_natives.h',
+        'renderer/guest_view/extensions_guest_view_container.cc',
+        'renderer/guest_view/extensions_guest_view_container.h',
         'renderer/guest_view/guest_view_container.cc',
         'renderer/guest_view/guest_view_container.h',
         'renderer/guest_view/guest_view_internal_custom_bindings.cc',
         'renderer/guest_view/guest_view_internal_custom_bindings.h',
+        'renderer/guest_view/mime_handler_view/mime_handler_view_container.cc',
+        'renderer/guest_view/mime_handler_view/mime_handler_view_container.h',
         'renderer/i18n_custom_bindings.cc',
         'renderer/i18n_custom_bindings.h',
         'renderer/id_generator_custom_bindings.cc',
@@ -998,6 +997,22 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //extensions/utility
+      'target_name': 'extensions_utility',
+      'type': 'static_library',
+      'dependencies': [
+        '../content/content.gyp:content_utility',
+        'extensions_common',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'utility/utility_handler.cc',
+        'utility/utility_handler.h',
+      ],
+    },
+    {
       # GN version: //extensions:test_support
       'target_name': 'extensions_test_support',
       'type': 'static_library',
@@ -1029,6 +1044,8 @@
         'browser/api_test_utils.h',
         'browser/api_unittest.cc',
         'browser/api_unittest.h',
+        'browser/app_window/test_app_window_contents.cc',
+        'browser/app_window/test_app_window_contents.h',
         'browser/extension_error_test_util.cc',
         'browser/extension_error_test_util.h',
         'browser/extensions_test.cc',
@@ -1125,9 +1142,9 @@
         '../device/bluetooth/bluetooth.gyp:device_bluetooth_mocks',
         '../device/serial/serial.gyp:device_serial',
         '../device/serial/serial.gyp:device_serial_test_util',
+        '../mojo/edk/mojo_edk.gyp:mojo_js_lib',
         '../mojo/edk/mojo_edk.gyp:mojo_system_impl',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../mojo/mojo_base.gyp:mojo_js_bindings_lib',
         '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -1148,11 +1165,14 @@
         'browser/api/api_resource_manager_unittest.cc',
         'browser/api/bluetooth/bluetooth_event_router_unittest.cc',
         'browser/api/cast_channel/cast_auth_ica_unittest.cc',
+        'browser/api/cast_channel/cast_auth_util_unittest.cc',
         'browser/api/cast_channel/cast_channel_api_unittest.cc',
         'browser/api/cast_channel/cast_framer_unittest.cc',
         'browser/api/cast_channel/cast_socket_unittest.cc',
         'browser/api/cast_channel/cast_transport_unittest.cc',
         'browser/api/cast_channel/logger_unittest.cc',
+        'browser/api/cast_channel/test_util.cc',
+        'browser/api/cast_channel/test_util.h',
         'browser/api/declarative/declarative_rule_unittest.cc',
         'browser/api/declarative/deduping_factory_unittest.cc',
         'browser/api/declarative/rules_registry_unittest.cc',
@@ -1208,6 +1228,7 @@
         'common/features/simple_feature_unittest.cc',
         'common/file_util_unittest.cc',
         'common/manifest_handler_unittest.cc',
+        'common/manifest_handlers/default_locale_manifest_unittest.cc',
         'common/manifest_handlers/externally_connectable_unittest.cc',
         'common/manifest_handlers/file_handler_manifest_unittest.cc',
         'common/manifest_handlers/oauth2_manifest_unittest.cc',

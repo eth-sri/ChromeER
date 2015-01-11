@@ -33,6 +33,8 @@ component("blink") {
     "web_compositor_support_impl.h",
     "web_content_layer_impl.cc",
     "web_content_layer_impl.h",
+    "web_display_item_list_impl.cc",
+    "web_display_item_list_impl.h",
     "web_external_bitmap_impl.cc",
     "web_external_bitmap_impl.h",
     "web_external_texture_layer_impl.cc",
@@ -65,22 +67,25 @@ component("blink") {
 }
 
 # GYP version: //cc/blink/cc_blink_tests.gyp:cc_blink_unittests
-test("cc_blink_unittests") {
-  deps = [
-    ":blink",
-    "//base/test:run_all_unittests",
-    "//base/third_party/dynamic_annotations",
-    "//skia",
-    "//testing/gtest",
-    "//ui/gfx/geometry",
-    "//ui/gfx:test_support",
-    "//cc",
-    "//cc:test_support",
-  ]
+# TODO(GYP): make linking work on the mac.
+if (!is_mac) {
+  test("cc_blink_unittests") {
+    deps = [
+      ":blink",
+      "//base/test:run_all_unittests",
+      "//base/third_party/dynamic_annotations",
+      "//skia",
+      "//testing/gtest",
+      "//ui/gfx/geometry",
+      "//ui/gfx:test_support",
+      "//cc",
+      "//cc:test_support",
+    ]
 
-  sources = [
-    "web_animation_unittest.cc",
-    "web_float_animation_curve_unittest.cc",
-    "web_layer_impl_fixed_bounds_unittest.cc",
-  ]
+    sources = [
+      "web_animation_unittest.cc",
+      "web_float_animation_curve_unittest.cc",
+      "web_layer_impl_fixed_bounds_unittest.cc",
+    ]
+  }
 }

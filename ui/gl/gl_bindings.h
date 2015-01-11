@@ -116,17 +116,17 @@
 #define GL_QUERY_RESULT_AVAILABLE_EXT                    0x8867
 
 // GL_CHROMIUM_command_buffer_query
-#define GL_COMMANDS_ISSUED_CHROMIUM                      0x84F2
+#define GL_COMMANDS_ISSUED_CHROMIUM                      0x6004
 
 /* GL_CHROMIUM_get_error_query */
-#define GL_GET_ERROR_QUERY_CHROMIUM                      0x84F3
+#define GL_GET_ERROR_QUERY_CHROMIUM                      0x6003
 
 /* GL_CHROMIUM_command_buffer_latency_query */
-#define GL_LATENCY_QUERY_CHROMIUM                        0x84F4
+#define GL_LATENCY_QUERY_CHROMIUM                        0x6007
 
 /* GL_CHROMIUM_async_pixel_transfers */
-#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM         0x84F5
-#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM           0x84F6
+#define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM         0x6005
+#define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM           0x6006
 
 // GL_CHROMIUM_sync_query
 #define GL_COMMANDS_COMPLETED_CHROMIUM                   0x84F7
@@ -142,6 +142,10 @@
 #define GL_OVERLAY_TRANSFORM_ROTATE_90_CHROMIUM          0x9248
 #define GL_OVERLAY_TRANSFORM_ROTATE_180_CHROMIUM         0x9249
 #define GL_OVERLAY_TRANSFORM_ROTATE_270_CHROMIUM         0x924A
+
+// GL_CHROMIUM_subscribe_uniforms
+#define GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM             0x924B
+#define GL_MOUSE_POSITION_CHROMIUM                       0x924C
 
 // GL_OES_texure_3D
 #define GL_SAMPLER_3D_OES                                0x8B5F

@@ -7,7 +7,9 @@
 #include "content/browser/loader/resource_scheduler.h"
 
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
+#include "base/time/time.h"
 #include "content/common/resource_messages.h"
 #include "content/browser/loader/resource_message_delegate.h"
 #include "content/public/browser/resource_controller.h"
@@ -22,6 +24,24 @@
 #include "net/url_request/url_request_context.h"
 
 namespace content {
+
+namespace {
+
+void PostHistogram(const char* base_name,
+                   const char* suffix,
+                   base::TimeDelta time) {
+  std::string histogram_name =
+      base::StringPrintf("ResourceScheduler.%s.%s", base_name, suffix);
+  base::HistogramBase* histogram_counter = base::Histogram::FactoryTimeGet(
+      histogram_name,
+      base::TimeDelta::FromMilliseconds(1),
+      base::TimeDelta::FromMinutes(5),
+      50,
+      base::Histogram::kUmaTargetedHistogramFlag);
+  histogram_counter->AddTime(time);
+}
+
+}  // namespace
 
 static const size_t kCoalescedTimerPeriod = 5000;
 static const size_t kMaxNumDelayableRequestsPerClient = 10;
@@ -123,6 +143,7 @@ class ResourceScheduler::ScheduledResourceRequest
                            const RequestPriorityParams& priority)
       : ResourceMessageDelegate(request),
         client_id_(client_id),
+        client_state_on_creation_(scheduler->GetClientState(client_id_)),
         request_(request),
         ready_(false),
         deferred_(false),
@@ -139,10 +160,34 @@ class ResourceScheduler::ScheduledResourceRequest
   void Start() {
     TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request_, "Queued");
     ready_ = true;
-    if (deferred_ && request_->status().is_success()) {
+    if (!request_->status().is_success())
+      return;
+    base::TimeTicks time = base::TimeTicks::Now();
+    ClientState current_state = scheduler_->GetClientState(client_id_);
+    // Note: the client state isn't perfectly accurate since it won't capture
+    // tabs which have switched between active and background multiple times.
+    // Ex: A tab with the following transitions Active -> Background -> Active
+    // will be recorded as Active.
+    const char* client_state = "Other";
+    if (current_state == client_state_on_creation_ && current_state == ACTIVE) {
+      client_state = "Active";
+    } else if (current_state == client_state_on_creation_ &&
+               current_state == BACKGROUND) {
+      client_state = "Background";
+    }
+
+    base::TimeDelta time_was_deferred = base::TimeDelta::FromMicroseconds(0);
+    if (deferred_) {
       deferred_ = false;
       controller()->Resume();
+      time_was_deferred = time - time_deferred_;
     }
+    PostHistogram("RequestTimeDeferred", client_state, time_was_deferred);
+    PostHistogram(
+        "RequestTimeThrottled", client_state, time - request_->creation_time());
+    // TODO(aiolos): Remove one of the above histograms after gaining an
+    // understanding of the difference between them and which one is more
+    // interesting.
   }
 
   void set_request_priority_params(const RequestPriorityParams& priority) {
@@ -177,7 +222,10 @@ class ResourceScheduler::ScheduledResourceRequest
   }
 
   // ResourceThrottle interface:
-  void WillStartRequest(bool* defer) override { deferred_ = *defer = !ready_; }
+  void WillStartRequest(bool* defer) override {
+    deferred_ = *defer = !ready_;
+    time_deferred_ = base::TimeTicks::Now();
+  }
 
   const char* GetNameForLogging() const override { return "ResourceScheduler"; }
 
@@ -186,7 +234,8 @@ class ResourceScheduler::ScheduledResourceRequest
     scheduler_->ReprioritizeRequest(this, new_priority, intra_priority_value);
   }
 
-  ClientId client_id_;
+  const ClientId client_id_;
+  const ResourceScheduler::ClientState client_state_on_creation_;
   net::URLRequest* request_;
   bool ready_;
   bool deferred_;
@@ -194,6 +243,7 @@ class ResourceScheduler::ScheduledResourceRequest
   ResourceScheduler* scheduler_;
   RequestPriorityParams priority_;
   uint32 fifo_ordering_;
+  base::TimeTicks time_deferred_;
 
   DISALLOW_COPY_AND_ASSIGN(ScheduledResourceRequest);
 };
@@ -233,11 +283,11 @@ class ResourceScheduler::Client {
         is_paused_(false),
         has_body_(false),
         using_spdy_proxy_(false),
+        load_started_time_(base::TimeTicks::Now()),
+        scheduler_(scheduler),
         in_flight_delayable_count_(0),
         total_layout_blocking_count_(0),
-        throttle_state_(ResourceScheduler::THROTTLED) {
-    scheduler_ = scheduler;
-  }
+        throttle_state_(ResourceScheduler::THROTTLED) {}
 
   ~Client() {
     // Update to default state and pause to ensure the scheduler has a
@@ -288,18 +338,21 @@ class ResourceScheduler::Client {
   bool is_visible() const { return is_visible_; }
 
   void OnAudibilityChanged(bool is_audible) {
-    if (is_audible == is_audible_) {
-      return;
-    }
-    is_audible_ = is_audible;
-    UpdateThrottleState();
+    UpdateState(is_audible, &is_audible_);
   }
 
   void OnVisibilityChanged(bool is_visible) {
-    if (is_visible == is_visible_) {
+    UpdateState(is_visible, &is_visible_);
+  }
+
+  // Function to update any client state variable used to determine whether a
+  // Client is active or background. Used for is_visible_ and is_audible_.
+  void UpdateState(bool new_state, bool* current_state) {
+    bool was_active = is_active();
+    *current_state = new_state;
+    if (was_active == is_active())
       return;
-    }
-    is_visible_ = is_visible;
+    last_active_switch_time_ = base::TimeTicks::Now();
     UpdateThrottleState();
   }
 
@@ -309,6 +362,25 @@ class ResourceScheduler::Client {
     }
     is_loaded_ = is_loaded;
     UpdateThrottleState();
+    if (!is_loaded_) {
+      load_started_time_ = base::TimeTicks::Now();
+      last_active_switch_time_ = base::TimeTicks();
+      return;
+    }
+    base::TimeTicks cur_time = base::TimeTicks::Now();
+    const char* client_catagory = "Other";
+    if (last_active_switch_time_.is_null()) {
+      client_catagory = is_active() ? "Active" : "Background";
+    } else if (is_active()) {
+      PostHistogram("ClientLoadedTime", "Other.SwitchedToActive",
+                    cur_time - last_active_switch_time_);
+    }
+    PostHistogram("ClientLoadedTime", client_catagory,
+                  cur_time - load_started_time_);
+    // TODO(aiolos): The above histograms will not take main resource load time
+    // into account with PlzNavigate into account. The ResourceScheduler also
+    // will load the main resources without a clients with the current logic.
+    // Find a way to fix both of these issues.
   }
 
   void SetPaused() {
@@ -704,6 +776,9 @@ class ResourceScheduler::Client {
   bool using_spdy_proxy_;
   RequestQueue pending_requests_;
   RequestSet in_flight_requests_;
+  base::TimeTicks load_started_time_;
+  // The last time the client switched state between active and background.
+  base::TimeTicks last_active_switch_time_;
   ResourceScheduler* scheduler_;
   // The number of delayable in-flight requests.
   size_t in_flight_delayable_count_;
@@ -754,9 +829,11 @@ scoped_ptr<ResourceThrottle> ResourceScheduler::ScheduleRequest(
     net::URLRequest* url_request) {
   DCHECK(CalledOnValidThread());
   ClientId client_id = MakeClientId(child_id, route_id);
-  scoped_ptr<ScheduledResourceRequest> request(
-      new ScheduledResourceRequest(client_id, url_request, this,
-          RequestPriorityParams(url_request->priority(), 0)));
+  scoped_ptr<ScheduledResourceRequest> request(new ScheduledResourceRequest(
+      client_id,
+      url_request,
+      this,
+      RequestPriorityParams(url_request->priority(), 0)));
 
   ClientMap::iterator it = client_map_.find(client_id);
   if (it == client_map_.end()) {
@@ -996,6 +1073,14 @@ void ResourceScheduler::LoadCoalescedRequests() {
     client->LoadCoalescedRequests();
     ++client_it;
   }
+}
+
+ResourceScheduler::ClientState ResourceScheduler::GetClientState(
+    ClientId client_id) const {
+  ClientMap::const_iterator client_it = client_map_.find(client_id);
+  if (client_it == client_map_.end())
+    return UNKNOWN;
+  return client_it->second->is_active() ? ACTIVE : BACKGROUND;
 }
 
 void ResourceScheduler::ReprioritizeRequest(ScheduledResourceRequest* request,

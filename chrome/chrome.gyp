@@ -39,13 +39,21 @@
           '../content/content.gyp:content_ppapi_plugin',
           '../third_party/WebKit/public/blink_devtools.gyp:blink_devtools_frontend_resources',
         ],
+        'conditions': [
+          [ 'cld_version==0 or cld_version==2', {
+            'chromium_child_dependencies': [
+              # Use whatever CLD2 data access mode that the application
+              # embedder is using.
+              '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld2_platform_impl', ],
+          }],
+        ],
       }],
-      ['enable_printing!=0', {
+      ['enable_basic_printing==1 or enable_print_preview==1', {
         'chromium_browser_dependencies': [
           '../printing/printing.gyp:printing',
         ],
       }],
-      ['enable_printing==1', {
+      ['enable_print_preview==1', {
         'chromium_browser_dependencies': [
           'service',
         ],
@@ -392,7 +400,6 @@
             '../content/content_shell_and_tests.gyp:content_unittests',
             '../net/net.gyp:net_unittests',
             '../ui/base/ui_base_tests.gyp:ui_base_unittests',
-            '../ui/base/ui_base_tests.gyp:ui_unittests',
           ],
         },
         {
@@ -511,6 +518,8 @@
         },
       ],  # 'targets'
       'includes': [
+        'app_shim/app_shim_win.gypi',
+        'chrome_watcher/chrome_watcher.gypi',
         'chrome_process_finder.gypi',
         'metro_utils.gypi',
       ],
@@ -674,7 +683,7 @@
         'chrome_browser_extensions.gypi',
       ],
     }],
-    ['enable_printing==1', {
+    ['enable_print_preview==1', {
       'targets': [
         {
           # GN version: //chrome/service

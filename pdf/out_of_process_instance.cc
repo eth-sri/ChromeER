@@ -40,6 +40,7 @@
 #include "ppapi/cpp/var_array.h"
 #include "ppapi/cpp/var_dictionary.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "v8/include/v8.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -84,6 +85,8 @@ const char kJSGetPasswordCompleteType[] = "getPasswordComplete";
 const char kJSPassword[] = "password";
 // Print (Page -> Plugin)
 const char kJSPrintType[] = "print";
+// Save (Page -> Plugin)
+const char kJSSaveType[] = "save";
 // Go to page (Plugin -> Page)
 const char kJSGoToPageType[] = "goToPage";
 const char kJSPageNumber[] = "page";
@@ -165,9 +168,22 @@ void Transform(PP_Instance instance, PP_PrivatePageTransformType type) {
   }
 }
 
+PP_Bool GetPrintPresetOptionsFromDocument(
+    PP_Instance instance,
+    PP_PdfPrintPresetOptions_Dev* options) {
+  void* object = pp::Instance::GetPerInstanceObject(instance, kPPPPdfInterface);
+  if (object) {
+    OutOfProcessInstance* obj_instance =
+        static_cast<OutOfProcessInstance*>(object);
+    obj_instance->GetPrintPresetOptionsFromDocument(options);
+  }
+  return PP_TRUE;
+}
+
 const PPP_Pdf ppp_private = {
   &GetLinkAtPosition,
-  &Transform
+  &Transform,
+  &GetPrintPresetOptionsFromDocument
 };
 
 int ExtractPrintPreviewPageIndex(const std::string& src_url) {
@@ -266,6 +282,15 @@ OutOfProcessInstance::~OutOfProcessInstance() {
 bool OutOfProcessInstance::Init(uint32_t argc,
                                 const char* argn[],
                                 const char* argv[]) {
+  v8::StartupData natives;
+  v8::StartupData snapshot;
+  pp::PDF::GetV8ExternalSnapshotData(this, &natives.data, &natives.raw_size,
+                                     &snapshot.data, &snapshot.raw_size);
+  if (natives.data) {
+    v8::V8::SetNativesDataBlob(&natives);
+    v8::V8::SetSnapshotDataBlob(&snapshot);
+  }
+
   // Check if the PDF is being loaded in the PDF chrome extension. We only allow
   // the plugin to be put into "full frame" mode when it is being loaded in the
   // extension because this enables some features that we don't want pages
@@ -379,6 +404,8 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
     }
   } else if (type == kJSPrintType) {
     Print();
+  } else if (type == kJSSaveType) {
+    pp::PDF::SaveAs(this);
   } else if (type == kJSRotateClockwiseType) {
     RotateClockwise();
   } else if (type == kJSRotateCounterclockwiseType) {
@@ -537,6 +564,12 @@ void OutOfProcessInstance::DidChangeView(const pp::View& view) {
     engine_->ScrolledToXPosition(scroll_offset_float.x() * device_scale_);
     engine_->ScrolledToYPosition(scroll_offset_float.y() * device_scale_);
   }
+}
+
+void OutOfProcessInstance::GetPrintPresetOptionsFromDocument(
+    PP_PdfPrintPresetOptions_Dev* options) {
+  options->is_scaling_disabled = PP_FromBool(IsPrintScalingDisabled());
+  options->copies = engine_->GetCopiesToPrint();
 }
 
 pp::Var OutOfProcessInstance::GetLinkAtPosition(
@@ -906,6 +939,7 @@ void OutOfProcessInstance::NotifyNumberOfFindResultsChanged(int total,
 
 void OutOfProcessInstance::NotifySelectedFindResultChanged(
     int current_find_index) {
+  DCHECK_GE(current_find_index, 0);
   SelectedFindResultChanged(current_find_index);
 }
 

@@ -31,8 +31,9 @@ class CONTENT_EXPORT TouchSelectionControllerClient {
   virtual bool SupportsAnimation() const = 0;
   virtual void SetNeedsAnimate() = 0;
   virtual void MoveCaret(const gfx::PointF& position) = 0;
-  virtual void SelectBetweenCoordinates(const gfx::PointF& start,
-                                        const gfx::PointF& end) = 0;
+  virtual void MoveRangeSelectionExtent(const gfx::PointF& extent) = 0;
+  virtual void SelectBetweenCoordinates(const gfx::PointF& base,
+                                        const gfx::PointF& extent) = 0;
   virtual void OnSelectionEvent(SelectionEventType event,
                                 const gfx::PointF& position) = 0;
   virtual scoped_ptr<TouchHandleDrawable> CreateDrawable() = 0;
@@ -64,6 +65,10 @@ class CONTENT_EXPORT TouchSelectionController : public TouchHandleClient {
   // To be called before forwarding a longpress event. This allows automatically
   // showing the selection or insertion handles from subsequent bounds changes.
   void OnLongPressEvent();
+
+  // Allow showing the selection handles from the most recent selection bounds
+  // update (if valid), or a future valid bounds update.
+  void AllowShowingFromCurrentSelection();
 
   // Hide the handles and suppress bounds updates until the next explicit
   // showing allowance.
@@ -133,7 +138,6 @@ class CONTENT_EXPORT TouchSelectionController : public TouchHandleClient {
 
   scoped_ptr<TouchHandle> start_selection_handle_;
   scoped_ptr<TouchHandle> end_selection_handle_;
-  gfx::PointF fixed_handle_position_;
   bool is_selection_active_;
   bool activate_selection_automatically_;
 

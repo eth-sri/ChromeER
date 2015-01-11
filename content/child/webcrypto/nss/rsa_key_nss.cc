@@ -4,6 +4,8 @@
 
 #include "content/child/webcrypto/nss/rsa_key_nss.h"
 
+#include <secasn1.h>
+
 #include "base/logging.h"
 #include "content/child/webcrypto/crypto_data.h"
 #include "content/child/webcrypto/generate_key_result.h"
@@ -76,11 +78,8 @@ bool CreateRsaHashedPublicKeyAlgorithm(
                              key->u.rsa.publicExponent.len);
 
   *key_algorithm = blink::WebCryptoKeyAlgorithm::createRsaHashed(
-      rsa_algorithm,
-      modulus_length_bits,
-      public_exponent.bytes(),
-      public_exponent.byte_length(),
-      hash_algorithm);
+      rsa_algorithm, modulus_length_bits, public_exponent.bytes(),
+      public_exponent.byte_length(), hash_algorithm);
   return true;
 }
 
@@ -92,8 +91,8 @@ bool CreateRsaHashedPrivateKeyAlgorithm(
   crypto::ScopedSECKEYPublicKey public_key(SECKEY_ConvertToPublicKey(key));
   if (!public_key)
     return false;
-  return CreateRsaHashedPublicKeyAlgorithm(
-      rsa_algorithm, hash_algorithm, public_key.get(), key_algorithm);
+  return CreateRsaHashedPublicKeyAlgorithm(rsa_algorithm, hash_algorithm,
+                                           public_key.get(), key_algorithm);
 }
 
 // From PKCS#1 [http://tools.ietf.org/html/rfc3447]:
@@ -213,7 +212,7 @@ struct FreeRsaPrivateKey {
 
 typedef scoped_ptr<CERTSubjectPublicKeyInfo,
                    crypto::NSSDestroyer<CERTSubjectPublicKeyInfo,
-                                        SECKEY_DestroySubjectPublicKeyInfo> >
+                                        SECKEY_DestroySubjectPublicKeyInfo>>
     ScopedCERTSubjectPublicKeyInfo;
 
 struct DestroyGenericObject {
@@ -238,8 +237,8 @@ void AddAttribute(CK_ATTRIBUTE_TYPE type,
 void AddAttribute(CK_ATTRIBUTE_TYPE type,
                   const CryptoData& data,
                   std::vector<CK_ATTRIBUTE>* templ) {
-  CK_ATTRIBUTE attribute = {type, const_cast<unsigned char*>(data.bytes()),
-                            data.byte_length()};
+  CK_ATTRIBUTE attribute = {
+      type, const_cast<unsigned char*>(data.bytes()), data.byte_length()};
   templ->push_back(attribute);
 }
 
@@ -274,25 +273,24 @@ Status ExportKeyPkcs8Nss(SECKEYPrivateKey* key, std::vector<uint8_t>* buffer) {
   if (!arena.get())
     return Status::OperationError();
 
-  if (!SEC_ASN1EncodeItem(arena.get(),
-                          &private_key_info.privateKey,
-                          &rsa_private_key,
-                          RSAPrivateKeyTemplate))
+  if (!SEC_ASN1EncodeItem(arena.get(), &private_key_info.privateKey,
+                          &rsa_private_key, RSAPrivateKeyTemplate)) {
     return Status::OperationError();
+  }
 
-  if (SECSuccess !=
-      SECOID_SetAlgorithmID(
-          arena.get(), &private_key_info.algorithm, algorithm, NULL))
+  if (SECSuccess != SECOID_SetAlgorithmID(arena.get(),
+                                          &private_key_info.algorithm,
+                                          algorithm, NULL)) {
     return Status::OperationError();
+  }
 
-  if (!SEC_ASN1EncodeInteger(
-          arena.get(), &private_key_info.version, kPrivateKeyInfoVersion))
+  if (!SEC_ASN1EncodeInteger(arena.get(), &private_key_info.version,
+                             kPrivateKeyInfoVersion)) {
     return Status::OperationError();
+  }
 
   crypto::ScopedSECItem encoded_key(
-      SEC_ASN1EncodeItem(NULL,
-                         NULL,
-                         &private_key_info,
+      SEC_ASN1EncodeItem(NULL, NULL, &private_key_info,
                          SEC_ASN1_GET(SECKEY_PrivateKeyInfoTemplate)));
 #else   // defined(USE_NSS)
   crypto::ScopedSECItem encoded_key(PK11_ExportDERPrivateKeyInfo(key, NULL));
@@ -358,8 +356,8 @@ Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
   //      marked sensitive) then this will break things.
   SECItem modulus_item = MakeSECItemForBuffer(CryptoData(params.n));
   crypto::ScopedSECItem object_id(PK11_MakeIDFromPubKey(&modulus_item));
-  AddAttribute(
-      CKA_ID, CryptoData(object_id->data, object_id->len), &key_template);
+  AddAttribute(CKA_ID, CryptoData(object_id->data, object_id->len),
+               &key_template);
 
   // Optional properties by JWA, however guaranteed to be present by Chromium's
   // implementation.
@@ -390,10 +388,8 @@ Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
 
   blink::WebCryptoKeyAlgorithm key_algorithm;
   if (!CreateRsaHashedPrivateKeyAlgorithm(
-          algorithm.id(),
-          algorithm.rsaHashedImportParams()->hash().id(),
-          private_key.get(),
-          &key_algorithm)) {
+          algorithm.id(), algorithm.rsaHashedImportParams()->hash().id(),
+          private_key.get(), &key_algorithm)) {
     return Status::ErrorUnexpected();
   }
 
@@ -407,9 +403,7 @@ Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
 
   *key = blink::WebCryptoKey::create(key_handle.release(),
                                      blink::WebCryptoKeyTypePrivate,
-                                     extractable,
-                                     key_algorithm,
-                                     usages);
+                                     extractable, key_algorithm, usages);
   return Status::Success();
 }
 
@@ -451,9 +445,11 @@ Status ImportRsaPublicKey(const blink::WebCryptoAlgorithm& algorithm,
     SECItem exponent;
   };
   const RsaPublicKeyData pubkey_in = {
-      {siUnsignedInteger, const_cast<unsigned char*>(modulus_data.bytes()),
+      {siUnsignedInteger,
+       const_cast<unsigned char*>(modulus_data.bytes()),
        modulus_data.byte_length()},
-      {siUnsignedInteger, const_cast<unsigned char*>(exponent_data.bytes()),
+      {siUnsignedInteger,
+       const_cast<unsigned char*>(exponent_data.bytes()),
        exponent_data.byte_length()}};
   const SEC_ASN1Template rsa_public_key_template[] = {
       {SEC_ASN1_SEQUENCE, 0, NULL, sizeof(RsaPublicKeyData)},
@@ -481,10 +477,8 @@ Status ImportRsaPublicKey(const blink::WebCryptoAlgorithm& algorithm,
 
   blink::WebCryptoKeyAlgorithm key_algorithm;
   if (!CreateRsaHashedPublicKeyAlgorithm(
-          algorithm.id(),
-          algorithm.rsaHashedImportParams()->hash().id(),
-          pubkey.get(),
-          &key_algorithm)) {
+          algorithm.id(), algorithm.rsaHashedImportParams()->hash().id(),
+          pubkey.get(), &key_algorithm)) {
     return Status::ErrorUnexpected();
   }
 
@@ -497,10 +491,8 @@ Status ImportRsaPublicKey(const blink::WebCryptoAlgorithm& algorithm,
       new PublicKeyNss(pubkey.Pass(), CryptoData(spki_data)));
 
   *key = blink::WebCryptoKey::create(key_handle.release(),
-                                     blink::WebCryptoKeyTypePublic,
-                                     extractable,
-                                     key_algorithm,
-                                     usages);
+                                     blink::WebCryptoKeyTypePublic, extractable,
+                                     key_algorithm, usages);
   return Status::Success();
 }
 
@@ -524,8 +516,7 @@ Status RsaHashedAlgorithm::GenerateKey(
   unsigned int public_exponent = 0;
   unsigned int modulus_length_bits = 0;
   status = GetRsaKeyGenParameters(algorithm.rsaHashedKeyGenParams(),
-                                  &public_exponent,
-                                  &modulus_length_bits);
+                                  &public_exponent, &modulus_length_bits);
   if (status.IsError())
     return status;
 
@@ -549,23 +540,17 @@ Status RsaHashedAlgorithm::GenerateKey(
   // so there is no danger of a leaked sec_public_key.
   SECKEYPublicKey* sec_public_key;
   crypto::ScopedSECKEYPrivateKey scoped_sec_private_key(
-      PK11_GenerateKeyPairWithOpFlags(slot.get(),
-                                      CKM_RSA_PKCS_KEY_PAIR_GEN,
-                                      &rsa_gen_params,
-                                      &sec_public_key,
-                                      attribute_flags,
-                                      generate_flags_,
-                                      operation_flags_mask,
-                                      NULL));
+      PK11_GenerateKeyPairWithOpFlags(slot.get(), CKM_RSA_PKCS_KEY_PAIR_GEN,
+                                      &rsa_gen_params, &sec_public_key,
+                                      attribute_flags, generate_flags_,
+                                      operation_flags_mask, NULL));
   if (!scoped_sec_private_key)
     return Status::OperationError();
 
   blink::WebCryptoKeyAlgorithm key_algorithm;
   if (!CreateRsaHashedPublicKeyAlgorithm(
-          algorithm.id(),
-          algorithm.rsaHashedKeyGenParams()->hash().id(),
-          sec_public_key,
-          &key_algorithm)) {
+          algorithm.id(), algorithm.rsaHashedKeyGenParams()->hash().id(),
+          sec_public_key, &key_algorithm)) {
     return Status::ErrorUnexpected();
   }
 
@@ -585,19 +570,13 @@ Status RsaHashedAlgorithm::GenerateKey(
   scoped_ptr<PrivateKeyNss> private_key_handle(
       new PrivateKeyNss(scoped_sec_private_key.Pass(), CryptoData(pkcs8_data)));
 
-  blink::WebCryptoKey public_key =
-      blink::WebCryptoKey::create(public_key_handle.release(),
-                                  blink::WebCryptoKeyTypePublic,
-                                  true,
-                                  key_algorithm,
-                                  public_usages);
+  blink::WebCryptoKey public_key = blink::WebCryptoKey::create(
+      public_key_handle.release(), blink::WebCryptoKeyTypePublic, true,
+      key_algorithm, public_usages);
 
-  blink::WebCryptoKey private_key =
-      blink::WebCryptoKey::create(private_key_handle.release(),
-                                  blink::WebCryptoKeyTypePrivate,
-                                  extractable,
-                                  key_algorithm,
-                                  private_usages);
+  blink::WebCryptoKey private_key = blink::WebCryptoKey::create(
+      private_key_handle.release(), blink::WebCryptoKeyTypePrivate, extractable,
+      key_algorithm, private_usages);
 
   result->AssignKeyPair(public_key, private_key);
   return Status::Success();
@@ -615,10 +594,8 @@ Status RsaHashedAlgorithm::VerifyKeyUsagesBeforeImportKey(
       // The JWK could represent either a public key or private key. The usages
       // must make sense for one of the two. The usages will be checked again by
       // ImportKeyJwk() once the key type has been determined.
-      if (CheckKeyCreationUsages(all_private_key_usages_, usages)
-              .IsSuccess() ||
-          CheckKeyCreationUsages(all_public_key_usages_, usages)
-              .IsSuccess()) {
+      if (CheckKeyCreationUsages(all_private_key_usages_, usages).IsSuccess() ||
+          CheckKeyCreationUsages(all_public_key_usages_, usages).IsSuccess()) {
         return Status::Success();
       }
       return Status::ErrorCreateKeyBadUsages();
@@ -640,14 +617,24 @@ Status RsaHashedAlgorithm::ImportKeyPkcs8(
   if (!key_data.byte_length())
     return Status::ErrorImportEmptyKeyData();
 
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  if (!arena.get())
+    return Status::OperationError();
+
   // The binary blob 'key_data' is expected to be a DER-encoded ASN.1 PKCS#8
-  // private key info object.
-  SECItem pki_der = MakeSECItemForBuffer(key_data);
+  // private key info object. Excess data is illegal, but NSS silently accepts
+  // it, so first ensure that 'key_data' consists of a single ASN.1 element.
+  SECItem key_item = MakeSECItemForBuffer(key_data);
+  SECItem pki_der;
+  if (SEC_QuickDERDecodeItem(arena.get(), &pki_der,
+                             SEC_ASN1_GET(SEC_AnyTemplate),
+                             &key_item) != SECSuccess) {
+    return Status::DataError();
+  }
 
   SECKEYPrivateKey* seckey_private_key = NULL;
   crypto::ScopedPK11Slot slot(PK11_GetInternalSlot());
-  if (PK11_ImportDERPrivateKeyInfoAndReturnKey(slot.get(),
-                                               &pki_der,
+  if (PK11_ImportDERPrivateKeyInfoAndReturnKey(slot.get(), &pki_der,
                                                NULL,    // nickname
                                                NULL,    // publicValue
                                                false,   // isPerm
@@ -666,10 +653,8 @@ Status RsaHashedAlgorithm::ImportKeyPkcs8(
 
   blink::WebCryptoKeyAlgorithm key_algorithm;
   if (!CreateRsaHashedPrivateKeyAlgorithm(
-          algorithm.id(),
-          algorithm.rsaHashedImportParams()->hash().id(),
-          private_key.get(),
-          &key_algorithm)) {
+          algorithm.id(), algorithm.rsaHashedImportParams()->hash().id(),
+          private_key.get(), &key_algorithm)) {
     return Status::ErrorUnexpected();
   }
 
@@ -684,9 +669,7 @@ Status RsaHashedAlgorithm::ImportKeyPkcs8(
 
   *key = blink::WebCryptoKey::create(key_handle.release(),
                                      blink::WebCryptoKeyTypePrivate,
-                                     extractable,
-                                     key_algorithm,
-                                     usages);
+                                     extractable, key_algorithm, usages);
 
   return Status::Success();
 }
@@ -719,10 +702,8 @@ Status RsaHashedAlgorithm::ImportKeySpki(
 
   blink::WebCryptoKeyAlgorithm key_algorithm;
   if (!CreateRsaHashedPublicKeyAlgorithm(
-          algorithm.id(),
-          algorithm.rsaHashedImportParams()->hash().id(),
-          sec_public_key.get(),
-          &key_algorithm)) {
+          algorithm.id(), algorithm.rsaHashedImportParams()->hash().id(),
+          sec_public_key.get(), &key_algorithm)) {
     return Status::ErrorUnexpected();
   }
 
@@ -736,10 +717,8 @@ Status RsaHashedAlgorithm::ImportKeySpki(
       new PublicKeyNss(sec_public_key.Pass(), CryptoData(spki_data)));
 
   *key = blink::WebCryptoKey::create(key_handle.release(),
-                                     blink::WebCryptoKeyTypePublic,
-                                     extractable,
-                                     key_algorithm,
-                                     usages);
+                                     blink::WebCryptoKeyTypePublic, extractable,
+                                     key_algorithm, usages);
 
   return Status::Success();
 }
@@ -787,12 +766,8 @@ Status RsaHashedAlgorithm::ImportKeyJwk(
 
   return jwk.is_private_key
              ? ImportRsaPrivateKey(algorithm, extractable, usages, jwk, key)
-             : ImportRsaPublicKey(algorithm,
-                                  extractable,
-                                  usages,
-                                  CryptoData(jwk.n),
-                                  CryptoData(jwk.e),
-                                  key);
+             : ImportRsaPublicKey(algorithm, extractable, usages,
+                                  CryptoData(jwk.n), CryptoData(jwk.e), key);
 }
 
 Status RsaHashedAlgorithm::ExportKeyJwk(const blink::WebCryptoKey& key,
@@ -811,9 +786,7 @@ Status RsaHashedAlgorithm::ExportKeyJwk(const blink::WebCryptoKey& key,
 
       WriteRsaPublicKeyJwk(SECItemToCryptoData(nss_key->u.rsa.modulus),
                            SECItemToCryptoData(nss_key->u.rsa.publicExponent),
-                           jwk_algorithm,
-                           key.extractable(),
-                           key.usages(),
+                           jwk_algorithm, key.extractable(), key.usages(),
                            buffer);
 
       return Status::Success();
@@ -835,9 +808,7 @@ Status RsaHashedAlgorithm::ExportKeyJwk(const blink::WebCryptoKey& key,
                             SECItemToCryptoData(key_props.exponent1),
                             SECItemToCryptoData(key_props.exponent2),
                             SECItemToCryptoData(key_props.coefficient),
-                            jwk_algorithm,
-                            key.extractable(),
-                            key.usages(),
+                            jwk_algorithm, key.extractable(), key.usages(),
                             buffer);
 
       return Status::Success();
@@ -845,6 +816,67 @@ Status RsaHashedAlgorithm::ExportKeyJwk(const blink::WebCryptoKey& key,
     default:
       return Status::ErrorUnexpected();
   }
+}
+
+Status RsaHashedAlgorithm::SerializeKeyForClone(
+    const blink::WebCryptoKey& key,
+    blink::WebVector<uint8_t>* key_data) const {
+  key_data->assign(static_cast<KeyNss*>(key.handle())->serialized_key_data());
+  return Status::Success();
+}
+
+// TODO(eroman): Defer import to the crypto thread. http://crbug.com/430763
+Status RsaHashedAlgorithm::DeserializeKeyForClone(
+    const blink::WebCryptoKeyAlgorithm& algorithm,
+    blink::WebCryptoKeyType type,
+    bool extractable,
+    blink::WebCryptoKeyUsageMask usages,
+    const CryptoData& key_data,
+    blink::WebCryptoKey* key) const {
+  blink::WebCryptoAlgorithm import_algorithm = CreateRsaHashedImportAlgorithm(
+      algorithm.id(), algorithm.rsaHashedParams()->hash().id());
+
+  Status status;
+
+  switch (type) {
+    case blink::WebCryptoKeyTypePublic:
+      status =
+          ImportKeySpki(key_data, import_algorithm, extractable, usages, key);
+      break;
+    case blink::WebCryptoKeyTypePrivate:
+      status =
+          ImportKeyPkcs8(key_data, import_algorithm, extractable, usages, key);
+      break;
+    default:
+      return Status::ErrorUnexpected();
+  }
+
+  // There is some duplicated information in the serialized format used by
+  // structured clone (since the KeyAlgorithm is serialized separately from the
+  // key data). Use this extra information to further validate what was
+  // deserialized from the key data.
+
+  if (algorithm.id() != key->algorithm().id())
+    return Status::ErrorUnexpected();
+
+  if (key->type() != type)
+    return Status::ErrorUnexpected();
+
+  if (algorithm.rsaHashedParams()->modulusLengthBits() !=
+      key->algorithm().rsaHashedParams()->modulusLengthBits()) {
+    return Status::ErrorUnexpected();
+  }
+
+  if (algorithm.rsaHashedParams()->publicExponent().size() !=
+          key->algorithm().rsaHashedParams()->publicExponent().size() ||
+      0 !=
+          memcmp(algorithm.rsaHashedParams()->publicExponent().data(),
+                 key->algorithm().rsaHashedParams()->publicExponent().data(),
+                 key->algorithm().rsaHashedParams()->publicExponent().size())) {
+    return Status::ErrorUnexpected();
+  }
+
+  return Status::Success();
 }
 
 }  // namespace webcrypto

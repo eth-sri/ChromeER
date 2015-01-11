@@ -6,8 +6,8 @@
  * @fileoverview Base class for all login WebUI screens.
  */
 cr.define('login', function() {
-  /** @const */ var CALLBACK_USER_ACTED = 'userActed';
   /** @const */ var CALLBACK_CONTEXT_CHANGED = 'contextChanged';
+  /** @const */ var CALLBACK_USER_ACTED = 'userActed';
 
   function doNothing() {};
 
@@ -43,7 +43,7 @@ cr.define('login', function() {
     contextObservers_: null,
 
     /**
-     * Called during screen registration.
+     * Called during screen initialization.
      */
     decorate: doNothing,
 
@@ -97,6 +97,22 @@ cr.define('login', function() {
     },
 
     /**
+     * @final
+     */
+    declareButton: function(id) {
+      var self = this;
+      var button = this.ownerDocument.createElement('button');
+      button.id = id;
+
+      button.addEventListener('click', function(e) {
+        self.sendImpl_(CALLBACK_USER_ACTED, id);
+        e.stopPropagation();
+      });
+
+      return button;
+    },
+
+    /**
      * @override
      * @final
      */
@@ -116,7 +132,11 @@ cr.define('login', function() {
      * @private
      */
     initializeImpl_: function() {
-      this.screenContext_ = new login.ScreenContext();
+      if (cr.isChromeOS)
+        this.screenContext_ = new login.ScreenContext();
+
+      this.decorate();
+
       this.querySelectorAllImpl_('[alias]').forEach(function(element) {
         var alias = element.getAttribute('alias');
         if (alias in this)
@@ -320,7 +340,7 @@ cr.define('login', function() {
       api.register = function() {
         var screen = $(id);
         screen.__proto__ = new Constructor();
-        screen.decorate();
+        screen.initialize();
         Oobe.getInstance().registerScreen(screen);
       };
 

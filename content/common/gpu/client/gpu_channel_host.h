@@ -130,6 +130,9 @@ class GpuChannelHost : public IPC::Sender,
   // Destroy a command buffer created by this channel.
   void DestroyCommandBuffer(CommandBufferProxyImpl* command_buffer);
 
+  // Destroy this channel.
+  void DestroyChannel();
+
   // Add a route for the current message loop.
   void AddRoute(int route_id, base::WeakPtr<IPC::Listener> listener);
   void RemoveRoute(int route_id);
@@ -153,7 +156,8 @@ class GpuChannelHost : public IPC::Sender,
   // IPC to the GPU process. The caller is responsible for ensuring it is
   // closed. Returns an invalid handle on failure.
   gfx::GpuMemoryBufferHandle ShareGpuMemoryBufferToGpuProcess(
-      gfx::GpuMemoryBufferHandle source_handle);
+      const gfx::GpuMemoryBufferHandle& source_handle,
+      bool* requires_sync_point);
 
   // Reserve one unused image ID.
   int32 ReserveImageId();

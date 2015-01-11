@@ -13,7 +13,7 @@ from telemetry.core import video
 from telemetry.core.platform import tracing_category_filter
 from telemetry.core.platform import tracing_options
 from telemetry.timeline import model
-from telemetry.unittest import tab_test_case
+from telemetry.unittest_util import tab_test_case
 
 
 def _IsDocumentVisible(tab):
@@ -61,7 +61,7 @@ class TabTest(tab_test_case.TabTestCase):
     self.assertEquals(self._tab.browser, self._browser)
 
   def testRendererCrash(self):
-    self.assertRaises(exceptions.TabCrashException,
+    self.assertRaises(exceptions.DevtoolsTargetCrashException,
                       lambda: self._tab.Navigate('chrome://crash',
                                                  timeout=5))
 
@@ -102,7 +102,9 @@ class TabTest(tab_test_case.TabTestCase):
     finally:
       self._tab.browser._platform_backend = original_platform_backend
 
-  @benchmark.Disabled('chromeos') # crbug.com/412713.
+  # Test failing on android: http://crbug.com/437057
+  # Also, for chromeos: http://crbug.com/412713
+  @benchmark.Disabled('android', 'chromeos')
   def testHighlight(self):
     self.assertEquals(self._tab.url, 'about:blank')
     options = tracing_options.TracingOptions()

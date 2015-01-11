@@ -23,7 +23,7 @@ class Browser(app.App):
   Be sure to clean up after yourself by calling Close() when you are done with
   the browser. Or better yet:
     browser_to_create = FindBrowser(options)
-    with browser_to_create.Create() as browser:
+    with browser_to_create.Create(options) as browser:
       ... do all your operations on browser here
   """
   def __init__(self, backend, platform_backend, credentials_path):
@@ -52,15 +52,9 @@ class Browser(app.App):
     self._browser_backend.Start()
     self._platform_backend.DidStartBrowser(self, self._browser_backend)
 
-  def __enter__(self):
-    return self
-
-  def __exit__(self, *args):
-    self.Close()
-
   @property
   def browser_type(self):
-    return self._browser_backend.browser_type
+    return self.app_type
 
   @property
   def supports_extensions(self):

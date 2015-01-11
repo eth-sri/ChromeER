@@ -4,8 +4,9 @@
 
 package org.chromium.components.devtools_bridge;
 
+import android.util.Log;
+
 import java.io.IOException;
-import java.util.List;
 
 /**
  * Helper class which handles a client session in tests. Having direct reference to
@@ -13,11 +14,13 @@ import java.util.List;
  * between them to satisfy theading requirements.
  */
 public class ClientSessionTestingHost {
+    private static final String TAG = "ClientSessionTestingHost";
+    private static final String SESSION_ID = "ID";
+
     private final SignalingReceiver mTarget;
     private final SessionBase.Executor mTargetExecutor;
     private final LocalSessionBridge.ThreadedExecutor mClientExecutor;
     private final String mSessionId;
-    private int mDelayMs = 10;
     private final ClientSession mClientSession;
 
     public ClientSessionTestingHost(
@@ -30,11 +33,33 @@ public class ClientSessionTestingHost {
         mClientExecutor = new LocalSessionBridge.ThreadedExecutor();
 
         mSessionId = sessionId;
+
+        SignalingReceiverProxy proxy = new SignalingReceiverProxy(
+                mTargetExecutor, mClientExecutor, target, 0);
+
         mClientSession = new ClientSession(
                 factory,
                 mClientExecutor,
-                new TargetAdaptor().createProxy(),
-                clientSocketName);
+                proxy.asServerSession(SESSION_ID),
+                clientSocketName) {
+            @Override
+            protected void closeSelf() {
+                Log.d(TAG, "Closed self");
+                super.closeSelf();
+            }
+
+            @Override
+            protected void onControlChannelOpened() {
+                Log.d(TAG, "Control channel opened");
+                super.onControlChannelOpened();
+            }
+
+            @Override
+            protected void onControlChannelClosed() {
+                Log.d(TAG, "Control channel closed");
+                super.onControlChannelClosed();
+            }
+        };
     }
 
     public void dispose() {
@@ -47,46 +72,15 @@ public class ClientSessionTestingHost {
     }
 
     public void start() {
+        start(new RTCConfiguration());
+    }
+
+    public void start(final RTCConfiguration config) {
         mClientExecutor.runSynchronously(new Runnable() {
             @Override
             public void run() {
-                mClientSession.start(new RTCConfiguration());
+                mClientSession.start(config);
             }
         });
-    }
-
-    /**
-     * Adapts ServerSessionInterface to DevToolsBridgeServer. Lives on mServerExecutor.
-     */
-    private class TargetAdaptor implements SessionBase.ServerSessionInterface {
-        /**
-         * Creates proxy that to safely use on mClientExecutor.
-         */
-        public LocalSessionBridge.ServerSessionProxy createProxy() {
-            LocalSessionBridge.ServerSessionProxy proxy =
-                    new LocalSessionBridge.ServerSessionProxy(
-                            mTargetExecutor, mClientExecutor, this, mDelayMs);
-            assert proxy.clientExecutor() == mClientExecutor;
-            assert proxy.serverExecutor() == mTargetExecutor;
-            return proxy;
-        }
-
-        @Override
-        public void startSession(RTCConfiguration config,
-                                 String offer,
-                                 SessionBase.NegotiationCallback callback) {
-            mTarget.startSession(mSessionId, config, offer, callback);
-        }
-
-        @Override
-        public void renegotiate(String offer, SessionBase.NegotiationCallback callback) {
-            mTarget.renegotiate(mSessionId, offer, callback);
-        }
-
-        @Override
-        public void iceExchange(List<String> clientCandidates,
-                                SessionBase.IceExchangeCallback callback) {
-            mTarget.iceExchange(mSessionId, clientCandidates, callback);
-        }
     }
 }

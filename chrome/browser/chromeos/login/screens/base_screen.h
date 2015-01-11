@@ -9,18 +9,14 @@
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
+#include "chrome/browser/chromeos/login/screens/base_screen_delegate.h"
+#include "components/login/screens/screen_context.h"
 
 namespace base {
 class DictionaryValue;
 }
 
-namespace login {
-class ScreenContext;
-}
-
 namespace chromeos {
-
-class BaseScreenDelegate;
 
 // Base class for the all OOBE/login/before-session screens.
 // Screens are identified by ID, screen and it's JS counterpart must have same
@@ -80,31 +76,41 @@ class BaseScreen {
  protected:
   // Screen can call this method to notify framework that it have finished
   // it's work with |outcome|.
-  void Finish(const std::string& outcome);
+  void Finish(BaseScreenDelegate::ExitCodes exit_code);
 
-  // Called when button with |button_id| was pressed. Notification
-  // about this event comes from the JS counterpart.
-  virtual void OnButtonPressed(const std::string& button_id);
-
-  // Called when context for the currenct screen was
-  // changed. Notification about this event comes from the JS
+  // Called when user action event with |event_id|
+  // happened. Notification about this event comes from the JS
   // counterpart.
-  virtual void OnContextChanged(const base::DictionaryValue* diff);
+  virtual void OnUserAction(const std::string& event_id);
+
+  // The method is called each time some key in screen context is
+  // updated by JS side. Default implementation does nothing, so
+  // subclasses should override it in order to observe updates in
+  // screen context.
+  virtual void OnContextKeyUpdated(const ::login::ScreenContext::KeyType& key);
 
   BaseScreenDelegate* get_base_screen_delegate() const {
     return base_screen_delegate_;
   }
+
+  ::login::ScreenContext context_;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestSuccess);
   FRIEND_TEST_ALL_PREFIXES(ProvisionedEnrollmentScreenTest, TestBackButton);
 
+  friend class BaseScreenHandler;
   friend class NetworkScreenTest;
   friend class ScreenManager;
   friend class UpdateScreenTest;
 
   void SetContext(::login::ScreenContext* context);
+
+  // Called when context for the current screen was
+  // changed. Notification about this event comes from the JS
+  // counterpart.
+  void OnContextChanged(const base::DictionaryValue& diff);
 
   BaseScreenDelegate* base_screen_delegate_;
 

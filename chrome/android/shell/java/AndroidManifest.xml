@@ -14,7 +14,6 @@
             android:protectionLevel="signature" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS"/>
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -123,6 +122,17 @@
                   android:name="org.chromium.components.gcm_driver.GCMListener$Receiver">
             <intent-filter>
                 <action android:name="com.google.ipc.invalidation.gcmmplex.EVENT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Android Notification service listener -->
+        <service android:exported="false"
+                 android:name="org.chromium.chrome.browser.notifications.NotificationService"/>
+        <receiver android:exported="false"
+                  android:name="org.chromium.chrome.browser.notifications.NotificationService$Receiver">
+            <intent-filter>
+                <action android:name="org.chromium.chrome.browser.notifications.CLICK_NOTIFICATION" />
+                <action android:name="org.chromium.chrome.browser.notifications.CLOSE_NOTIFICATION" />
             </intent-filter>
         </receiver>
 

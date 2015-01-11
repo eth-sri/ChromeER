@@ -38,7 +38,6 @@ class HttpResponseHeaders;
 class ProxyInfo;
 class ProxyServer;
 class ProxyService;
-class SocketStream;
 class URLRequest;
 
 class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
@@ -104,9 +103,6 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   bool CanThrottleRequest(const URLRequest& request) const;
   bool CanEnablePrivacyMode(const GURL& url,
                             const GURL& first_party_for_cookies) const;
-
-  int NotifyBeforeSocketStreamConnect(SocketStream* socket,
-                                      const CompletionCallback& callback);
 
   bool CancelURLRequestWithPolicyViolatingReferrerHeader(
       const URLRequest& request,
@@ -270,11 +266,6 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   virtual bool OnCanEnablePrivacyMode(
       const GURL& url,
       const GURL& first_party_for_cookies) const;
-
-  // Called before a SocketStream tries to connect.
-  // See OnBeforeURLRequest for return value description. Returns OK by default.
-  virtual int OnBeforeSocketStreamConnect(
-      SocketStream* socket, const CompletionCallback& callback);
 
   // Called when the |referrer_url| for requesting |target_url| during handling
   // of the |request| is does not comply with the referrer policy (e.g. a

@@ -15,6 +15,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/scoped_user_pref_update.h"
@@ -38,6 +39,7 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
+#include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/net_pref_observer.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
@@ -72,6 +74,7 @@
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
+#include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -95,7 +98,6 @@
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/dom_storage_context.h"
-#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -126,7 +128,7 @@
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
@@ -156,7 +158,6 @@ using base::TimeDelta;
 using base::UserMetricsAction;
 using content::BrowserThread;
 using content::DownloadManagerDelegate;
-using content::HostZoomMap;
 
 namespace {
 
@@ -632,7 +633,7 @@ void ProfileImpl::DoFinalInit() {
     session_cookie_mode = content::CookieStoreConfig::RESTORED_SESSION_COOKIES;
   }
 
-  InitHostZoomMap();
+  ChromeNetLog* const net_log = g_browser_process->io_thread()->net_log();
 
   base::Callback<void(bool)> data_reduction_proxy_unavailable;
   scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
@@ -640,6 +641,7 @@ void ProfileImpl::DoFinalInit() {
   scoped_ptr<DataReductionProxyChromeConfigurator> chrome_configurator;
   scoped_ptr<data_reduction_proxy::DataReductionProxyStatisticsPrefs>
       data_reduction_proxy_statistics_prefs;
+  scoped_ptr<data_reduction_proxy::DataReductionProxyEventStore> event_store;
   DataReductionProxyChromeSettings* data_reduction_proxy_chrome_settings =
       DataReductionProxyChromeSettingsFactory::GetForBrowserContext(this);
   data_reduction_proxy_params =
@@ -648,6 +650,13 @@ void ProfileImpl::DoFinalInit() {
       base::Bind(
           &data_reduction_proxy::DataReductionProxySettings::SetUnreachable,
           base::Unretained(data_reduction_proxy_chrome_settings));
+  // The event_store is used by DataReductionProxyChromeSettings, configurator,
+  // and ProfileIOData. Ownership is passed to the latter via
+  // ProfileIOData::Handle, which is only destroyed after
+  // BrowserContextKeyedServices, including DataReductionProxyChromeSettings
+  event_store.reset(
+      new data_reduction_proxy::DataReductionProxyEventStore(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
   // The configurator is used by DataReductionProxyChromeSettings and
   // ProfileIOData. Ownership is passed to the latter via ProfileIOData::Handle,
   // which is only destroyed after BrowserContextKeyedServices,
@@ -655,7 +664,13 @@ void ProfileImpl::DoFinalInit() {
   chrome_configurator.reset(
       new DataReductionProxyChromeConfigurator(
           prefs_.get(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+          net_log,
+          event_store.get()));
+  // Retain a raw pointer to use for initialization of data reduction proxy
+  // settings after ownership is passed
+  data_reduction_proxy::DataReductionProxyEventStore*
+      data_reduction_proxy_event_store = event_store.get();
   // Retain a raw pointer to use for initialization of data reduction proxy
   // settings after ownership is passed.
   DataReductionProxyChromeConfigurator*
@@ -693,12 +708,15 @@ void ProfileImpl::DoFinalInit() {
                 data_reduction_proxy_unavailable,
                 chrome_configurator.Pass(),
                 data_reduction_proxy_params.Pass(),
-                data_reduction_proxy_statistics_prefs.Pass());
+                data_reduction_proxy_statistics_prefs.Pass(),
+                event_store.Pass());
   data_reduction_proxy_chrome_settings->InitDataReductionProxySettings(
       data_reduction_proxy_chrome_configurator,
       prefs_.get(),
       g_browser_process->local_state(),
-      GetRequestContext());
+      GetRequestContext(),
+      net_log,
+      data_reduction_proxy_event_store);
 
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
@@ -716,6 +734,9 @@ void ProfileImpl::DoFinalInit() {
   content::BrowserContext::GetDefaultStoragePartition(this)->
       GetDOMStorageContext()->SetSaveSessionStorageOnDisk();
 
+  // TODO(wjmaclean): Remove this. crbug.com/420643
+  chrome::MigrateProfileZoomLevelPrefs(this);
+
   // The DomDistillerViewerSource is not a normal WebUI so it must be registered
   // as a URLDataSource early.
   RegisterDomDistillerViewerSource(this);
@@ -727,8 +748,8 @@ void ProfileImpl::DoFinalInit() {
                    path_.value().c_str());
 
 #if defined(OS_CHROMEOS)
-  if (chromeos::LoginUtils::Get()->RestartToApplyPerSessionFlagsIfNeed(this,
-                                                                       true)) {
+  if (chromeos::UserSessionManager::GetInstance()
+          ->RestartToApplyPerSessionFlagsIfNeed(this, true)) {
     return;
   }
 #endif
@@ -755,17 +776,6 @@ void ProfileImpl::DoFinalInit() {
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && !defined(OS_IOS)
   signin_ui_util::InitializePrefsForProfile(this);
 #endif
-}
-
-void ProfileImpl::InitHostZoomMap() {
-  HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
-  DCHECK(!zoom_level_prefs_);
-  zoom_level_prefs_.reset(
-      new chrome::ChromeZoomLevelPrefs(prefs_.get(), GetPath()));
-  zoom_level_prefs_->InitPrefsAndCopyToHostZoomMap(GetPath(), host_zoom_map);
-
-  // TODO(wjmaclean): Remove this. crbug.com/420643
-  chrome::MigrateProfileZoomLevelPrefs(this);
 }
 
 base::FilePath ProfileImpl::last_selected_directory() {
@@ -828,6 +838,13 @@ std::string ProfileImpl::GetProfileName() {
 
 Profile::ProfileType ProfileImpl::GetProfileType() const {
   return REGULAR_PROFILE;
+}
+
+scoped_ptr<content::ZoomLevelDelegate>
+ProfileImpl::CreateZoomLevelDelegate(const base::FilePath& partition_path) {
+  return make_scoped_ptr(new chrome::ChromeZoomLevelPrefs(
+      GetPrefs(), GetPath(), partition_path,
+      ZoomEventManager::GetForBrowserContext(this)->GetWeakPtr()));
 }
 
 base::FilePath ProfileImpl::GetPath() const {
@@ -987,7 +1004,8 @@ PrefService* ProfileImpl::GetPrefs() {
 }
 
 chrome::ChromeZoomLevelPrefs* ProfileImpl::GetZoomLevelPrefs() {
-  return zoom_level_prefs_.get();
+  return static_cast<chrome::ChromeZoomLevelPrefs*>(
+      GetDefaultStoragePartition(this)->GetZoomLevelDelegate());
 }
 
 PrefService* ProfileImpl::GetOffTheRecordPrefs() {

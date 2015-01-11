@@ -5,10 +5,13 @@
 #include "athena/activity/public/activity.h"
 #include "athena/activity/public/activity_view_model.h"
 #include "athena/resource_manager/public/resource_manager.h"
-#include "athena/test/chrome/athena_browsertest.h"
-#include "athena/test/chrome/test_util.h"
+#include "athena/test/base/test_util.h"
+#include "athena/test/chrome/athena_chrome_browser_test.h"
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/compositor/compositor_switches.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/size.h"
@@ -19,19 +22,40 @@ namespace athena {
 namespace {
 // The test URL to navigate to.
 const char kTestUrl[] = "chrome:about";
+
+const int kTimeoutMS = 12000;  // The timeout: 2 seconds.
+const int kIterationSleepMS = 5;  // The wait time in ms per iteration.
 }
 
 // Need to override the test class to make the test always draw its content.
-class ContentProxyBrowserTest : public AthenaBrowserTest {
+class ContentProxyBrowserTest : public AthenaChromeBrowserTest {
  public:
   ContentProxyBrowserTest() {}
   ~ContentProxyBrowserTest() override {}
+
+  // Make sure that we have rendered the page that a read back will succeed.
+  void WaitForRendererToBeFinished(Activity* activity) {
+    int timeout_counter = kTimeoutMS / kIterationSleepMS;
+    do {
+      content::RenderViewHost* host =
+          activity->GetWebContents()->GetRenderViewHost();
+
+      if (host && host->GetView() &&
+          host->GetView()->IsSurfaceAvailableForCopy())
+        return;
+
+      usleep(kIterationSleepMS * 1000);
+      test_util::WaitUntilIdle();
+    } while (--timeout_counter);
+
+    NOTREACHED() << "Renderer did not get finished rendering.";
+  }
 
   // AthenaBrowserTest:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     // Make sure that we draw the output - it's required for this test.
     command_line->AppendSwitch(switches::kEnablePixelOutputInTests);
-    AthenaBrowserTest::SetUpCommandLine(command_line);
+    AthenaChromeBrowserTest::SetUpCommandLine(command_line);
   }
 
  private:
@@ -39,10 +63,8 @@ class ContentProxyBrowserTest : public AthenaBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(ContentProxyBrowserTest, CreateContent) {
-  const int kTimeoutMS = 12000;  // The timeout: 2 seconds.
-  const int kIterationSleepMS = 5;  // The wait time in ms per iteration.
   const GURL gurl(kTestUrl);
-  content::BrowserContext* context = test_util::GetBrowserContext();
+  content::BrowserContext* context = GetBrowserContext();
   // Create an activity (and wait until it is loaded).
   // The size of its overview image should be empty since it is visible.
   Activity* activity1 =
@@ -53,6 +75,10 @@ IN_PROC_BROWSER_TEST_F(ContentProxyBrowserTest, CreateContent) {
   DCHECK_EQ(activity1->GetActivityViewModel()->GetOverviewModeImage()
                 .size().ToString(),
             gfx::Size().ToString());
+
+  // Allow the activity time to start the renderer. Locally this was not a
+  // problem in over 150 runs, but the try server shows flakiness.
+  WaitForRendererToBeFinished(activity1);
 
   // Create another activity. The size of all overview images should be empty
   // since they have the visible state.
@@ -66,6 +92,9 @@ IN_PROC_BROWSER_TEST_F(ContentProxyBrowserTest, CreateContent) {
   DCHECK_EQ(activity2->GetActivityViewModel()->GetOverviewModeImage()
                 .size().ToString(),
             gfx::Size().ToString());
+
+  // As above.
+  WaitForRendererToBeFinished(activity2);
 
   // Turn the activity invisible which should create the ContentProxy.
   activity1->SetCurrentState(Activity::ACTIVITY_INVISIBLE);

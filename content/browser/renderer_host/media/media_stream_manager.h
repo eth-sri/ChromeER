@@ -37,6 +37,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_observer.h"
 #include "base/system_monitor/system_monitor.h"
+#include "base/threading/thread.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
@@ -288,7 +289,7 @@ class CONTENT_EXPORT MediaStreamManager
   // MEDIA_TAB_VIDEO_CAPTURE for being posted to the UI by parsing
   // StreamOptions::Constraints for requested tab capture IDs.
   bool SetupTabCaptureRequest(DeviceRequest* request);
-  // Prepare |request| of type MEDIA_LOOPBACK_AUDIO_CAPTURE and/or
+  // Prepare |request| of type MEDIA_DESKTOP_AUDIO_CAPTURE and/or
   // MEDIA_DESKTOP_VIDEO_CAPTURE for being posted to the UI by parsing
   // StreamOptions::Constraints for the requested desktop ID.
   bool SetupScreenCaptureRequest(DeviceRequest* request);
@@ -382,6 +383,9 @@ class CONTENT_EXPORT MediaStreamManager
   media::AudioManager* const audio_manager_;  // not owned
   scoped_refptr<AudioInputDeviceManager> audio_input_device_manager_;
   scoped_refptr<VideoCaptureManager> video_capture_manager_;
+#if defined(OS_WIN)
+  base::Thread video_capture_thread_;
+#endif
 
   // Indicator of device monitoring state.
   bool monitoring_started_;

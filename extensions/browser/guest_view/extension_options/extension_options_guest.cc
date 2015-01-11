@@ -4,11 +4,14 @@
 
 #include "extensions/browser/guest_view/extension_options/extension_options_guest.h"
 
+#include "base/metrics/user_metrics.h"
 #include "base/values.h"
 #include "components/crx_file/id_util.h"
+#include "content/public/browser/navigation_details.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/result_codes.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_registry.h"
@@ -54,8 +57,7 @@ extensions::GuestViewBase* ExtensionOptionsGuest::Create(
 }
 
 void ExtensionOptionsGuest::CreateWebContents(
-    const std::string& embedder_extension_id,
-    int embedder_render_process_id,
+    int owner_render_process_id,
     const GURL& embedder_site_url,
     const base::DictionaryValue& create_params,
     const WebContentsCreatedCallback& callback) {
@@ -68,6 +70,7 @@ void ExtensionOptionsGuest::CreateWebContents(
     return;
   }
 
+  std::string embedder_extension_id = embedder_site_url.host();
   if (crx_file::id_util::IdIsValid(embedder_extension_id) &&
       extension_id != embedder_extension_id) {
     // Extensions cannot embed other extensions' options pages.
@@ -226,6 +229,17 @@ bool ExtensionOptionsGuest::ShouldCreateWebContents(
                                false));
   }
   return false;
+}
+
+void ExtensionOptionsGuest::DidNavigateMainFrame(
+    const content::LoadCommittedDetails& details,
+    const content::FrameNavigateParams& params) {
+  if (attached() && (params.url.GetOrigin() != options_page_.GetOrigin())) {
+    base::RecordAction(base::UserMetricsAction("BadMessageTerminate_EOG"));
+    base::KillProcess(
+        web_contents()->GetRenderProcessHost()->GetHandle(),
+        content::RESULT_CODE_KILLED_BAD_MESSAGE, false /* wait */);
+  }
 }
 
 bool ExtensionOptionsGuest::OnMessageReceived(const IPC::Message& message) {

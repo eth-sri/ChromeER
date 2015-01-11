@@ -10,7 +10,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window_testing_views.h"
-#include "chrome/browser/ui/views/extensions/extension_action_view_controller.h"
+#include "chrome/browser/ui/extensions/extension_action_view_controller.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_action_view.h"
@@ -36,6 +36,16 @@ int BrowserActionTestUtil::NumberOfBrowserActions() {
 
 int BrowserActionTestUtil::VisibleBrowserActions() {
   return GetContainer(browser_)->VisibleBrowserActions();
+}
+
+bool BrowserActionTestUtil::IsChevronShowing() {
+  BrowserActionsContainer* container = GetContainer(browser_);
+  gfx::Size visible_size = container->GetVisibleBounds().size();
+  return container->chevron() &&
+      container->chevron()->visible() &&
+      visible_size.width() >=
+          container->chevron()->GetPreferredSize().width() &&
+      !visible_size.IsEmpty();
 }
 
 void BrowserActionTestUtil::InspectPopup(int index) {

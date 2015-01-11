@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/options/browser_options_handler.h"
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,6 @@
 #include "base/memory/singleton.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/stl_util.h"
@@ -70,6 +70,10 @@
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/policy_namespace.h"
+#include "components/policy/core/common/policy_service.h"
+#include "components/proximity_auth/switches.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/signin/core/browser/signin_manager.h"
@@ -89,6 +93,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/google_service_auth_error.h"
+#include "policy/policy_constants.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
@@ -191,6 +196,9 @@ BrowserOptionsHandler::~BrowserOptionsHandler() {
   // away so they don't try and call back to us.
   if (select_folder_dialog_.get())
     select_folder_dialog_->ListenerDestroyed();
+
+  g_browser_process->policy_service()->RemoveObserver(
+      policy::POLICY_DOMAIN_CHROME, this);
 }
 
 void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
@@ -252,6 +260,9 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "metricsReportingResetRestart", IDS_OPTIONS_ENABLE_LOGGING_RESTART },
     { "easyUnlockDescription", IDS_OPTIONS_EASY_UNLOCK_DESCRIPTION,
       device_type_resource_id },
+    { "easyUnlockRequireProximityLabel",
+      IDS_OPTIONS_EASY_UNLOCK_REQUIRE_PROXIMITY_LABEL,
+      device_type_resource_id },
     { "easyUnlockSectionTitle", IDS_OPTIONS_EASY_UNLOCK_SECTION_TITLE },
     { "easyUnlockSetupButton", IDS_OPTIONS_EASY_UNLOCK_SETUP_BUTTON },
     { "easyUnlockSetupIntro", IDS_OPTIONS_EASY_UNLOCK_SETUP_INTRO,
@@ -271,13 +282,16 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "homePageShowHomeButton", IDS_OPTIONS_TOOLBAR_SHOW_HOME_BUTTON },
     { "homePageUseNewTab", IDS_OPTIONS_HOMEPAGE_USE_NEWTAB },
     { "homePageUseURL", IDS_OPTIONS_HOMEPAGE_USE_URL },
-    { "hotwordAudioHistoryEnable", IDS_HOTWORD_AUDIO_HISTORY_PREF_CHKBOX },
+    { "hotwordAlwaysOnAudioHistoryDescription",
+      IDS_HOTWORD_ALWAYS_ON_AUDIO_HISTORY_DESCRIPTION },
+    { "hotwordAudioHistoryManage", IDS_HOTWORD_AUDIO_HISTORY_MANAGE_LINK },
     { "hotwordSearchEnable", IDS_HOTWORD_SEARCH_PREF_CHKBOX },
     { "hotwordConfirmEnable", IDS_HOTWORD_CONFIRM_BUBBLE_ENABLE },
     { "hotwordConfirmDisable", IDS_HOTWORD_CONFIRM_BUBBLE_DISABLE },
     { "hotwordConfirmMessage", IDS_HOTWORD_SEARCH_PREF_DESCRIPTION },
     { "hotwordNoDSPDesc", IDS_HOTWORD_SEARCH_NO_DSP_DESCRIPTION },
     { "hotwordAlwaysOnDesc", IDS_HOTWORD_SEARCH_ALWAYS_ON_DESCRIPTION },
+    { "hotwordRetrainLink", IDS_HOTWORD_RETRAIN_LINK },
     { "hotwordAudioLoggingEnable", IDS_HOTWORD_AUDIO_LOGGING_ENABLE },
     { "importData", IDS_OPTIONS_IMPORT_DATA_BUTTON },
     { "improveBrowsingExperience", IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
@@ -509,7 +523,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
                 IDS_OPTIONS_ENABLE_DO_NOT_TRACK_BUBBLE_TITLE);
   RegisterTitle(values, "spellingConfirmOverlay",
                 IDS_CONTENT_CONTEXT_SPELLING_ASK_GOOGLE);
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   RegisterCloudPrintValues(values);
 #endif
 
@@ -521,13 +535,15 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   values->SetString("hotwordLearnMoreURL", chrome::kHotwordLearnMoreURL);
   RegisterTitle(values, "hotwordConfirmOverlay",
                 IDS_HOTWORD_CONFIRM_BUBBLE_TITLE);
+  values->SetString("hotwordManageAudioHistoryURL",
+                    chrome::kManageAudioHistoryURL);
 
-#if defined(OS_CHROMEOS)
   Profile* profile = Profile::FromWebUI(web_ui());
+#if defined(OS_CHROMEOS)
   std::string username = profile->GetProfileName();
   if (username.empty()) {
     user_manager::User* user =
-        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+      chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
     if (user && (user->GetType() != user_manager::USER_TYPE_GUEST))
       username = user->email();
   }
@@ -536,6 +552,21 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
 
   values->SetString("username", username);
 #endif
+
+  base::string16 user_email;
+  // If the profile is a guest session, it will not be found in the cache.
+  // In that case, just set the value with an empty string for the email since
+  // it won't be displayed anyways for a guest profile.
+  if (!profile->IsGuestSession()) {
+    ProfileInfoCache& cache =
+        g_browser_process->profile_manager()->GetProfileInfoCache();
+    user_email = cache.GetUserNameOfProfileAtIndex(
+        cache.GetIndexOfProfileWithPath(profile->GetPath()));
+  }
+  values->SetString(
+      "hotwordAudioHistoryEnabled",
+      l10n_util::GetStringFUTF16(IDS_HOTWORD_AUDIO_HISTORY_ENABLED,
+                                 user_email));
 
   // Pass along sync status early so it will be available during page init.
   values->Set("syncData", GetSyncStateDictionary().release());
@@ -623,6 +654,10 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       "easyUnlockAllowed",
       EasyUnlockService::Get(Profile::FromWebUI(web_ui()))->IsAllowed());
   values->SetString("easyUnlockLearnMoreURL", chrome::kEasyUnlockLearnMoreUrl);
+  values->SetBoolean(
+      "easyUnlockProximityDetectionAllowed",
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          proximity_auth::switches::kEnableProximityDetection));
 
 #if defined(OS_CHROMEOS)
   values->SetBoolean(
@@ -645,7 +680,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   values->SetBoolean("usingNewProfilesUI", switches::IsNewAvatarMenu());
 }
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 void BrowserOptionsHandler::RegisterCloudPrintValues(
     base::DictionaryValue* values) {
   values->SetString("cloudPrintOptionLabel",
@@ -653,7 +688,7 @@ void BrowserOptionsHandler::RegisterCloudPrintValues(
                         IDS_CLOUD_PRINT_CHROMEOS_OPTION_LABEL,
                         l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
 }
-#endif  // defined(ENABLE_FULL_PRINTING)
+#endif  // defined(ENABLE_PRINT_PREVIEW)
 
 void BrowserOptionsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
@@ -815,6 +850,9 @@ void BrowserOptionsHandler::InitializeHandler() {
             base::Bind(&BrowserOptionsHandler::SetupPageZoomSelector,
                        base::Unretained(this)));
   }
+
+  g_browser_process->policy_service()->AddObserver(
+      policy::POLICY_DOMAIN_CHROME, this);
 
   ProfileSyncService* sync_service(
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile));
@@ -1621,25 +1659,43 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
     const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
   std::string group = base::FieldTrialList::FindFullName("VoiceTrigger");
-  base::FundamentalValue enabled(
-      profile->GetPrefs()->GetBoolean(prefs::kHotwordSearchEnabled));
   if (group != "" && group != "Disabled" &&
       HotwordServiceFactory::IsHotwordAllowed(profile)) {
     // Update the current error value.
     HotwordServiceFactory::IsServiceAvailable(profile);
     int error = HotwordServiceFactory::GetCurrentError(profile);
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableExperimentalHotwording)) {
+
+    std::string function_name;
+    bool always_on = false;
+    if (HotwordService::IsExperimentalHotwordingEnabled()) {
       if (HotwordServiceFactory::IsHotwordHardwareAvailable()) {
-        web_ui()->CallJavascriptFunction(
-            "BrowserOptions.showHotwordAlwaysOnSection");
+        function_name = "BrowserOptions.showHotwordAlwaysOnSection";
+        always_on = true;
+        // Show the retrain link if always-on is enabled.
+        if (profile->GetPrefs()->GetBoolean(
+                prefs::kHotwordAlwaysOnSearchEnabled)) {
+          web_ui()->CallJavascriptFunction(
+              "BrowserOptions.setHotwordRetrainLinkVisible",
+              base::FundamentalValue(true));
+        }
       } else {
-        web_ui()->CallJavascriptFunction(
-            "BrowserOptions.showHotwordNoDSPSection");
+        function_name = "BrowserOptions.showHotwordNoDspSection";
       }
-    } else if (!error) {
-      web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
-                                       enabled);
+    } else {
+      function_name = "BrowserOptions.showHotwordSection";
+    }
+
+    // Audio history should be displayed if it's enabled regardless of the
+    // hotword error state. An additional message is displayed if always-on
+    // hotwording is enabled.
+    if (profile->GetPrefs()->GetBoolean(prefs::kHotwordAudioHistoryEnabled) &&
+        HotwordService::IsExperimentalHotwordingEnabled()) {
+      web_ui()->CallJavascriptFunction("BrowserOptions.showAudioHistorySection",
+                                       base::FundamentalValue(always_on));
+    }
+
+    if (!error) {
+      web_ui()->CallJavascriptFunction(function_name);
     } else {
       base::string16 hotword_help_url =
           base::ASCIIToUTF16(chrome::kHotwordLearnMoreURL);
@@ -1648,8 +1704,7 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
         error_message = base::StringValue(
             l10n_util::GetStringFUTF16(error, hotword_help_url));
       }
-      web_ui()->CallJavascriptFunction("BrowserOptions.showHotwordSection",
-                                       enabled, error_message);
+      web_ui()->CallJavascriptFunction(function_name, error_message);
     }
   }
 }
@@ -1668,15 +1723,15 @@ void BrowserOptionsHandler::HandleLaunchHotwordAudioVerificationApp(
     DCHECK(profile->GetPrefs()->GetBoolean(
         prefs::kHotwordAlwaysOnSearchEnabled));
     DCHECK(profile->GetPrefs()->GetBoolean(
-        prefs::kHotwordAudioLoggingEnabled));
+        prefs::kHotwordAudioHistoryEnabled));
 
-    launch_mode = HotwordService::SPEECH_TRAINING;
+    launch_mode = HotwordService::RETRAIN;
   } else if (profile->GetPrefs()->GetBoolean(
-      prefs::kHotwordAudioLoggingEnabled)) {
+      prefs::kHotwordAudioHistoryEnabled)) {
     DCHECK(!profile->GetPrefs()->GetBoolean(
         prefs::kHotwordAlwaysOnSearchEnabled));
 
-    // TODO(kcarattini): Make sure the Chrome Audio Logging pref is synced
+    // TODO(kcarattini): Make sure the Chrome Audio History pref is synced
     // to the account-level Audio History setting from footprints.
     launch_mode = HotwordService::HOTWORD_ONLY;
   } else {
@@ -1705,7 +1760,11 @@ void BrowserOptionsHandler::HandleRefreshExtensionControlIndicators(
 #if defined(OS_CHROMEOS)
 void BrowserOptionsHandler::HandleOpenWallpaperManager(
     const base::ListValue* args) {
+#if !defined(USE_ATHENA)
   ash::Shell::GetInstance()->user_wallpaper_delegate()->OpenSetWallpaperPage();
+#else
+  NOTIMPLEMENTED();
+#endif
 }
 
 void BrowserOptionsHandler::VirtualKeyboardChangeCallback(
@@ -1989,6 +2048,15 @@ void BrowserOptionsHandler::SetMetricsReportingCheckbox(bool checked,
       "BrowserOptions.setMetricsReportingCheckboxState",
       base::FundamentalValue(checked),
       base::FundamentalValue(disabled));
+}
+
+void BrowserOptionsHandler::OnPolicyUpdated(const policy::PolicyNamespace& ns,
+                                            const policy::PolicyMap& previous,
+                                            const policy::PolicyMap& current) {
+  std::set<std::string> different_keys;
+  current.GetDifferingKeys(previous, &different_keys);
+  if (ContainsKey(different_keys, policy::key::kMetricsReportingEnabled))
+    SetupMetricsReportingCheckbox();
 }
 
 }  // namespace options

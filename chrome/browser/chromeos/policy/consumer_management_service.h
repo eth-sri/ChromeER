@@ -118,7 +118,7 @@ class ConsumerManagementService
   void RemoveObserver(Observer* observer);
 
   // Returns the status.
-  Status GetStatus() const;
+  virtual Status GetStatus() const;
 
   // Returns the string value of the status.
   std::string GetStatusString() const;
@@ -128,10 +128,10 @@ class ConsumerManagementService
   bool HasPendingEnrollmentNotification() const;
 
   // Returns the enrollment stage.
-  EnrollmentStage GetEnrollmentStage() const;
+  virtual EnrollmentStage GetEnrollmentStage() const;
 
   // Sets the enrollment stage.
-  void SetEnrollmentStage(EnrollmentStage stage);
+  virtual void SetEnrollmentStage(EnrollmentStage stage);
 
   // Returns the device owner stored in the boot lockbox via |callback|.
   void GetOwner(const GetOwnerCallback& callback);
@@ -141,9 +141,12 @@ class ConsumerManagementService
   void SetOwner(const std::string& user_id, const SetOwnerCallback& callback);
 
   // chromeos::DeviceSettingsService::Observer:
-  virtual void OwnershipStatusChanged() override;
-  virtual void DeviceSettingsUpdated() override;
-  virtual void OnDeviceSettingsServiceShutdown() override;
+  void OwnershipStatusChanged() override;
+  void DeviceSettingsUpdated() override;
+  void OnDeviceSettingsServiceShutdown() override;
+
+ protected:
+  void NotifyStatusChanged();
 
  private:
   void OnGetBootAttributeDone(
@@ -162,8 +165,6 @@ class ConsumerManagementService
       chromeos::DBusMethodCallStatus call_status,
       bool dbus_success,
       const cryptohome::BaseReply& reply);
-
-  void NotifyStatusChanged();
 
   chromeos::CryptohomeClient* client_;
   chromeos::DeviceSettingsService* device_settings_service_;

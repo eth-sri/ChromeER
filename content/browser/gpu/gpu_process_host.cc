@@ -326,9 +326,10 @@ void GpuProcessHost::GetProcessHandles(
   }
   std::list<base::ProcessHandle> handles;
   for (size_t i = 0; i < arraysize(g_gpu_process_hosts); ++i) {
+    // TODO(rvargas) crbug/417532: don't store ProcessHandles!.
     GpuProcessHost* host = g_gpu_process_hosts[i];
     if (host && ValidateHost(host))
-      handles.push_back(host->process_->GetHandle());
+      handles.push_back(host->process_->GetProcess().Handle());
   }
   BrowserThread::PostTask(
       BrowserThread::UI,
@@ -651,30 +652,32 @@ void GpuProcessHost::CreateViewCommandBuffer(
 }
 
 void GpuProcessHost::CreateGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferHandle& handle,
+    gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
     gfx::GpuMemoryBuffer::Format format,
     gfx::GpuMemoryBuffer::Usage usage,
+    int client_id,
     const CreateGpuMemoryBufferCallback& callback) {
   TRACE_EVENT0("gpu", "GpuProcessHost::CreateGpuMemoryBuffer");
 
   DCHECK(CalledOnValidThread());
 
-  if (Send(new GpuMsg_CreateGpuMemoryBuffer(handle, size, format, usage))) {
+  if (Send(new GpuMsg_CreateGpuMemoryBuffer(
+               id, size, format, usage, client_id))) {
     create_gpu_memory_buffer_requests_.push(callback);
   } else {
     callback.Run(gfx::GpuMemoryBufferHandle());
   }
 }
 
-void GpuProcessHost::DestroyGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferHandle& handle,
-    int sync_point) {
+void GpuProcessHost::DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                                            int client_id,
+                                            int sync_point) {
   TRACE_EVENT0("gpu", "GpuProcessHost::DestroyGpuMemoryBuffer");
 
   DCHECK(CalledOnValidThread());
 
-  Send(new GpuMsg_DestroyGpuMemoryBuffer(handle, sync_point));
+  Send(new GpuMsg_DestroyGpuMemoryBuffer(id, client_id, sync_point));
 }
 
 void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {

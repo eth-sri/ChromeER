@@ -137,7 +137,7 @@ class WebPluginDelegateProxy
                 const std::string& method,
                 const char* buf,
                 unsigned int len,
-                const GURL& referrer,
+                const Referrer& referrer,
                 bool notify_redirects,
                 bool is_plugin_src_load,
                 int origin_pid,
@@ -195,7 +195,7 @@ class WebPluginDelegateProxy
   void OnAcceleratedPluginSwappedIOSurface();
 #endif
 #if defined(OS_WIN)
-  void OnSetWindowlessData(HANDLE modal_loop_pump_messages_event,
+  void OnSetWindowlessData(HANDLE modal_loop_pump_messages_event_handle,
                            gfx::NativeViewId dummy_activation_window);
   void OnNotifyIMEStatus(const int input_mode, const gfx::Rect& caret_rect);
 #endif

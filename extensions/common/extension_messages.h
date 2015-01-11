@@ -147,6 +147,17 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExecuteCode_Params)
   IPC_STRUCT_MEMBER(bool, user_gesture)
 IPC_STRUCT_END()
 
+// Struct containing information about the sender of connect() calls that
+// originate from a tab.
+IPC_STRUCT_BEGIN(ExtensionMsg_TabConnectionInfo)
+  // The tab from where the connection was created.
+  IPC_STRUCT_MEMBER(base::DictionaryValue, tab)
+
+  // The ID of the frame that initiated the connection.
+  // 0 if main frame, positive otherwise. -1 if not initiated from a frame.
+  IPC_STRUCT_MEMBER(int, frame_id)
+IPC_STRUCT_END()
+
 // Struct containing the data for external connections to extensions. Used to
 // handle the IPCs initiated by both connect() and onConnect().
 IPC_STRUCT_BEGIN(ExtensionMsg_ExternalConnectionInfo)
@@ -258,6 +269,14 @@ struct ExtensionMsg_Loaded_Params {
   int creation_flags;
 };
 
+struct ExtensionHostMsg_AutomationQuerySelector_Error {
+  enum Value { kNone, kNoMainFrame, kNoDocument, kNodeDestroyed };
+
+  ExtensionHostMsg_AutomationQuerySelector_Error() : value(kNone) {}
+
+  Value value;
+};
+
 namespace IPC {
 
 template <>
@@ -319,6 +338,14 @@ struct ParamTraits<ExtensionMsg_Loaded_Params> {
 }  // namespace IPC
 
 #endif  // EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
+
+IPC_ENUM_TRAITS_MAX_VALUE(
+    ExtensionHostMsg_AutomationQuerySelector_Error::Value,
+    ExtensionHostMsg_AutomationQuerySelector_Error::kNodeDestroyed)
+
+IPC_STRUCT_TRAITS_BEGIN(ExtensionHostMsg_AutomationQuerySelector_Error)
+IPC_STRUCT_TRAITS_MEMBER(value)
+IPC_STRUCT_TRAITS_END()
 
 // Parameters structure for ExtensionMsg_UpdatePermissions.
 IPC_STRUCT_BEGIN(ExtensionMsg_UpdatePermissions_Params)
@@ -425,17 +452,15 @@ IPC_MESSAGE_ROUTED1(ExtensionMsg_SetTabId,
 IPC_MESSAGE_CONTROL1(ExtensionMsg_UpdatePermissions,
                      ExtensionMsg_UpdatePermissions_Params)
 
-// Tell the renderer about new tab-specific permissions for an extension.
-IPC_MESSAGE_CONTROL4(ExtensionMsg_UpdateTabSpecificPermissions,
-                     GURL /* url */,
-                     int /* tab_id */,
-                     std::string /* extension_id */,
-                     extensions::URLPatternSet /* hosts */)
+// Tell the render view about new tab-specific permissions for an extension.
+IPC_MESSAGE_ROUTED3(ExtensionMsg_UpdateTabSpecificPermissions,
+                    GURL /* url */,
+                    std::string /* extension_id */,
+                    extensions::URLPatternSet /* hosts */)
 
-// Tell the renderer to clear tab-specific permissions for some extensions.
-IPC_MESSAGE_CONTROL2(ExtensionMsg_ClearTabSpecificPermissions,
-                     int /* tab_id */,
-                     std::vector<std::string> /* extension_ids */)
+// Tell the render view to clear tab-specific permissions for some extensions.
+IPC_MESSAGE_ROUTED1(ExtensionMsg_ClearTabSpecificPermissions,
+                    std::vector<std::string> /* extension_ids */)
 
 // Tell the renderer which type this view is.
 IPC_MESSAGE_ROUTED1(ExtensionMsg_NotifyRenderViewType,
@@ -471,7 +496,7 @@ IPC_MESSAGE_ROUTED2(ExtensionMsg_GetAppInstallStateResponse,
 IPC_MESSAGE_ROUTED5(ExtensionMsg_DispatchOnConnect,
                     int /* target_port_id */,
                     std::string /* channel_name */,
-                    base::DictionaryValue /* source_tab */,
+                    ExtensionMsg_TabConnectionInfo /* source */,
                     ExtensionMsg_ExternalConnectionInfo,
                     std::string /* tls_channel_id */)
 
@@ -745,8 +770,24 @@ IPC_MESSAGE_CONTROL4(ExtensionHostMsg_AttachGuest,
                      base::DictionaryValue /* attach_params */)
 
 // Tells the browser to create a mime handler guest view for a plugin.
-IPC_MESSAGE_CONTROL4(ExtensionHostMsg_CreateMimeHandlerViewGuest,
+IPC_MESSAGE_CONTROL5(ExtensionHostMsg_CreateMimeHandlerViewGuest,
                      int /* render_frame_id */,
                      std::string /* embedder_url */,
+                     std::string /* content_url */,
                      std::string /* mime_type */,
                      int /* element_instance_id */)
+
+// Sent when a query selector request is made from the automation API.
+// acc_obj_id is the accessibility tree ID of the starting element.
+IPC_MESSAGE_ROUTED3(ExtensionMsg_AutomationQuerySelector,
+                    int /* request_id */,
+                    int /* acc_obj_id */,
+                    base::string16 /* selector */)
+
+// Result of a query selector request.
+// result_acc_obj_id is the accessibility tree ID of the result element; 0
+// indicates no result.
+IPC_MESSAGE_ROUTED3(ExtensionHostMsg_AutomationQuerySelector_Result,
+                    int /* request_id */,
+                    ExtensionHostMsg_AutomationQuerySelector_Error /* error */,
+                    int /* result_acc_obj_id */)

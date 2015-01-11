@@ -44,6 +44,14 @@ IPC_ENUM_TRAITS_MAX_VALUE(WindowOpenDisposition,
 IPC_ENUM_TRAITS_MAX_VALUE(net::RequestPriority, net::MAXIMUM_PRIORITY)
 IPC_ENUM_TRAITS_MAX_VALUE(content::V8CacheOptions,
                           content::V8_CACHE_OPTIONS_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::V8ScriptStreamingMode,
+                          content::V8_SCRIPT_STREAMING_MODE_LAST)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(ui::PointerType,
+                              ui::POINTER_TYPE_FIRST,
+                              ui::POINTER_TYPE_LAST)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(ui::HoverType,
+                              ui::HOVER_TYPE_FIRST,
+                              ui::HOVER_TYPE_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebPoint)
   IPC_STRUCT_TRAITS_MEMBER(x)
@@ -163,8 +171,13 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(device_supports_mouse)
   IPC_STRUCT_TRAITS_MEMBER(touch_adjustment_enabled)
   IPC_STRUCT_TRAITS_MEMBER(pointer_events_max_touch_points)
+  IPC_STRUCT_TRAITS_MEMBER(available_pointer_types)
+  IPC_STRUCT_TRAITS_MEMBER(primary_pointer_type)
+  IPC_STRUCT_TRAITS_MEMBER(available_hover_types)
+  IPC_STRUCT_TRAITS_MEMBER(primary_hover_type)
   IPC_STRUCT_TRAITS_MEMBER(sync_xhr_in_documents_enabled)
   IPC_STRUCT_TRAITS_MEMBER(deferred_image_decoding_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(image_color_profiles_enabled)
   IPC_STRUCT_TRAITS_MEMBER(should_respect_image_orientation)
   IPC_STRUCT_TRAITS_MEMBER(number_of_cpu_cores)
   IPC_STRUCT_TRAITS_MEMBER(editing_behavior)
@@ -179,6 +192,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(spatial_navigation_enabled)
   IPC_STRUCT_TRAITS_MEMBER(v8_cache_options)
   IPC_STRUCT_TRAITS_MEMBER(v8_script_streaming_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(v8_script_streaming_mode)
   IPC_STRUCT_TRAITS_MEMBER(slimming_paint_enabled)
   IPC_STRUCT_TRAITS_MEMBER(pepper_accelerated_video_decode_enabled)
 #if defined(OS_ANDROID)

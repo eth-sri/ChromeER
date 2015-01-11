@@ -9,11 +9,11 @@
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "base/command_line.h"
-#include "ui/events/device_data_manager.h"
-#include "ui/events/device_hotplug_event_observer.h"
-#include "ui/events/input_device.h"
-#include "ui/events/keyboard_device.h"
-#include "ui/events/touchscreen_device.h"
+#include "ui/events/devices/device_data_manager.h"
+#include "ui/events/devices/device_hotplug_event_observer.h"
+#include "ui/events/devices/input_device.h"
+#include "ui/events/devices/keyboard_device.h"
+#include "ui/events/devices/touchscreen_device.h"
 #include "ui/keyboard/keyboard_export.h"
 #include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
@@ -183,6 +183,19 @@ TEST_F(VirtualKeyboardControllerAutoTest, SuppressedIfExternalKeyboardPresent) {
   ASSERT_TRUE(keyboard::IsKeyboardEnabled());
   ASSERT_TRUE(notified());
   ASSERT_FALSE(IsVirtualKeyboardSuppressed());
+}
+
+// Tests handling multiple keyboards. Catches crbug.com/430252
+TEST_F(VirtualKeyboardControllerAutoTest, HandleMultipleKeyboardsPresent) {
+  std::vector<ui::KeyboardDevice> keyboards;
+  keyboards.push_back(ui::KeyboardDevice(
+      1, ui::InputDeviceType::INPUT_DEVICE_INTERNAL, "keyboard"));
+  keyboards.push_back(ui::KeyboardDevice(
+      2, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "keyboard"));
+  keyboards.push_back(ui::KeyboardDevice(
+      3, ui::InputDeviceType::INPUT_DEVICE_EXTERNAL, "keyboard"));
+  UpdateKeyboardDevices(keyboards);
+  ASSERT_FALSE(keyboard::IsKeyboardEnabled());
 }
 
 }  // namespace test

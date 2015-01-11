@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/appcache/appcache_group.h"
@@ -132,8 +133,6 @@ AppCacheUpdateJob::URLFetcher::~URLFetcher() {
 
 void AppCacheUpdateJob::URLFetcher::Start() {
   request_->set_first_party_for_cookies(job_->manifest_url_);
-  request_->SetLoadFlags(request_->load_flags() |
-                         net::LOAD_DISABLE_INTERCEPT);
   if (existing_response_headers_.get())
     AddConditionalHeaders(existing_response_headers_.get());
   request_->Start();
@@ -154,6 +153,11 @@ void AppCacheUpdateJob::URLFetcher::OnReceivedRedirect(
 
 void AppCacheUpdateJob::URLFetcher::OnResponseStarted(
     net::URLRequest *request) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 AppCacheUpdateJob::URLFetcher::OnResponseStarted"));
+
   DCHECK(request == request_);
   int response_code = -1;
   if (request->status().is_success()) {
@@ -179,7 +183,12 @@ void AppCacheUpdateJob::URLFetcher::OnResponseStarted(
     // requested on the whatwg list.
     // See http://code.google.com/p/chromium/issues/detail?id=69594
     // TODO(michaeln): Consider doing this for cross-origin HTTP too.
-    if (net::IsCertStatusError(request->ssl_info().cert_status) ||
+    const net::HttpNetworkSession::Params* session_params =
+        request->context()->GetNetworkSessionParams();
+    bool ignore_cert_errors = session_params &&
+                              session_params->ignore_certificate_errors;
+    if ((net::IsCertStatusError(request->ssl_info().cert_status) &&
+            !ignore_cert_errors) ||
         (url_.GetOrigin() != job_->manifest_url_.GetOrigin() &&
             request->response_headers()->
                 HasHeaderValue("cache-control", "no-store"))) {
@@ -208,6 +217,11 @@ void AppCacheUpdateJob::URLFetcher::OnResponseStarted(
 
 void AppCacheUpdateJob::URLFetcher::OnReadCompleted(
     net::URLRequest* request, int bytes_read) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 AppCacheUpdateJob::URLFetcher::OnReadCompleted"));
+
   DCHECK(request_ == request);
   bool data_consumed = true;
   if (request->status().is_success() && bytes_read > 0) {

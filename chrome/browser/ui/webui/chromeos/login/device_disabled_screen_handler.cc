@@ -27,14 +27,16 @@ DeviceDisabledScreenHandler::~DeviceDisabledScreenHandler() {
     delegate_->OnActorDestroyed(this);
 }
 
-void DeviceDisabledScreenHandler::Show(const std::string& message) {
+void DeviceDisabledScreenHandler::Show() {
   if (!page_is_ready()) {
     show_on_init_ = true;
-    message_ = message;
     return;
   }
 
-  CallJS("setMessage", message);
+  if (delegate_) {
+    CallJS("setEnrollmentDomain", delegate_->GetEnrollmentDomain());
+    CallJS("setMessage", delegate_->GetMessage());
+  }
   ShowScreen(OobeUI::kScreenDeviceDisabled, NULL);
 }
 
@@ -48,10 +50,18 @@ void DeviceDisabledScreenHandler::SetDelegate(Delegate* delegate) {
     Initialize();
 }
 
+void DeviceDisabledScreenHandler::UpdateMessage(const std::string& message) {
+  if (page_is_ready())
+    CallJS("setMessage", message);
+}
+
 void DeviceDisabledScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
   builder->Add("deviceDisabledHeading", IDS_DEVICE_DISABLED_HEADING);
-  builder->Add("deviceDisabledExplanation", IDS_DEVICE_DISABLED_EXPLANATION);
+  builder->Add("deviceDisabledExplanationWithDomain",
+               IDS_DEVICE_DISABLED_EXPLANATION_WITH_DOMAIN);
+  builder->Add("deviceDisabledExplanationWithoutDomain",
+               IDS_DEVICE_DISABLED_EXPLANATION_WITHOUT_DOMAIN);
 }
 
 void DeviceDisabledScreenHandler::Initialize() {
@@ -59,7 +69,7 @@ void DeviceDisabledScreenHandler::Initialize() {
     return;
 
   if (show_on_init_) {
-    Show(message_);
+    Show();
     show_on_init_ = false;
   }
 }

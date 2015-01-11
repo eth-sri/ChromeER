@@ -13,8 +13,34 @@ if (is_chromeos && use_x11 && cpu_arch != "arm") {
 
     script = "../../tools/generate_stubs/generate_stubs.py"
     sources = [ "gpu/media/va.sigs" ]
-    source_prereqs = [ extra_header ]
+    inputs = [ extra_header ]
     stubs_filename_root = "va_stubs"
+
+    outputs = [
+      "$target_gen_dir/gpu/media/$stubs_filename_root.cc",
+      "$target_gen_dir/gpu/media/$stubs_filename_root.h",
+    ]
+    args = [
+      "-i", rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-o", rebase_path("$target_gen_dir/gpu/media", root_build_dir),
+      "-t", "posix_stubs",
+      "-e", rebase_path(extra_header, root_build_dir),
+      "-s", stubs_filename_root,
+      "-p", "content/common/gpu/media",
+    ]
+
+    args += rebase_path(sources, root_build_dir)
+  }
+}
+
+if (is_mac) {
+  action("libvt_generate_stubs") {
+    extra_header = "gpu/media/vt_stubs_header.fragment"
+
+    script = "../../tools/generate_stubs/generate_stubs.py"
+    sources = [ "gpu/media/vt.sig" ]
+    inputs = [ extra_header ]
+    stubs_filename_root = "vt_stubs"
 
     outputs = [
       "$target_gen_dir/gpu/media/$stubs_filename_root.cc",
@@ -115,12 +141,14 @@ source_set("common") {
     sources += [
       "gpu/client/gpu_memory_buffer_impl_io_surface.cc",
       "gpu/client/gpu_memory_buffer_impl_io_surface.h",
-    ]
+    ] + get_target_outputs(":libvt_generate_stubs") 
+
     sources -= [
       "plugin_list_posix.cc",
     ]
 
     deps += [
+      ":libvt_generate_stubs",
       "//content/app/resources",
       "//content:resources",
       "//third_party/WebKit/public:resources",
@@ -149,11 +177,20 @@ source_set("common") {
     assert(false, "Need to add lots of conditions here")
   }
 
-  if (!use_ozone) {
+  if (use_ozone) {
+    deps += [
+      "//ui/ozone:ozone",
+      "//ui/ozone:ozone_base",
+      "//ui/ozone/gpu",
+    ]
+  } else {
     sources -= [
       "cursors/webcursor_ozone.cc",
       "font_list_ozone.cc",
-      "gpu/gpu_memory_buffer_factory_ozone.cc",
+      "gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.cc",
+      "gpu/client/gpu_memory_buffer_impl_ozone_native_buffer.h",
+      "gpu/gpu_memory_buffer_factory_ozone_native_buffer.cc",
+      "gpu/gpu_memory_buffer_factory_ozone_native_buffer.h",
     ]
   }
 
@@ -179,10 +216,6 @@ source_set("common") {
   }
 
   if (use_x11) {
-    sources += [
-      "gpu/gpu_memory_buffer_factory_x11_pixmap.cc",
-      "common/gpu/gpu_memory_buffer_factory_x11_pixmap.h",
-    ]
     include_dirs += [ "//third_party/khronos" ]
     configs += [ "//build/config/linux:xcomposite" ]
 
@@ -192,10 +225,6 @@ source_set("common") {
         "gpu/x_util.h",
       ]
     }
-  } else {
-    sources -= [
-      "gpu/gpu_memory_buffer_factory_x11.cc",
-    ]
   }
 
   if (enable_plugins) {
@@ -320,6 +349,7 @@ source_set("common") {
 mojom("mojo_bindings") {
   sources = [
     "geolocation_service.mojom",
+    "permission_service.mojom",
     "render_frame_setup.mojom",
   ]
 

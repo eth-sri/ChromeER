@@ -17,6 +17,7 @@
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/layer_client.h"
+#include "cc/layers/surface_layer.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/surfaces/surface_id.h"
@@ -279,7 +280,12 @@ class COMPOSITOR_EXPORT Layer
                                gfx::Size frame_size_in_dip);
 
   // Begins showing content from a surface with a particular id.
-  void SetShowSurface(cc::SurfaceId id, gfx::Size frame_size_in_dip);
+  void SetShowSurface(cc::SurfaceId surface_id,
+                      const cc::SurfaceLayer::SatisfyCallback& satisfy_callback,
+                      const cc::SurfaceLayer::RequireCallback& require_callback,
+                      gfx::Size surface_size,
+                      float scale,
+                      gfx::Size frame_size_in_dip);
 
   bool has_external_content() {
     return texture_layer_.get() || delegated_renderer_layer_.get() ||
@@ -333,7 +339,9 @@ class COMPOSITOR_EXPORT Layer
       SkCanvas* canvas,
       const gfx::Rect& clip,
       ContentLayerClient::GraphicsContextStatus gc_status) override;
-  void DidChangeLayerCanUseLCDText() override {}
+  scoped_refptr<cc::DisplayItemList> PaintContentsToDisplayList(
+      const gfx::Rect& clip,
+      GraphicsContextStatus gc_status) override;
   bool FillsBoundsCompletely() const override;
 
   cc::Layer* cc_layer() { return cc_layer_; }

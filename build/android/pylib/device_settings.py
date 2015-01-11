@@ -8,6 +8,8 @@ from pylib import constants
 from pylib import content_settings
 
 _LOCK_SCREEN_SETTINGS_PATH = '/data/system/locksettings.db'
+_ALTERNATE_LOCK_SCREEN_SETTINGS_PATH = (
+    '/data/data/com.android.providers.settings/databases/settings.db')
 PASSWORD_QUALITY_UNSPECIFIED = '0'
 
 
@@ -66,20 +68,33 @@ def SetLockScreenSettings(device):
   Raises:
     Exception if the setting was not properly set.
   """
-  if (not device.old_interface.FileExistsOnDevice(_LOCK_SCREEN_SETTINGS_PATH) or
-      device.GetProp('ro.build.type') != 'userdebug'):
+  if device.GetProp('ro.build.type') != 'userdebug':
+    logging.warning('Unable to disable lockscreen on user builds.')
     return
 
-  db = _LOCK_SCREEN_SETTINGS_PATH
-  locksettings = [('locksettings', 'lockscreen.disabled', '1'),
-                  ('locksettings', 'lockscreen.password_type',
-                   PASSWORD_QUALITY_UNSPECIFIED),
-                  ('locksettings', 'lockscreen.password_type_alternate',
-                   PASSWORD_QUALITY_UNSPECIFIED)]
+  def get_lock_settings(table):
+    return [(table, 'lockscreen.disabled', '1'),
+            (table, 'lockscreen.password_type', PASSWORD_QUALITY_UNSPECIFIED),
+            (table, 'lockscreen.password_type_alternate',
+             PASSWORD_QUALITY_UNSPECIFIED)]
+
+  if device.FileExists(_LOCK_SCREEN_SETTINGS_PATH):
+    db = _LOCK_SCREEN_SETTINGS_PATH
+    locksettings = get_lock_settings('locksettings')
+    columns = ['name', 'user', 'value']
+    generate_values = lambda k, v: [k, '0', v]
+  elif device.FileExists(_ALTERNATE_LOCK_SCREEN_SETTINGS_PATH):
+    db = _ALTERNATE_LOCK_SCREEN_SETTINGS_PATH
+    locksettings = get_lock_settings('secure') + get_lock_settings('system')
+    columns = ['name', 'value']
+    generate_values = lambda k, v: [k, v]
+  else:
+    logging.warning('Unable to find database file to set lock screen settings.')
+    return
+
   for table, key, value in locksettings:
     # Set the lockscreen setting for default user '0'
-    columns = ['name', 'user', 'value']
-    values = [key, '0', value]
+    values = generate_values(key, value)
 
     cmd = """begin transaction;
 delete from '%(table)s' where %(primary_key)s='%(primary_value)s';
@@ -91,9 +106,10 @@ commit transaction;""" % {
       'columns': ', '.join(columns),
       'values': ', '.join(["'%s'" % value for value in values])
     }
-    output_msg = device.RunShellCommand('sqlite3 %s "%s"' % (db, cmd))
+    output_msg = device.RunShellCommand('sqlite3 %s "%s"' % (db, cmd),
+                                        as_root=True)
     if output_msg:
-      print ' '.join(output_msg)
+      logging.info(' '.join(output_msg))
 
 
 ENABLE_LOCATION_SETTINGS = [

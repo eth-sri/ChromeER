@@ -550,15 +550,6 @@ system call NtCreate*
 *!content::BrowserThreadImpl::CacheThreadRun
 *!content::BrowserThreadImpl::Run
 
-UNADDRESSABLE ACCESS
-name=http://crbug.com/379204
-...
-*!WTF::MessageQueue<>::waitForMessageWithTimeout
-*!blink::WorkerRunLoop::run
-*!blink::WorkerRunLoop::run
-*!blink::WorkerThread::workerThread
-*!WTF::threadEntryPoint
-
 GDI USAGE ERROR
 name=379774
 system call NtUserCallOneParam.RELEASEDC
@@ -635,6 +626,10 @@ UNADDRESSABLE ACCESS
 name=http://code.google.com/p/dynamorio/issues/detail?id=1443
 dynamorio.dll!*
 
+UNINITIALIZED READ
+name=http://code.google.com/p/dynamorio/issues/detail?id=1443 (another instance)
+dynamorio.dll!*
+
 UNADDRESSABLE ACCESS
 name=http://crbug.com/400495
 aura.dll!aura::Window::Contains
@@ -667,3 +662,17 @@ blink_web.dll!blink::FrameView::removeFromAXObjectCache
 blink_web.dll!blink::FrameView::prepareForDetach
 blink_web.dll!blink::LocalFrame::setView
 blink_web.dll!blink::FrameTree::~FrameTree
+
+UNADDRESSABLE ACCESS
+name=http://crbug.com/432070
+blink_web.dll!blink::Frame::detach
+content.dll!content::RenderFrameProxy::OnDeleteProxy
+content.dll!content::RenderFrameProxy::OnMessageReceived
+content.dll!content::MessageRouter::RouteMessage
+
+UNINITIALIZED READ
+name=some name
+base.dll!Pickle::WriteBool
+content.dll!IPC::ParamTraits<>::Write
+content.dll!IPC::MessageSchema<>::Write
+content.dll!ResourceHostMsg_RequestResource::ResourceHostMsg_RequestResource

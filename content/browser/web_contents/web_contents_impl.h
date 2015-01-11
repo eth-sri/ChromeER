@@ -51,12 +51,11 @@ class BrowserPluginGuest;
 class BrowserPluginGuestManager;
 class DateTimeChooserAndroid;
 class DownloadItem;
-class GeolocationDispatcherHost;
 class GeolocationServiceContext;
 class InterstitialPageImpl;
 class JavaScriptDialogManager;
 class ManifestManagerHost;
-class MidiDispatcherHost;
+class PluginContentOriginWhitelist;
 class PowerSaveBlocker;
 class RenderViewHost;
 class RenderViewHostDelegateView;
@@ -169,7 +168,7 @@ class CONTENT_EXPORT WebContentsImpl
 
   // A redirect was received while requesting a resource.
   void DidGetRedirectForResourceRequest(
-      RenderViewHost* render_view_host,
+      RenderFrameHost* render_frame_host,
       const ResourceRedirectDetails& details);
 
   WebContentsView* GetView() const;
@@ -473,6 +472,9 @@ class CONTENT_EXPORT WebContentsImpl
       SiteInstance* instance) override;
   SessionStorageNamespaceMap GetSessionStorageNamespaceMap() override;
   FrameTree* GetFrameTree() override;
+  void SetIsVirtualKeyboardRequested(bool requested) override;
+  bool IsVirtualKeyboardRequested() override;
+
 
   // NavigatorDelegate ---------------------------------------------------------
 
@@ -552,7 +554,7 @@ class CONTENT_EXPORT WebContentsImpl
                                       bool is_main_frame) override;
   int CreateOpenerRenderViewsForRenderManager(SiteInstance* instance) override;
   NavigationControllerImpl& GetControllerForRenderManager() override;
-  WebUIImpl* CreateWebUIForRenderManager(const GURL& url) override;
+  scoped_ptr<WebUIImpl> CreateWebUIForRenderManager(const GURL& url) override;
   NavigationEntry* GetLastCommittedNavigationEntryForRenderManager() override;
   bool FocusLocationBarByDefault() override;
   void SetFocusToLocationBar(bool select_all) override;
@@ -637,9 +639,12 @@ class CONTENT_EXPORT WebContentsImpl
 
   typedef base::Callback<void(WebContents*)> CreatedCallback;
 
+  // Requests the renderer to move the selection extent to a new position.
+  void MoveRangeSelectionExtent(const gfx::Point& extent);
+
   // Requests the renderer to select the region between two points in the
   // currently focused frame.
-  void SelectRange(const gfx::Point& start, const gfx::Point& end);
+  void SelectRange(const gfx::Point& base, const gfx::Point& extent);
 
   // Notifies the main frame that it can continue navigation (if it was deferred
   // immediately at first response).
@@ -1163,6 +1168,11 @@ class CONTENT_EXPORT WebContentsImpl
   // NULL otherwise.
   scoped_ptr<BrowserPluginGuest> browser_plugin_guest_;
 
+#if defined(ENABLE_PLUGINS)
+  // Manages the whitelist of plugin content origins exempt from power saving.
+  scoped_ptr<PluginContentOriginWhitelist> plugin_content_origin_whitelist_;
+#endif
+
   // This must be at the end, or else we might get notifications and use other
   // member variables that are gone.
   NotificationRegistrar registrar_;
@@ -1202,10 +1212,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   scoped_ptr<GeolocationServiceContext> geolocation_service_context_;
 
-  scoped_ptr<GeolocationDispatcherHost> geolocation_dispatcher_host_;
-
-  scoped_ptr<MidiDispatcherHost> midi_dispatcher_host_;
-
   scoped_ptr<ScreenOrientationDispatcherHost>
       screen_orientation_dispatcher_host_;
 
@@ -1220,6 +1226,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Created on-demand to mute all audio output from this WebContents.
   scoped_ptr<WebContentsAudioMuter> audio_muter_;
+
+  bool virtual_keyboard_requested_;
 
   base::WeakPtrFactory<WebContentsImpl> loading_weak_factory_;
 

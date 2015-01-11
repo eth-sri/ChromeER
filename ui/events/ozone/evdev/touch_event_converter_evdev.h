@@ -28,7 +28,6 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   TouchEventConverterEvdev(int fd,
                            base::FilePath path,
                            int id,
-                           const EventDeviceInfo& info,
                            const EventDispatchCallback& dispatch);
   ~TouchEventConverterEvdev() override;
 
@@ -37,11 +36,25 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   gfx::Size GetTouchscreenSize() const override;
   bool IsInternal() const override;
 
+  // Unsafe part of initialization.
+  virtual void Initialize(const EventDeviceInfo& info);
+
  private:
   friend class MockTouchEventConverterEvdev;
 
-  // Unsafe part of initialization.
-  void Init(const EventDeviceInfo& info);
+  struct InProgressEvents {
+    InProgressEvents();
+
+    float x_;
+    float y_;
+    int id_;  // Device reported "unique" touch point id; -1 means not active
+    int finger_;  // "Finger" id starting from 0; -1 means not active
+
+    EventType type_;
+    float radius_x_;
+    float radius_y_;
+    float pressure_;
+  };
 
   // Overidden from base::MessagePumpLibevent::Watcher.
   void OnFileCanReadWithoutBlocking(int fd) override;
@@ -52,6 +65,8 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   void ProcessAbs(const input_event& input);
   void ProcessSyn(const input_event& input);
 
+  void ReportEvent(int touch_id,
+      const InProgressEvents& event, const base::TimeDelta& delta);
   void ReportEvents(base::TimeDelta delta);
 
   // Callback for dispatching events.
@@ -75,14 +90,6 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   float y_min_tuxels_;
   float y_num_tuxels_;
 
-  // Output range for x-axis.
-  float x_min_pixels_;
-  float x_num_pixels_;
-
-  // Output range for y-axis.
-  float y_min_pixels_;
-  float y_num_pixels_;
-
   // Size of the touchscreen as reported by the driver.
   gfx::Size native_size_;
 
@@ -92,20 +99,6 @@ class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
   // Bit field tracking which in-progress touch points have been modified
   // without a syn event.
   std::bitset<MAX_FINGERS> altered_slots_;
-
-  struct InProgressEvents {
-    InProgressEvents();
-
-    float x_;
-    float y_;
-    int id_;  // Device reported "unique" touch point id; -1 means not active
-    int finger_;  // "Finger" id starting from 0; -1 means not active
-
-    EventType type_;
-    float radius_x_;
-    float radius_y_;
-    float pressure_;
-  };
 
   // In-progress touch points.
   InProgressEvents events_[MAX_FINGERS];

@@ -17,10 +17,6 @@
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/browser/password_store_consumer.h"
 
-namespace content {
-class WebContents;
-}  // namespace content
-
 namespace password_manager {
 
 class PasswordManager;
@@ -253,6 +249,10 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // match which had this username.
   bool UpdatePendingCredentialsIfOtherPossibleUsername(
       const base::string16& username);
+
+  // Update state to reflect that |credential| was used. This is broken out from
+  // UpdateLogin() so that PSL matches can also be properly updated.
+  void UpdateMetadataForUsage(const autofill::PasswordForm& credential);
 
   // Converts the "ActionsTaken" fields into an int so they can be logged to
   // UMA.

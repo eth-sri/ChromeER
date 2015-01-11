@@ -12,6 +12,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -23,6 +24,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_l10n_util.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/manifest_constants.h"
 #include "grit/browser_resources.h"
@@ -79,6 +81,9 @@ LoadManifestOnFileThread(
   scoped_ptr<base::DictionaryValue> manifest(
       file_util::LoadManifest(chromevox_path, manifest_filename, &error));
   CHECK(manifest) << error;
+  bool localized = extension_l10n_util::LocalizeExtension(
+      chromevox_path, manifest.get(), &error);
+  CHECK(localized) << error;
   return manifest.Pass();
 }
 #endif  // defined(OS_CHROMEOS)
@@ -309,8 +314,8 @@ void ComponentLoader::AddHangoutServicesExtension() {
 }
 
 void ComponentLoader::AddHotwordAudioVerificationApp() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableExperimentalHotwording)) {
+  if (HotwordService::IsExperimentalHotwordingEnabled() &&
+      HotwordServiceFactory::IsHotwordHardwareAvailable()) {
     Add(IDR_HOTWORD_AUDIO_VERIFICATION_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("hotword_audio_verification")));
   }
@@ -318,8 +323,7 @@ void ComponentLoader::AddHotwordAudioVerificationApp() {
 
 void ComponentLoader::AddHotwordHelperExtension() {
   if (HotwordServiceFactory::IsHotwordAllowed(browser_context_)) {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    if (command_line->HasSwitch(switches::kEnableExperimentalHotwording)) {
+    if (HotwordService::IsExperimentalHotwordingEnabled()) {
       Add(IDR_HOTWORD_MANIFEST,
           base::FilePath(FILE_PATH_LITERAL("hotword")));
     } else {
@@ -536,20 +540,18 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
     AddHotwordHelperExtension();
     AddImageLoaderExtension();
 
+    bool install_feedback = enable_background_extensions_during_testing;
+#if defined(GOOGLE_CHROME_BUILD)
+    install_feedback = true;
+#endif  // defined(GOOGLE_CHROME_BUILD)
+    if (install_feedback)
+      Add(IDR_FEEDBACK_MANIFEST, base::FilePath(FILE_PATH_LITERAL("feedback")));
+
 #if defined(ENABLE_SETTINGS_APP)
     Add(IDR_SETTINGS_APP_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("settings_app")));
 #endif
   }
-
-  // If (!enable_background_extensions_during_testing || this isn't a test)
-  //   install_feedback = false;
-  bool install_feedback = enable_background_extensions_during_testing;
-#if defined(GOOGLE_CHROME_BUILD)
-  install_feedback = true;
-#endif  // defined(GOOGLE_CHROME_BUILD)
-  if (install_feedback)
-    Add(IDR_FEEDBACK_MANIFEST, base::FilePath(FILE_PATH_LITERAL("feedback")));
 
 #if defined(OS_CHROMEOS)
   if (!skip_session_components) {
@@ -622,7 +624,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   base::FilePath pdf_path;
   content::PluginService* plugin_service =
       content::PluginService::GetInstance();
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kOutOfProcessPdf) &&
+  if (switches::OutOfProcessPdfEnabled() &&
       PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf_path) &&
       plugin_service->GetRegisteredPpapiPluginInfo(pdf_path)) {
     Add(IDR_PDF_MANIFEST, base::FilePath(FILE_PATH_LITERAL("pdf")));

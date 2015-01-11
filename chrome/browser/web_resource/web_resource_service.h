@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/web_resource/json_asynchronous_unpacker.h"
-#include "chrome/browser/web_resource/resource_request_allowed_notifier.h"
+#include "components/web_resource/resource_request_allowed_notifier.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
 
@@ -31,7 +31,7 @@ class WebResourceService
     : public net::URLFetcherDelegate,
       public JSONAsynchronousUnpackerDelegate,
       public base::RefCountedThreadSafe<WebResourceService>,
-      public ResourceRequestAllowedNotifier::Observer {
+      public web_resource::ResourceRequestAllowedNotifier::Observer {
  public:
   WebResourceService(PrefService* prefs,
                      const GURL& web_resource_server,
@@ -78,7 +78,8 @@ class WebResourceService
 
   // Helper class used to tell this service if it's allowed to make network
   // resource requests.
-  ResourceRequestAllowedNotifier resource_request_allowed_notifier_;
+  web_resource::ResourceRequestAllowedNotifier
+      resource_request_allowed_notifier_;
 
   // The tool that fetches the url data from the server.
   scoped_ptr<net::URLFetcher> url_fetcher_;

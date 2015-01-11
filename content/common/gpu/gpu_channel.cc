@@ -20,15 +20,18 @@
 #include "base/timer/timer.h"
 #include "content/common/gpu/devtools_gpu_agent.h"
 #include "content/common/gpu/gpu_channel_manager.h"
+#include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/gpu/sync_point_manager.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "gpu/command_buffer/service/image_factory.h"
 #include "gpu/command_buffer/service/mailbox_manager_impl.h"
+#include "gpu/command_buffer/service/sync_point_manager.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/message_filter.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_image_shared_memory.h"
 #include "ui/gl/gl_surface.h"
 
 #if defined(OS_POSIX)
@@ -70,10 +73,11 @@ const int64 kStopPreemptThresholdMs = kVsyncIntervalMs;
 // - it generates mailbox names for clients of the GPU process on the IO thread.
 class GpuChannelMessageFilter : public IPC::MessageFilter {
  public:
-  GpuChannelMessageFilter(base::WeakPtr<GpuChannel> gpu_channel,
-                          scoped_refptr<SyncPointManager> sync_point_manager,
-                          scoped_refptr<base::MessageLoopProxy> message_loop,
-                          bool future_sync_points)
+  GpuChannelMessageFilter(
+      base::WeakPtr<GpuChannel> gpu_channel,
+      scoped_refptr<gpu::SyncPointManager> sync_point_manager,
+      scoped_refptr<base::MessageLoopProxy> message_loop,
+      bool future_sync_points)
       : preemption_state_(IDLE),
         gpu_channel_(gpu_channel),
         sender_(NULL),
@@ -348,7 +352,7 @@ class GpuChannelMessageFilter : public IPC::MessageFilter {
 
   static void InsertSyncPointOnMainThread(
       base::WeakPtr<GpuChannel> gpu_channel,
-      scoped_refptr<SyncPointManager> manager,
+      scoped_refptr<gpu::SyncPointManager> manager,
       int32 routing_id,
       bool retire,
       uint32 sync_point) {
@@ -377,7 +381,7 @@ class GpuChannelMessageFilter : public IPC::MessageFilter {
   // passed through - therefore the WeakPtr assumptions are respected.
   base::WeakPtr<GpuChannel> gpu_channel_;
   IPC::Sender* sender_;
-  scoped_refptr<SyncPointManager> sync_point_manager_;
+  scoped_refptr<gpu::SyncPointManager> sync_point_manager_;
   scoped_refptr<base::MessageLoopProxy> message_loop_;
   scoped_refptr<gpu::PreemptionFlag> preempting_flag_;
 
@@ -816,6 +820,36 @@ uint64 GpuChannel::GetMemoryUsage() {
     size += it.GetCurrentValue()->GetMemoryUsage();
   }
   return size;
+}
+
+scoped_refptr<gfx::GLImage> GpuChannel::CreateImageForGpuMemoryBuffer(
+    const gfx::GpuMemoryBufferHandle& handle,
+    const gfx::Size& size,
+    gfx::GpuMemoryBuffer::Format format,
+    uint32 internalformat) {
+  switch (handle.type) {
+    case gfx::SHARED_MEMORY_BUFFER: {
+      scoped_refptr<gfx::GLImageSharedMemory> image(
+          new gfx::GLImageSharedMemory(size, internalformat));
+      if (!image->Initialize(handle, format))
+        return scoped_refptr<gfx::GLImage>();
+
+      return image;
+    }
+    default: {
+      GpuChannelManager* manager = gpu_channel_manager();
+      if (!manager->gpu_memory_buffer_factory())
+        return scoped_refptr<gfx::GLImage>();
+
+      return manager->gpu_memory_buffer_factory()
+          ->AsImageFactory()
+          ->CreateImageForGpuMemoryBuffer(handle,
+                                          size,
+                                          format,
+                                          internalformat,
+                                          client_id_);
+    }
+  }
 }
 
 }  // namespace content

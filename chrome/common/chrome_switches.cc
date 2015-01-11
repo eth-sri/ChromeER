@@ -21,6 +21,11 @@ namespace switches {
 // all work out.
 // -----------------------------------------------------------------------------
 
+// If set, Chrome will activate any existing browsers for a specific profile.
+// Used for example by the fast-user switcher in the Windows JumpList.
+const char kActivateExistingProfileBrowser[] =
+    "activate-existing-profile-browser";
+
 // Allows third-party content included on a page to prompt for a HTTP basic
 // auth username/password pair.
 const char kAllowCrossOriginAuthPrompt[]    = "allow-cross-origin-auth-prompt";
@@ -71,9 +76,6 @@ const char kAppId[]                         = "app-id";
 // Specifies that the associated value should be launched in "application"
 // mode.
 const char kApp[]                           = "app";
-
-// Specifies an URL to use for app list start page.
-const char kAppListStartPageURL[]           = "app-list-start-page-url";
 
 // Overrides the apps checkout URL, which is used to determine when to expose
 // some private APIs.
@@ -294,6 +296,9 @@ const char kDisableOfflineAutoReloadVisibleOnly[] =
 // Disable the origin chip.
 const char kDisableOriginChip[]             = "disable-origin-chip";
 
+// Disable the out of process PDF plugin.
+const char kDisableOutOfProcessPdf[]        = "disable-out-of-process-pdf";
+
 // Disable the setting to prompt the user for their OS account password before
 // revealing plaintext passwords in the password manager.
 const char kDisablePasswordManagerReauthentication[] =
@@ -343,9 +348,6 @@ const char kDisableSearchButtonInOmnibox[]  =
 
 // Disables using bubbles for session restore request.
 const char kDisableSessionCrashedBubble[] = "disable-session-crashed-bubble";
-
-// Disable SPDY/3.1. This is a temporary testing flag.
-const char kDisableSpdy31[]                 = "disable-spdy31";
 
 // Disables the suggestions service.
 const char kDisableSuggestionsService[]     = "disable-suggestions-service";
@@ -449,10 +451,13 @@ const char kEnhancedBookmarksExperiment[] = "enhanced-bookmarks-experiment";
 // installing in Chrome.
 const char kEnableEphemeralApps[]           = "enable-ephemeral-apps";
 
-// Enables experimental hotword detection features. These features include
+// Enables v2 hotword detection features. These features include
 // using a new component extension for performing hotword detection, new UI
 // flows, and always-on detection.
 const char kEnableExperimentalHotwording[]  = "enable-experimental-hotwording";
+
+// Enables experimental hotword features specific to always-on.
+const char kEnableExperimentalHotwordHardware[] = "enable-hotword-hardware";
 
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
@@ -511,6 +516,9 @@ const char kDisableOfflineLoadStaleCache[]  =
 // to do that with "flag=value" flags.
 const char kEnableOriginChipAlways[]        = "enable-origin-chip-always";
 const char kEnableOriginChipOnSrp[]         = "enable-origin-chip-on-srp";
+
+// Enable the out of process PDF plugin.
+const char kEnableOutOfProcessPdf[]         = "enable-out-of-process-pdf";
 
 // Enables panels (always on-top docked pop-up windows).
 const char kEnablePanels[]                  = "enable-panels";
@@ -590,14 +598,6 @@ const char kDisableSettingsWindow[]          = "disable-settings-window";
 // Enable SPDY/4, aka HTTP/2. This is a temporary testing flag.
 const char kEnableSpdy4[]                   = "enable-spdy4";
 
-// Enables auto correction for misspelled words.
-const char kEnableSpellingAutoCorrect[]     = "enable-spelling-auto-correct";
-
-// Enables participation in the field trial for user feedback to spelling
-// service.
-const char kEnableSpellingFeedbackFieldTrial[] =
-    "enable-spelling-feedback-field-trial";
-
 // Enables a feature that holds back some SSLConnectJobs in order to
 // minimize the number of full SSL handshakes completed.
 const char kEnableSSLConnectJobWaiting[] = "enable-ssl-connect-job-waiting";
@@ -641,9 +641,6 @@ const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 // Enables Alternate-Protocol when the port is user controlled (> 1024).
 const char kEnableUserAlternateProtocolPorts[] =
     "enable-user-controlled-alternate-protocol-ports";
-
-// Uses WebSocket over SPDY.
-const char kEnableWebSocketOverSpdy[]       = "enable-websocket-over-spdy";
 
 // Enables the Website Settings page on the Settings page.
 const char kEnableWebsiteSettingsManager[]  = "enable-website-settings-manager";
@@ -890,9 +887,6 @@ const char kOriginToForceQuicOn[]           = "origin-to-force-quic-on";
 // chrome process started. (See ProcessSingleton for more details.)
 const char kOriginalProcessStartTime[]      = "original-process-start-time";
 
-// Enable the out of process PDF plugin.
-const char kOutOfProcessPdf[] = "out-of-process-pdf";
-
 // Packages an extension to a .crx installable file from a given directory.
 const char kPackExtension[]                 = "pack-extension";
 
@@ -1111,6 +1105,15 @@ const char kSpeculativeResourcePrefetchingLearning[] = "learning";
 // Speculative resource prefetching is enabled.
 const char kSpeculativeResourcePrefetchingEnabled[] = "enabled";
 
+#if defined(ENABLE_SPELLCHECK)
+// Enables auto correction for misspelled words.
+const char kEnableSpellingAutoCorrect[]     = "enable-spelling-auto-correct";
+
+// Enables participation in the field trial for user feedback to spelling
+// service.
+const char kEnableSpellingFeedbackFieldTrial[] =
+    "enable-spelling-feedback-field-trial";
+
 // Specifies the URL where spelling service feedback data will be sent instead
 // of the default URL. This switch is for temporary testing only.
 // TODO(rouslan): Remove this flag when feedback testing is complete. Revisit by
@@ -1124,6 +1127,7 @@ const char kSpellingServiceFeedbackUrl[] = "spelling-service-feedback-url";
 // August 2013.
 const char kSpellingServiceFeedbackIntervalSeconds[] =
     "spelling-service-feedback-interval-seconds";
+#endif
 
 // Specifies the maximum SSL/TLS version ("ssl3", "tls1", "tls1.1", or
 // "tls1.2").
@@ -1136,6 +1140,13 @@ const char kSSLVersionMin[]                 = "ssl-version-min";
 // Specifies the minimum SSL/TLS version ("ssl3", "tls1", "tls1.1", or
 // "tls1.2") that TLS fallback will accept.
 const char kSSLVersionFallbackMin[]         = "ssl-version-fallback-min";
+
+// These values aren't switches, but rather the values that kSSLVersionMax,
+// kSSLVersionMin and kSSLVersionFallbackMin can have.
+const char kSSLVersionSSLv3[]               = "ssl3";
+const char kSSLVersionTLSv1[]               = "tls1";
+const char kSSLVersionTLSv11[]              = "tls1.1";
+const char kSSLVersionTLSv12[]              = "tls1.2";
 
 // Starts the browser maximized, regardless of any previous settings.
 const char kStartMaximized[]                = "start-maximized";
@@ -1227,6 +1238,10 @@ const char kWindowSize[]                    = "window-size";
 // Uses WinHTTP to fetch and evaluate PAC scripts. Otherwise the default is to
 // use Chromium's network stack to fetch, and V8 to evaluate.
 const char kWinHttpProxyResolver[]          = "winhttp-proxy-resolver";
+
+// Specifies which category option was clicked in the Windows Jumplist that
+// resulted in a browser startup.
+const char kWinJumplistAction[]             = "win-jumplist-action";
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 // Specifies a custom URL for fetching plug-ins metadata. Used for testing.
@@ -1335,7 +1350,7 @@ const char kWaitForMutex[]                  = "wait-for-mutex";
 const char kWindows8Search[]                = "windows8-search";
 #endif
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
 // Enables support to debug printing subsystem.
 const char kDebugPrint[] = "debug-print";
 #endif
@@ -1349,6 +1364,17 @@ bool AboutInSettingsEnabled() {
   return SettingsWindowEnabled() &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           ::switches::kDisableAboutInSettings);
+}
+
+bool OutOfProcessPdfEnabled() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(kEnableOutOfProcessPdf))
+    return true;
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(kDisableOutOfProcessPdf))
+    return false;
+
+  // Default.
+  return false;
 }
 
 bool SettingsWindowEnabled() {

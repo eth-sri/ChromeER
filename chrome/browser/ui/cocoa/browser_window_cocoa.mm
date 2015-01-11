@@ -140,7 +140,7 @@ void BrowserWindowCocoa::Show() {
     [window() orderOut:controller_];
     [window() miniaturize:controller_];
   } else if (initial_show_state_ == ui::SHOW_STATE_FULLSCREEN) {
-    chrome::ToggleFullscreenWithChromeOrFallback(browser_);
+    chrome::ToggleFullscreenWithToolbarOrFallback(browser_);
   }
   initial_show_state_ = ui::SHOW_STATE_DEFAULT;
 
@@ -244,7 +244,7 @@ bool BrowserWindowCocoa::IsActive() const {
   return [window() isKeyWindow];
 }
 
-gfx::NativeWindow BrowserWindowCocoa::GetNativeWindow() {
+gfx::NativeWindow BrowserWindowCocoa::GetNativeWindow() const {
   return window();
 }
 
@@ -354,17 +354,14 @@ void BrowserWindowCocoa::Restore() {
 // See browser_window_controller.h for a detailed explanation of the logic in
 // this method.
 void BrowserWindowCocoa::EnterFullscreen(const GURL& url,
-                                         FullscreenExitBubbleType bubble_type) {
-  if (browser_->fullscreen_controller()->IsWindowFullscreenForTabOrPending()) {
+                                         FullscreenExitBubbleType bubble_type,
+                                         bool with_toolbar) {
+  if (browser_->fullscreen_controller()->IsWindowFullscreenForTabOrPending())
     [controller_ enterWebContentFullscreenForURL:url bubbleType:bubble_type];
-    return;
-  }
-
-  if (url.is_empty()) {
-    [controller_ enterPresentationMode];
-  } else {
+  else if (!url.is_empty())
     [controller_ enterExtensionFullscreenForURL:url bubbleType:bubble_type];
-  }
+  else
+    [controller_ enterBrowserFullscreenWithToolbar:with_toolbar];
 }
 
 void BrowserWindowCocoa::ExitFullscreen() {
@@ -388,6 +385,18 @@ bool BrowserWindowCocoa::IsFullscreen() const {
 
 bool BrowserWindowCocoa::IsFullscreenBubbleVisible() const {
   return false;
+}
+
+bool BrowserWindowCocoa::SupportsFullscreenWithToolbar() const {
+  return chrome::mac::SupportsSystemFullscreen();
+}
+
+void BrowserWindowCocoa::UpdateFullscreenWithToolbar(bool with_toolbar) {
+  [controller_ updateFullscreenWithToolbar:with_toolbar];
+}
+
+bool BrowserWindowCocoa::IsFullscreenWithToolbar() const {
+  return IsFullscreen() && ![controller_ inPresentationMode];
 }
 
 void BrowserWindowCocoa::ConfirmAddSearchProvider(
@@ -419,6 +428,10 @@ void BrowserWindowCocoa::UpdateReloadStopState(bool is_loading, bool force) {
 
 void BrowserWindowCocoa::UpdateToolbar(content::WebContents* contents) {
   [controller_ updateToolbarWithContents:contents];
+}
+
+void BrowserWindowCocoa::ResetToolbarTabState(content::WebContents* contents) {
+  [controller_ resetTabState:contents];
 }
 
 void BrowserWindowCocoa::FocusToolbar() {
@@ -613,23 +626,6 @@ void BrowserWindowCocoa::Copy() {
 
 void BrowserWindowCocoa::Paste() {
   [NSApp sendAction:@selector(paste:) to:nil from:nil];
-}
-
-void BrowserWindowCocoa::EnterFullscreenWithChrome() {
-  CHECK(chrome::mac::SupportsSystemFullscreen());
-  [controller_ enterFullscreenWithChrome];
-}
-
-void BrowserWindowCocoa::EnterFullscreenWithoutChrome() {
-  [controller_ enterPresentationMode];
-}
-
-bool BrowserWindowCocoa::IsFullscreenWithChrome() {
-  return IsFullscreen() && ![controller_ inPresentationMode];
-}
-
-bool BrowserWindowCocoa::IsFullscreenWithoutChrome() {
-  return IsFullscreen() && [controller_ inPresentationMode];
 }
 
 WindowOpenDisposition BrowserWindowCocoa::GetDispositionForPopupBounds(

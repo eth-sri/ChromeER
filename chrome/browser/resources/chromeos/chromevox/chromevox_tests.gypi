@@ -30,6 +30,14 @@
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
         'chromevox_test_deps_js',
       ],
+      'conditions': [
+        [ 'cld_version==0 or cld_version==2', {
+          'dependencies': [
+            # Interactive tests should use whatever CLD2 data access mode that
+            # the application embedder is using.
+            '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld2_platform_impl', ],
+        }],
+      ],
       'defines': [
         'HAS_OUT_OF_PROC_TEST_RUNNER',
       ],
@@ -164,8 +172,10 @@
         'chromevox/injected/live_regions_test.unitjs',
         'chromevox/injected/user_commands_test.unitjs',
         'chromevox/injected/navigation_manager_test.unitjs',
+        'cvox2/background/automation_util_test.extjs',
         'cvox2/background/background_test.extjs',
         'cvox2/background/cursors_test.extjs',
+        'cvox2/background/output_test.extjs',
         'host/chrome/braille_display_manager_test.unitjs',
         'host/chrome/braille_input_handler_test.unitjs',
         'host/chrome/braille_integration_test.unitjs',

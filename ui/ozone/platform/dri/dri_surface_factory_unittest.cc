@@ -36,11 +36,11 @@ class MockScreenManager : public ui::ScreenManager {
                     ui::ScanoutBufferGenerator* buffer_generator)
       : ScreenManager(dri, buffer_generator),
         dri_(dri) {}
-  virtual ~MockScreenManager() {}
+  ~MockScreenManager() override {}
 
   // Normally we'd use DRM to figure out the controller configuration. But we
   // can't use DRM in unit tests, so we just create a fake configuration.
-  virtual void ForceInitializationOfPrimaryDisplay() override {
+  void ForceInitializationOfPrimaryDisplay() override {
     ConfigureDisplayController(
         kDefaultCrtc, kDefaultConnector, gfx::Point(), kDefaultMode);
   }
@@ -57,8 +57,9 @@ class DriSurfaceFactoryTest : public testing::Test {
  public:
   DriSurfaceFactoryTest() {}
 
-  virtual void SetUp() override;
-  virtual void TearDown() override;
+  void SetUp() override;
+  void TearDown() override;
+
  protected:
   scoped_ptr<base::MessageLoop> message_loop_;
   scoped_ptr<ui::MockDriWrapper> dri_;
@@ -78,11 +79,12 @@ void DriSurfaceFactoryTest::SetUp() {
   screen_manager_.reset(new MockScreenManager(dri_.get(),
                                               buffer_generator_.get()));
   window_delegate_manager_.reset(new ui::DriWindowDelegateManager());
-  factory_.reset(new ui::DriSurfaceFactory(
-      dri_.get(), screen_manager_.get(), window_delegate_manager_.get()));
+  factory_.reset(
+      new ui::DriSurfaceFactory(dri_.get(), window_delegate_manager_.get()));
 
   scoped_ptr<ui::DriWindowDelegate> window_delegate(
       new ui::DriWindowDelegateImpl(ui::DriSurfaceFactory::kDefaultWidgetHandle,
+                                    dri_.get(), window_delegate_manager_.get(),
                                     screen_manager_.get()));
   window_delegate->Initialize();
   window_delegate_manager_->AddWindowDelegate(
@@ -114,42 +116,4 @@ TEST_F(DriSurfaceFactoryTest, SuccessfulWidgetRealization) {
 
   EXPECT_TRUE(factory_->CreateCanvasForWidget(
       ui::DriSurfaceFactory::kDefaultWidgetHandle));
-}
-
-TEST_F(DriSurfaceFactoryTest, SetCursorImage) {
-  EXPECT_EQ(ui::DriSurfaceFactory::INITIALIZED,
-            factory_->InitializeHardware());
-
-  scoped_ptr<ui::SurfaceOzoneCanvas> surf = factory_->CreateCanvasForWidget(
-      ui::DriSurfaceFactory::kDefaultWidgetHandle);
-  EXPECT_TRUE(surf);
-
-  SkBitmap image;
-  SkImageInfo info = SkImageInfo::Make(
-      6, 4, kN32_SkColorType, kPremul_SkAlphaType);
-  image.allocPixels(info);
-  image.eraseColor(SK_ColorWHITE);
-
-  std::vector<SkBitmap> cursor_bitmaps;
-  cursor_bitmaps.push_back(image);
-  factory_->SetHardwareCursor(ui::DriSurfaceFactory::kDefaultWidgetHandle,
-                              cursor_bitmaps,
-                              gfx::Point(4, 2),
-                              0);
-
-  SkBitmap cursor;
-  // Buffers 0 and 1 are the cursor buffers.
-  cursor.setInfo(dri_->buffers()[1]->getCanvas()->imageInfo());
-  EXPECT_TRUE(dri_->buffers()[1]->getCanvas()->readPixels(&cursor, 0, 0));
-
-  // Check that the frontbuffer is displaying the right image as set above.
-  for (int i = 0; i < cursor.height(); ++i) {
-    for (int j = 0; j < cursor.width(); ++j) {
-      if (j < info.width() && i < info.height())
-        EXPECT_EQ(SK_ColorWHITE, cursor.getColor(j, i));
-      else
-        EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
-                  cursor.getColor(j, i));
-    }
-  }
 }

@@ -25,9 +25,11 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   """The backend for controlling a locally-executed browser instance, on Linux,
   Mac or Windows.
   """
-  def __init__(self, browser_options, executable, flash_path, is_content_shell,
-               browser_directory, output_profile_path, extensions_to_load):
+  def __init__(self, desktop_platform_backend, browser_options, executable,
+               flash_path, is_content_shell, browser_directory,
+               output_profile_path, extensions_to_load):
     super(DesktopBrowserBackend, self).__init__(
+        desktop_platform_backend,
         supports_tab_control=not is_content_shell,
         supports_extensions=not is_content_shell,
         browser_options=browser_options,
@@ -96,10 +98,10 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     return r'\\.\pipe\%s_service' % os.path.basename(self._tmp_minidump_dir)
 
   def _StartCrashService(self):
-    os_name = self._browser.platform.GetOSName()
+    os_name = self.browser.platform.GetOSName()
     if os_name != 'win':
       return None
-    arch_name = self._browser.platform.GetArchName()
+    arch_name = self.browser.platform.GetArchName()
     return subprocess.Popen([
         support_binaries.FindPath('crash_service', arch_name, os_name),
         '--no-window',
@@ -241,8 +243,19 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       logging.warning('Crash dump is older than 5 minutes. May not be correct.')
     return most_recent_dump
 
+  def _IsExecutableStripped(self):
+    if self.browser.platform.GetOSName() == 'mac':
+      symbols = subprocess.check_output(['/usr/bin/nm', self._executable])
+      num_symbols = len(symbols.splitlines())
+      # We assume that if there are more than 10 symbols the executable is not
+      # stripped.
+      return num_symbols < 10
+    else:
+      return False
+
+
   def _GetStackFromMinidump(self, minidump):
-    os_name = self._browser.platform.GetOSName()
+    os_name = self.browser.platform.GetOSName()
     if os_name == 'win':
       cdb = self._GetCdbPath()
       if not cdb:
@@ -254,7 +267,7 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       stack_end = output.find('quit:')
       return output[stack_start:stack_end]
 
-    arch_name = self._browser.platform.GetArchName()
+    arch_name = self.browser.platform.GetArchName()
     stackwalk = support_binaries.FindPath(
         'minidump_stackwalk', arch_name, os_name)
     if not stackwalk:
@@ -285,9 +298,17 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
         os.makedirs(symbol_path)
         shutil.copyfile(symbol, os.path.join(symbol_path, binary + '.sym'))
     else:
-      logging.info('Dumping breakpad symbols')
+
+      # On some platforms generating the symbol table can be very time
+      # consuming, skip it if there's nothing to dump.
+      if self._IsExecutableStripped():
+        logging.info('%s appears to be stripped, skipping symbol dump.' % (
+            self._executable))
+        return
+
+      logging.info('Dumping breakpad symbols.')
       generate_breakpad_symbols_path = os.path.join(
-          util.GetChromiumSrcDir(), "components", "breakpad",
+          util.GetChromiumSrcDir(), "components", "crash",
           "tools", "generate_breakpad_symbols.py")
       cmd = [
           sys.executable,
@@ -309,21 +330,41 @@ class DesktopBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
   def GetStackTrace(self):
     most_recent_dump = self._GetMostRecentMinidump()
     if not most_recent_dump:
-      logging.warning('No crash dump found. Returning browser stdout.')
-      return self.GetStandardOutput()
+      return 'No crash dump found. Returning browser stdout:\n' + (
+          self.GetStandardOutput())
 
+    logging.info('minidump found: %s' % most_recent_dump)
     stack = self._GetStackFromMinidump(most_recent_dump)
     if not stack:
-      logging.warning('Failed to symbolize minidump. Returning browser stdout.')
-      return self.GetStandardOutput()
+      return 'Failed to symbolize minidump. Returning browser stdout:\n' + (
+          self.GetStandardOutput())
 
     return stack
 
   def __del__(self):
     self.Close()
 
+  def _TryCooperativeShutdown(self):
+    if self.browser.platform.IsCooperativeShutdownSupported():
+      # Ideally there would be a portable, cooperative shutdown
+      # mechanism for the browser. This seems difficult to do
+      # correctly for all embedders of the content API. The only known
+      # problem with unclean shutdown of the browser process is on
+      # Windows, where suspended child processes frequently leak. For
+      # now, just solve this particular problem. See Issue 424024.
+      if self.browser.platform.CooperativelyShutdown(self._proc, "chrome"):
+        try:
+          util.WaitFor(lambda: not self.IsBrowserRunning(), timeout=5)
+          logging.info('Successfully shut down browser cooperatively')
+        except util.TimeoutException as e:
+          logging.warning('Failed to cooperatively shutdown. ' +
+                          'Proceeding to terminate: ' + str(e))
+
   def Close(self):
     super(DesktopBrowserBackend, self).Close()
+
+    if self.IsBrowserRunning():
+      self._TryCooperativeShutdown()
 
     # Shutdown politely if the profile may be used again.
     if self._output_profile_path and self.IsBrowserRunning():

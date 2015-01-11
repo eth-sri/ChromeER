@@ -33,6 +33,8 @@ class BluetoothGattDescriptorClient;
 class BluetoothGattManagerClient;
 class BluetoothGattServiceClient;
 class BluetoothInputClient;
+class BluetoothMediaClient;
+class BluetoothMediaTransportClient;
 class BluetoothProfileManagerClient;
 class CrasAudioClient;
 class CrosDisksClient;
@@ -52,13 +54,14 @@ class NfcRecordClient;
 class NfcTagClient;
 class PermissionBrokerClient;
 class PowerManagerClient;
-class PowerPolicyController;
+class PrivetDaemonClient;
 class SessionManagerClient;
 class ShillDeviceClient;
 class ShillIPConfigClient;
 class ShillManagerClient;
 class ShillProfileClient;
 class ShillServiceClient;
+class ShillThirdPartyVpnDriverClient;
 class SMSClient;
 class SystemClockClient;
 class UpdateEngineClient;
@@ -121,6 +124,8 @@ class CHROMEOS_EXPORT DBusThreadManager {
   BluetoothGattManagerClient* GetBluetoothGattManagerClient();
   BluetoothGattServiceClient* GetBluetoothGattServiceClient();
   BluetoothInputClient* GetBluetoothInputClient();
+  BluetoothMediaClient* GetBluetoothMediaClient();
+  BluetoothMediaTransportClient* GetBluetoothMediaTransportClient();
   BluetoothProfileManagerClient* GetBluetoothProfileManagerClient();
   CrasAudioClient* GetCrasAudioClient();
   CrosDisksClient* GetCrosDisksClient();
@@ -139,13 +144,14 @@ class CHROMEOS_EXPORT DBusThreadManager {
   NfcTagClient* GetNfcTagClient();
   PermissionBrokerClient* GetPermissionBrokerClient();
   PowerManagerClient* GetPowerManagerClient();
-  PowerPolicyController* GetPowerPolicyController();
+  PrivetDaemonClient* GetPrivetDaemonClient();
   SessionManagerClient* GetSessionManagerClient();
   ShillDeviceClient* GetShillDeviceClient();
   ShillIPConfigClient* GetShillIPConfigClient();
   ShillManagerClient* GetShillManagerClient();
   ShillServiceClient* GetShillServiceClient();
   ShillProfileClient* GetShillProfileClient();
+  ShillThirdPartyVpnDriverClient* GetShillThirdPartyVpnDriverClient();
   SMSClient* GetSMSClient();
   SystemClockClient* GetSystemClockClient();
   UpdateEngineClient* GetUpdateEngineClient();
@@ -184,7 +190,6 @@ class CHROMEOS_EXPORT DBusThreadManager {
   scoped_ptr<base::Thread> dbus_thread_;
   scoped_refptr<dbus::Bus> system_bus_;
   scoped_ptr<DBusClientBundle> client_bundle_;
-  scoped_ptr<PowerPolicyController> power_policy_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(DBusThreadManager);
 };
@@ -206,6 +211,9 @@ class CHROMEOS_EXPORT DBusThreadManagerSetter {
   void SetBluetoothGattServiceClient(
       scoped_ptr<BluetoothGattServiceClient> client);
   void SetBluetoothInputClient(scoped_ptr<BluetoothInputClient> client);
+  void SetBluetoothMediaClient(scoped_ptr<BluetoothMediaClient> client);
+  void SetBluetoothMediaTransportClient(
+      scoped_ptr<BluetoothMediaTransportClient> client);
   void SetBluetoothProfileManagerClient(
       scoped_ptr<BluetoothProfileManagerClient> client);
   void SetCrasAudioClient(scoped_ptr<CrasAudioClient> client);
@@ -230,6 +238,7 @@ class CHROMEOS_EXPORT DBusThreadManagerSetter {
   void SetNfcTagClient(scoped_ptr<NfcTagClient> client);
   void SetPermissionBrokerClient(scoped_ptr<PermissionBrokerClient> client);
   void SetPowerManagerClient(scoped_ptr<PowerManagerClient> client);
+  void SetPrivetDaemonClient(scoped_ptr<PrivetDaemonClient> client);
   void SetSessionManagerClient(scoped_ptr<SessionManagerClient> client);
   void SetSMSClient(scoped_ptr<SMSClient> client);
   void SetSystemClockClient(scoped_ptr<SystemClockClient> client);

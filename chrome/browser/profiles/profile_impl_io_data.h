@@ -14,6 +14,8 @@
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "content/public/browser/cookie_store_factory.h"
 
+class ChromeSdchPolicy;
+
 namespace chrome_browser_net {
 class Predictor;
 }  // namespace chrome_browser_net
@@ -69,7 +71,9 @@ class ProfileImplIOData : public ProfileIOData {
         scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
             data_reduction_proxy_params,
         scoped_ptr<data_reduction_proxy::DataReductionProxyStatisticsPrefs>
-            data_reduction_proxy_statistics_prefs);
+            data_reduction_proxy_statistics_prefs,
+        scoped_ptr<data_reduction_proxy::DataReductionProxyEventStore>
+            data_reduction_proxy_event_store);
 
     // These Create*ContextGetter() functions are only exposed because the
     // circular relationship between Profile, ProfileIOData::Handle, and the
@@ -236,6 +240,7 @@ class ProfileImplIOData : public ProfileIOData {
       domain_reliability_monitor_;
 
   mutable scoped_ptr<net::SdchManager> sdch_manager_;
+  mutable scoped_ptr<ChromeSdchPolicy> sdch_policy_;
 
   mutable BooleanPrefMember data_reduction_proxy_enabled_;
 

@@ -21,18 +21,21 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/geolocation/simple_geolocation_provider.h"
 #include "chrome/browser/chromeos/login/enrollment/auto_enrollment_check_screen.h"
+#include "chrome/browser/chromeos/login/enrollment/enrollment_mode.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/screens/device_disabled_screen.h"
+#include "chrome/browser/chromeos/login/screens/enable_debugging_screen.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
 #include "chrome/browser/chromeos/login/screens/eula_screen.h"
 #include "chrome/browser/chromeos/login/screens/hid_detection_screen.h"
@@ -53,6 +56,7 @@
 #include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/system/device_disabling_manager.h"
 #include "chrome/browser/chromeos/timezone/timezone_provider.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/metrics/metrics_reporting_state.h"
@@ -70,6 +74,7 @@
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "chromeos/settings/cros_settings_names.h"
+#include "chromeos/settings/cros_settings_provider.h"
 #include "chromeos/settings/timezone_settings.h"
 #include "components/crash/app/breakpad_linux.h"
 #include "components/pairing/bluetooth_controller_pairing_controller.h"
@@ -148,6 +153,7 @@ const char WizardController::kLoginScreenName[] = "login";
 const char WizardController::kUpdateScreenName[] = "update";
 const char WizardController::kUserImageScreenName[] = "image";
 const char WizardController::kEulaScreenName[] = "eula";
+const char WizardController::kEnableDebuggingScreenName[] = "debugging";
 const char WizardController::kEnrollmentScreenName[] = "enroll";
 const char WizardController::kResetScreenName[] = "reset";
 const char WizardController::kKioskEnableScreenName[] = "kiosk-enable";
@@ -302,16 +308,17 @@ BaseScreen* WizardController::CreateScreen(const std::string& screen_name) {
     return new chromeos::UserImageScreen(
         this, oobe_display_->GetUserImageScreenActor());
   } else if (screen_name == kEulaScreenName) {
-    scoped_ptr<chromeos::EulaScreen> screen(
-        new chromeos::EulaScreen(this, oobe_display_->GetEulaScreenActor()));
-    screen->SetDelegate(this);
-    return screen.release();
+    return new chromeos::EulaScreen(this, this, oobe_display_->GetEulaView());
   } else if (screen_name == kEnrollmentScreenName) {
     return new chromeos::EnrollmentScreen(
         this, oobe_display_->GetEnrollmentScreenActor());
   } else if (screen_name == kResetScreenName) {
     return new chromeos::ResetScreen(this,
                                      oobe_display_->GetResetScreenActor());
+  } else if (screen_name == kEnableDebuggingScreenName) {
+    return new chromeos::EnableDebuggingScreen(
+        this,
+        oobe_display_->GetEnableDebuggingScreenActor());
   } else if (screen_name == kKioskEnableScreenName) {
     return new chromeos::KioskEnableScreen(
         this, oobe_display_->GetKioskEnableScreenActor());
@@ -338,25 +345,21 @@ BaseScreen* WizardController::CreateScreen(const std::string& screen_name) {
       shark_controller_.reset(
           new pairing_chromeos::BluetoothControllerPairingController());
     }
-    scoped_ptr<chromeos::ControllerPairingScreen> screen(
-        new ControllerPairingScreen(
-            this,
-            oobe_display_->GetControllerPairingScreenActor(),
-            shark_controller_.get()));
-    screen->SetDelegate(this);
-    return screen.release();
+    return new ControllerPairingScreen(
+        this,
+        this,
+        oobe_display_->GetControllerPairingScreenActor(),
+        shark_controller_.get());
   } else if (screen_name == kHostPairingScreenName) {
     if (!remora_controller_) {
       remora_controller_.reset(
           new pairing_chromeos::BluetoothHostPairingController());
       remora_controller_->StartPairing();
     }
-    scoped_ptr<HostPairingScreen> screen(
-        new HostPairingScreen(this,
-                              oobe_display_->GetHostPairingScreenActor(),
-                              remora_controller_.get()));
-    screen->SetDelegate(this);
-    return screen.release();
+    return new HostPairingScreen(this,
+                                 this,
+                                 oobe_display_->GetHostPairingScreenActor(),
+                                 remora_controller_.get());
   } else if (screen_name == kDeviceDisabledScreenName) {
     return new chromeos::DeviceDisabledScreen(
         this, oobe_display_->GetDeviceDisabledScreenActor());
@@ -439,17 +442,16 @@ void WizardController::ShowEnrollmentScreen() {
     screen_parameters_->GetString("user", &user);
   }
 
-  EnrollmentScreenActor::EnrollmentMode mode =
-      EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL;
+  EnrollmentMode mode = ENROLLMENT_MODE_MANUAL;
   EnrollmentScreen* screen = EnrollmentScreen::Get(this);
   std::string enrollment_domain = GetForcedEnrollmentDomain();
   if (is_auto_enrollment) {
-    mode = EnrollmentScreenActor::ENROLLMENT_MODE_AUTO;
+    mode = ENROLLMENT_MODE_AUTO;
   } else if (enrollment_recovery_) {
-    mode = EnrollmentScreenActor::ENROLLMENT_MODE_RECOVERY;
+    mode = ENROLLMENT_MODE_RECOVERY;
     enrollment_domain = GetEnrollmentRecoveryDomain();
   } else if (ShouldAutoStartEnrollment() && !CanExitEnrollment()) {
-    mode = EnrollmentScreenActor::ENROLLMENT_MODE_FORCED;
+    mode = ENROLLMENT_MODE_FORCED;
   }
 
   screen->SetParameters(mode, enrollment_domain, user,
@@ -474,6 +476,12 @@ void WizardController::ShowKioskAutolaunchScreen() {
   VLOG(1) << "Showing kiosk autolaunch screen.";
   SetStatusAreaVisible(false);
   SetCurrentScreen(GetScreen(kKioskAutolaunchScreenName));
+}
+
+void WizardController::ShowEnableDebuggingScreen() {
+  VLOG(1) << "Showing enable developer features screen.";
+  SetStatusAreaVisible(false);
+  SetCurrentScreen(GetScreen(kEnableDebuggingScreenName));
 }
 
 void WizardController::ShowTermsOfServiceScreen() {
@@ -502,6 +510,8 @@ void WizardController::ShowAutoEnrollmentCheckScreen() {
   VLOG(1) << "Showing Auto-enrollment check screen.";
   SetStatusAreaVisible(true);
   AutoEnrollmentCheckScreen* screen = AutoEnrollmentCheckScreen::Get(this);
+  if (retry_auto_enrollment_check_)
+    screen->ClearState();
   screen->set_auto_enrollment_controller(host_->GetAutoEnrollmentController());
   SetCurrentScreen(screen);
 }
@@ -542,7 +552,7 @@ void WizardController::SkipToLoginForTesting(
   VLOG(1) << "SkipToLoginForTesting.";
   StartupUtils::MarkEulaAccepted();
   PerformPostEulaActions();
-  OnDeviceNotDisabled();
+  OnDeviceDisabledChecked(false /* device_disabled */);
 }
 
 void WizardController::AddObserver(Observer* observer) {
@@ -706,7 +716,7 @@ void WizardController::OnEnrollmentDone() {
     ShowLoginScreen(LoginScreenContext());
 }
 
-void WizardController::OnResetCanceled() {
+void WizardController::OnDeviceModificationCanceled() {
   if (previous_screen_) {
     SetCurrentScreen(previous_screen_);
   } else {
@@ -758,10 +768,22 @@ void WizardController::OnHostPairingFinished() {
   InitiateOOBEUpdate();
 }
 
-void WizardController::OnDeviceNotDisabled() {
-  if (skip_update_enroll_after_eula_ ||
-      ShouldAutoStartEnrollment() ||
-      enrollment_recovery_) {
+void WizardController::OnAutoEnrollmentCheckCompleted() {
+  // Check whether the device is disabled. OnDeviceDisabledChecked() will be
+  // invoked when the result of this check is known. Until then, the current
+  // screen will remain visible and will continue showing a spinner.
+  g_browser_process->platform_part()->device_disabling_manager()->
+      CheckWhetherDeviceDisabledDuringOOBE(base::Bind(
+          &WizardController::OnDeviceDisabledChecked,
+          weak_factory_.GetWeakPtr()));
+}
+
+void WizardController::OnDeviceDisabledChecked(bool device_disabled) {
+  if (device_disabled) {
+    ShowDeviceDisabledScreen();
+  } else if (skip_update_enroll_after_eula_ ||
+             ShouldAutoStartEnrollment() ||
+             enrollment_recovery_) {
     ShowEnrollmentScreen();
   } else {
     PerformOOBECompletedActions();
@@ -898,6 +920,8 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
     ShowKioskEnableScreen();
   } else if (screen_name == kKioskAutolaunchScreenName) {
     ShowKioskAutolaunchScreen();
+  } else if (screen_name == kEnableDebuggingScreenName) {
+    ShowEnableDebuggingScreen();
   } else if (screen_name == kEnrollmentScreenName) {
     ShowEnrollmentScreen();
   } else if (screen_name == kTermsOfServiceScreenName) {
@@ -940,7 +964,9 @@ void WizardController::AdvanceToScreen(const std::string& screen_name) {
 
 ///////////////////////////////////////////////////////////////////////////////
 // WizardController, chromeos::BaseScreenDelegate overrides:
-void WizardController::OnExit(ExitCodes exit_code) {
+void WizardController::OnExit(BaseScreen& /* screen */,
+                              ExitCodes exit_code,
+                              const ::login::ScreenContext* /* context */) {
   VLOG(1) << "Wizard screen exit code: " << exit_code;
   std::string previous_screen_id = current_screen_->GetName();
   if (IsOOBEStepToTrack(previous_screen_id)) {
@@ -977,17 +1003,24 @@ void WizardController::OnExit(ExitCodes exit_code) {
     case EULA_BACK:
       ShowNetworkScreen();
       break;
+    case ENABLE_DEBUGGING_CANCELED:
+      OnDeviceModificationCanceled();
+      break;
+    case ENABLE_DEBUGGING_FINISHED:
+      OnDeviceModificationCanceled();
+      break;
     case ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED:
-      ShowDeviceDisabledScreen();
+      OnAutoEnrollmentCheckCompleted();
       break;
     case ENTERPRISE_ENROLLMENT_COMPLETED:
       OnEnrollmentDone();
       break;
     case ENTERPRISE_ENROLLMENT_BACK:
-      ShowNetworkScreen();
+      retry_auto_enrollment_check_ = true;
+      ShowAutoEnrollmentCheckScreen();
       break;
     case RESET_CANCELED:
-      OnResetCanceled();
+      OnDeviceModificationCanceled();
       break;
     case KIOSK_AUTOLAUNCH_CANCELED:
       OnKioskAutolaunchCanceled();
@@ -1015,9 +1048,6 @@ void WizardController::OnExit(ExitCodes exit_code) {
       break;
     case HOST_PAIRING_FINISHED:
       OnHostPairingFinished();
-      break;
-    case DEVICE_NOT_DISABLED:
-      OnDeviceNotDisabled();
       break;
     default:
       NOTREACHED();
@@ -1094,6 +1124,33 @@ void WizardController::AutoLaunchKioskApp() {
   KioskAppManager::App app_data;
   std::string app_id = KioskAppManager::Get()->GetAutoLaunchApp();
   CHECK(KioskAppManager::Get()->GetApp(app_id, &app_data));
+
+  // Wait for the |CrosSettings| to become either trusted or permanently
+  // untrusted.
+  const CrosSettingsProvider::TrustedStatus status =
+      CrosSettings::Get()->PrepareTrustedValues(base::Bind(
+          &WizardController::AutoLaunchKioskApp,
+          weak_factory_.GetWeakPtr()));
+  if (status == CrosSettingsProvider::TEMPORARILY_UNTRUSTED)
+    return;
+
+  if (status == CrosSettingsProvider::PERMANENTLY_UNTRUSTED) {
+    // If the |cros_settings_| are permanently untrusted, show an error message
+    // and refuse to auto-launch the kiosk app.
+    GetErrorScreen()->SetUIState(ErrorScreen::UI_STATE_LOCAL_STATE_ERROR);
+    SetStatusAreaVisible(false);
+    ShowErrorScreen();
+    return;
+  }
+
+  bool device_disabled = false;
+  CrosSettings::Get()->GetBoolean(kDeviceDisabled, &device_disabled);
+  if (device_disabled && system::DeviceDisablingManager::
+                             HonorDeviceDisablingDuringNormalOperation()) {
+    // If the device is disabled, bail out. A device disabled screen will be
+    // shown by the DeviceDisablingManager.
+    return;
+  }
 
   host_->StartAppLaunch(app_id, false /* diagnostic_mode */);
 }

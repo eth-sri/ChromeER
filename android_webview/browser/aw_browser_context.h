@@ -29,6 +29,7 @@ class WebContents;
 
 namespace data_reduction_proxy {
 class DataReductionProxyConfigurator;
+class DataReductionProxyEventStore;
 class DataReductionProxySettings;
 class DataReductionProxyStatisticsPrefs;
 }
@@ -65,6 +66,7 @@ class AwBrowserContext : public content::BrowserContext,
       content::WebContents* web_contents);
 
   static void SetDataReductionProxyEnabled(bool enabled);
+  static void SetLegacyCacheRemovalDelayForTest(int delay_ms);
 
   // Maps to BrowserMainParts::PreMainMessageLoopRun.
   void PreMainMessageLoopRun();
@@ -88,11 +90,16 @@ class AwBrowserContext : public content::BrowserContext,
   data_reduction_proxy::DataReductionProxySettings*
       GetDataReductionProxySettings();
 
+  data_reduction_proxy::DataReductionProxyEventStore*
+      GetDataReductionProxyEventStore();
+
   AwURLRequestContextGetter* GetAwURLRequestContext();
 
   void CreateUserPrefServiceIfNecessary();
 
   // content::BrowserContext implementation.
+  scoped_ptr<content::ZoomLevelDelegate> CreateZoomLevelDelegate(
+      const base::FilePath& partition_path) override;
   virtual base::FilePath GetPath() const override;
   virtual bool IsOffTheRecord() const override;
   virtual net::URLRequestContextGetter* GetRequestContext() override;
@@ -120,6 +127,10 @@ class AwBrowserContext : public content::BrowserContext,
   void CreateDataReductionProxyStatisticsIfNecessary();
   static bool data_reduction_proxy_enabled_;
 
+  // Delay, in milliseconds, before removing the legacy cache dir.
+  // This is non-const for testing purposes.
+  static int legacy_cache_removal_delay_ms_;
+
   // The file path where data for this context is persisted.
   base::FilePath context_storage_path_;
 
@@ -142,6 +153,8 @@ class AwBrowserContext : public content::BrowserContext,
       data_reduction_proxy_statistics_;
   scoped_ptr<data_reduction_proxy::DataReductionProxySettings>
       data_reduction_proxy_settings_;
+  scoped_ptr<data_reduction_proxy::DataReductionProxyEventStore>
+      data_reduction_proxy_event_store_;
 
   DISALLOW_COPY_AND_ASSIGN(AwBrowserContext);
 };

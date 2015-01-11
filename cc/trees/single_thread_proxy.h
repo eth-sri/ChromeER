@@ -19,6 +19,7 @@
 
 namespace cc {
 
+class BeginFrameSource;
 class ContextProvider;
 class LayerTreeHost;
 class LayerTreeHostSingleThreadClient;
@@ -30,7 +31,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
       LayerTreeHostSingleThreadClient* client,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
   ~SingleThreadProxy() override;
 
   // Proxy implementation
@@ -57,16 +59,15 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   bool SupportsImplScrolling() const override;
   void AsValueInto(base::debug::TracedValue* state) const override;
   bool MainFrameWillHappenForTesting() override;
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
 
   // SchedulerClient implementation
-  BeginFrameSource* ExternalBeginFrameSource() override;
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
   void ScheduledActionSendBeginMainFrame() override;
   DrawResult ScheduledActionDrawAndSwapIfPossible() override;
   DrawResult ScheduledActionDrawAndSwapForced() override;
   void ScheduledActionCommit() override;
   void ScheduledActionAnimate() override;
-  void ScheduledActionUpdateVisibleTiles() override;
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginOutputSurfaceCreation() override;
   void ScheduledActionManageTiles() override;
@@ -75,6 +76,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   base::TimeDelta BeginMainFrameToCommitDurationEstimate() override;
   base::TimeDelta CommitToActivateDurationEstimate() override;
   void DidBeginImplFrameDeadline() override;
+  void SendBeginFramesToChildren(const BeginFrameArgs& args) override;
 
   // LayerTreeHostImplClient implementation
   void UpdateRendererCapabilitiesOnImplThread() override;
@@ -87,11 +89,11 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void DidSwapBuffersCompleteOnImplThread() override;
   void OnCanDrawStateChanged(bool can_draw) override;
   void NotifyReadyToActivate() override;
+  void NotifyReadyToDraw() override;
   void SetNeedsRedrawOnImplThread() override;
   void SetNeedsRedrawRectOnImplThread(const gfx::Rect& dirty_rect) override;
   void SetNeedsAnimateOnImplThread() override;
   void SetNeedsManageTilesOnImplThread() override;
-  void DidInitializeVisibleTileOnImplThread() override;
   void SetNeedsCommitOnImplThread() override;
   void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> events) override;
@@ -114,10 +116,12 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   SingleThreadProxy(
       LayerTreeHost* layer_tree_host,
       LayerTreeHostSingleThreadClient* client,
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
   void BeginMainFrame();
   void BeginMainFrameAbortedOnImplThread();
+  void DoAnimate();
   void DoBeginMainFrame(const BeginFrameArgs& begin_frame_args);
   void DoCommit();
   DrawResult DoComposite(base::TimeTicks frame_begin_time,
@@ -127,7 +131,6 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void CommitComplete();
 
   bool ShouldComposite() const;
-  void UpdateBackgroundAnimateTicking();
   void ScheduleRequestNewOutputSurface();
 
   // Accessed on main thread only.
@@ -159,6 +162,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
 
   // This is the callback for the scheduled RequestNewOutputSurface.
   base::CancelableClosure output_surface_creation_callback_;
+
+  scoped_ptr<BeginFrameSource> external_begin_frame_source_;
 
   base::WeakPtrFactory<SingleThreadProxy> weak_factory_;
 

@@ -22,6 +22,7 @@
 #include "extensions/browser/notification_types.h"
 #include "extensions/browser/quota_service.h"
 #include "extensions/browser/runtime_data.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/file_util.h"
 
 using content::BrowserContext;
@@ -87,7 +88,8 @@ void ShellExtensionSystem::LaunchApp(const ExtensionId& extension_id) {
   const Extension* extension = ExtensionRegistry::Get(browser_context_)
                                    ->enabled_extensions()
                                    .GetByID(extension_id);
-  AppRuntimeEventRouter::DispatchOnLaunchedEvent(browser_context_, extension);
+  AppRuntimeEventRouter::DispatchOnLaunchedEvent(
+      browser_context_, extension, extensions::SOURCE_UNTRACKED);
 }
 
 void ShellExtensionSystem::Shutdown() {
@@ -139,14 +141,6 @@ LazyBackgroundTaskQueue* ShellExtensionSystem::lazy_background_task_queue() {
 
 EventRouter* ShellExtensionSystem::event_router() {
   return event_router_.get();
-}
-
-WarningService* ShellExtensionSystem::warning_service() {
-  return NULL;
-}
-
-Blacklist* ShellExtensionSystem::blacklist() {
-  return NULL;
 }
 
 ErrorConsole* ShellExtensionSystem::error_console() {

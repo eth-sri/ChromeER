@@ -16,6 +16,7 @@
 #include "net/quic/congestion_control/loss_detection_interface.h"
 #include "net/quic/congestion_control/rtt_stats.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
+#include "net/quic/crypto/cached_network_parameters.h"
 #include "net/quic/quic_ack_notifier_manager.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_sustained_bandwidth_recorder.h"
@@ -67,7 +68,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
     virtual ~NetworkChangeVisitor() {}
 
     // Called when congestion window may have changed.
-    virtual void OnCongestionWindowChange(QuicByteCount congestion_window) = 0;
+    virtual void OnCongestionWindowChange() = 0;
     // TODO(jri): Add OnRttStatsChange() to this class as well.
   };
 
@@ -93,10 +94,18 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
                         const QuicClock* clock,
                         QuicConnectionStats* stats,
                         CongestionControlType congestion_control_type,
-                        LossDetectionType loss_type);
+                        LossDetectionType loss_type,
+                        bool is_secure);
   virtual ~QuicSentPacketManager();
 
   virtual void SetFromConfig(const QuicConfig& config);
+
+  // Pass the CachedNetworkParameters to the send algorithm.
+  // Returns true if this changes the initial connection state.
+  bool ResumeConnectionState(
+      const CachedNetworkParameters& cached_network_params);
+
+  void SetNumOpenStreams(size_t num_streams);
 
   void SetHandshakeConfirmed() { handshake_confirmed_ = true; }
 
@@ -108,6 +117,13 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   bool IsUnacked(QuicPacketSequenceNumber sequence_number) const;
 
   // Requests retransmission of all unacked packets of |retransmission_type|.
+  // The behavior of this method depends on the value of |retransmission_type|:
+  // ALL_UNACKED_RETRANSMISSION - All unacked packets will be retransmitted.
+  // This can happen, for example, after a version negotiation packet has been
+  // received and all packets needs to be retransmitted with the new version.
+  // ALL_INITIAL_RETRANSMISSION - Only initially encrypted packets will be
+  // retransmitted. This can happen, for example, when a CHLO has been rejected
+  // and the previously encrypted data needs to be encrypted with a new key.
   void RetransmitUnackedPackets(TransmissionType retransmission_type);
 
   // Retransmits the oldest pending packet there is still a tail loss probe
@@ -180,15 +196,22 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   const QuicSustainedBandwidthRecorder& SustainedBandwidthRecorder() const;
 
-  // Returns the size of the current congestion window in bytes.  Note, this is
-  // not the *available* window.  Some send algorithms may not use a congestion
-  // window and will return 0.
-  QuicByteCount GetCongestionWindow() const;
+  // Returns the size of the current congestion window in number of
+  // kDefaultTCPMSS-sized segments. Note, this is not the *available* window.
+  // Some send algorithms may not use a congestion window and will return 0.
+  QuicPacketCount GetCongestionWindowInTcpMss() const;
 
-  // Returns the size of the slow start congestion window in bytes,
-  // aka ssthresh.  Some send algorithms do not define a slow start
-  // threshold and will return 0.
-  QuicByteCount GetSlowStartThreshold() const;
+  // Returns the number of packets of length |max_packet_length| which fit in
+  // the current congestion window. More packets may end up in flight if the
+  // congestion window has been recently reduced, of if non-full packets are
+  // sent.
+  QuicPacketCount EstimateMaxPacketsInFlight(
+      QuicByteCount max_packet_length) const;
+
+  // Returns the size of the slow start congestion window in nume of 1460 byte
+  // TCP segments, aka ssthresh.  Some send algorithms do not define a slow
+  // start threshold and will return 0.
+  QuicPacketCount GetSlowStartThresholdInTcpMss() const;
 
   // Enables pacing if it has not already been enabled.
   void EnablePacing();
@@ -342,9 +365,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   QuicConnectionStats* stats_;
   DebugDelegate* debug_delegate_;
   NetworkChangeVisitor* network_change_visitor_;
+  const QuicPacketCount initial_congestion_window_;
   RttStats rtt_stats_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
   scoped_ptr<LossDetectionInterface> loss_algorithm_;
+  bool n_connection_simulation_;
 
   // Receiver side buffer in bytes.
   QuicByteCount receive_buffer_bytes_;

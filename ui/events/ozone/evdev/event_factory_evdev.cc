@@ -12,12 +12,14 @@
 #include "base/task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/worker_pool.h"
-#include "ui/events/device_data_manager.h"
+#include "ui/events/devices/device_data_manager.h"
 #include "ui/events/ozone/device/device_event.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
 #include "ui/events/ozone/evdev/event_converter_evdev_impl.h"
 #include "ui/events/ozone/evdev/event_device_info.h"
+#include "ui/events/ozone/evdev/input_injector_evdev.h"
+#include "ui/events/ozone/evdev/tablet_event_converter_evdev.h"
 #include "ui/events/ozone/evdev/touch_event_converter_evdev.h"
 
 #if defined(USE_EVDEV_GESTURES)
@@ -58,7 +60,8 @@ struct OpenInputDeviceParams {
 
 #if defined(USE_EVDEV_GESTURES)
 bool UseGesturesLibraryForDevice(const EventDeviceInfo& devinfo) {
-  if (devinfo.HasAbsXY() && !devinfo.IsMappedToScreen())
+  if ((devinfo.HasAbsXY() || devinfo.HasMTAbsXY()) &&
+      !devinfo.IsMappedToScreen())
     return true;  // touchpad
 
   if (devinfo.HasRelXY())
@@ -89,10 +92,18 @@ scoped_ptr<EventConverterEvdev> CreateConverter(
 #endif
 
   // Touchscreen: use TouchEventConverterEvdev.
-  scoped_ptr<EventConverterEvdev> converter;
+  if (devinfo.HasMTAbsXY()) {
+    scoped_ptr<TouchEventConverterEvdev> converter(new TouchEventConverterEvdev(
+        fd, params.path, params.id, params.dispatch_callback));
+    converter->Initialize(devinfo);
+    return converter.Pass();
+  }
+
+  // Graphics tablet
   if (devinfo.HasAbsXY())
-    return make_scoped_ptr<EventConverterEvdev>(new TouchEventConverterEvdev(
-        fd, params.path, params.id, devinfo, params.dispatch_callback));
+    return make_scoped_ptr<EventConverterEvdev>(new TabletEventConverterEvdev(
+        fd, params.path, params.id, params.modifiers, params.cursor, devinfo,
+        params.dispatch_callback));
 
   // Everything else: use EventConverterEvdevImpl.
   return make_scoped_ptr<EventConverterEvdevImpl>(
@@ -173,6 +184,11 @@ EventFactoryEvdev::EventFactoryEvdev(CursorDelegateEvdev* cursor,
 }
 
 EventFactoryEvdev::~EventFactoryEvdev() { STLDeleteValues(&converters_); }
+
+scoped_ptr<SystemInputInjector> EventFactoryEvdev::CreateSystemInputInjector() {
+  return make_scoped_ptr(new InputInjectorEvdev(
+      &modifiers_, cursor_, &keyboard_, dispatch_callback_));
+}
 
 void EventFactoryEvdev::PostUiEvent(scoped_ptr<Event> event) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
@@ -283,8 +299,8 @@ void EventFactoryEvdev::WarpCursorTo(gfx::AcceleratedWidget widget,
   if (cursor_) {
     cursor_->MoveCursorTo(widget, location);
     PostUiEvent(make_scoped_ptr(new MouseEvent(ET_MOUSE_MOVED,
-                                               cursor_->location(),
-                                               cursor_->location(),
+                                               cursor_->GetLocation(),
+                                               cursor_->GetLocation(),
                                                modifiers_.GetModifierFlags(),
                                                /* changed_button_flags */ 0)));
   }
@@ -302,7 +318,7 @@ void EventFactoryEvdev::NotifyHotplugEventObserver(
   for (auto it = converters_.begin(); it != converters_.end(); ++it) {
     if (it->second->HasTouchscreen()) {
       InputDeviceType device_type = InputDeviceType::INPUT_DEVICE_EXTERNAL;
-      if (converter.IsInternal())
+      if (it->second->IsInternal())
         device_type = InputDeviceType::INPUT_DEVICE_INTERNAL;
 
       touchscreens.push_back(

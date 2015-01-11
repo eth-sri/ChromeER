@@ -51,6 +51,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#elif defined(OS_WIN)
+#include "base/win/scoped_handle.h"
 #endif
 
 namespace {
@@ -83,7 +85,7 @@ Status UnpackAutomationExtension(const base::FilePath& temp_dir,
   return Status(kOk);
 }
 
-Status PrepareCommandLine(int port,
+Status PrepareCommandLine(uint16 port,
                           const Capabilities& capabilities,
                           CommandLine* prepared_command,
                           base::ScopedTempDir* user_data_dir,
@@ -266,7 +268,7 @@ Status LaunchRemoteChromeSession(
 
 Status LaunchDesktopChrome(
     URLRequestContextGetter* context_getter,
-    int port,
+    uint16 port,
     scoped_ptr<PortReservation> port_reservation,
     const SyncWebSocketFactory& socket_factory,
     const Capabilities& capabilities,
@@ -323,6 +325,25 @@ Status LaunchDesktopChrome(
     no_stderr.push_back(std::make_pair(devnull.get(), STDERR_FILENO));
     options.fds_to_remap = &no_stderr;
   }
+#elif defined(OS_WIN)
+  // Silence chrome error message.
+  HANDLE out_read;
+  HANDLE out_write;
+  SECURITY_ATTRIBUTES sa_attr;
+
+  sa_attr.nLength = sizeof(SECURITY_ATTRIBUTES);
+  sa_attr.bInheritHandle = TRUE;
+  sa_attr.lpSecurityDescriptor = NULL;
+  if (!CreatePipe(&out_read, &out_write, &sa_attr, 0))
+      return Status(kUnknownError, "CreatePipe() - Pipe creation failed");
+  // Prevent handle leak.
+  base::win::ScopedHandle scoped_out_read(out_read);
+  base::win::ScopedHandle scoped_out_write(out_write);
+
+  options.stdout_handle = out_write;
+  options.stderr_handle = out_write;
+  options.stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
+  options.inherit_handles = true;
 #endif
 
 #if defined(OS_WIN)
@@ -411,7 +432,7 @@ Status LaunchDesktopChrome(
 
 Status LaunchAndroidChrome(
     URLRequestContextGetter* context_getter,
-    int port,
+    uint16 port,
     scoped_ptr<PortReservation> port_reservation,
     const SyncWebSocketFactory& socket_factory,
     const Capabilities& capabilities,
@@ -490,12 +511,15 @@ Status LaunchChrome(
         capabilities, devtools_event_listeners, chrome);
   }
 
-  int port = 0;
+  uint16 port = 0;
   scoped_ptr<PortReservation> port_reservation;
   Status port_status(kOk);
 
   if (capabilities.IsAndroid()) {
-    port_status = port_manager->ReservePortFromPool(&port, &port_reservation);
+    if (port_server)
+      port_status = port_server->ReservePort(&port, &port_reservation);
+    else
+      port_status = port_manager->ReservePortFromPool(&port, &port_reservation);
     if (port_status.IsError())
       return Status(kUnknownError, "cannot reserve port for Chrome",
                     port_status);

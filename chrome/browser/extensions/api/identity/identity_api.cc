@@ -11,7 +11,6 @@
 
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
@@ -20,12 +19,14 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/account_tracker_service_factory.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/extensions/api/identity.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
@@ -785,6 +786,10 @@ void IdentityGetAuthTokenFunction::ShowOAuthApprovalDialog(
 }
 
 OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow() {
+  SigninClient* signin_client =
+      ChromeSigninClientFactory::GetForProfile(GetProfile());
+  std::string signin_scoped_device_id =
+      signin_client->GetSigninScopedDeviceId();
   OAuth2MintTokenFlow* mint_token_flow = new OAuth2MintTokenFlow(
       this,
       OAuth2MintTokenFlow::Parameters(
@@ -792,6 +797,7 @@ OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow() {
           oauth2_client_id_,
           std::vector<std::string>(token_key_->scopes.begin(),
                                    token_key_->scopes.end()),
+          signin_scoped_device_id,
           gaia_mint_token_mode_));
   return mint_token_flow;
 }
@@ -839,14 +845,15 @@ ExtensionFunction::ResponseAction IdentityGetProfileUserInfoFunction::Run() {
     return RespondNow(Error(identity_constants::kOffTheRecord));
   }
 
+  AccountTrackerService::AccountInfo account =
+      AccountTrackerServiceFactory::GetForProfile(GetProfile())
+          ->GetAccountInfo(GetPrimaryAccountId(GetProfile()));
   api::identity::ProfileUserInfo profile_user_info;
   if (extension()->permissions_data()->HasAPIPermission(
           APIPermission::kIdentityEmail)) {
-    profile_user_info.email =
-        GetProfile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername);
+    profile_user_info.email = account.email;
   }
-  profile_user_info.id =
-      GetProfile()->GetPrefs()->GetString(prefs::kGoogleServicesUserAccountId);
+  profile_user_info.id = account.gaia;
 
   return RespondNow(OneArgument(profile_user_info.ToValue().release()));
 }

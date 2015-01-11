@@ -3,6 +3,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Top level script for running all python unittests in the NaCl SDK
+"""
+
+from __future__ import print_function
+
+import argparse
 import os
 import subprocess
 import sys
@@ -30,6 +36,7 @@ EXTRACT_PACKAGES = ['nacl_x86_glibc']
 TOOLCHAIN_OUT = os.path.join(build_paths.OUT_DIR, 'sdk_tests', 'toolchain')
 
 TEST_MODULES = [
+    'build_artifacts_test',
     'build_version_test',
     'create_html_test',
     'create_nmf_test',
@@ -59,8 +66,13 @@ def ExtractToolchains():
                            '--dest-dir', TOOLCHAIN_OUT,
                            'extract'])
 
-def main():
+def main(args):
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument('-v', '--verbose', action='store_true')
+  options = parser.parse_args(args)
+
   # Some of the unit tests use parts of toolchains. Extract to TOOLCHAIN_OUT.
+  print('Extracting toolchains...')
   ExtractToolchains()
 
   suite = unittest.TestSuite()
@@ -68,8 +80,14 @@ def main():
     module = __import__(module_name)
     suite.addTests(unittest.defaultTestLoader.loadTestsFromModule(module))
 
-  result = unittest.TextTestRunner(verbosity=2).run(suite)
+  if options.verbose:
+    verbosity = 2
+  else:
+    verbosity = 1
+
+  print('Running unittests...')
+  result = unittest.TextTestRunner(verbosity=verbosity).run(suite)
   return int(not result.wasSuccessful())
 
 if __name__ == '__main__':
-  sys.exit(main())
+  sys.exit(main(sys.argv[1:]))

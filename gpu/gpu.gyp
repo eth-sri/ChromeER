@@ -61,35 +61,10 @@
     },
     {
       # Library emulates GLES2 using command_buffers.
-      # GN version: //gpu/command_buffer/client:gles2_implementation_client_side_arrays
-      'target_name': 'gles2_implementation_client_side_arrays',
+      'target_name': 'gles2_implementation_no_check',
       'type': '<(component)',
       'defines': [
         'GLES2_IMPL_IMPLEMENTATION',
-        'GLES2_SUPPORT_CLIENT_SIDE_ARRAYS=1',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../third_party/khronos/khronos.gyp:khronos_headers',
-        '../ui/gl/gl.gyp:gl',
-        '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/gfx/gfx.gyp:gfx',
-        'command_buffer/command_buffer.gyp:gles2_utils',
-        'gles2_cmd_helper',
-      ],
-      'sources': [
-        '<@(gles2_implementation_source_files)',
-      ],
-      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],
-    },
-    {
-      # Library emulates GLES2 using command_buffers.
-      'target_name': 'gles2_implementation_client_side_arrays_no_check',
-      'type': '<(component)',
-      'defines': [
-        'GLES2_IMPL_IMPLEMENTATION',
-        'GLES2_SUPPORT_CLIENT_SIDE_ARRAYS=1',
         'GLES2_CONFORMANCE_TESTS=1',
       ],
       'dependencies': [
@@ -141,7 +116,7 @@
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
-        'gles2_implementation_client_side_arrays_no_check',
+        'gles2_implementation_no_check',
       ],
       'sources': [
         '<@(gles2_c_lib_source_files)',
@@ -197,7 +172,7 @@
         'command_buffer_service',
         'gpu',
         'gpu_unittest_utils',
-        'gles2_implementation_client_side_arrays',
+        'gles2_implementation',
         'gles2_cmd_helper',
         'gles2_c_lib',
       ],
@@ -257,6 +232,7 @@
         'command_buffer/service/gles2_cmd_decoder_unittest_programs.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_textures.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_attribs.cc',
+        'command_buffer/service/gles2_cmd_decoder_unittest_valuebuffer.cc',
         'command_buffer/service/gl_surface_mock.cc',
         'command_buffer/service/gl_surface_mock.h',
         'command_buffer/service/gpu_scheduler_unittest.cc',
@@ -273,10 +249,12 @@
         'command_buffer/service/program_cache_unittest.cc',
         'command_buffer/service/shader_manager_unittest.cc',
         'command_buffer/service/shader_translator_unittest.cc',
+        'command_buffer/service/shader_translator_cache_unittest.cc',
         'command_buffer/service/test_helper.cc',
         'command_buffer/service/test_helper.h',
         'command_buffer/service/texture_manager_unittest.cc',
         'command_buffer/service/transfer_buffer_manager_unittest.cc',
+        'command_buffer/service/valuebuffer_manager_unittest.cc',
         'command_buffer/service/vertex_attrib_manager_unittest.cc',
         'command_buffer/service/vertex_array_manager_unittest.cc',
         'command_buffer/service/gpu_tracer_unittest.cc',
@@ -329,7 +307,7 @@
         'command_buffer_service',
         'gpu',
         'gpu_unittest_utils',
-        'gles2_implementation_client_side_arrays',
+        'gles2_implementation',
         'gles2_cmd_helper',
         'gles2_c_lib',
         #'gl_unittests',
@@ -343,6 +321,7 @@
         'command_buffer/tests/gl_bind_uniform_location_unittest.cc',
         'command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc',
         'command_buffer/tests/gl_chromium_path_rendering_unittest.cc',
+        'command_buffer/tests/gl_clear_framebuffer_unittest.cc',
         'command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc',
         'command_buffer/tests/gl_depth_texture_unittest.cc',
         'command_buffer/tests/gl_gpu_memory_buffer_unittest.cc',

@@ -60,16 +60,6 @@ const int kIdleConnectionTimeoutSeconds = 30;
 // The initial receive window size for both streams and sessions.
 const int32 kInitialReceiveWindowSize = 10 * 1024 * 1024;  // 10MB
 
-// The suggested initial congestion windows for a server to use.
-// TODO: This should be tested and optimized, and even better, suggest a window
-// that corresponds to historical bandwidth and min-RTT.
-// Larger initial congestion windows can, if we don't overshoot, reduce latency
-// by avoiding the RTT needed for slow start to double (and re-double) from a
-// default of 10.
-// We match SPDY's use of 32 when secure (since we'd compete with SPDY).
-const int32 kServerSecureInitialCongestionWindow = 32;
-// Be conservative, and just use double a typical TCP  ICWND for HTTP.
-const int32 kServerInecureInitialCongestionWindow = 20;
 // Set the maximum number of undecryptable packets the connection will store.
 const int32 kMaxUndecryptablePackets = 100;
 
@@ -922,15 +912,13 @@ int QuicStreamFactory::CreateSession(
                                                   packet_writer_factory,
                                                   true  /* owns_writer */,
                                                   false  /* is_server */,
+                                                  server_id.is_https(),
                                                   supported_versions_);
   connection->set_max_packet_length(max_packet_length_);
 
   InitializeCachedStateInCryptoConfig(server_id, server_info);
 
   QuicConfig config = config_;
-  config.SetInitialCongestionWindowToSend(
-      server_id.is_https() ? kServerSecureInitialCongestionWindow
-                           : kServerInecureInitialCongestionWindow);
   config.set_max_undecryptable_packets(kMaxUndecryptablePackets);
   config.SetInitialFlowControlWindowToSend(kInitialReceiveWindowSize);
   config.SetInitialStreamFlowControlWindowToSend(kInitialReceiveWindowSize);
@@ -942,6 +930,14 @@ int QuicStreamFactory::CreateSession(
     if (stats != nullptr) {
       config.SetInitialRoundTripTimeUsToSend(stats->srtt.InMicroseconds());
     }
+  }
+
+  if (quic_server_info_factory_ && !server_info) {
+    // Start the disk cache loading so that we can persist the newer QUIC server
+    // information and/or inform the disk cache that we have reused
+    // |server_info|.
+    server_info.reset(quic_server_info_factory_->GetForServer(server_id));
+    server_info->Start();
   }
 
   *session = new QuicClientSession(
@@ -985,6 +981,8 @@ void QuicStreamFactory::ActivateSession(
 void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
     const QuicServerId& server_id,
     const scoped_ptr<QuicServerInfo>& server_info) {
+  // |server_info| will be NULL, if a non-empty server config already exists in
+  // the memory cache. This is a minor optimization to avoid LookupOrCreate.
   if (!server_info)
     return;
 
@@ -992,6 +990,27 @@ void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
       crypto_config_.LookupOrCreate(server_id);
   if (!cached->IsEmpty())
     return;
+
+  if (http_server_properties_) {
+    if (quic_supported_servers_at_startup_.empty()) {
+      for (const std::pair<net::HostPortPair, net::AlternateProtocolInfo>&
+               key_value : http_server_properties_->alternate_protocol_map()) {
+        if (key_value.second.protocol == QUIC) {
+          quic_supported_servers_at_startup_.insert(key_value.first);
+        }
+      }
+    }
+
+    // TODO(rtenneti): Delete the following histogram after collecting stats.
+    // If the AlternateProtocolMap contained an entry for this host, check if
+    // the disk cache contained an entry for it.
+    if (ContainsKey(quic_supported_servers_at_startup_,
+                    server_id.host_port_pair())) {
+      UMA_HISTOGRAM_BOOLEAN(
+          "Net.QuicServerInfo.ExpectConfigMissingFromDiskCache",
+          server_info->state().server_config.empty());
+    }
+  }
 
   if (!cached->Initialize(server_info->state().server_config,
                           server_info->state().source_address_token,

@@ -42,6 +42,7 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/resource_request_info.h"
+#include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/stream_info.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/resource_response.h"
@@ -88,7 +89,6 @@
 
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/intercept_download_resource_throttle.h"
-#include "chrome/browser/ui/android/infobars/auto_login_prompter.h"
 #include "components/navigation_interception/intercept_navigation_delegate.h"
 #endif
 
@@ -175,7 +175,8 @@ void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamInfo> stream,
                                      int render_process_id,
                                      int render_view_id,
                                      const std::string& extension_id,
-                                     const std::string& view_id) {
+                                     const std::string& view_id,
+                                     bool embedded) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 
   content::WebContents* web_contents =
@@ -198,9 +199,9 @@ void SendExecuteMimeTypeHandlerEvent(scoped_ptr<content::StreamInfo> stream,
   StreamsPrivateAPI* streams_private = StreamsPrivateAPI::Get(profile);
   if (!streams_private)
     return;
-  streams_private->ExecuteMimeTypeHandler(
-      extension_id, web_contents, stream.Pass(), view_id,
-      expected_content_size);
+  streams_private->ExecuteMimeTypeHandler(extension_id, web_contents,
+                                          stream.Pass(), view_id,
+                                          expected_content_size, embedded);
 }
 #endif  // !defined(ENABLE_EXTENSIONS)
 
@@ -271,6 +272,12 @@ ChromeResourceDispatcherHostDelegate::ChromeResourceDispatcherHostDelegate(
       user_script_listener_(new extensions::UserScriptListener()),
 #endif
       prerender_tracker_(prerender_tracker) {
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(content::ServiceWorkerContext::AddExcludedHeadersForFetchEvent,
+                 variations::VariationsHttpHeaderProvider::GetInstance()
+                     ->GetVariationHeaderNames()));
 }
 
 ChromeResourceDispatcherHostDelegate::~ChromeResourceDispatcherHostDelegate() {
@@ -307,6 +314,9 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
     content::AppCacheService* appcache_service,
     ResourceType resource_type,
     ScopedVector<content::ResourceThrottle>* throttles) {
+  if (safe_browsing_.get())
+    safe_browsing_->OnResourceRequest(request);
+
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
   bool is_prerendering =
       info->GetVisibilityState() == blink::WebPageVisibilityStatePrerender;
@@ -400,7 +410,8 @@ void ChromeResourceDispatcherHostDelegate::RequestBeginning(
 #endif
 
   signin::AppendMirrorRequestHeaderIfPossible(
-      request, GURL() /* redirect_url */, io_data);
+      request, GURL() /* redirect_url */, io_data,
+      info->GetChildID(), info->GetRouteID());
 
   AppendStandardResourceThrottles(request,
                                   resource_context,
@@ -624,12 +635,13 @@ void ChromeResourceDispatcherHostDelegate::OnStreamCreated(
   std::map<net::URLRequest*, StreamTargetInfo>::iterator ix =
       stream_target_info_.find(request);
   CHECK(ix != stream_target_info_.end());
+  bool embedded = info->GetResourceType() != content::RESOURCE_TYPE_MAIN_FRAME;
   content::BrowserThread::PostTask(
       content::BrowserThread::UI, FROM_HERE,
       base::Bind(&SendExecuteMimeTypeHandlerEvent, base::Passed(&stream),
-                 request->GetExpectedContentSize(),
-                 info->GetChildID(), info->GetRouteID(),
-                 ix->second.extension_id, ix->second.view_id));
+                 request->GetExpectedContentSize(), info->GetChildID(),
+                 info->GetRouteID(), ix->second.extension_id,
+                 ix->second.view_id, embedded));
   stream_target_info_.erase(request);
 #endif
 }
@@ -640,17 +652,6 @@ void ChromeResourceDispatcherHostDelegate::OnResponseStarted(
     content::ResourceResponse* response,
     IPC::Sender* sender) {
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
-
-#if defined(OS_ANDROID)
-  // See if the response contains the X-Auto-Login header.  If so, this was
-  // a request for a login page, and the server is allowing the browser to
-  // suggest auto-login, if available.
-  if (info->IsMainFrame()) {
-    AutoLoginPrompter::ShowInfoBarIfPossible(request, info->GetChildID(),
-                                             info->GetRouteID());
-  }
-#endif
-
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -709,9 +710,9 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
     content::ResourceResponse* response) {
   ProfileIOData* io_data = ProfileIOData::FromResourceContext(resource_context);
 
-#if defined(ENABLE_ONE_CLICK_SIGNIN)
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
 
+#if defined(ENABLE_ONE_CLICK_SIGNIN)
   // See if the response contains the Google-Accounts-SignIn header.  If so,
   // then the user has just finished signing in, and the server is allowing the
   // browser to suggest connecting the user's profile to the account.
@@ -726,7 +727,8 @@ void ChromeResourceDispatcherHostDelegate::OnRequestRedirected(
   // response and let Chrome handle the action with native UI. The only
   // exception is requests from gaia webview, since the native profile
   // management UI is built on top of it.
-  signin::AppendMirrorRequestHeaderIfPossible(request, redirect_url, io_data);
+  signin::AppendMirrorRequestHeaderIfPossible(request, redirect_url, io_data,
+      info->GetChildID(), info->GetRouteID());
 
   if (io_data->resource_prefetch_predictor_observer()) {
     io_data->resource_prefetch_predictor_observer()->OnRequestRedirected(

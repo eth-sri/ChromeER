@@ -26,17 +26,22 @@
   -webkit-margin-end: 16px;
 }
 
-#downloads-display {
+#downloads-display,
+#no-downloads-or-results {
   max-width: 740px;
   padding: 0 10px 34px;
 }
 
 .download {
   -webkit-margin-start: 114px;
-  -webkit-padding-start: 56px;
+  -webkit-padding-start: 52px;
   margin-bottom: 15px;
-  margin-top: 6px;
   position: relative;
+}
+
+.download,
+#no-downloads-or-results {
+  margin-top: 6px;
 }
 
 .date-container {
@@ -74,7 +79,7 @@ html[dir=rtl] .icon {
 .download.otr > .safe,
 .download.otr > .show-dangerous {
   -webkit-transition: opacity 150ms;
-  background: url('../../../../ui/webui/resources/images/otr_icon_standalone.png')
+  background: url(../../../../ui/webui/resources/images/otr_icon_standalone.png)
               no-repeat right bottom;
   opacity: .66;
 }
@@ -107,8 +112,15 @@ html[dir=rtl] .progress {
 }
 
 .progress.background {
-  background: url('chrome://theme/IDR_DOWNLOAD_PROGRESS_BACKGROUND_32');
+  background: url(chrome://theme/IDR_DOWNLOAD_PROGRESS_BACKGROUND_32);
   background-size: 48px;
+}
+
+.name,
+.src-url,
+.controls a {
+  -webkit-padding-end: 4px;
+  -webkit-padding-start: 4px;
 }
 
 .name {
@@ -140,7 +152,7 @@ html[dir=rtl] .progress {
 }
 
 .controls a {
-  -webkit-margin-end: 16px;
+  -webkit-margin-end: 12px;
   color: #777;
 }
 

@@ -44,12 +44,12 @@ class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
   explicit VideoCaptureManager(
       scoped_ptr<media::VideoCaptureDeviceFactory> factory);
 
+  void Unregister();
+
   // Implements MediaStreamProvider.
   void Register(MediaStreamProviderListener* listener,
                 const scoped_refptr<base::SingleThreadTaskRunner>&
                     device_task_runner) override;
-
-  void Unregister() override;
 
   void EnumerateDevices(MediaStreamType stream_type) override;
 
@@ -130,6 +130,13 @@ class CONTENT_EXPORT VideoCaptureManager : public MediaStreamProvider {
   media::VideoCaptureDeviceFactory* video_capture_device_factory() const {
     return video_capture_device_factory_.get();
   }
+
+#if defined(OS_WIN)
+  void set_device_task_runner(
+      const scoped_refptr<base::SingleThreadTaskRunner>& device_task_runner) {
+    device_task_runner_ = device_task_runner;
+  }
+#endif
 
  private:
   ~VideoCaptureManager() override;

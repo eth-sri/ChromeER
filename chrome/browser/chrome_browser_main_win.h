@@ -9,6 +9,8 @@
 
 #include "chrome/browser/chrome_browser_main.h"
 
+class DidRunUpdater;
+
 namespace base {
 class CommandLine;
 }
@@ -32,6 +34,7 @@ class ChromeBrowserMainPartsWin : public ChromeBrowserMainParts {
 
   // ChromeBrowserMainParts overrides.
   virtual void ShowMissingLocaleMessageBox() override;
+  virtual void PostProfileInit() override;
   virtual void PostBrowserStart() override;
 
   // Prepares the localized strings that are going to be displayed to
@@ -63,6 +66,10 @@ class ChromeBrowserMainPartsWin : public ChromeBrowserMainParts {
   static void SetupInstallerUtilStrings();
 
  private:
+#if defined(GOOGLE_CHROME_BUILD)
+  scoped_ptr<DidRunUpdater> did_run_updater_;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainPartsWin);
 };
 

@@ -117,6 +117,11 @@ public class ChromeShellTab extends Tab {
             public void onOpenInNewTab(String url, Referrer referrer) {
                 mTabManager.createTab(url, TabLaunchType.FROM_LINK);
             }
+
+            @Override
+            public void onOpenImageInNewTab(String url, Referrer referrer) {
+                mTabManager.createTab(url, TabLaunchType.FROM_LINK);
+            }
         });
     }
 
@@ -141,6 +146,12 @@ public class ChromeShellTab extends Tab {
         @Override
         public boolean isFullscreenForTabOrPending() {
             return mIsFullscreen;
+        }
+
+        @Override
+        public void webContentsCreated(long sourceWebContents, long openerRenderFrameId,
+                String frameName, String targetUrl, long newWebContents) {
+            mTabManager.createTab(targetUrl, TabLaunchType.FROM_LINK);
         }
     }
 }

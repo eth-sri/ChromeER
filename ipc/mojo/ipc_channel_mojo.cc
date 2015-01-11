@@ -9,7 +9,6 @@
 #include "base/lazy_instance.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/mojo/client_channel.mojom.h"
-#include "ipc/mojo/ipc_channel_mojo_readers.h"
 #include "ipc/mojo/ipc_mojo_bootstrap.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/error_handler.h"
@@ -168,7 +167,7 @@ void ServerChannelMojo::Close() {
 
 void ChannelMojo::ChannelInfoDeleter::operator()(
     mojo::embedder::ChannelInfo* ptr) const {
-  mojo::embedder::DestroyChannelOnIOThread(ptr);
+  mojo::embedder::DestroyChannel(ptr);
 }
 
 //------------------------------------------------------------------------------
@@ -272,7 +271,7 @@ void ChannelMojo::OnBootstrapError() {
 void ChannelMojo::InitMessageReader(mojo::ScopedMessagePipeHandle pipe,
                                     int32_t peer_pid) {
   message_reader_ =
-      make_scoped_ptr(new internal::MessageReader(pipe.Pass(), this));
+      make_scoped_ptr(new internal::MessagePipeReader(pipe.Pass(), this));
 
   for (size_t i = 0; i < pending_messages_.size(); ++i) {
     bool sent = message_reader_->Send(make_scoped_ptr(pending_messages_[i]));

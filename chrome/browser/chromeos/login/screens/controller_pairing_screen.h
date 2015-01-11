@@ -29,11 +29,10 @@ class ControllerPairingScreen
 
   ControllerPairingScreen(
       BaseScreenDelegate* base_screen_delegate,
+      Delegate* delegate,
       ControllerPairingScreenActor* actor,
       pairing_chromeos::ControllerPairingController* shark_controller);
   virtual ~ControllerPairingScreen();
-
-  void SetDelegate(Delegate* delegate);
 
  private:
   typedef pairing_chromeos::ControllerPairingController::Stage Stage;
@@ -57,16 +56,12 @@ class ControllerPairingScreen
       const base::DictionaryValue& diff) override;
   virtual void OnUserActed(const std::string& action) override;
 
-  // Context for sharing data between C++ and JS.
-  // TODO(dzhioev): move to BaseScreen when possible.
-  ::login::ScreenContext context_;
+  Delegate* delegate_;
 
   ControllerPairingScreenActor* actor_;
 
   // Controller performing pairing. Owned by the wizard controller.
   pairing_chromeos::ControllerPairingController* shark_controller_;
-
-  Delegate* delegate_;
 
   // Current stage of pairing process.
   Stage current_stage_;

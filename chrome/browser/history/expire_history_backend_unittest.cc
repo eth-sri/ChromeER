@@ -12,7 +12,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
@@ -22,6 +21,7 @@
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/tools/profiles/thumbnail-inl.h"
+#include "components/history/core/browser/history_backend_notifier.h"
 #include "components/history/core/common/thumbnail_score.h"
 #include "components/history/core/test/history_client_fake_bookmarks.h"
 #include "content/public/test/test_browser_thread.h"
@@ -47,7 +47,7 @@ namespace history {
 // ExpireHistoryTest -----------------------------------------------------------
 
 class ExpireHistoryTest : public testing::Test,
-                          public ExpireHistoryBackendDelegate {
+                          public HistoryBackendNotifier {
  public:
   ExpireHistoryTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
@@ -73,7 +73,7 @@ class ExpireHistoryTest : public testing::Test,
   // |expired|, or manually deleted.
   void EnsureURLInfoGone(const URLRow& row, bool expired);
 
-  // Returns whether ExpireHistoryBackendDelegate::NotifyURLsModified was
+  // Returns whether HistoryBackendNotifier::NotifyURLsModified was
   // called for |url|.
   bool ModifiedNotificationSent(const GURL& url);
 
@@ -154,11 +154,15 @@ class ExpireHistoryTest : public testing::Test,
     thumb_db_.reset();
   }
 
-  // ExpireHistoryBackendDelegate:
+  // HistoryBackendNotifier:
+  void NotifyFaviconChanged(const std::set<GURL>& urls) override {}
+  void NotifyURLVisited(ui::PageTransition transition,
+                        const URLRow& row,
+                        const RedirectList& redirects,
+                        base::Time visit_time) override {}
   void NotifyURLsModified(const URLRows& rows) override {
     urls_modified_notifications_.push_back(rows);
   }
-
   void NotifyURLsDeleted(bool all_history,
                          bool expired,
                          const URLRows& rows,

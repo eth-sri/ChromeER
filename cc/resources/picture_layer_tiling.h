@@ -29,7 +29,7 @@ class TracedValue;
 namespace cc {
 
 class PictureLayerTiling;
-class PicturePileImpl;
+class RasterSource;
 
 class CC_EXPORT PictureLayerTilingClient {
  public:
@@ -38,7 +38,6 @@ class CC_EXPORT PictureLayerTilingClient {
   virtual scoped_refptr<Tile> CreateTile(
     PictureLayerTiling* tiling,
     const gfx::Rect& content_rect) = 0;
-  virtual RasterSource* GetRasterSource() = 0;
   virtual gfx::Size CalculateTileSize(
     const gfx::Size& content_bounds) const = 0;
   // This invalidation region defines the area (if any, it can by null) that
@@ -48,6 +47,7 @@ class CC_EXPORT PictureLayerTilingClient {
       const PictureLayerTiling* tiling) const = 0;
   virtual PictureLayerTiling* GetRecycledTwinTiling(
       const PictureLayerTiling* tiling) = 0;
+  virtual TilePriority::PriorityBin GetMaxTilePriorityBin() const = 0;
   virtual size_t GetMaxTilesForInterestArea() const = 0;
   virtual float GetSkewportTargetTimeInSeconds() const = 0;
   virtual int GetSkewportExtrapolationLimitInContentPixels() const = 0;
@@ -118,24 +118,6 @@ class CC_EXPORT PictureLayerTiling {
     TilingData::SpiralDifferenceIterator spiral_iterator_;
   };
 
-  class CC_EXPORT TilingEvictionTileIterator {
-   public:
-    TilingEvictionTileIterator();
-    TilingEvictionTileIterator(PictureLayerTiling* tiling,
-                               TreePriority tree_priority,
-                               EvictionCategory category);
-    ~TilingEvictionTileIterator();
-
-    operator bool() const;
-    const Tile* operator*() const;
-    Tile* operator*();
-    TilingEvictionTileIterator& operator++();
-
-   private:
-    const std::vector<Tile*>* eviction_tiles_;
-    size_t current_eviction_tiles_index_;
-  };
-
   ~PictureLayerTiling();
 
   // Create a tiling with no tiles.  CreateTiles must be called to add some.
@@ -144,8 +126,9 @@ class CC_EXPORT PictureLayerTiling {
       const gfx::Size& layer_bounds,
       PictureLayerTilingClient* client);
   gfx::Size layer_bounds() const { return layer_bounds_; }
-  void UpdateTilesToCurrentPile(const Region& layer_invalidation,
-                                const gfx::Size& new_layer_bounds);
+  void UpdateTilesToCurrentRasterSource(RasterSource* raster_source,
+                                        const Region& layer_invalidation,
+                                        const gfx::Size& new_layer_bounds);
   void CreateMissingTilesInLiveTilesRect();
   void RemoveTilesInRegion(const Region& layer_region);
 
@@ -205,7 +188,8 @@ class CC_EXPORT PictureLayerTiling {
   }
 
   bool IsTileOccluded(const Tile* tile) const;
-  bool IsTileRequiredForActivation(const Tile* tile) const;
+  bool IsTileRequiredForActivationIfVisible(const Tile* tile) const;
+  bool IsTileRequiredForDrawIfVisible(const Tile* tile) const;
 
   // Iterate over all tiles to fill content_rect.  Even if tiles are invalid
   // (i.e. no valid resource) this tiling should still iterate over them.
@@ -258,8 +242,7 @@ class CC_EXPORT PictureLayerTiling {
 
   void Reset();
 
-  void ComputeTilePriorityRects(WhichTree tree,
-                                const gfx::Rect& viewport_in_layer_space,
+  void ComputeTilePriorityRects(const gfx::Rect& viewport_in_layer_space,
                                 float ideal_contents_scale,
                                 double current_frame_time_in_seconds,
                                 const Occlusion& occlusion_in_layer_space);
@@ -298,7 +281,7 @@ class CC_EXPORT PictureLayerTiling {
  protected:
   friend class CoverageIterator;
   friend class TilingRasterTileIterator;
-  friend class TilingEvictionTileIterator;
+  friend class TilingSetEvictionQueue;
 
   typedef std::pair<int, int> TileMapKey;
   typedef base::hash_map<TileMapKey, scoped_refptr<Tile>> TileMap;

@@ -23,6 +23,8 @@ class ProfileHelper;
 namespace chromeos {
 namespace system {
 class AutomaticRebootManager;
+class DeviceDisablingManager;
+class DeviceDisablingManagerDefaultDelegate;
 }
 }
 
@@ -48,6 +50,9 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase,
 
   void InitializeChromeUserManager();
   void DestroyChromeUserManager();
+
+  void InitializeDeviceDisablingManager();
+  void ShutdownDeviceDisablingManager();
 
   void InitializeSessionManager(const base::CommandLine& parsed_command_line,
                                 Profile* profile,
@@ -77,6 +82,10 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase,
     return chrome_user_manager_.get();
   }
 
+  chromeos::system::DeviceDisablingManager* device_disabling_manager() {
+    return device_disabling_manager_.get();
+  }
+
   // Overridden from BrowserProcessPlatformPartBase:
   virtual void StartTearDown() override;
 
@@ -97,6 +106,11 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase,
       automatic_reboot_manager_;
 
   scoped_ptr<chromeos::ChromeUserManager> chrome_user_manager_;
+
+  scoped_ptr<chromeos::system::DeviceDisablingManagerDefaultDelegate>
+      device_disabling_manager_delegate_;
+  scoped_ptr<chromeos::system::DeviceDisablingManager>
+      device_disabling_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserProcessPlatformPart);
 };

@@ -22,10 +22,19 @@ namespace {
 const char kDefaultSrc[] = "default-src";
 const char kScriptSrc[] = "script-src";
 const char kObjectSrc[] = "object-src";
+const char kPluginTypes[] = "plugin-types";
 
 const char kSandboxDirectiveName[] = "sandbox";
 const char kAllowSameOriginToken[] = "allow-same-origin";
 const char kAllowTopNavigation[] = "allow-top-navigation";
+
+// This is the list of plugin types which are fully sandboxed and are safe to
+// load up in an extension, regardless of the URL they are navigated to.
+const char* const kSandboxedPluginTypes[] = {
+  "application/pdf",
+  "application/x-google-chrome-pdf",
+  "application/x-pnacl"
+};
 
 struct DirectiveStatus {
   explicit DirectiveStatus(const char* name)
@@ -53,6 +62,12 @@ bool isNonWildcardTLD(const std::string& url,
   size_t end_of_host = url.find("/", start_of_host);
   if (end_of_host == std::string::npos)
     end_of_host = url.size();
+
+  // A missing host such as "chrome-extension://" is invalid, but for backwards-
+  // compatibility, accept such CSP parts. They will be ignored by Blink anyway.
+  // TODO(robwu): Remove this special case once crbug.com/434773 is fixed.
+  if (start_of_host == end_of_host)
+    return true;
 
   // Note: It is sufficient to only compare the first character against '*'
   // because the CSP only allows wildcards at the start of a directive, see
@@ -101,7 +116,7 @@ bool isNonWildcardTLD(const std::string& url,
 }
 
 bool HasOnlySecureTokens(base::StringTokenizer& tokenizer,
-                         Manifest::Type type) {
+                         int options) {
   while (tokenizer.GetNext()) {
     std::string source = tokenizer.token();
     base::StringToLowerASCII(&source);
@@ -125,9 +140,7 @@ bool HasOnlySecureTokens(base::StringTokenizer& tokenizer,
       continue;
     }
 
-    // crbug.com/146487
-    if (type == Manifest::TYPE_EXTENSION ||
-        type == Manifest::TYPE_LEGACY_PACKAGED_APP) {
+    if (options & OPTIONS_ALLOW_UNSAFE_EVAL) {
       if (source == "'unsafe-eval'")
         continue;
     }
@@ -142,13 +155,65 @@ bool HasOnlySecureTokens(base::StringTokenizer& tokenizer,
 bool UpdateStatus(const std::string& directive_name,
                   base::StringTokenizer& tokenizer,
                   DirectiveStatus* status,
-                  Manifest::Type type) {
+                  int options) {
   if (status->seen_in_policy)
     return false;
   if (directive_name != status->directive_name)
     return false;
   status->seen_in_policy = true;
-  status->is_secure = HasOnlySecureTokens(tokenizer, type);
+  status->is_secure = HasOnlySecureTokens(tokenizer, options);
+  return true;
+}
+
+// Parses the plugin-types directive and returns the list of mime types
+// specified in |plugin_types|.
+bool ParsePluginTypes(const std::string& directive_name,
+                      base::StringTokenizer& tokenizer,
+                      std::vector<std::string>* plugin_types) {
+  DCHECK(plugin_types);
+
+  if (directive_name != kPluginTypes || !plugin_types->empty())
+    return false;
+
+  while (tokenizer.GetNext()) {
+    std::string mime_type = tokenizer.token();
+    base::StringToLowerASCII(&mime_type);
+    // Since we're comparing the mime types to a whitelist, we don't check them
+    // for strict validity right now.
+    plugin_types->push_back(mime_type);
+  }
+
+  return true;
+}
+
+// Returns true if the |plugin_type| is one of the fully sandboxed plugin types.
+bool PluginTypeAllowed(const std::string& plugin_type) {
+  for (size_t i = 0; i < arraysize(kSandboxedPluginTypes); ++i) {
+    if (plugin_type == kSandboxedPluginTypes[i])
+      return true;
+  }
+  return false;
+}
+
+// Returns true if the policy is allowed to contain an insecure object-src
+// directive. This requires OPTIONS_ALLOW_INSECURE_OBJECT_SRC to be specified
+// as an option and the plugin-types that can be loaded must be restricted to
+// the set specified in kSandboxedPluginTypes.
+bool AllowedToHaveInsecureObjectSrc(
+    int options,
+    const std::vector<std::string>& plugin_types) {
+  if (!(options & OPTIONS_ALLOW_INSECURE_OBJECT_SRC))
+    return false;
+
+  // plugin-types must be specified.
+  if (plugin_types.empty())
+    return false;
+
+  for (const auto& plugin_type : plugin_types) {
+    if (!PluginTypeAllowed(plugin_type))
+      return false;
+  }
+
   return true;
 }
 
@@ -164,7 +229,7 @@ bool ContentSecurityPolicyIsLegal(const std::string& policy) {
 }
 
 bool ContentSecurityPolicyIsSecure(const std::string& policy,
-                                   Manifest::Type type) {
+                                   int options) {
   // See http://www.w3.org/TR/CSP/#parse-a-csp-policy for parsing algorithm.
   std::vector<std::string> directives;
   base::SplitString(policy, ';', &directives);
@@ -172,6 +237,8 @@ bool ContentSecurityPolicyIsSecure(const std::string& policy,
   DirectiveStatus default_src_status(kDefaultSrc);
   DirectiveStatus script_src_status(kScriptSrc);
   DirectiveStatus object_src_status(kObjectSrc);
+
+  std::vector<std::string> plugin_types;
 
   for (size_t i = 0; i < directives.size(); ++i) {
     std::string& input = directives[i];
@@ -182,19 +249,25 @@ bool ContentSecurityPolicyIsSecure(const std::string& policy,
     std::string directive_name = tokenizer.token();
     base::StringToLowerASCII(&directive_name);
 
-    if (UpdateStatus(directive_name, tokenizer, &default_src_status, type))
+    if (UpdateStatus(directive_name, tokenizer, &default_src_status, options))
       continue;
-    if (UpdateStatus(directive_name, tokenizer, &script_src_status, type))
+    if (UpdateStatus(directive_name, tokenizer, &script_src_status, options))
       continue;
-    if (UpdateStatus(directive_name, tokenizer, &object_src_status, type))
+    if (UpdateStatus(directive_name, tokenizer, &object_src_status, options))
+      continue;
+    if (ParsePluginTypes(directive_name, tokenizer, &plugin_types))
       continue;
   }
 
   if (script_src_status.seen_in_policy && !script_src_status.is_secure)
     return false;
 
-  if (object_src_status.seen_in_policy && !object_src_status.is_secure)
-    return false;
+  if (object_src_status.seen_in_policy && !object_src_status.is_secure) {
+    // Note that this does not fully check the object-src source list for
+    // validity but Blink will do this anyway.
+    if (!AllowedToHaveInsecureObjectSrc(options, plugin_types))
+      return false;
+  }
 
   if (default_src_status.seen_in_policy && !default_src_status.is_secure) {
     return script_src_status.seen_in_policy &&

@@ -6,9 +6,9 @@ from measurements import thread_times
 from measurements import smoothness_unittest
 from metrics import timeline
 from telemetry.core import wpr_modes
-from telemetry.unittest import options_for_unittests
-from telemetry.unittest import page_test_test_case
-from telemetry.unittest import test
+from telemetry.unittest_util import options_for_unittests
+from telemetry.unittest_util import page_test_test_case
+from telemetry.unittest_util import test
 
 
 
@@ -46,8 +46,7 @@ class ThreadTimesUnitTest(page_test_test_case.PageTestTestCase):
 
   def testWithSilkDetails(self):
     ps = self.CreatePageSetFromFileInUnittestDataDir('scrollable_page.html')
-    measurement = thread_times.ThreadTimes()
-    self._options.report_silk_details = True
+    measurement = thread_times.ThreadTimes(report_silk_details=True)
     results = self.RunMeasurement(measurement, ps, options = self._options)
     self.assertEquals(0, len(results.failures))
 

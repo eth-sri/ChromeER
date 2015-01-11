@@ -50,8 +50,6 @@ source_set("browser") {
       "api/app_view/app_view_guest_internal_api.h",
       "api/app_window/app_window_api.cc",
       "api/app_window/app_window_api.h",
-      "api/guest_view/guest_view_internal_api.cc",
-      "api/guest_view/guest_view_internal_api.h",
       "api/async_api_function.cc",
       "api/async_api_function.h",
       "api/bluetooth/bluetooth_api.cc",
@@ -143,12 +141,19 @@ source_set("browser") {
       "api/execute_code_function.h",
       "api/extensions_api_client.cc",
       "api/extensions_api_client.h",
+      "api/guest_view/guest_view_internal_api.cc",
+      "api/guest_view/guest_view_internal_api.h",
       "api/hid/hid_api.cc",
       "api/hid/hid_api.h",
       "api/hid/hid_connection_resource.cc",
       "api/hid/hid_connection_resource.h",
       "api/hid/hid_device_manager.cc",
       "api/hid/hid_device_manager.h",
+      "api/management/management_api.cc",
+      "api/management/management_api.h",
+      "api/management/management_api_constants.cc",
+      "api/management/management_api_constants.h",
+      "api/management/management_api_delegate.h",
       "api/messaging/native_message_host.cc",
       "api/power/power_api.cc",
       "api/power/power_api.h",
@@ -256,6 +261,8 @@ source_set("browser") {
       "api/web_request/web_request_time_tracker.h",
       "api/web_view/web_view_internal_api.cc",
       "api/web_view/web_view_internal_api.h",
+      "api/webcam_private/webcam_private_api.h",
+      "api/webcam_private/webcam_private_api_chromeos.cc",
       "api_activity_monitor.h",
       "app_sorting.h",
       "app_window/app_delegate.h",
@@ -460,6 +467,10 @@ source_set("browser") {
       "updater/request_queue_impl.h",
       "updater/safe_manifest_parser.cc",
       "updater/safe_manifest_parser.h",
+      "updater/update_service.cc",
+      "updater/update_service.h",
+      "updater/update_service_factory.cc",
+      "updater/update_service_factory.h",
       "url_request_util.cc",
       "url_request_util.h",
       "value_store/leveldb_value_store.cc",
@@ -480,6 +491,8 @@ source_set("browser") {
       "view_type_utils.h",
       "warning_service.cc",
       "warning_service.h",
+      "warning_service_factory.cc",
+      "warning_service_factory.h",
       "warning_set.cc",
       "warning_set.h",
     ]
@@ -502,6 +515,17 @@ source_set("browser") {
     } else {
       sources += [
         "api/cast_channel/cast_auth_util_nss.cc",
+      ]
+    }
+
+    if (is_chromeos) {
+      sources += [
+        "api/vpn_provider/vpn_provider_api.cc",
+        "api/vpn_provider/vpn_provider_api.h",
+        "api/vpn_provider/vpn_service.cc",
+        "api/vpn_provider/vpn_service.h",
+        "api/vpn_provider/vpn_service_factory.cc",
+        "api/vpn_provider/vpn_service_factory.h",
       ]
     }
   }

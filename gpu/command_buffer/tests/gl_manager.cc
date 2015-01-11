@@ -139,6 +139,10 @@ scoped_ptr<gfx::GpuMemoryBuffer> GLManager::CreateGpuMemoryBuffer(
 }
 
 void GLManager::Initialize(const GLManager::Options& options) {
+  InitializeWithCommandLine(options, nullptr);
+}
+void GLManager::InitializeWithCommandLine(const GLManager::Options& options,
+                                          base::CommandLine* command_line) {
   const int32 kCommandBufferSize = 1024 * 1024;
   const size_t kStartTransferBufferSize = 4 * 1024 * 1024;
   const size_t kMinTransferBufferSize = 1 * 256 * 1024;
@@ -186,14 +190,19 @@ void GLManager::Initialize(const GLManager::Options& options) {
   attrib_helper.blue_size = 8;
   attrib_helper.alpha_size = 8;
   attrib_helper.depth_size = 16;
+  attrib_helper.stencil_size = 8;
   attrib_helper.Serialize(&attribs);
 
+  DCHECK(!command_line || !context_group);
   if (!context_group) {
+    scoped_refptr<gles2::FeatureInfo> feature_info;
+    if (command_line)
+      feature_info = new gles2::FeatureInfo(*command_line);
     context_group =
         new gles2::ContextGroup(mailbox_manager_.get(),
                                 NULL,
                                 new gpu::gles2::ShaderTranslatorCache,
-                                NULL,
+                                feature_info,
                                 options.bind_generates_resource);
   }
 
@@ -255,12 +264,14 @@ void GLManager::Initialize(const GLManager::Options& options) {
   transfer_buffer_.reset(new TransferBuffer(gles2_helper_.get()));
 
   // Create the object exposing the OpenGL API.
+  const bool support_client_side_arrays = true;
   gles2_implementation_.reset(
       new gles2::GLES2Implementation(gles2_helper_.get(),
                                      client_share_group,
                                      transfer_buffer_.get(),
                                      options.bind_generates_resource,
                                      options.lose_context_when_out_of_memory,
+                                     support_client_side_arrays,
                                      this));
 
   ASSERT_TRUE(gles2_implementation_->Initialize(
@@ -321,7 +332,11 @@ const gpu::gles2::FeatureInfo::Workarounds& GLManager::workarounds() const {
 }
 
 void GLManager::PumpCommands() {
-  decoder_->MakeCurrent();
+  if (!decoder_->MakeCurrent()) {
+    command_buffer_->SetContextLostReason(decoder_->GetContextLostReason());
+    command_buffer_->SetParseError(::gpu::error::kLostContext);
+    return;
+  }
   gpu_scheduler_->PutChanged();
   ::gpu::CommandBuffer::State state = command_buffer_->GetLastState();
   if (!context_lost_allowed_) {

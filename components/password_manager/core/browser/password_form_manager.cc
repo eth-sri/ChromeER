@@ -16,6 +16,7 @@
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_manager_driver.h"
@@ -25,6 +26,10 @@ using autofill::FormStructure;
 using autofill::PasswordForm;
 using autofill::PasswordFormMap;
 using base::Time;
+
+// Shorten the name to spare line breaks. The code provides enough context
+// already.
+typedef autofill::SavePasswordProgressLogger Logger;
 
 namespace password_manager {
 
@@ -257,6 +262,17 @@ void PasswordFormManager::ProvisionallySave(
       is_new_login_ = true;
       user_action_ = password_changed ? kUserActionChoosePslMatch
                                       : kUserActionOverridePassword;
+
+      // Update credential to reflect that it has been used for submission.
+      // If this isn't updated, then password generation uploads are off for
+      // sites where PSL matching is required to fill the login form, as two
+      // PASSWORD votes are uploaded per saved password instead of one.
+      //
+      // TODO(gcasto): It would be nice if other state were shared such that if
+      // say a password was updated on one match it would update on all related
+      // passwords. This is a much larger change.
+      UpdateMetadataForUsage(pending_credentials_);
+
       // Normally, the copy of the PSL matched credentials, adapted for the
       // current domain, is saved automatically without asking the user, because
       // the copy likely represents the same account, i.e., the one for which
@@ -351,11 +367,22 @@ void PasswordFormManager::FetchMatchingLoginsFromPasswordStore(
     PasswordStore::AuthorizationPromptPolicy prompt_policy) {
   DCHECK_EQ(state_, PRE_MATCHING_PHASE);
   state_ = MATCHING_PHASE;
+
+  scoped_ptr<BrowserSavePasswordProgressLogger> logger;
+  if (client_->IsLoggingActive()) {
+    logger.reset(new BrowserSavePasswordProgressLogger(client_));
+    logger->LogMessage(Logger::STRING_FETCH_LOGINS_METHOD);
+  }
+
   PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
+    if (logger)
+      logger->LogMessage(Logger::STRING_NO_STORE);
     NOTREACHED();
     return;
   }
+  // This logging is only temporary, to investigate http://crbug.com/423327.
+  VLOG(4) << "Asking the store for logins for this form: " << observed_form_;
   password_store->GetLogins(observed_form_, prompt_policy, this);
 }
 
@@ -368,6 +395,12 @@ void PasswordFormManager::OnRequestDone(
   // Note that the result gets deleted after this call completes, but we own
   // the PasswordForm objects pointed to by the result vector, thus we keep
   // copies to a minimum here.
+
+  scoped_ptr<BrowserSavePasswordProgressLogger> logger;
+  if (client_->IsLoggingActive()) {
+    logger.reset(new BrowserSavePasswordProgressLogger(client_));
+    logger->LogMessage(Logger::STRING_ON_REQUEST_DONE_METHOD);
+  }
 
   int best_score = 0;
   // These credentials will be in the final result regardless of score.
@@ -442,6 +475,8 @@ void PasswordFormManager::OnRequestDone(
     // If no saved forms can be used, then it isn't blacklisted and generation
     // should be allowed.
     driver_->AllowPasswordGenerationForForm(observed_form_);
+    if (logger)
+      logger->LogNumber(Logger::STRING_BEST_SCORE, best_score);
     return;
   }
 
@@ -498,6 +533,13 @@ void PasswordFormManager::OnGetPasswordStoreResults(
       const std::vector<autofill::PasswordForm*>& results) {
   DCHECK_EQ(state_, MATCHING_PHASE);
 
+  scoped_ptr<BrowserSavePasswordProgressLogger> logger;
+  if (client_->IsLoggingActive()) {
+    logger.reset(new BrowserSavePasswordProgressLogger(client_));
+    logger->LogMessage(Logger::STRING_ON_GET_STORE_RESULTS_METHOD);
+    logger->LogNumber(Logger::STRING_NUMBER_RESULTS, results.size());
+  }
+
   if (results.empty()) {
     state_ = POST_MATCHING_PHASE;
     // No result means that we visit this site the first time so we don't need
@@ -543,12 +585,20 @@ void PasswordFormManager::SaveAsNewLogin(bool reset_preferred_login) {
   // Upload credentials the first time they are saved. This data is used
   // by password generation to help determine account creation sites.
   // Blacklisted credentials will never be used, so don't upload a vote for
-  // them.
-  if (!pending_credentials_.blacklisted_by_user)
-    UploadPasswordForm(pending_credentials_.form_data, autofill::PASSWORD);
+  // them. Credentials that have been previously used (e.g. PSL matches) are
+  // checked to see if they are valid account creation forms.
+  if (!pending_credentials_.blacklisted_by_user) {
+    if (pending_credentials_.times_used == 0) {
+      UploadPasswordForm(pending_credentials_.form_data, autofill::PASSWORD);
+    } else {
+      CheckForAccountCreationForm(pending_credentials_, observed_form_);
+    }
+  }
 
   pending_credentials_.date_created = Time::Now();
   SanitizePossibleUsernames(&pending_credentials_);
+  // This logging is only temporary, to investigate http://crbug.com/423327.
+  VLOG(4) << "Adding this login: " << pending_credentials_;
   password_store->AddLogin(pending_credentials_);
 
   if (reset_preferred_login) {
@@ -583,6 +633,8 @@ void PasswordFormManager::UpdatePreferredLoginState(
       iter->second->preferred = false;
       if (user_action_ == kUserActionNone)
         user_action_ = kUserActionChoose;
+      // This logging is only temporary, to investigate http://crbug.com/423327.
+      VLOG(4) << "Updating this login: " << *iter->second;
       password_store->UpdateLogin(*iter->second);
     }
   }
@@ -604,8 +656,7 @@ void PasswordFormManager::UpdateLogin() {
     return;
   }
 
-  // Update metadata.
-  ++pending_credentials_.times_used;
+  UpdateMetadataForUsage(pending_credentials_);
 
   if (client_->IsSyncAccountCredential(
           base::UTF16ToUTF8(pending_credentials_.username_value),
@@ -619,10 +670,6 @@ void PasswordFormManager::UpdateLogin() {
 
   UpdatePreferredLoginState(password_store);
 
-  // Remove alternate usernames. At this point we assume that we have found
-  // the right username.
-  pending_credentials_.other_possible_usernames.clear();
-
   // Update the new preferred login.
   if (!selected_username_.empty()) {
     // An other possible username is selected. We set this selected username
@@ -630,6 +677,8 @@ void PasswordFormManager::UpdateLogin() {
     // username, so we delete the old credentials and add a new one instead.
     password_store->RemoveLogin(pending_credentials_);
     pending_credentials_.username_value = selected_username_;
+    // This logging is only temporary, to investigate http://crbug.com/423327.
+    VLOG(4) << "Adding this login: " << pending_credentials_;
     password_store->AddLogin(pending_credentials_);
   } else if ((observed_form_.scheme == PasswordForm::SCHEME_HTML) &&
              (observed_form_.origin.spec().length() >
@@ -654,6 +703,8 @@ void PasswordFormManager::UpdateLogin() {
     PasswordForm copy(pending_credentials_);
     copy.origin = observed_form_.origin;
     copy.action = observed_form_.action;
+    // This logging is only temporary, to investigate http://crbug.com/423327.
+    VLOG(4) << "Adding this login: " << copy;
     password_store->AddLogin(copy);
   } else if (observed_form_.new_password_element.empty() &&
              (pending_credentials_.password_element.empty() ||
@@ -669,10 +720,23 @@ void PasswordFormManager::UpdateLogin() {
     pending_credentials_.password_element = observed_form_.password_element;
     pending_credentials_.username_element = observed_form_.username_element;
     pending_credentials_.submit_element = observed_form_.submit_element;
+    // This logging is only temporary, to investigate http://crbug.com/423327.
+    VLOG(4) << "Adding this login: " << pending_credentials_;
     password_store->AddLogin(pending_credentials_);
   } else {
+    // This logging is only temporary, to investigate http://crbug.com/423327.
+    VLOG(4) << "Updating this login: " << pending_credentials_;
     password_store->UpdateLogin(pending_credentials_);
   }
+}
+
+void PasswordFormManager::UpdateMetadataForUsage(
+    const PasswordForm& credential) {
+  ++pending_credentials_.times_used;
+
+  // Remove alternate usernames. At this point we assume that we have found
+  // the right username.
+  pending_credentials_.other_possible_usernames.clear();
 }
 
 bool PasswordFormManager::UpdatePendingCredentialsIfOtherPossibleUsername(

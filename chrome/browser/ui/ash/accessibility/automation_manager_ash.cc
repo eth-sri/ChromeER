@@ -26,7 +26,9 @@ AutomationManagerAsh* AutomationManagerAsh::GetInstance() {
 
 void AutomationManagerAsh::Enable(BrowserContext* context) {
   enabled_ = true;
-  Reset();
+  if (!current_tree_.get())
+    current_tree_.reset(new AXTreeSourceAsh());
+  ResetSerializer();
   SendEvent(context, current_tree_->GetRoot(), ui::AX_EVENT_LOAD_COMPLETE);
 }
 
@@ -43,12 +45,6 @@ void AutomationManagerAsh::HandleEvent(BrowserContext* context,
   if (!enabled_) {
     return;
   }
-
-  // TODO(dtseng): Events should only be delivered to extensions with the
-  // desktop permission.
-  views::Widget* widget = view->GetWidget();
-  if (!widget)
-    return;
 
   if (!context && g_browser_process->profile_manager()) {
     context = g_browser_process->profile_manager()->GetLastUsedProfile();
@@ -83,12 +79,12 @@ void AutomationManagerAsh::SetSelection(int32 id, int32 start, int32 end) {
   current_tree_->SetSelection(id, start, end);
 }
 
-AutomationManagerAsh::AutomationManagerAsh() : enabled_(false) {}
+AutomationManagerAsh::AutomationManagerAsh() : enabled_(false) {
+}
 
 AutomationManagerAsh::~AutomationManagerAsh() {}
 
-void AutomationManagerAsh::Reset() {
-  current_tree_.reset(new AXTreeSourceAsh());
+void AutomationManagerAsh::ResetSerializer() {
   current_tree_serializer_.reset(
       new ui::AXTreeSerializer<views::AXAuraObjWrapper*>(
           current_tree_.get()));

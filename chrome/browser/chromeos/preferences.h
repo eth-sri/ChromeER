@@ -13,8 +13,8 @@
 #include "base/prefs/pref_member.h"
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/prefs/pref_service_syncable_observer.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "components/user_manager/user_manager.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
 
 class PrefRegistrySimple;
 class PrefService;
@@ -139,6 +139,8 @@ class Preferences : public PrefServiceSyncableObserver,
   BooleanPrefMember xkb_auto_repeat_enabled_;
   IntegerPrefMember xkb_auto_repeat_delay_pref_;
   IntegerPrefMember xkb_auto_repeat_interval_pref_;
+
+  IntegerPrefMember wake_on_wifi_enabled_;
 
   // User owning these preferences.
   const user_manager::User* user_;

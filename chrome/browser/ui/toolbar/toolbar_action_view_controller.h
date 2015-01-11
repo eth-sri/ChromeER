@@ -39,6 +39,10 @@ class ToolbarActionViewController {
   // Returns the icon and the badge, if any, for the current tab.
   virtual gfx::ImageSkia GetIconWithBadge() = 0;
 
+  // Returns the name of the action, which can be separate from the accessible
+  // name or name for the tooltip.
+  virtual base::string16 GetActionName() const = 0;
+
   // Returns the accessible name to use for the given |web_contents|.
   virtual base::string16 GetAccessibleName(content::WebContents* web_contents)
       const = 0;
@@ -73,6 +77,9 @@ class ToolbarActionViewController {
   // to, e.g., an API call).
   // Returns true if a popup is shown.
   virtual bool ExecuteAction(bool by_user) = 0;
+
+  // Updates the current state of the action.
+  virtual void UpdateState() = 0;
 
   // Paints any extra parts of the image (e.g., a badge).
   virtual void PaintExtra(gfx::Canvas* canvas,

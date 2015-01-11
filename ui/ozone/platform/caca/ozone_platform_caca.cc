@@ -10,6 +10,7 @@
 #include "ui/ozone/platform/caca/caca_window_manager.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
 #include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/system_input_injector.h"
 
 namespace ui {
 
@@ -18,22 +19,25 @@ namespace {
 class OzonePlatformCaca : public OzonePlatform {
  public:
   OzonePlatformCaca() {}
-  virtual ~OzonePlatformCaca() {}
+  ~OzonePlatformCaca() override {}
 
   // OzonePlatform:
-  virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
+  ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
     return window_manager_.get();
   }
-  virtual CursorFactoryOzone* GetCursorFactoryOzone() override {
+  CursorFactoryOzone* GetCursorFactoryOzone() override {
     return cursor_factory_ozone_.get();
   }
-  virtual GpuPlatformSupport* GetGpuPlatformSupport() override {
+  GpuPlatformSupport* GetGpuPlatformSupport() override {
     return NULL;  // no GPU support
   }
-  virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
+  GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
     return NULL;  // no GPU support
   }
-  virtual scoped_ptr<PlatformWindow> CreatePlatformWindow(
+  scoped_ptr<SystemInputInjector> CreateSystemInputInjector() override {
+    return nullptr;  // no input injection support.
+  }
+  scoped_ptr<PlatformWindow> CreatePlatformWindow(
       PlatformWindowDelegate* delegate,
       const gfx::Rect& bounds) override {
     scoped_ptr<CacaWindow> caca_window(new CacaWindow(
@@ -42,18 +46,17 @@ class OzonePlatformCaca : public OzonePlatform {
       return nullptr;
     return caca_window.Pass();
   }
-  virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
-      override {
+  scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate() override {
     return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateOzone());
   }
 
-  virtual void InitializeUI() override {
+  void InitializeUI() override {
     window_manager_.reset(new CacaWindowManager);
     event_source_.reset(new CacaEventSource());
     cursor_factory_ozone_.reset(new CursorFactoryOzone());
   }
 
-  virtual void InitializeGPU() override {}
+  void InitializeGPU() override {}
 
  private:
   scoped_ptr<CacaWindowManager> window_manager_;

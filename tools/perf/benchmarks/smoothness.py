@@ -13,7 +13,7 @@ class SmoothnessTop25(benchmark.Benchmark):
 
   http://www.chromium.org/developers/design-documents/rendering-benchmarks"""
   test = smoothness.Smoothness
-  page_set = page_sets.Top25PageSet
+  page_set = page_sets.Top25SmoothPageSet
 
 
 class SmoothnessToughFiltersCases(benchmark.Benchmark):
@@ -21,7 +21,8 @@ class SmoothnessToughFiltersCases(benchmark.Benchmark):
   page_set = page_sets.ToughFiltersCasesPageSet
 
 
-@benchmark.Disabled('mac')  # crbug.com/388877
+# crbug.com/388877, crbug.com/396127
+@benchmark.Disabled('mac', 'win', 'android')
 class SmoothnessToughCanvasCases(benchmark.Benchmark):
   test = smoothness.Smoothness
   page_set = page_sets.ToughCanvasCasesPageSet
@@ -68,7 +69,7 @@ class SmoothnessGpuRasterizationTop25(benchmark.Benchmark):
   """
   tag = 'gpu_rasterization'
   test = smoothness.Smoothness
-  page_set = page_sets.Top25PageSet
+  page_set = page_sets.Top25SmoothPageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
 
@@ -102,7 +103,6 @@ class SmoothnessSimpleMobilePages(benchmark.Benchmark):
   test = smoothness.Smoothness
   page_set = page_sets.SimpleMobileSitesPageSet
 
-
 @benchmark.Enabled('android')
 class SmoothnessToughPinchZoomCases(benchmark.Benchmark):
   """Measures rendering statistics for pinch-zooming into the tough pinch zoom
@@ -129,3 +129,8 @@ class SmoothnessGpuRasterizationPolymer(benchmark.Benchmark):
   page_set = page_sets.PolymerPageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
+
+class SmoothnessToughFastScrollingCases(benchmark.Benchmark):
+  test = smoothness.Smoothness
+  page_set = page_sets.ToughScrollingCasesPageSet
+  options = {'page_label_filter' : 'fastscrolling'}

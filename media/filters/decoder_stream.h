@@ -53,16 +53,15 @@ class MEDIA_EXPORT DecoderStream {
   DecoderStream(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       ScopedVector<Decoder> decoders,
-      const SetDecryptorReadyCB& set_decryptor_ready_cb,
       const scoped_refptr<MediaLog>& media_log);
   virtual ~DecoderStream();
 
   // Initializes the DecoderStream and returns the initialization result
   // through |init_cb|. Note that |init_cb| is always called asynchronously.
   void Initialize(DemuxerStream* stream,
-                  bool low_delay,
-                  const StatisticsCB& statistics_cb,
-                  const InitCB& init_cb);
+                  const InitCB& init_cb,
+                  const SetDecryptorReadyCB& set_decryptor_ready_cb,
+                  const StatisticsCB& statistics_cb);
 
   // Reads a decoded Output and returns it via the |read_cb|. Note that
   // |read_cb| is always called asynchronously. This method should only be
@@ -100,7 +99,7 @@ class MEDIA_EXPORT DecoderStream {
   }
 
   // Allows callers to register for notification of config changes; this is
-  // called immediately after recieving the 'kConfigChanged' status from the
+  // called immediately after receiving the 'kConfigChanged' status from the
   // DemuxerStream, before any action is taken to handle the config change.
   typedef base::Closure ConfigChangeObserverCB;
   void set_config_change_observer(
@@ -172,7 +171,6 @@ class MEDIA_EXPORT DecoderStream {
   base::Closure reset_cb_;
 
   DemuxerStream* stream_;
-  bool low_delay_;
 
   scoped_ptr<DecoderSelector<StreamType> > decoder_selector_;
 

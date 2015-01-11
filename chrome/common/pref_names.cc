@@ -480,18 +480,6 @@ const char kAudioMute[] = "settings.audio.mute";
 // |kAudioDevicesVolumePercent| setting.
 const char kAudioVolumePercent[] = "settings.audio.volume_percent";
 
-// An integer pref to record user's spring charger check result.
-// 0 - unknown charger, not checked yet.
-// 1 - confirmed safe charger.
-// 2 - confirmed original charger and declined to order new charger.
-// 3 - confirmed original charger and ordered new charger online.
-// 4 - confirmed original charger and ordered new charger by phone.
-// 5 - confirmed original charger, ordered a new one online, but continue to use
-//     the old one.
-// 6 - confirmed original charger, ordered a new one by phone, but continue to
-//     use the old one.
-const char kSpringChargerCheck[] = "settings.spring_charger.check_result";
-
 // A boolean pref set to true if touchpad tap-to-click is enabled.
 const char kTapToClickEnabled[] = "settings.touchpad.enable_tap_to_click";
 
@@ -834,6 +822,10 @@ const char kFileSystemProviderMounted[] = "file_system_provider.mounted";
 
 // A boolean pref set to true if the virtual keyboard should be enabled.
 const char kTouchVirtualKeyboardEnabled[] = "ui.touch_virtual_keyboard_enabled";
+
+// An integer pref that controls the wake on wifi features that should be
+// enabled.
+const char kWakeOnWiFiEnabled[] = "settings.internet.wake_on_wifi";
 
 #endif  // defined(OS_CHROMEOS)
 
@@ -1207,17 +1199,21 @@ const char kGCMChannelEnabled[] = "gcm.channel_enabled";
 const char kPushMessagingRegistrationCount[] =
     "gcm.push_messaging_registration_count";
 
+// Whether a user is allowed to use Easy Unlock.
+const char kEasyUnlockAllowed[] = "easy_unlock.allowed";
+
 // Whether Easy Unlock is enabled.
 const char kEasyUnlockEnabled[] = "easy_unlock.enabled";
-
-// Whether to show the Easy Unlock first run tutorial.
-const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
 
 // Preference storing Easy Unlock pairing data.
 const char kEasyUnlockPairing[] = "easy_unlock.pairing";
 
-// Whether a user is allowed to use Easy Unlock.
-const char kEasyUnlockAllowed[] = "easy_unlock.allowed";
+// Whether close proximity between the remote and the local device is required
+// in order to use Easy Unlock.
+const char kEasyUnlockProximityRequired[] = "easy_unlock.proximity_required";
+
+// Whether to show the Easy Unlock first run tutorial.
+const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
 
 // A cache of zero suggest results using JSON serialized into a string.
 const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
@@ -1273,9 +1269,6 @@ const char kDisableSSLRecordSplitting[] = "ssl.ssl_record_splitting.disabled";
 // Dictionary of dates when a site's SSL blocking interstitial was proceeded
 // through.
 const char kSSLBlockingBypassed[] = "ssl.ssl_blocking_bypassed";
-
-// A boolean pref of the EULA accepted flag.
-const char kEulaAccepted[] = "EulaAccepted";
 
 // Boolean that specifies whether or not crash reporting and metrics reporting
 // are sent over the network for analysis.
@@ -1421,10 +1414,10 @@ const char kDownloadDefaultDirectory[] = "download.default_directory";
 // upgrade a unsafe location to a safe location.
 const char kDownloadDirUpgraded[] = "download.directory_upgrade";
 
-#if defined(OS_WIN)
-// Whether downloaded PDFs should be opened in Adobe Acrobat Reader.
-const char kOpenPdfDownloadInAdobeReader[] =
-    "download.open_pdf_in_adobe_reader";
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+const char kOpenPdfDownloadInSystemReader[] =
+    "download.open_pdf_in_system_reader";
 #endif
 
 // String which specifies where to save html files to by default.
@@ -1970,6 +1963,9 @@ const char kTabStripStackedLayout[] = "tab-strip-stacked-layout";
 // Indicates that factory reset was requested from options page or reset screen.
 const char kFactoryResetRequested[] = "FactoryResetRequested";
 
+// Indicates that debugging features were requested from oobe screen.
+const char kDebuggingFeaturesRequested[] = "DebuggingFeaturesRequested";
+
 // Boolean recording whether we have showed a balloon that calls out the message
 // center for desktop notifications.
 const char kMessageCenterShowedFirstRunBalloon[] =
@@ -2274,5 +2270,15 @@ const char kBrowserAddPersonEnabled[] = "profile.add_person_enabled";
 
 // A dictionary that maps user id to hardlock state.
 const char kEasyUnlockHardlockState[] = "easy_unlock.hardlock_state";
+
+// The beginning of time span when we count user's "Nope" for the password
+// bubble.
+const char kPasswordBubbleTimeStamp[] = "password_bubble.timestamp";
+
+// The count of user's "Nope" for the password bubble.
+const char kPasswordBubbleNopesCount[] = "password_bubble.nopes";
+
+// Last user's interaction with the password bubble.
+const char kPasswordBubbleLastInteractions[] = "password_bubble.interactions";
 
 }  // namespace prefs

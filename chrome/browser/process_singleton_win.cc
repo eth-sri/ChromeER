@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "base/path_service.h"
 #include "base/process/kill.h"
 #include "base/process/process_info.h"
 #include "base/strings/string_number_conversions.h"
@@ -161,7 +160,6 @@ bool ProcessLaunchNotification(
     return false;
 
   // Handle the WM_COPYDATA message from another process.
-  HWND hwnd = reinterpret_cast<HWND>(wparam);
   const COPYDATASTRUCT* cds = reinterpret_cast<COPYDATASTRUCT*>(lparam);
 
   CommandLine parsed_command_line(CommandLine::NO_PROGRAM);

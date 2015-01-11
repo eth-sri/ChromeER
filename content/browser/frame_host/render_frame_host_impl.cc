@@ -25,6 +25,8 @@
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 #include "content/browser/geolocation/geolocation_service_context.h"
+#include "content/browser/permissions/permission_service_context.h"
+#include "content/browser/permissions/permission_service_impl.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -35,12 +37,10 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/transition_request_manager.h"
 #include "content/common/accessibility_messages.h"
-#include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/inter_process_time_ticks_converter.h"
 #include "content/common/navigation_params.h"
-#include "content/common/platform_notification_messages.h"
 #include "content/common/render_frame_setup.mojom.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/public/browser/ax_event_notification_details.h"
@@ -49,7 +49,6 @@
 #include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/desktop_notification_delegate.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/stream_handle.h"
@@ -80,54 +79,6 @@ typedef base::hash_map<RenderFrameHostID, RenderFrameHostImpl*>
     RoutingIDFrameMap;
 base::LazyInstance<RoutingIDFrameMap> g_routing_id_frame_map =
     LAZY_INSTANCE_INITIALIZER;
-
-class DesktopNotificationDelegateImpl : public DesktopNotificationDelegate {
- public:
-  DesktopNotificationDelegateImpl(RenderFrameHost* render_frame_host,
-                                  int notification_id)
-      : render_process_id_(render_frame_host->GetProcess()->GetID()),
-        render_frame_id_(render_frame_host->GetRoutingID()),
-        notification_id_(notification_id) {}
-
-  ~DesktopNotificationDelegateImpl() override {}
-
-  void NotificationDisplayed() override {
-    RenderFrameHost* rfh =
-        RenderFrameHost::FromID(render_process_id_, render_frame_id_);
-    if (!rfh)
-      return;
-
-    rfh->Send(new DesktopNotificationMsg_PostDisplay(
-        rfh->GetRoutingID(), notification_id_));
-  }
-
-  void NotificationClosed(bool by_user) override {
-    RenderFrameHost* rfh =
-        RenderFrameHost::FromID(render_process_id_, render_frame_id_);
-    if (!rfh)
-      return;
-
-    rfh->Send(new DesktopNotificationMsg_PostClose(
-        rfh->GetRoutingID(), notification_id_, by_user));
-    static_cast<RenderFrameHostImpl*>(rfh)->NotificationClosed(
-        notification_id_);
-  }
-
-  void NotificationClick() override {
-    RenderFrameHost* rfh =
-        RenderFrameHost::FromID(render_process_id_, render_frame_id_);
-    if (!rfh)
-      return;
-
-    rfh->Send(new DesktopNotificationMsg_PostClick(
-        rfh->GetRoutingID(), notification_id_));
-  }
-
- private:
-  int render_process_id_;
-  int render_frame_id_;
-  int notification_id_;
-};
 
 // Translate a WebKit text direction into a base::i18n one.
 base::i18n::TextDirection WebTextDirectionToChromeTextDirection(
@@ -171,7 +122,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(RenderViewHostImpl* render_view_host,
                                          FrameTree* frame_tree,
                                          FrameTreeNode* frame_tree_node,
                                          int routing_id,
-                                         bool is_swapped_out)
+                                         int flags)
     : render_view_host_(render_view_host),
       delegate_(delegate),
       cross_process_frame_connector_(NULL),
@@ -187,6 +138,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(RenderViewHostImpl* render_view_host,
       accessibility_reset_count_(0),
       no_create_browser_accessibility_manager_for_testing_(false),
       weak_ptr_factory_(this) {
+  bool is_swapped_out = !!(flags & CREATE_RF_SWAPPED_OUT);
   frame_tree_->RegisterRenderFrameHost(this);
   GetProcess()->AddRoute(routing_id_, this);
   g_routing_id_frame_map.Get().insert(std::make_pair(
@@ -308,14 +260,6 @@ bool RenderFrameHostImpl::Send(IPC::Message* message) {
         make_scoped_ptr(message));
   }
 
-  // Route IPCs through the RenderFrameProxyHost when in swapped out state.
-  // Note: For subframes in --site-per-process mode, we don't use swapped out
-  // RenderFrameHosts.
-  if (frame_tree_node_->IsMainFrame() && is_swapped_out()) {
-    DCHECK(render_frame_proxy_host_);
-    return render_frame_proxy_host_->Send(message);
-  }
-
   return GetProcess()->Send(message);
 }
 
@@ -380,17 +324,13 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
     IPC_MESSAGE_HANDLER(FrameHostMsg_BeginNavigation,
                         OnBeginNavigation)
-    IPC_MESSAGE_HANDLER(PlatformNotificationHostMsg_RequestPermission,
-                        OnRequestPlatformNotificationPermission)
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
-                        OnShowDesktopNotification)
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Cancel,
-                        OnCancelDesktopNotification)
     IPC_MESSAGE_HANDLER(FrameHostMsg_TextSurroundingSelectionResponse,
                         OnTextSurroundingSelectionResponse)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_LocationChanges,
                         OnAccessibilityLocationChanges)
+    IPC_MESSAGE_HANDLER(AccessibilityHostMsg_FindInPageResult,
+                        OnAccessibilityFindInPageResult)
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(FrameHostMsg_ShowPopup, OnShowPopup)
     IPC_MESSAGE_HANDLER(FrameHostMsg_HidePopup, OnHidePopup)
@@ -435,6 +375,11 @@ void RenderFrameHostImpl::AccessibilitySetTextSelection(
       routing_id_, object_id, start_offset, end_offset));
 }
 
+void RenderFrameHostImpl::AccessibilitySetValue(
+    int object_id, const base::string16& value) {
+  Send(new AccessibilityMsg_SetValue(routing_id_, object_id, value));
+}
+
 bool RenderFrameHostImpl::AccessibilityViewHasFocus() const {
   RenderWidgetHostView* view = render_view_host_->GetView();
   if (view)
@@ -460,6 +405,10 @@ gfx::Point RenderFrameHostImpl::AccessibilityOriginInScreen(
 
 void RenderFrameHostImpl::AccessibilityHitTest(const gfx::Point& point) {
   Send(new AccessibilityMsg_HitTest(routing_id_, point));
+}
+
+void RenderFrameHostImpl::AccessibilitySetAccessibilityFocus(int acc_obj_id) {
+  Send(new AccessibilityMsg_SetAccessibilityFocus(routing_id_, acc_obj_id));
 }
 
 void RenderFrameHostImpl::AccessibilityFatalError() {
@@ -992,52 +941,6 @@ void RenderFrameHostImpl::OnCreateEventRacerLog(int32 *routing_id) {
   *routing_id = GetSiteInstance()->CreateEventRacerLog();
 }
 
-void RenderFrameHostImpl::OnRequestPlatformNotificationPermission(
-    const GURL& origin, int request_id) {
-  base::Callback<void(bool)> done_callback = base::Bind(
-      &RenderFrameHostImpl::PlatformNotificationPermissionRequestDone,
-      weak_ptr_factory_.GetWeakPtr(),
-      request_id);
-
-  if (!delegate()->GetAsWebContents())
-    return;
-
-  // TODO(peter): plumb user_gesture and bridge_id.
-  GetContentClient()->browser()->RequestPermission(
-      content::PERMISSION_NOTIFICATIONS,
-      delegate()->GetAsWebContents(),
-      routing_id_,
-      origin,
-      true,  // user_gesture,
-      done_callback);
-}
-
-void RenderFrameHostImpl::OnShowDesktopNotification(
-    int notification_id,
-    const ShowDesktopNotificationHostMsgParams& params) {
-  scoped_ptr<DesktopNotificationDelegateImpl> delegate(
-      new DesktopNotificationDelegateImpl(this, notification_id));
-
-  base::Closure cancel_callback;
-  GetContentClient()->browser()->ShowDesktopNotification(
-      params,
-      GetSiteInstance()->GetBrowserContext(),
-      GetProcess()->GetID(),
-      delegate.Pass(),
-      &cancel_callback);
-
-  cancel_notification_callbacks_[notification_id] = cancel_callback;
-}
-
-void RenderFrameHostImpl::OnCancelDesktopNotification(int notification_id) {
-  if (!cancel_notification_callbacks_.count(notification_id)) {
-    NOTREACHED();
-    return;
-  }
-  cancel_notification_callbacks_[notification_id].Run();
-  cancel_notification_callbacks_.erase(notification_id);
-}
-
 void RenderFrameHostImpl::OnTextSurroundingSelectionResponse(
     const base::string16& content,
     size_t start_offset,
@@ -1120,7 +1023,7 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
       // Get the frame routing ids from out-of-process iframes and
       // browser plugin instance ids from guests and update the mappings in
       // FrameAccessibility.
-      for (unsigned int i = 0; i < params.size(); ++i) {
+      for (size_t i = 0; i < params.size(); ++i) {
         const AccessibilityHostMsg_EventParams& param = params[i];
         UpdateCrossProcessIframeAccessibility(
             param.node_to_frame_routing_id_map);
@@ -1195,6 +1098,20 @@ void RenderFrameHostImpl::OnAccessibilityLocationChanges(
   }
 }
 
+void RenderFrameHostImpl::OnAccessibilityFindInPageResult(
+    const AccessibilityHostMsg_FindInPageResultParams& params) {
+  AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
+  if (accessibility_mode & AccessibilityModeFlagPlatform) {
+    BrowserAccessibilityManager* manager =
+        GetOrCreateBrowserAccessibilityManager();
+    if (manager) {
+      manager->OnFindInPageResult(
+          params.request_id, params.match_index, params.start_id,
+          params.start_offset, params.end_id, params.end_offset);
+    }
+  }
+}
+
 #if defined(OS_MACOSX) || defined(OS_ANDROID)
 void RenderFrameHostImpl::OnShowPopup(
     const FrameHostMsg_ShowPopup_Params& params) {
@@ -1233,6 +1150,13 @@ void RenderFrameHostImpl::RegisterMojoServices() {
                    base::Bind(&RenderFrameHostImpl::DidUseGeolocationPermission,
                               base::Unretained(this))));
   }
+
+  if (!permission_service_context_)
+    permission_service_context_.reset(new PermissionServiceContext(this));
+
+  GetServiceRegistry()->AddService<PermissionService>(
+      base::Bind(&PermissionServiceContext::CreateService,
+                 base::Unretained(permission_service_context_.get())));
 }
 
 void RenderFrameHostImpl::SetState(RenderFrameHostImplState rfh_state) {
@@ -1428,10 +1352,6 @@ void RenderFrameHostImpl::JavaScriptDialogClosed(
     render_view_host_->delegate_->RendererUnresponsive(render_view_host_);
 }
 
-void RenderFrameHostImpl::NotificationClosed(int notification_id) {
-  cancel_notification_callbacks_.erase(notification_id);
-}
-
 // PlzNavigate
 void RenderFrameHostImpl::CommitNavigation(
     ResourceResponse* response,
@@ -1485,27 +1405,13 @@ void RenderFrameHostImpl::InvalidateMojoConnection() {
   service_registry_.reset();
 }
 
-void RenderFrameHostImpl::PlatformNotificationPermissionRequestDone(
-    int request_id,
-    bool granted) {
-  blink::WebNotificationPermission permission =
-      granted ? blink::WebNotificationPermissionAllowed
-              : blink::WebNotificationPermissionDenied;
-
-  Send(new PlatformNotificationMsg_PermissionRequestComplete(
-      routing_id_, request_id, permission));
-}
-
 void RenderFrameHostImpl::UpdateCrossProcessIframeAccessibility(
-    const std::map<int32, int> node_to_frame_routing_id_map) {
-  std::map<int32, int>::const_iterator iter;
-  for (iter = node_to_frame_routing_id_map.begin();
-       iter != node_to_frame_routing_id_map.end();
-       ++iter) {
+    const std::map<int32, int>& node_to_frame_routing_id_map) {
+  for (const auto& iter : node_to_frame_routing_id_map) {
     // This is the id of the accessibility node that has a child frame.
-    int32 node_id = iter->first;
+    int32 node_id = iter.first;
     // The routing id from either a RenderFrame or a RenderFrameProxy.
-    int frame_routing_id = iter->second;
+    int frame_routing_id = iter.second;
 
     FrameTree* frame_tree = frame_tree_node()->frame_tree();
     FrameTreeNode* child_frame_tree_node = frame_tree->FindByRoutingID(
@@ -1518,15 +1424,12 @@ void RenderFrameHostImpl::UpdateCrossProcessIframeAccessibility(
 }
 
 void RenderFrameHostImpl::UpdateGuestFrameAccessibility(
-    const std::map<int32, int> node_to_browser_plugin_instance_id_map) {
-  std::map<int32, int>::const_iterator iter;
-  for (iter = node_to_browser_plugin_instance_id_map.begin();
-       iter != node_to_browser_plugin_instance_id_map.end();
-       ++iter) {
+    const std::map<int32, int>& node_to_browser_plugin_instance_id_map) {
+  for (const auto& iter : node_to_browser_plugin_instance_id_map) {
     // This is the id of the accessibility node that hosts a plugin.
-    int32 node_id = iter->first;
+    int32 node_id = iter.first;
     // The id of the browser plugin.
-    int browser_plugin_instance_id = iter->second;
+    int browser_plugin_instance_id = iter.second;
     FrameAccessibility::GetInstance()->AddGuestWebContents(
         this, node_id, browser_plugin_instance_id);
   }
@@ -1560,6 +1463,17 @@ BrowserAccessibilityManager*
       UMA_HISTOGRAM_COUNTS("Accessibility.FrameDidNotEnableCount", 1);
   }
   return browser_accessibility_manager_.get();
+}
+
+void RenderFrameHostImpl::ActivateFindInPageResultForAccessibility(
+    int request_id) {
+  AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
+  if (accessibility_mode & AccessibilityModeFlagPlatform) {
+    BrowserAccessibilityManager* manager =
+        GetOrCreateBrowserAccessibilityManager();
+    if (manager)
+      manager->ActivateFindInPageResult(request_id);
+  }
 }
 
 #if defined(OS_WIN)

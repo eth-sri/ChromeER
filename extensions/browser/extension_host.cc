@@ -313,7 +313,7 @@ void ExtensionHost::OnDocumentAvailable() {
   DCHECK(extension_host_type_ == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE);
   ExtensionSystem::Get(browser_context_)
       ->runtime_data()
-      ->SetBackgroundPageReady(extension_, true);
+      ->SetBackgroundPageReady(extension_->id(), true);
   content::NotificationService::current()->Notify(
       extensions::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
       content::Source<const Extension>(extension_),
@@ -372,7 +372,8 @@ void ExtensionHost::RenderViewDeleted(RenderViewHost* render_view_host) {
     render_view_host_ = host_contents_->GetRenderViewHost();
 }
 
-content::JavaScriptDialogManager* ExtensionHost::GetJavaScriptDialogManager() {
+content::JavaScriptDialogManager* ExtensionHost::GetJavaScriptDialogManager(
+    WebContents* source) {
   return delegate_->GetJavaScriptDialogManager();
 }
 

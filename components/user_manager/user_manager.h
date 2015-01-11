@@ -9,6 +9,7 @@
 
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager_export.h"
+#include "components/user_manager/user_type.h"
 
 namespace chromeos {
 class ScopedUserManagerEnabler;
@@ -113,8 +114,13 @@ class USER_MANAGER_EXPORT UserManager {
   // multi-profile session will still be part of this list as long as they
   // are regular users (i.e. not a public session/supervised etc.).
   // Returns an empty list in case when primary user is not a regular one or
-  // has a policy that prohibids it to be part of multi-profile session.
+  // has a policy that prohibits it to be part of multi-profile session.
   virtual UserList GetUsersAllowedForMultiProfile() const = 0;
+
+  // Returns list of users allowed for supervised user creation.
+  // Returns an empty list in cases when supervised user creation or adding new
+  // users is restricted.
+  virtual UserList GetUsersAllowedForSupervisedUsersCreation() const = 0;
 
   // Returns a list of users who are currently logged in.
   virtual const UserList& GetLoggedInUsers() const = 0;
@@ -235,6 +241,11 @@ class USER_MANAGER_EXPORT UserManager {
   // Otherwise, returns |user_id| itself.
   virtual std::string GetUserDisplayEmail(const std::string& user_id) const = 0;
 
+  // Saves user's type for user |user_id| into local state preferences.
+  // Ignored If there is no such user.
+  virtual void SaveUserType(const std::string& user_id,
+                            const UserType& user_type) = 0;
+
   // Returns true if current user is an owner.
   virtual bool IsCurrentUserOwner() const = 0;
 
@@ -253,8 +264,11 @@ class USER_MANAGER_EXPORT UserManager {
   // Returns true if at least one user has signed in.
   virtual bool IsUserLoggedIn() const = 0;
 
-  // Returns true if we're logged in as a regular user.
-  virtual bool IsLoggedInAsRegularUser() const = 0;
+  // Returns true if we're logged in as a user with gaia account.
+  virtual bool IsLoggedInAsUserWithGaiaAccount() const = 0;
+
+  // Returns true if we're logged in as a regular supervised user.
+  virtual bool IsLoggedInAsRegularSupervisedUser() const = 0;
 
   // Returns true if we're logged in as a demo user.
   virtual bool IsLoggedInAsDemoUser() const = 0;

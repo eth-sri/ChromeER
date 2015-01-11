@@ -70,16 +70,14 @@ std::string GetEquivalentAriaRoleString(const ui::AXRole role) {
       return "button";
     case ui::AX_ROLE_COMPLEMENTARY:
       return "complementary";
+    case ui::AX_ROLE_FIGURE:
+      return "figure";
     case ui::AX_ROLE_FOOTER:
       return "contentinfo";
-    case ui::AX_ROLE_HORIZONTAL_RULE:
-      return "separator";
     case ui::AX_ROLE_IMAGE:
       return "img";
     case ui::AX_ROLE_MAIN:
       return "main";
-    case ui::AX_ROLE_MATH_ELEMENT:
-      return "math";
     case ui::AX_ROLE_NAVIGATION:
       return "navigation";
     case ui::AX_ROLE_RADIO_BUTTON:
@@ -110,7 +108,8 @@ void AddIntListAttributeFromWebObjects(ui::AXIntListAttribute attr,
 BlinkAXTreeSource::BlinkAXTreeSource(RenderFrameImpl* render_frame)
     : render_frame_(render_frame),
       node_to_frame_routing_id_map_(NULL),
-      node_to_browser_plugin_instance_id_map_(NULL) {
+      node_to_browser_plugin_instance_id_map_(NULL),
+      accessibility_focus_id_(-1) {
 }
 
 BlinkAXTreeSource::~BlinkAXTreeSource() {
@@ -149,6 +148,17 @@ int32 BlinkAXTreeSource::GetId(blink::WebAXObject node) const {
 void BlinkAXTreeSource::GetChildren(
     blink::WebAXObject parent,
     std::vector<blink::WebAXObject>* out_children) const {
+  if (parent.role() == blink::WebAXRoleStaticText) {
+    blink::WebAXObject ancestor = parent;
+    while (!ancestor.isDetached()) {
+      if (ancestor.axID() == accessibility_focus_id_) {
+        parent.loadInlineTextBoxes();
+        break;
+      }
+      ancestor = ancestor.parentObject();
+    }
+  }
+
   bool is_iframe = false;
   WebNode node = parent.node();
   if (!node.isNull() && node.isElementNode()) {
@@ -374,6 +384,8 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   if (src.isInLiveRegion()) {
     dst->AddBoolAttribute(ui::AX_ATTR_LIVE_ATOMIC, src.liveRegionAtomic());
     dst->AddBoolAttribute(ui::AX_ATTR_LIVE_BUSY, src.liveRegionBusy());
+    if (src.liveRegionBusy())
+      dst->state |= (1 << ui::AX_STATE_BUSY);
     dst->AddStringAttribute(ui::AX_ATTR_LIVE_STATUS,
                             UTF16ToUTF8(src.liveRegionStatus()));
     dst->AddStringAttribute(ui::AX_ATTR_LIVE_RELEVANT,

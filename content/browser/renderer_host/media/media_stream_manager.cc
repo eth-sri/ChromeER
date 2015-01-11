@@ -93,7 +93,7 @@ void ParseStreamType(const StreamOptions& options,
        if (audio_stream_source == kMediaStreamSourceTab) {
          *audio_type = content::MEDIA_TAB_AUDIO_CAPTURE;
        } else if (audio_stream_source == kMediaStreamSourceSystem) {
-         *audio_type = content::MEDIA_LOOPBACK_AUDIO_CAPTURE;
+         *audio_type = content::MEDIA_DESKTOP_AUDIO_CAPTURE;
        }
      } else {
        // This is normal audio device capture.
@@ -360,6 +360,9 @@ MediaStreamManager::EnumerationCache::~EnumerationCache() {
 
 MediaStreamManager::MediaStreamManager()
     : audio_manager_(NULL),
+#if defined(OS_WIN)
+      video_capture_thread_("VideoCaptureThread"),
+#endif
       monitoring_started_(false),
 #if defined(OS_CHROMEOS)
       has_checked_keyboard_mic_(false),
@@ -369,6 +372,9 @@ MediaStreamManager::MediaStreamManager()
 
 MediaStreamManager::MediaStreamManager(media::AudioManager* audio_manager)
     : audio_manager_(audio_manager),
+#if defined(OS_WIN)
+      video_capture_thread_("VideoCaptureThread"),
+#endif
       monitoring_started_(false),
 #if defined(OS_CHROMEOS)
       has_checked_keyboard_mic_(false),
@@ -1327,7 +1333,7 @@ bool MediaStreamManager::SetupTabCaptureRequest(DeviceRequest* request) {
 }
 
 bool MediaStreamManager::SetupScreenCaptureRequest(DeviceRequest* request) {
-  DCHECK(request->audio_type() == MEDIA_LOOPBACK_AUDIO_CAPTURE ||
+  DCHECK(request->audio_type() == MEDIA_DESKTOP_AUDIO_CAPTURE ||
          request->video_type() == MEDIA_DESKTOP_VIDEO_CAPTURE);
 
   // For screen capture we only support two valid combinations:
@@ -1335,7 +1341,7 @@ bool MediaStreamManager::SetupScreenCaptureRequest(DeviceRequest* request) {
   // (2) screen video capture with loopback audio capture.
   if (request->video_type() != MEDIA_DESKTOP_VIDEO_CAPTURE ||
       (request->audio_type() != MEDIA_NO_SERVICE &&
-       request->audio_type() != MEDIA_LOOPBACK_AUDIO_CAPTURE)) {
+       request->audio_type() != MEDIA_DESKTOP_AUDIO_CAPTURE)) {
     LOG(ERROR) << "Invalid screen capture request.";
     return false;
   }
@@ -1595,7 +1601,16 @@ void MediaStreamManager::InitializeDeviceManagersOnIOThread() {
   video_capture_manager_ =
       new VideoCaptureManager(media::VideoCaptureDeviceFactory::CreateFactory(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)));
+#if defined(OS_WIN)
+  // Use an STA Video Capture Thread to try to avoid crashes on enumeration of
+  // buggy third party Direct Show modules, http://crbug.com/428958.
+  video_capture_thread_.init_com_with_mta(false);
+  CHECK(video_capture_thread_.Start());
+  video_capture_manager_->Register(this,
+                                   video_capture_thread_.message_loop_proxy());
+#else
   video_capture_manager_->Register(this, device_task_runner_);
+#endif
 }
 
 void MediaStreamManager::Opened(MediaStreamType stream_type,

@@ -19,7 +19,6 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -263,10 +262,11 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
       base::Bind(&PluginProcessHost::GetContexts,
       base::Unretained(this)));
 
-  // TODO(jam): right now we're passing NULL for appcache, blob storage, and
-  // file system. If NPAPI plugins actually use this, we'll have to plumb them.
+  // TODO(jam): right now we're passing NULL for appcache, blob storage, file
+  // system and host zoom level context. If NPAPI plugins actually use this,
+  // we'll have to plumb them.
   ResourceMessageFilter* resource_message_filter = new ResourceMessageFilter(
-      process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL, NULL,
+      process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL, NULL, NULL,
       get_contexts_callback);
   process_->AddFilter(resource_message_filter);
   return true;

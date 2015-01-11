@@ -27,7 +27,7 @@ namespace net {
 
 namespace {
 
-// Time period for which the connection_id should live in time wait state..
+// Time period for which the connection_id should live in time wait state.
 const int kTimeWaitSeconds = 5;
 
 }  // namespace
@@ -39,7 +39,8 @@ class ConnectionIdCleanUpAlarm : public QuicAlarm::Delegate {
  public:
   explicit ConnectionIdCleanUpAlarm(
       QuicTimeWaitListManager* time_wait_list_manager)
-      : time_wait_list_manager_(time_wait_list_manager) {}
+      : time_wait_list_manager_(time_wait_list_manager) {
+  }
 
   QuicTime OnAlarm() override {
     time_wait_list_manager_->CleanUpOldConnectionIds();
@@ -66,7 +67,8 @@ class QuicTimeWaitListManager::QueuedPacket {
                QuicEncryptedPacket* packet)
       : server_address_(server_address),
         client_address_(client_address),
-        packet_(packet) {}
+        packet_(packet) {
+  }
 
   const IPEndPoint& server_address() const { return server_address_; }
   const IPEndPoint& client_address() const { return client_address_; }

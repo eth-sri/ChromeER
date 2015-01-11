@@ -25,10 +25,6 @@
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/trace_event.h"
 
-#if defined(__native_client__) && !defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
-#define GLES2_SUPPORT_CLIENT_SIDE_ARRAYS
-#endif
-
 #if defined(GPU_CLIENT_DEBUG)
 #include "base/command_line.h"
 #include "gpu/command_buffer/client/gpu_switches.h"
@@ -53,21 +49,6 @@ GLES2Implementation::GLStaticState::GLStaticState() {
 GLES2Implementation::GLStaticState::~GLStaticState() {
 }
 
-GLES2Implementation::GLStaticState::IntState::IntState()
-    : max_combined_texture_image_units(0),
-      max_cube_map_texture_size(0),
-      max_fragment_uniform_vectors(0),
-      max_renderbuffer_size(0),
-      max_texture_image_units(0),
-      max_texture_size(0),
-      max_varying_vectors(0),
-      max_vertex_attribs(0),
-      max_vertex_texture_image_units(0),
-      max_vertex_uniform_vectors(0),
-      num_compressed_texture_formats(0),
-      num_shader_binary_formats(0),
-      bind_generates_resource_chromium(0) {}
-
 GLES2Implementation::SingleThreadChecker::SingleThreadChecker(
     GLES2Implementation* gles2_implementation)
     : gles2_implementation_(gles2_implementation) {
@@ -86,6 +67,7 @@ GLES2Implementation::GLES2Implementation(
     TransferBufferInterface* transfer_buffer,
     bool bind_generates_resource,
     bool lose_context_when_out_of_memory,
+    bool support_client_side_arrays,
     GpuControl* gpu_control)
     : helper_(helper),
       transfer_buffer_(transfer_buffer),
@@ -102,6 +84,7 @@ GLES2Implementation::GLES2Implementation(
       bound_framebuffer_(0),
       bound_read_framebuffer_(0),
       bound_renderbuffer_(0),
+      bound_valuebuffer_(0),
       current_program_(0),
       bound_array_buffer_id_(0),
       bound_pixel_pack_transfer_buffer_id_(0),
@@ -113,6 +96,7 @@ GLES2Implementation::GLES2Implementation(
       error_bits_(0),
       debug_(false),
       lose_context_when_out_of_memory_(lose_context_when_out_of_memory),
+      support_client_side_arrays_(support_client_side_arrays),
       use_count_(0),
       error_message_callback_(NULL),
       gpu_control_(gpu_control),
@@ -175,115 +159,45 @@ bool GLES2Implementation::Initialize(
   }
   mapped_memory_->set_chunk_size_multiple(chunk_size);
 
-  if (!QueryAndCacheStaticState())
-    return false;
+  GLStaticState::ShaderPrecisionMap* shader_precisions =
+      &static_state_.shader_precisions;
+  capabilities_.VisitPrecisions([shader_precisions](
+      GLenum shader, GLenum type, Capabilities::ShaderPrecision* result) {
+    const GLStaticState::ShaderPrecisionKey key(shader, type);
+    cmds::GetShaderPrecisionFormat::Result cached_result = {
+        true, result->min_range, result->max_range, result->precision};
+    shader_precisions->insert(std::make_pair(key, cached_result));
+  });
 
   util_.set_num_compressed_texture_formats(
-      static_state_.int_state.num_compressed_texture_formats);
-  util_.set_num_shader_binary_formats(
-      static_state_.int_state.num_shader_binary_formats);
+      capabilities_.num_compressed_texture_formats);
+  util_.set_num_shader_binary_formats(capabilities_.num_shader_binary_formats);
 
   texture_units_.reset(
-      new TextureUnit[
-          static_state_.int_state.max_combined_texture_image_units]);
+      new TextureUnit[capabilities_.max_combined_texture_image_units]);
 
   query_tracker_.reset(new QueryTracker(mapped_memory_.get()));
   buffer_tracker_.reset(new BufferTracker(mapped_memory_.get()));
 
   query_id_allocator_.reset(new IdAllocator());
-#if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
-  GetIdHandler(id_namespaces::kBuffers)->MakeIds(
-      this, kClientSideArrayId, arraysize(reserved_ids_), &reserved_ids_[0]);
-#endif
+  if (support_client_side_arrays_) {
+    GetIdHandler(id_namespaces::kBuffers)->MakeIds(
+       this, kClientSideArrayId, arraysize(reserved_ids_), &reserved_ids_[0]);
+  }
 
   vertex_array_object_manager_.reset(new VertexArrayObjectManager(
-      static_state_.int_state.max_vertex_attribs,
-      reserved_ids_[0],
-      reserved_ids_[1]));
+      capabilities_.max_vertex_attribs, reserved_ids_[0], reserved_ids_[1],
+      support_client_side_arrays_));
 
   // GL_BIND_GENERATES_RESOURCE_CHROMIUM state must be the same
   // on Client & Service.
-  if (static_state_.int_state.bind_generates_resource_chromium !=
+  if (capabilities_.bind_generates_resource_chromium !=
       (share_group_->bind_generates_resource() ? 1 : 0)) {
     SetGLError(GL_INVALID_OPERATION,
                "Initialize",
                "Service bind_generates_resource mismatch.");
     return false;
   }
-
-  return true;
-}
-
-bool GLES2Implementation::QueryAndCacheStaticState() {
-  TRACE_EVENT0("gpu", "GLES2Implementation::QueryAndCacheStaticState");
-  // Setup query for multiple GetIntegerv's
-  static const GLenum pnames[] = {
-    GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS,
-    GL_MAX_CUBE_MAP_TEXTURE_SIZE,
-    GL_MAX_FRAGMENT_UNIFORM_VECTORS,
-    GL_MAX_RENDERBUFFER_SIZE,
-    GL_MAX_TEXTURE_IMAGE_UNITS,
-    GL_MAX_TEXTURE_SIZE,
-    GL_MAX_VARYING_VECTORS,
-    GL_MAX_VERTEX_ATTRIBS,
-    GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS,
-    GL_MAX_VERTEX_UNIFORM_VECTORS,
-    GL_NUM_COMPRESSED_TEXTURE_FORMATS,
-    GL_NUM_SHADER_BINARY_FORMATS,
-    GL_BIND_GENERATES_RESOURCE_CHROMIUM,
-  };
-
-  GetMultipleIntegervState integerv_state(
-      pnames, arraysize(pnames),
-      &static_state_.int_state.max_combined_texture_image_units,
-      sizeof(static_state_.int_state));
-  if (!GetMultipleIntegervSetup(&integerv_state)) {
-    return false;
-  }
-
-  // Setup query for multiple GetShaderPrecisionFormat's
-  static const GLenum precision_params[][2] = {
-    { GL_VERTEX_SHADER, GL_LOW_INT },
-    { GL_VERTEX_SHADER, GL_MEDIUM_INT },
-    { GL_VERTEX_SHADER, GL_HIGH_INT },
-    { GL_VERTEX_SHADER, GL_LOW_FLOAT },
-    { GL_VERTEX_SHADER, GL_MEDIUM_FLOAT },
-    { GL_VERTEX_SHADER, GL_HIGH_FLOAT },
-    { GL_FRAGMENT_SHADER, GL_LOW_INT },
-    { GL_FRAGMENT_SHADER, GL_MEDIUM_INT },
-    { GL_FRAGMENT_SHADER, GL_HIGH_INT },
-    { GL_FRAGMENT_SHADER, GL_LOW_FLOAT },
-    { GL_FRAGMENT_SHADER, GL_MEDIUM_FLOAT },
-    { GL_FRAGMENT_SHADER, GL_HIGH_FLOAT },
-  };
-
-  GetAllShaderPrecisionFormatsState  precision_state(
-      precision_params, arraysize(precision_params));
-  GetAllShaderPrecisionFormatsSetup(&precision_state);
-
-  // Allocate and partition transfer buffer for all requests
-  void* buffer = transfer_buffer_->Alloc(
-      integerv_state.transfer_buffer_size_needed +
-      precision_state.transfer_buffer_size_needed);
-  if (!buffer) {
-    SetGLError(GL_OUT_OF_MEMORY, "QueryAndCacheStaticState",
-               "Transfer buffer allocation failed.");
-    return false;
-  }
-  integerv_state.buffer = buffer;
-  precision_state.results_buffer =
-      static_cast<char*>(buffer) + integerv_state.transfer_buffer_size_needed;
-
-  // Make all the requests and wait once for all the results.
-  GetMultipleIntegervRequest(&integerv_state);
-  GetAllShaderPrecisionFormatsRequest(&precision_state);
-  WaitForCmd();
-  GetMultipleIntegervOnCompleted(&integerv_state);
-  GetAllShaderPrecisionFormatsOnCompleted(&precision_state);
-
-  // TODO(gman): We should be able to free without a token.
-  transfer_buffer_->FreePendingToken(buffer, helper_->InsertToken());
-  CheckGLError();
 
   return true;
 }
@@ -296,9 +210,11 @@ GLES2Implementation::~GLES2Implementation() {
   WaitForCmd();
   query_tracker_.reset();
 
-#if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
-  DeleteBuffers(arraysize(reserved_ids_), &reserved_ids_[0]);
-#endif
+  // GLES2Implementation::Initialize() could fail before allocating
+  // reserved_ids_, so we need delete them carefully.
+  if (support_client_side_arrays_ && reserved_ids_[0]) {
+    DeleteBuffers(arraysize(reserved_ids_), &reserved_ids_[0]);
+  }
 
   // Release any per-context data in share group.
   share_group_->FreeContext(this);
@@ -685,40 +601,40 @@ GLboolean GLES2Implementation::IsEnabled(GLenum cap) {
 bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
   switch (pname) {
     case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:
-      *params = static_state_.int_state.max_combined_texture_image_units;
+      *params = capabilities_.max_combined_texture_image_units;
       return true;
     case GL_MAX_CUBE_MAP_TEXTURE_SIZE:
-      *params = static_state_.int_state.max_cube_map_texture_size;
+      *params = capabilities_.max_cube_map_texture_size;
       return true;
     case GL_MAX_FRAGMENT_UNIFORM_VECTORS:
-      *params = static_state_.int_state.max_fragment_uniform_vectors;
+      *params = capabilities_.max_fragment_uniform_vectors;
       return true;
     case GL_MAX_RENDERBUFFER_SIZE:
-      *params = static_state_.int_state.max_renderbuffer_size;
+      *params = capabilities_.max_renderbuffer_size;
       return true;
     case GL_MAX_TEXTURE_IMAGE_UNITS:
-      *params = static_state_.int_state.max_texture_image_units;
+      *params = capabilities_.max_texture_image_units;
       return true;
     case GL_MAX_TEXTURE_SIZE:
-      *params = static_state_.int_state.max_texture_size;
+      *params = capabilities_.max_texture_size;
       return true;
     case GL_MAX_VARYING_VECTORS:
-      *params = static_state_.int_state.max_varying_vectors;
+      *params = capabilities_.max_varying_vectors;
       return true;
     case GL_MAX_VERTEX_ATTRIBS:
-      *params = static_state_.int_state.max_vertex_attribs;
+      *params = capabilities_.max_vertex_attribs;
       return true;
     case GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:
-      *params = static_state_.int_state.max_vertex_texture_image_units;
+      *params = capabilities_.max_vertex_texture_image_units;
       return true;
     case GL_MAX_VERTEX_UNIFORM_VECTORS:
-      *params = static_state_.int_state.max_vertex_uniform_vectors;
+      *params = capabilities_.max_vertex_uniform_vectors;
       return true;
     case GL_NUM_COMPRESSED_TEXTURE_FORMATS:
-      *params = static_state_.int_state.num_compressed_texture_formats;
+      *params = capabilities_.num_compressed_texture_formats;
       return true;
     case GL_NUM_SHADER_BINARY_FORMATS:
-      *params = static_state_.int_state.num_shader_binary_formats;
+      *params = capabilities_.num_shader_binary_formats;
       return true;
     case GL_ARRAY_BUFFER_BINDING:
       if (share_group_->bind_generates_resource()) {
@@ -807,6 +723,13 @@ bool GLES2Implementation::GetFloatvHelper(GLenum pname, GLfloat* params) {
 
 bool GLES2Implementation::GetIntegervHelper(GLenum pname, GLint* params) {
   return GetHelper(pname, params);
+}
+
+bool GLES2Implementation::GetInternalformativHelper(
+    GLenum target, GLenum format, GLenum pname, GLsizei bufSize,
+    GLint* params) {
+  // TODO(zmo): Implement the client side caching.
+  return false;
 }
 
 GLuint GLES2Implementation::GetMaxValueInBufferCHROMIUMHelper(
@@ -1195,6 +1118,19 @@ void GLES2Implementation::PixelStorei(GLenum pname, GLint param) {
   CheckGLError();
 }
 
+void GLES2Implementation::VertexAttribIPointer(
+    GLuint index, GLint size, GLenum type, GLsizei stride, const void* ptr) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glVertexAttribPointer("
+      << index << ", "
+      << size << ", "
+      << GLES2Util::GetStringVertexAttribType(type) << ", "
+      << stride << ", "
+      << ptr << ")");
+  helper_->VertexAttribIPointer(index, size, type, stride, ToGLuint(ptr));
+  CheckGLError();
+}
+
 void GLES2Implementation::VertexAttribPointer(
     GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride,
     const void* ptr) {
@@ -1205,7 +1141,7 @@ void GLES2Implementation::VertexAttribPointer(
       << GLES2Util::GetStringVertexAttribType(type) << ", "
       << GLES2Util::GetStringBool(normalized) << ", "
       << stride << ", "
-      << static_cast<const void*>(ptr) << ")");
+      << ptr << ")");
   // Record the info on the client side.
   if (!vertex_array_object_manager_->SetAttribPointer(
       bound_array_buffer_id_, index, size, type, normalized, stride, ptr)) {
@@ -1213,8 +1149,7 @@ void GLES2Implementation::VertexAttribPointer(
                "client side arrays are not allowed in vertex array objects.");
     return;
   }
-#if defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
-  if (bound_array_buffer_id_ != 0) {
+  if (!support_client_side_arrays_ || bound_array_buffer_id_ != 0) {
     // Only report NON client side buffers to the service.
     if (!ValidateOffset("glVertexAttribPointer",
                         reinterpret_cast<GLintptr>(ptr))) {
@@ -1223,14 +1158,6 @@ void GLES2Implementation::VertexAttribPointer(
     helper_->VertexAttribPointer(index, size, type, normalized, stride,
                                  ToGLuint(ptr));
   }
-#else  // !defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
-  if (!ValidateOffset("glVertexAttribPointer",
-                      reinterpret_cast<GLintptr>(ptr))) {
-    return;
-  }
-  helper_->VertexAttribPointer(index, size, type, normalized, stride,
-                               ToGLuint(ptr));
-#endif  // !defined(GLES2_SUPPORT_CLIENT_SIDE_ARRAYS)
   CheckGLError();
 }
 
@@ -2338,8 +2265,8 @@ void GLES2Implementation::ActiveTexture(GLenum texture) {
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glActiveTexture("
       << GLES2Util::GetStringEnum(texture) << ")");
   GLuint texture_index = texture - GL_TEXTURE0;
-  if (texture_index >= static_cast<GLuint>(
-      static_state_.int_state.max_combined_texture_image_units)) {
+  if (texture_index >=
+      static_cast<GLuint>(capabilities_.max_combined_texture_image_units)) {
     SetGLErrorInvalidEnum(
         "glActiveTexture", texture, "texture");
     return;
@@ -2373,6 +2300,11 @@ void GLES2Implementation::GenVertexArraysOESHelper(
 
 void GLES2Implementation::GenQueriesEXTHelper(
     GLsizei /* n */, const GLuint* /* queries */) {
+}
+
+void GLES2Implementation::GenValuebuffersCHROMIUMHelper(
+    GLsizei /* n */,
+    const GLuint* /* valuebuffers */) {
 }
 
 // NOTE #1: On old versions of OpenGL, calling glBindXXX with an unused id
@@ -2524,6 +2456,26 @@ bool GLES2Implementation::BindVertexArrayOESHelper(GLuint array) {
   return changed;
 }
 
+bool GLES2Implementation::BindValuebufferCHROMIUMHelper(GLenum target,
+                                                        GLuint valuebuffer) {
+  bool changed = false;
+  switch (target) {
+    case GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM:
+      if (bound_valuebuffer_ != valuebuffer) {
+        bound_valuebuffer_ = valuebuffer;
+        changed = true;
+      }
+      break;
+    default:
+      changed = true;
+      break;
+  }
+  // TODO(gman): There's a bug here. If the target is invalid the ID will not be
+  // used even though it's marked it as used here.
+  GetIdHandler(id_namespaces::kValuebuffers)->MarkAsUsedForBind(valuebuffer);
+  return changed;
+}
+
 bool GLES2Implementation::UseProgramHelper(GLuint program) {
   bool changed = false;
   if (current_program_ != program) {
@@ -2623,8 +2575,7 @@ void GLES2Implementation::DeleteTexturesHelper(
     return;
   }
   for (GLsizei ii = 0; ii < n; ++ii) {
-    for (GLint tt = 0;
-         tt < static_state_.int_state.max_combined_texture_image_units;
+    for (GLint tt = 0; tt < capabilities_.max_combined_texture_image_units;
          ++tt) {
       TextureUnit& unit = texture_units_[tt];
       if (textures[ii] == unit.bound_texture_2d) {
@@ -2638,6 +2589,11 @@ void GLES2Implementation::DeleteTexturesHelper(
       }
     }
   }
+}
+
+void GLES2Implementation::DeleteTexturesStub(GLsizei n,
+                                             const GLuint* textures) {
+  helper_->DeleteTexturesImmediate(n, textures);
 }
 
 void GLES2Implementation::DeleteVertexArraysOESHelper(
@@ -2657,9 +2613,27 @@ void GLES2Implementation::DeleteVertexArraysOESStub(
   helper_->DeleteVertexArraysOESImmediate(n, arrays);
 }
 
-void GLES2Implementation::DeleteTexturesStub(
-    GLsizei n, const GLuint* textures) {
-  helper_->DeleteTexturesImmediate(n, textures);
+void GLES2Implementation::DeleteValuebuffersCHROMIUMHelper(
+    GLsizei n,
+    const GLuint* valuebuffers) {
+  if (!GetIdHandler(id_namespaces::kValuebuffers)
+           ->FreeIds(this, n, valuebuffers,
+                     &GLES2Implementation::DeleteValuebuffersCHROMIUMStub)) {
+    SetGLError(GL_INVALID_VALUE, "glDeleteValuebuffersCHROMIUM",
+               "id not created by this context.");
+    return;
+  }
+  for (GLsizei ii = 0; ii < n; ++ii) {
+    if (valuebuffers[ii] == bound_valuebuffer_) {
+      bound_valuebuffer_ = 0;
+    }
+  }
+}
+
+void GLES2Implementation::DeleteValuebuffersCHROMIUMStub(
+    GLsizei n,
+    const GLuint* valuebuffers) {
+  helper_->DeleteValuebuffersCHROMIUMImmediate(n, valuebuffers);
 }
 
 void GLES2Implementation::DisableVertexAttribArray(GLuint index) {
@@ -3043,134 +3017,6 @@ void GLES2Implementation::RateLimitOffscreenContextCHROMIUM() {
     rate_limit_tokens_.pop();
   }
   rate_limit_tokens_.push(helper_->InsertToken());
-}
-
-void GLES2Implementation::GetMultipleIntegervCHROMIUM(
-    const GLenum* pnames, GLuint count, GLint* results, GLsizeiptr size) {
-  GPU_CLIENT_SINGLE_THREAD_CHECK();
-  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGetMultipleIntegervCHROMIUM("
-                 << static_cast<const void*>(pnames) << ", "
-                 << count << ", " << results << ", "
-                 << size << ")");
-  GPU_CLIENT_LOG_CODE_BLOCK({
-    for (GLuint i = 0; i < count; ++i) {
-      GPU_CLIENT_LOG(
-          "  " << i << ": " << GLES2Util::GetStringGLState(pnames[i]));
-    }
-  });
-  DCHECK(size >= 0 && FitInt32NonNegative<GLsizeiptr>(size));
-
-  GetMultipleIntegervState state(pnames, count, results, size);
-  if (!GetMultipleIntegervSetup(&state)) {
-    return;
-  }
-  state.buffer = transfer_buffer_->Alloc(state.transfer_buffer_size_needed);
-  if (!state.buffer) {
-    SetGLError(GL_OUT_OF_MEMORY, "glGetMultipleIntegervCHROMIUM",
-               "Transfer buffer allocation failed.");
-    return;
-  }
-  GetMultipleIntegervRequest(&state);
-  WaitForCmd();
-  GetMultipleIntegervOnCompleted(&state);
-
-  GPU_CLIENT_LOG("  returned");
-  GPU_CLIENT_LOG_CODE_BLOCK({
-    for (int i = 0; i < state.num_results; ++i) {
-      GPU_CLIENT_LOG("  " << i << ": " << (results[i]));
-    }
-  });
-
-  // TODO(gman): We should be able to free without a token.
-  transfer_buffer_->FreePendingToken(state.buffer, helper_->InsertToken());
-  CheckGLError();
-}
-
-bool GLES2Implementation::GetMultipleIntegervSetup(
-    GetMultipleIntegervState* state) {
-  state->num_results = 0;
-  for (GLuint ii = 0; ii < state->pnames_count; ++ii) {
-    int num = util_.GLGetNumValuesReturned(state->pnames[ii]);
-    if (!num) {
-      SetGLErrorInvalidEnum(
-          "glGetMultipleIntegervCHROMIUM", state->pnames[ii], "pname");
-      return false;
-    }
-    state->num_results += num;
-  }
-  if (static_cast<size_t>(state->results_size) !=
-      state->num_results * sizeof(GLint)) {
-    SetGLError(GL_INVALID_VALUE, "glGetMultipleIntegervCHROMIUM", "bad size");
-    return false;
-  }
-  for (int ii = 0; ii < state->num_results; ++ii) {
-    if (state->results[ii] != 0) {
-      SetGLError(GL_INVALID_VALUE,
-                 "glGetMultipleIntegervCHROMIUM", "results not set to zero.");
-      return false;
-    }
-  }
-  state->transfer_buffer_size_needed =
-      state->pnames_count * sizeof(state->pnames[0]) +
-      state->num_results * sizeof(state->results[0]);
-  return true;
-}
-
-void GLES2Implementation::GetMultipleIntegervRequest(
-    GetMultipleIntegervState* state) {
-  GLenum* pnames_buffer = static_cast<GLenum*>(state->buffer);
-  state->results_buffer = pnames_buffer + state->pnames_count;
-  memcpy(pnames_buffer, state->pnames, state->pnames_count * sizeof(GLenum));
-  memset(state->results_buffer, 0, state->num_results * sizeof(GLint));
-  helper_->GetMultipleIntegervCHROMIUM(
-      transfer_buffer_->GetShmId(),
-      transfer_buffer_->GetOffset(pnames_buffer),
-      state->pnames_count,
-      transfer_buffer_->GetShmId(),
-      transfer_buffer_->GetOffset(state->results_buffer),
-      state->results_size);
-}
-
-void GLES2Implementation::GetMultipleIntegervOnCompleted(
-    GetMultipleIntegervState* state) {
-  memcpy(state->results, state->results_buffer, state->results_size);;
-}
-
-void GLES2Implementation::GetAllShaderPrecisionFormatsSetup(
-    GetAllShaderPrecisionFormatsState* state) {
-  state->transfer_buffer_size_needed =
-      state->precision_params_count *
-      sizeof(cmds::GetShaderPrecisionFormat::Result);
-}
-
-void GLES2Implementation::GetAllShaderPrecisionFormatsRequest(
-    GetAllShaderPrecisionFormatsState* state) {
-  typedef cmds::GetShaderPrecisionFormat::Result Result;
-  Result* result = static_cast<Result*>(state->results_buffer);
-
-  for (int i = 0; i < state->precision_params_count; i++) {
-    result->success = false;
-    helper_->GetShaderPrecisionFormat(state->precision_params[i][0],
-                                      state->precision_params[i][1],
-                                      transfer_buffer_->GetShmId(),
-                                      transfer_buffer_->GetOffset(result));
-    result++;
-  }
-}
-
-void GLES2Implementation::GetAllShaderPrecisionFormatsOnCompleted(
-    GetAllShaderPrecisionFormatsState* state) {
-  typedef cmds::GetShaderPrecisionFormat::Result Result;
-  Result* result = static_cast<Result*>(state->results_buffer);
-
-  for (int i = 0; i < state->precision_params_count; i++) {
-    if (result->success) {
-      const GLStaticState::ShaderPrecisionKey key(
-        state->precision_params[i][0], state->precision_params[i][1]);
-      static_state_.shader_precisions[key] = *result;
-    }
-    result++;
-  }
 }
 
 void GLES2Implementation::GetProgramInfoCHROMIUMHelper(
@@ -3953,9 +3799,6 @@ GLuint GLES2Implementation::CreateImageCHROMIUMHelper(ClientBuffer buffer,
     return 0;
   }
 
-  // Flush the command stream to ensure ordering in case the newly
-  // returned image_id has recently been in use with a different buffer.
-  helper_->CommandBufferHelper::Flush();
   int32_t image_id =
       gpu_control_->CreateImage(buffer, width, height, internalformat);
   if (image_id < 0) {

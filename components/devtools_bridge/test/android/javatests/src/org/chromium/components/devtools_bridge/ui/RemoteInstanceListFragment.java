@@ -23,8 +23,12 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import org.chromium.components.devtools_bridge.RTCConfiguration;
+import org.chromium.components.devtools_bridge.SessionBase;
 import org.chromium.components.devtools_bridge.apiary.ApiaryClientFactory;
 import org.chromium.components.devtools_bridge.apiary.TestApiaryClientFactory;
+import org.chromium.components.devtools_bridge.commands.Command;
+import org.chromium.components.devtools_bridge.commands.CommandSender;
 import org.chromium.components.devtools_bridge.gcd.RemoteInstance;
 
 import java.io.IOException;
@@ -34,7 +38,7 @@ import java.util.List;
  * Fragment of application for manual testing the DevTools bridge. Shows instances
  * registered in GCD and lets unregister them.
  */
-public class RemoteInstanceListFragment extends ListFragment {
+public abstract class RemoteInstanceListFragment extends ListFragment {
     private static final String TAG = "RemoteInstanceListFragment";
     private static final String NO_ID = "";
     private static final int CODE_ACCOUNT_SELECTED = 1;
@@ -51,6 +55,18 @@ public class RemoteInstanceListFragment extends ListFragment {
                 getActivity(), android.R.layout.simple_list_item_1);
         new UpdateListAction().execute();
         setListAdapter(mListAdapter);
+    }
+
+    @Override
+    public void onDestroy() {
+        new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected final Void doInBackground(Void... args) {
+                mClientFactory.close();
+                return null;
+            }
+        }.execute();
+        super.onDestroy();
     }
 
     @Override
@@ -78,6 +94,12 @@ public class RemoteInstanceListFragment extends ListFragment {
 
         if (mOAuthToken == null) return;
 
+        menu.add("Connect")
+                .setOnMenuItemClickListener(new ConnectAction())
+                .setEnabled(mSelected != null);
+        menu.add("Send invalid offer")
+                .setOnMenuItemClickListener(new SendInvalidOfferAction())
+                .setEnabled(mSelected != null);
         menu.add("Delete")
                 .setOnMenuItemClickListener(new DeleteInstanceAction(mSelected))
                 .setEnabled(mSelected != null);
@@ -111,6 +133,8 @@ public class RemoteInstanceListFragment extends ListFragment {
         }
     }
 
+    protected abstract void connect(String oAuthToken, String remoteInstanceId);
+
     public void queryOAuthToken(Account accout) {
         AccountManager manager = AccountManager.get(getActivity());
 
@@ -133,6 +157,17 @@ public class RemoteInstanceListFragment extends ListFragment {
 
     public void updateList() {
         new UpdateListAction().execute();
+    }
+
+    private final class ConnectAction implements MenuItem.OnMenuItemClickListener {
+        @Override
+        public boolean onMenuItemClick(MenuItem item) {
+            if (mOAuthToken != null && mSelected != null) {
+                connect(mOAuthToken, mSelected.id);
+                return true;
+            }
+            return false;
+        }
     }
 
     private abstract class AsyncAction extends AsyncTask<Void, Void, Boolean>
@@ -178,6 +213,61 @@ public class RemoteInstanceListFragment extends ListFragment {
         protected abstract void doInBackgroundImpl() throws IOException;
         protected abstract void onSuccess();
         protected void onFailure() {}
+    }
+
+    private final class SendInvalidOfferAction extends AsyncAction {
+        private final String mOAuthTokenCopy = mOAuthToken;
+        private final RemoteInstance mSelectedCopy = mSelected;
+        private IOException mException;
+
+        public SendInvalidOfferAction() {
+            super("Sending invalid offer");
+        }
+
+        @Override
+        protected final void doInBackgroundImpl() throws IOException {
+            if (mOAuthTokenCopy == null || mSelected == null) {
+                throw new IOException("Action cann't be applied.");
+            }
+
+            final String sessionId = "sessionId";
+            final String offer = "INVALID_OFFER";
+            final RTCConfiguration config = new RTCConfiguration();
+
+            CommandSender sender = new CommandSender() {
+                @Override
+                protected void send(Command command, Runnable completionCallback) {
+                    try {
+                        mClientFactory.newTestGCDClient(mOAuthTokenCopy)
+                                .send(mSelectedCopy.id, command);
+                    } catch (IOException e) {
+                        mException = e;
+                        command.setFailure("IO exception");
+                    } finally {
+                        completionCallback.run();
+                    }
+                }
+            };
+
+            sender.startSession(sessionId, config, offer, new SessionBase.NegotiationCallback() {
+                @Override
+                public void onSuccess(String answer) {
+                    mException = new IOException("Unexpected success");
+                }
+
+                @Override
+                public void onFailure(String errorMessage) {
+                    Log.i(TAG, "Expected failure: " + errorMessage);
+                }
+            });
+
+            if (mException != null)
+                throw mException;
+        }
+
+        @Override
+        protected void onSuccess() {
+        }
     }
 
     private final class UpdateListAction extends AsyncAction {

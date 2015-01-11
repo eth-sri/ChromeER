@@ -108,7 +108,7 @@ class BrowserView : public BrowserWindow,
   BrowserFrame* frame() const { return frame_; }
 
   // Returns a pointer to the BrowserView* interface implementation (an
-  // instance of this object, typically) for a given native window, or NULL if
+  // instance of this object, typically) for a given native window, or null if
   // there is no such association.
   //
   // Don't use this unless you only have a NativeWindow. In nearly all
@@ -165,7 +165,7 @@ class BrowserView : public BrowserWindow,
   // Accessor for the Toolbar.
   ToolbarView* toolbar() { return toolbar_; }
 
-  // Bookmark bar may be NULL, for example for pop-ups.
+  // Bookmark bar may be null, for example for pop-ups.
   BookmarkBarView* bookmark_bar() { return bookmark_bar_view_.get(); }
 
   // Returns the do-nothing view which controls the z-order of the find bar
@@ -257,7 +257,7 @@ class BrowserView : public BrowserWindow,
   void FlashFrame(bool flash) override;
   bool IsAlwaysOnTop() const override;
   void SetAlwaysOnTop(bool always_on_top) override;
-  gfx::NativeWindow GetNativeWindow() override;
+  gfx::NativeWindow GetNativeWindow() const override;
   BrowserWindowTesting* GetBrowserWindowTesting() override;
   StatusBubble* GetStatusBubble() override;
   void UpdateTitleBar() override;
@@ -281,7 +281,8 @@ class BrowserView : public BrowserWindow,
   void Minimize() override;
   void Restore() override;
   void EnterFullscreen(const GURL& url,
-                       FullscreenExitBubbleType bubble_type) override;
+                       FullscreenExitBubbleType bubble_type,
+                       bool with_toolbar) override;
   void ExitFullscreen() override;
   void UpdateFullscreenExitBubbleContent(
       const GURL& url,
@@ -289,6 +290,9 @@ class BrowserView : public BrowserWindow,
   bool ShouldHideUIForFullscreen() const override;
   bool IsFullscreen() const override;
   bool IsFullscreenBubbleVisible() const override;
+  bool SupportsFullscreenWithToolbar() const override;
+  void UpdateFullscreenWithToolbar(bool with_toolbar) override;
+  bool IsFullscreenWithToolbar() const override;
 #if defined(OS_WIN)
   virtual void SetMetroSnapMode(bool enable) override;
   virtual bool IsInMetroSnapMode() const override;
@@ -297,6 +301,7 @@ class BrowserView : public BrowserWindow,
   void SetFocusToLocationBar(bool select_all) override;
   void UpdateReloadStopState(bool is_loading, bool force) override;
   void UpdateToolbar(content::WebContents* contents) override;
+  void ResetToolbarTabState(content::WebContents* contents) override;
   void FocusToolbar() override;
   void FocusAppMenu() override;
   void FocusBookmarksToolbar() override;
@@ -481,10 +486,10 @@ class BrowserView : public BrowserWindow,
   // Prepare to show the Bookmark Bar for the specified WebContents.
   // Returns true if the Bookmark Bar can be shown (i.e. it's supported for this
   // Browser type) and there should be a subsequent re-layout to show it.
-  // |contents| can be NULL.
+  // |contents| can be null.
   bool MaybeShowBookmarkBar(content::WebContents* contents);
 
-  // Moves the bookmark bar view to the specified parent, which may be NULL,
+  // Moves the bookmark bar view to the specified parent, which may be null,
   // |this|, or |top_container_|. Ensures that |top_container_| stays in front
   // of |bookmark_bar_view_|.
   void SetBookmarkBarParent(views::View* new_parent);
@@ -492,12 +497,12 @@ class BrowserView : public BrowserWindow,
   // Prepare to show an Info Bar for the specified WebContents. Returns
   // true if there is an Info Bar to show and one is supported for this Browser
   // type, and there should be a subsequent re-layout to show it.
-  // |contents| can be NULL.
+  // |contents| can be null.
   bool MaybeShowInfoBar(content::WebContents* contents);
 
   // Updates devtools window for given contents. This method will show docked
   // devtools window for inspected |web_contents| that has docked devtools
-  // and hide it for NULL or not inspected |web_contents|. It will also make
+  // and hide it for null or not inspected |web_contents|. It will also make
   // sure devtools window size and position are restored for given tab.
   // This method will not update actual DevTools WebContents, if not
   // |update_devtools_web_contents|. In this case, manual update is required.
@@ -506,7 +511,7 @@ class BrowserView : public BrowserWindow,
 
   // Updates various optional child Views, e.g. Bookmarks Bar, Info Bar or the
   // Download Shelf in response to a change notification from the specified
-  // |contents|. |contents| can be NULL. In this case, all optional UI will be
+  // |contents|. |contents| can be null. In this case, all optional UI will be
   // removed.
   void UpdateUIForContents(content::WebContents* contents);
 
@@ -614,7 +619,7 @@ class BrowserView : public BrowserWindow,
   // The Toolbar containing the navigation buttons, menus and the address bar.
   ToolbarView* toolbar_;
 
-  // The Bookmark Bar View for this window. Lazily created. May be NULL for
+  // The Bookmark Bar View for this window. Lazily created. May be null for
   // non-tabbed browsers like popups. May not be visible.
   scoped_ptr<BookmarkBarView> bookmark_bar_view_;
 

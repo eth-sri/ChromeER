@@ -11,6 +11,7 @@
 #include "base/time/time.h"
 #include "cc/output/compositor_frame_metadata.h"
 #include "content/browser/devtools/protocol/devtools_protocol_handler_impl.h"
+#include "content/public/browser/readback_types.h"
 
 class SkBitmap;
 
@@ -47,8 +48,9 @@ class PageHandler {
 
   Response Navigate(const std::string& url, FrameId* frame_id);
 
+  using NavigationEntries = std::vector<scoped_refptr<NavigationEntry>>;
   Response GetNavigationHistory(int* current_index,
-                                std::vector<NavigationEntry>* entries);
+                                NavigationEntries* entries);
 
   Response NavigateToHistoryEntry(int entry_id);
 
@@ -59,6 +61,8 @@ class PageHandler {
   Response ClearGeolocationOverride();
 
   Response SetTouchEmulationEnabled(bool enabled);
+  Response SetTouchEmulationEnabled(bool enabled,
+                                    const std::string* configuration);
 
   scoped_refptr<DevToolsProtocol::Response> CaptureScreenshot(
       scoped_refptr<DevToolsProtocol::Command> command);
@@ -70,8 +74,9 @@ class PageHandler {
                            const int* quality,
                            const int* max_width,
                            const int* max_height);
-
   Response StopScreencast();
+  Response ScreencastFrameAck(int frame_number);
+
   Response HandleJavaScriptDialog(bool accept, const std::string* prompt_text);
 
   scoped_refptr<DevToolsProtocol::Response> QueryUsageAndQuota(
@@ -85,12 +90,11 @@ class PageHandler {
 
   void NotifyScreencastVisibility(bool visible);
   void InnerSwapCompositorFrame();
-  void ScreencastFrameCaptured(
-      const std::string& format,
-      int quality,
-      const cc::CompositorFrameMetadata& metadata,
-      bool success,
-      const SkBitmap& bitmap);
+  void ScreencastFrameCaptured(const cc::CompositorFrameMetadata& metadata,
+                               const SkBitmap& bitmap,
+                               ReadbackResponse response);
+  void ScreencastFrameEncoded(const cc::CompositorFrameMetadata& metadata,
+                              const std::string& data);
 
   void ScreenshotCaptured(
       scoped_refptr<DevToolsProtocol::Command> command,
@@ -101,10 +105,11 @@ class PageHandler {
 
   void QueryUsageAndQuotaCompleted(
       scoped_refptr<DevToolsProtocol::Command> command,
-      scoped_ptr<QueryUsageAndQuotaResponse> response);
+      scoped_refptr<QueryUsageAndQuotaResponse> response);
 
   bool enabled_;
   bool touch_emulation_enabled_;
+  std::string touch_emulation_configuration_;
 
   bool screencast_enabled_;
   std::string screencast_format_;
@@ -114,7 +119,8 @@ class PageHandler {
   int capture_retry_count_;
   bool has_last_compositor_frame_metadata_;
   cc::CompositorFrameMetadata last_compositor_frame_metadata_;
-  base::TimeTicks last_frame_time_;
+  int screencast_frame_sent_;
+  int screencast_frame_acked_;
 
   scoped_ptr<ColorPicker> color_picker_;
 

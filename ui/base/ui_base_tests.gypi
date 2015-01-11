@@ -59,6 +59,10 @@
     'dragdrop/os_exchange_data_provider_aurax11_unittest.cc',
     'ime/candidate_window_unittest.cc',
     'ime/chromeos/character_composer_unittest.cc',
+    'ime/chromeos/component_extension_ime_manager_unittest.cc',
+    'ime/chromeos/composition_text_unittest.cc',
+    'ime/chromeos/extension_ime_util_unittest.cc',
+    'ime/chromeos/ime_keyboard_x11_unittest.cc',
     'ime/composition_text_util_pango_unittest.cc',
     'ime/input_method_base_unittest.cc',
     'ime/input_method_chromeos_unittest.cc',
@@ -68,8 +72,10 @@
     'models/list_model_unittest.cc',
     'models/list_selection_model_unittest.cc',
     'models/tree_node_model_unittest.cc',
+    'test/test_clipboard_unittest.cc',
     'test/data/resource.h',
     'text/bytes_formatting_unittest.cc',
+    'touch/touch_editing_controller_unittest.cc',
     'view_prop_unittest.cc',
     'webui/web_ui_util_unittest.cc',
     'x/selection_requestor_unittest.cc',
@@ -132,6 +138,9 @@
       'dependencies': [
         '../../testing/android/native_test.gyp:native_test_native_code',
       ],
+      'sources!': [
+        'touch/touch_editing_controller_unittest.cc',
+      ],
     }],
     ['use_pango == 1', {
       'dependencies': [
@@ -190,16 +199,6 @@
     ['chromeos==1', {
       'dependencies': [
         '../../chromeos/chromeos.gyp:chromeos',
-        '../aura/aura.gyp:aura_test_support',
-        '../chromeos/ui_chromeos.gyp:ui_chromeos',
-        '../chromeos/ui_chromeos.gyp:ui_chromeos_resources',
-        '../chromeos/ui_chromeos.gyp:ui_chromeos_strings',
-        '../events/events.gyp:gesture_detection',
-        '../message_center/message_center.gyp:message_center',
-      ],
-      'sources': [
-        '../chromeos/network/network_state_notifier_unittest.cc',
-        '../chromeos/touch_exploration_controller_unittest.cc',
       ],
       'sources!': [
         'dragdrop/os_exchange_data_provider_aurax11_unittest.cc',

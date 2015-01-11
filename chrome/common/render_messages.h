@@ -125,6 +125,14 @@ IPC_STRUCT_TRAITS_BEGIN(ContentSettingPatternSource)
   IPC_STRUCT_TRAITS_MEMBER(incognito)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(EmbeddedSearchRequestParams)
+  IPC_STRUCT_TRAITS_MEMBER(search_query)
+  IPC_STRUCT_TRAITS_MEMBER(original_query)
+  IPC_STRUCT_TRAITS_MEMBER(rlz_parameter_value)
+  IPC_STRUCT_TRAITS_MEMBER(input_encoding)
+  IPC_STRUCT_TRAITS_MEMBER(assisted_query_stats)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(InstantSuggestion)
   IPC_STRUCT_TRAITS_MEMBER(text)
   IPC_STRUCT_TRAITS_MEMBER(metadata)
@@ -267,11 +275,15 @@ IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetInputInProgress,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSetSuggestionToPrefetch,
                     InstantSuggestion /* suggestion */)
 
-IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxSubmit,
-                    base::string16 /* value */)
+IPC_MESSAGE_ROUTED2(ChromeViewMsg_SearchBoxSubmit,
+                    base::string16 /* value */,
+                    EmbeddedSearchRequestParams /* params */)
 
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SearchBoxThemeChanged,
                     ThemeBackgroundInfo /* value */)
+
+IPC_MESSAGE_ROUTED1(ChromeViewMsg_HistorySyncCheckResult,
+                    bool /* sync_history */)
 
 IPC_MESSAGE_ROUTED2(ChromeViewMsg_ChromeIdentityCheckResult,
                     base::string16 /* identity */,
@@ -529,11 +541,6 @@ IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_V8HeapStats,
                      int /* size of heap (allocated from the OS) */,
                      int /* bytes in use */)
 
-// Request for a DNS prefetch of the names in the array.
-// NameList is typedef'ed std::vector<std::string>
-IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_DnsPrefetch,
-                     std::vector<std::string> /* hostnames */)
-
 // Request for preconnect to host providing resource specified by URL
 IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_Preconnect,
                      GURL /* preconnect target url */)
@@ -596,6 +603,10 @@ IPC_MESSAGE_ROUTED3(ChromeViewHostMsg_LogMostVisitedNavigation,
                     int /* page_seq_no */,
                     int /* position */,
                     base::string16 /* provider */)
+
+// The Instant page asks whether the user syncs its history.
+IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_HistorySyncCheck,
+                    int /* page_seq_no */)
 
 // The Instant page asks for Chrome identity check against |identity|.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_ChromeIdentityCheck,

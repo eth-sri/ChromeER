@@ -1229,9 +1229,23 @@ chrome.automation.AutomationNode.prototype.role;
 
 
 /**
+ * @type {!Object.<chrome.automation.StateType, boolean>}
+ */
+chrome.automation.AutomationNode.prototype.state;
+
+
+/**
+ * @type {number}
+ */
+chrome.automation.AutomationNode.prototype.indexInParent;
+
+
+/**
  * @type {{
  *     name: string,
  *     value: string,
+ *     textSelStart: number,
+ *     textSelEnd: number,
  *     wordStarts: Array.<number>,
  *     wordEnds: Array.<number>
  * }}
@@ -1246,39 +1260,39 @@ chrome.automation.AutomationNode.prototype.root;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.firstChild = function() {};
+chrome.automation.AutomationNode.prototype.firstChild;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.lastChild = function() {};
+chrome.automation.AutomationNode.prototype.lastChild;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.nextSibling = function() {};
+chrome.automation.AutomationNode.prototype.nextSibling;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.previousSibling = function() {};
+chrome.automation.AutomationNode.prototype.previousSibling;
 
 
 /**
- * @return {chrome.automation.AutomationNode}
+ * @type {chrome.automation.AutomationNode}
  */
-chrome.automation.AutomationNode.prototype.parent = function() {};
+chrome.automation.AutomationNode.prototype.parent;
 
 
 /**
- * @return {!Array.<chrome.automation.AutomationNode>}
+ * @type {!Array.<chrome.automation.AutomationNode>}
  */
-chrome.automation.AutomationNode.prototype.children = function() {};
+chrome.automation.AutomationNode.prototype.children;
 
 
 /**
@@ -1303,6 +1317,9 @@ chrome.automation.AutomationNode.prototype.addEventListener =
  */
 chrome.automation.AutomationNode.prototype.removeEventListener =
     function(eventType, callback, capture) {};
+
+
+chrome.automation.AutomationNode.prototype.doDefault = function() {};
 
 
 chrome.automation.AutomationNode.prototype.focus = function() {};
@@ -1388,7 +1405,6 @@ chrome.automation.RoleType = {
     application: 'application',
     article: 'article',
     banner: 'banner',
-    browser: 'browser',
     busyIndicator: 'busyIndicator',
     button: 'button',
     buttonDropDown: 'buttonDropDown',
@@ -1411,7 +1427,6 @@ chrome.automation.RoleType = {
     disclosureTriangle: 'disclosureTriangle',
     div: 'div',
     document: 'document',
-    drawer: 'drawer',
     editableText: 'editableText',
     embeddedObject: 'embeddedObject',
     footer: 'footer',
@@ -1420,7 +1435,6 @@ chrome.automation.RoleType = {
     group: 'group',
     growArea: 'growArea',
     heading: 'heading',
-    helpTag: 'helpTag',
     horizontalRule: 'horizontalRule',
     iframe: 'iframe',
     ignored: 'ignored',
@@ -1443,7 +1457,6 @@ chrome.automation.RoleType = {
     marquee: 'marquee',
     mathElement: 'mathElement',
     math: 'math',
-    matte: 'matte',
     menuBar: 'menuBar',
     menuButton: 'menuButton',
     menuItem: 'menuItem',
@@ -1464,14 +1477,12 @@ chrome.automation.RoleType = {
     rootWebArea: 'rootWebArea',
     rowHeader: 'rowHeader',
     row: 'row',
-    rulerMarker: 'rulerMarker',
     ruler: 'ruler',
     svgRoot: 'svgRoot',
     scrollArea: 'scrollArea',
     scrollBar: 'scrollBar',
     seamlessWebArea: 'seamlessWebArea',
     search: 'search',
-    sheet: 'sheet',
     slider: 'slider',
     sliderThumb: 'sliderThumb',
     spinButtonPart: 'spinButtonPart',
@@ -1480,7 +1491,6 @@ chrome.automation.RoleType = {
     splitter: 'splitter',
     staticText: 'staticText',
     status: 'status',
-    systemWide: 'systemWide',
     tabGroup: 'tabGroup',
     tabList: 'tabList',
     tabPanel: 'tabPanel',
@@ -1498,7 +1508,6 @@ chrome.automation.RoleType = {
     tree: 'tree',
     unknown: 'unknown',
     tooltip: 'tooltip',
-    valueIndicator: 'valueIndicator',
     webArea: 'webArea',
     window: 'window'
 };

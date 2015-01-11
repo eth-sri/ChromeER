@@ -480,6 +480,10 @@ const char* SpdyFramer::StatusCodeToString(int status_code) {
       return "CONNECT_ERROR";
     case RST_STREAM_ENHANCE_YOUR_CALM:
       return "ENHANCE_YOUR_CALM";
+    case RST_STREAM_INADEQUATE_SECURITY:
+      return "INADEQUATE_SECURITY";
+    case RST_STREAM_HTTP_1_1_REQUIRED:
+      return "HTTP_1_1_REQUIRED";
   }
   return "UNKNOWN_STATUS";
 }
@@ -1497,33 +1501,19 @@ size_t SpdyFramer::ProcessControlFrameBeforeHeaderBlock(const char* data,
           }
           DCHECK(reader.IsDoneReading());
           if (debug_visitor_) {
-            // SPDY 4 reports HEADERS with PRIORITY as SYN_STREAM.
-            SpdyFrameType reported_type = current_frame_type_;
-            if (protocol_version() > SPDY3 && has_priority) {
-              reported_type = SYN_STREAM;
-            }
             debug_visitor_->OnReceiveCompressedFrame(
                 current_frame_stream_id_,
-                reported_type,
+                current_frame_type_,
                 current_frame_length_);
           }
           if (current_frame_type_ == SYN_REPLY) {
             visitor_->OnSynReply(
                 current_frame_stream_id_,
                 (current_frame_flags_ & CONTROL_FLAG_FIN) != 0);
-          } else if (protocol_version() > SPDY3 &&
-              current_frame_flags_ & HEADERS_FLAG_PRIORITY) {
-            // SPDY 4+ is missing SYN_STREAM. Simulate it so that API changes
-            // can be made independent of wire changes.
-            visitor_->OnSynStream(
-                current_frame_stream_id_,
-                0,  // associated_to_stream_id
-                priority,
-                current_frame_flags_ & CONTROL_FLAG_FIN,
-                false);  // unidirectional
           } else {
             visitor_->OnHeaders(
                 current_frame_stream_id_,
+                (current_frame_flags_ & HEADERS_FLAG_PRIORITY) != 0, priority,
                 (current_frame_flags_ & CONTROL_FLAG_FIN) != 0,
                 expect_continuation_ == 0);
           }
@@ -2001,7 +1991,8 @@ size_t SpdyFramer::ProcessRstStreamFramePayload(const char* data, size_t len) {
       DCHECK(successful_read);
       if (SpdyConstants::IsValidRstStreamStatus(protocol_version(),
                                                 status_raw)) {
-        status = static_cast<SpdyRstStreamStatus>(status_raw);
+        status =
+            SpdyConstants::ParseRstStreamStatus(protocol_version(), status_raw);
       } else {
         if (protocol_version() > SPDY3) {
           // Treat unrecognized status codes as INTERNAL_ERROR as
@@ -2494,7 +2485,8 @@ SpdySerializedFrame* SpdyFramer::SerializeRstStream(
     builder.BeginNewFrame(*this, RST_STREAM, 0, rst_stream.stream_id());
   }
 
-  builder.WriteUInt32(rst_stream.status());
+  builder.WriteUInt32(SpdyConstants::SerializeRstStreamStatus(
+      protocol_version(), rst_stream.status()));
 
   // In SPDY4 and up, RST_STREAM frames may also specify opaque data.
   if (protocol_version() > SPDY3 && rst_stream.description().size() > 0) {

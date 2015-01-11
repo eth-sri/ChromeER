@@ -6,9 +6,12 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/threading/thread_checker.h"
 #include "content/renderer/media/native_handle_impl.h"
+#include "content/renderer/media/webrtc/track_observer.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_pool.h"
@@ -71,6 +74,7 @@ RemoteVideoSourceDelegate::SetSize(int width, int height) {
 void MediaStreamRemoteVideoSource::
 RemoteVideoSourceDelegate::RenderFrame(
     const cricket::VideoFrame* frame) {
+  TRACE_EVENT0("webrtc", "RemoteVideoSourceDelegate::RenderFrame");
   base::TimeDelta timestamp = base::TimeDelta::FromMicroseconds(
       frame->GetElapsedTime() / rtc::kNumNanosecsPerMicrosec);
 
@@ -120,19 +124,22 @@ RemoteVideoSourceDelegate::DoRenderFrameOnIOThread(
     scoped_refptr<media::VideoFrame> video_frame,
     const media::VideoCaptureFormat& format) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
+  TRACE_EVENT0("webrtc", "RemoteVideoSourceDelegate::DoRenderFrameOnIOThread");
   // TODO(hclam): Give the estimated capture time.
   frame_callback_.Run(video_frame, format, base::TimeTicks());
 }
 
 MediaStreamRemoteVideoSource::MediaStreamRemoteVideoSource(
-    webrtc::VideoTrackInterface* remote_track)
-    : remote_track_(remote_track),
-      last_state_(remote_track->state()) {
-  remote_track_->RegisterObserver(this);
+    scoped_ptr<TrackObserver> observer)
+    : observer_(observer.Pass()) {
+  // The callback will be automatically cleared when 'observer_' goes out of
+  // scope and no further callbacks will occur.
+  observer_->SetCallback(base::Bind(&MediaStreamRemoteVideoSource::OnChanged,
+      base::Unretained(this)));
 }
 
 MediaStreamRemoteVideoSource::~MediaStreamRemoteVideoSource() {
-  remote_track_->UnregisterObserver(this);
+  DCHECK(CalledOnValidThread());
 }
 
 void MediaStreamRemoteVideoSource::GetCurrentSupportedFormats(
@@ -140,7 +147,7 @@ void MediaStreamRemoteVideoSource::GetCurrentSupportedFormats(
     int max_requested_height,
     double max_requested_frame_rate,
     const VideoCaptureDeviceFormatsCB& callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   media::VideoCaptureFormats formats;
   // Since the remote end is free to change the resolution at any point in time
   // the supported formats are unknown.
@@ -150,17 +157,21 @@ void MediaStreamRemoteVideoSource::GetCurrentSupportedFormats(
 void MediaStreamRemoteVideoSource::StartSourceImpl(
     const media::VideoCaptureFormat& format,
     const VideoCaptureDeliverFrameCB& frame_callback) {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   DCHECK(!delegate_.get());
   delegate_ = new RemoteVideoSourceDelegate(io_message_loop(), frame_callback);
-  remote_track_->AddRenderer(delegate_.get());
+  scoped_refptr<webrtc::VideoTrackInterface> video_track(
+      static_cast<webrtc::VideoTrackInterface*>(observer_->track().get()));
+  video_track->AddRenderer(delegate_.get());
   OnStartDone(MEDIA_DEVICE_OK);
 }
 
 void MediaStreamRemoteVideoSource::StopSourceImpl() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(CalledOnValidThread());
   DCHECK(state() != MediaStreamVideoSource::ENDED);
-  remote_track_->RemoveRenderer(delegate_.get());
+  scoped_refptr<webrtc::VideoTrackInterface> video_track(
+      static_cast<webrtc::VideoTrackInterface*>(observer_->track().get()));
+  video_track->RemoveRenderer(delegate_.get());
 }
 
 webrtc::VideoRendererInterface*
@@ -168,26 +179,23 @@ MediaStreamRemoteVideoSource::RenderInterfaceForTest() {
   return delegate_.get();
 }
 
-void MediaStreamRemoteVideoSource::OnChanged() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  webrtc::MediaStreamTrackInterface::TrackState state = remote_track_->state();
-  if (state != last_state_) {
-    last_state_ = state;
-    switch (state) {
-      case webrtc::MediaStreamTrackInterface::kInitializing:
-        // Ignore the kInitializing state since there is no match in
-        // WebMediaStreamSource::ReadyState.
-        break;
-      case webrtc::MediaStreamTrackInterface::kLive:
-        SetReadyState(blink::WebMediaStreamSource::ReadyStateLive);
-        break;
-      case webrtc::MediaStreamTrackInterface::kEnded:
-        SetReadyState(blink::WebMediaStreamSource::ReadyStateEnded);
-        break;
-      default:
-        NOTREACHED();
-        break;
-    }
+void MediaStreamRemoteVideoSource::OnChanged(
+    webrtc::MediaStreamTrackInterface::TrackState state) {
+  DCHECK(CalledOnValidThread());
+  switch (state) {
+    case webrtc::MediaStreamTrackInterface::kInitializing:
+      // Ignore the kInitializing state since there is no match in
+      // WebMediaStreamSource::ReadyState.
+      break;
+    case webrtc::MediaStreamTrackInterface::kLive:
+      SetReadyState(blink::WebMediaStreamSource::ReadyStateLive);
+      break;
+    case webrtc::MediaStreamTrackInterface::kEnded:
+      SetReadyState(blink::WebMediaStreamSource::ReadyStateEnded);
+      break;
+    default:
+      NOTREACHED();
+      break;
   }
 }
 

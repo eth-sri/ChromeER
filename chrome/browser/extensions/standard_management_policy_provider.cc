@@ -83,7 +83,7 @@ bool StandardManagementPolicyProvider::UserMayLoad(
     return true;
 
   ExtensionManagement::InstallationMode installation_mode =
-      settings_->GetInstallationMode(extension->id());
+      settings_->GetInstallationMode(extension);
 
   // Force-installed extensions cannot be overwritten manually.
   if (!Manifest::IsPolicyLocation(extension->location()) &&
@@ -97,7 +97,7 @@ bool StandardManagementPolicyProvider::UserMayLoad(
   // handled by the switch statement below, please consider whether enterprise
   // policy should be able to disallow extensions of the new type. If so, add
   // a branch to the second block and add a line to the definition of
-  // kExtensionAllowedTypesMap in configuration_policy_handler_list.cc.
+  // kAllowedTypesMap in extension_management_constants.h.
   switch (extension->GetType()) {
     case Manifest::TYPE_UNKNOWN:
       break;
@@ -142,7 +142,7 @@ bool StandardManagementPolicyProvider::MustRemainInstalled(
     const Extension* extension,
     base::string16* error) const {
   ExtensionManagement::InstallationMode mode =
-      settings_->GetInstallationMode(extension->id());
+      settings_->GetInstallationMode(extension);
   // Disallow removing of recommended extension, to avoid re-install it
   // again while policy is reload. But disabling of recommended extension is
   // allowed.

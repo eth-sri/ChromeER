@@ -9,7 +9,9 @@
 #include <vector>
 
 #include "base/base_paths.h"
+#include "base/debug/alias.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/debug/stack_trace.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -17,6 +19,7 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
@@ -33,7 +36,6 @@
 #include "chrome/common/pref_names.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_metrics.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_protocol.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
@@ -217,18 +219,24 @@ void RecordPrecacheStatsOnUIThread(const GURL& url,
 
   precache_manager->RecordStatsForFetch(url, fetch_time, size, was_cached);
 }
-
-void RecordIOThreadToRequestStartOnUIThread(
-    const base::TimeTicks& request_start) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  base::TimeDelta request_lag = request_start -
-      g_browser_process->io_thread()->creation_time();
-  UMA_HISTOGRAM_TIMES("Net.IOThreadCreationToHTTPRequestStart", request_lag);
-}
 #endif  // defined(OS_ANDROID)
 
 void ReportInvalidReferrerSend(const GURL& target_url,
-                               const GURL& referrer_url) {
+                               const GURL& referrer_url,
+                               const base::debug::StackTrace& callstack) {
+  // Record information to help debug http://crbug.com/422871
+  base::debug::StackTrace trace = callstack;
+  base::debug::Alias(&trace);
+  enum { INVALID_URL, FILE_URL, DATA_URL, HTTP_URL, OTHER } reason = OTHER;
+  if (!target_url.is_valid())
+    reason = INVALID_URL;
+  else if (target_url.SchemeIsFile())
+    reason = FILE_URL;
+  else if (target_url.SchemeIs(url::kDataScheme))
+    reason = DATA_URL;
+  else if (target_url.SchemeIs(url::kHttpScheme))
+    reason = HTTP_URL;
+  base::debug::Alias(&reason);
   base::RecordAction(
       base::UserMetricsAction("Net.URLRequest_StartJob_InvalidReferrer"));
   base::debug::DumpWithoutCrashing();
@@ -327,9 +335,9 @@ void ChromeNetworkDelegate::AllowAccessToAllFiles() {
 // static
 // TODO(megjablon): Use data_reduction_proxy_delayed_pref_service to read prefs.
 // Until updated the pref values may be up to an hour behind on desktop.
-base::Value* ChromeNetworkDelegate::HistoricNetworkStatsInfoToValue() {
+base::Value* ChromeNetworkDelegate::HistoricNetworkStatsInfoToValue(
+    PrefService* prefs) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  PrefService* prefs = g_browser_process->local_state();
   int64 total_received = prefs->GetInt64(
       data_reduction_proxy::prefs::kHttpReceivedContentLength);
   int64 total_original = prefs->GetInt64(
@@ -358,28 +366,6 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     GURL* new_url) {
-#if defined(OS_ANDROID)
-  // This UMA tracks the time to the first user-initiated request start, so
-  // only non-null profiles are considered.
-  if (first_request_ && profile_) {
-    bool record_timing = true;
-    if (data_reduction_proxy_params_) {
-      record_timing =
-          (request->url() != data_reduction_proxy_params_->probe_url()) &&
-          (request->url() != data_reduction_proxy_params_->warmup_url());
-    }
-    if (record_timing) {
-      first_request_ = false;
-      net::LoadTimingInfo timing_info;
-      request->GetLoadTimingInfo(&timing_info);
-      BrowserThread::PostTask(
-          BrowserThread::UI, FROM_HERE,
-          base::Bind(&RecordIOThreadToRequestStartOnUIThread,
-                     timing_info.request_start));
-    }
-  }
-#endif  // defined(OS_ANDROID)
-
 #if defined(ENABLE_CONFIGURATION_POLICY)
   // TODO(joaodasilva): This prevents extensions from seeing URLs that are
   // blocked. However, an extension might redirect the request to another URL,
@@ -441,6 +427,7 @@ void ChromeNetworkDelegate::OnResolveProxy(
       !proxy_config_getter_.is_null()) {
     on_resolve_proxy_handler_.Run(url, load_flags,
                                   proxy_config_getter_.Run(),
+                                  proxy_service.config(),
                                   proxy_service.proxy_retry_info(),
                                   data_reduction_proxy_params_, result);
   }
@@ -489,18 +476,6 @@ int ChromeNetworkDelegate::OnHeadersReceived(
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
     GURL* allowed_unsafe_redirect_url) {
-  data_reduction_proxy::DataReductionProxyBypassType bypass_type;
-  if (data_reduction_proxy::MaybeBypassProxyAndPrepareToRetry(
-      data_reduction_proxy_params_,
-      request,
-      original_response_headers,
-      override_response_headers,
-      &bypass_type)) {
-    if (data_reduction_proxy_usage_stats_)
-      data_reduction_proxy_usage_stats_->SetBypassType(bypass_type);
-    return net::OK;
-  }
-
   return extensions_delegate_->OnHeadersReceived(
       request,
       callback,
@@ -524,13 +499,33 @@ void ChromeNetworkDelegate::OnResponseStarted(net::URLRequest* request) {
 
 void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
                                            int bytes_read) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 ChromeNetworkDelegate::OnRawBytesRead"));
+
   TRACE_EVENT_ASYNC_STEP_PAST1("net", "URLRequest", &request, "DidRead",
                                "bytes_read", bytes_read);
 #if defined(ENABLE_TASK_MANAGER)
   // This is not completely accurate, but as a first approximation ignore
   // requests that are served from the cache. See bug 330931 for more info.
-  if (!request.was_cached())
-    TaskManager::GetInstance()->model()->NotifyBytesRead(request, bytes_read);
+  if (!request.was_cached()) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    // I suspect that the jank is in creating a TaskManager instance. After the
+    // bug is fixed, rewrite the operators below as one line.
+    tracked_objects::ScopedTracker tracking_profile1(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 ChromeNetworkDelegate::OnRawBytesRead1"));
+
+    TaskManager* task_manager = TaskManager::GetInstance();
+
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 ChromeNetworkDelegate::OnRawBytesRead2"));
+
+    task_manager->model()->NotifyBytesRead(request, bytes_read);
+  }
 #endif  // defined(ENABLE_TASK_MANAGER)
 }
 
@@ -804,8 +799,10 @@ bool ChromeNetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
     const net::URLRequest& request,
     const GURL& target_url,
     const GURL& referrer_url) const {
+  base::debug::StackTrace callstack;
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&ReportInvalidReferrerSend, target_url, referrer_url));
+                          base::Bind(&ReportInvalidReferrerSend, target_url,
+                                     referrer_url, callstack));
   return true;
 }
 

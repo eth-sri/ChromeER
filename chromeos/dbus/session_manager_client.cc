@@ -84,7 +84,7 @@ class SessionManagerClientImpl : public SessionManagerClient {
     observers_.RemoveObserver(observer);
   }
 
-  virtual bool HasObserver(Observer* observer) override {
+  virtual bool HasObserver(const Observer* observer) const override {
     return observers_.HasObserver(observer);
   }
 
@@ -154,6 +154,16 @@ class SessionManagerClientImpl : public SessionManagerClient {
   virtual void NotifyLockScreenDismissed() override {
     SimpleMethodCallToSessionManager(
         login_manager::kSessionManagerHandleLockScreenDismissed);
+  }
+
+  virtual void NotifySupervisedUserCreationStarted() override {
+    SimpleMethodCallToSessionManager(
+        login_manager::kSessionManagerHandleSupervisedUserCreationStarting);
+  }
+
+  virtual void NotifySupervisedUserCreationFinished() override {
+    SimpleMethodCallToSessionManager(
+        login_manager::kSessionManagerHandleSupervisedUserCreationFinished);
   }
 
   virtual void RetrieveActiveSessions(
@@ -583,13 +593,15 @@ class SessionManagerClientStubImpl : public SessionManagerClient {
   virtual void RemoveObserver(Observer* observer) override {
     observers_.RemoveObserver(observer);
   }
-  virtual bool HasObserver(Observer* observer) override {
+  virtual bool HasObserver(const Observer* observer) const override {
     return observers_.HasObserver(observer);
   }
   virtual void EmitLoginPromptVisible() override {}
   virtual void RestartJob(int pid, const std::string& command_line) override {}
   virtual void StartSession(const std::string& user_email) override {}
   virtual void StopSession() override {}
+  virtual void NotifySupervisedUserCreationStarted() override {}
+  virtual void NotifySupervisedUserCreationFinished() override {}
   virtual void StartDeviceWipe() override {}
   virtual void RequestLockScreen() override {
     if (delegate_)

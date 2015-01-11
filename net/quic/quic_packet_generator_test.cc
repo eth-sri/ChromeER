@@ -33,7 +33,7 @@ namespace {
 class MockDelegate : public QuicPacketGenerator::DelegateInterface {
  public:
   MockDelegate() {}
-  virtual ~MockDelegate() override {}
+  ~MockDelegate() override {}
 
   MOCK_METHOD3(ShouldGeneratePacket,
                bool(TransmissionType transmission_type,
@@ -116,7 +116,7 @@ class QuicPacketGeneratorTest : public ::testing::Test {
         packet6_(0, PACKET_1BYTE_SEQUENCE_NUMBER, nullptr, 0, nullptr),
         packet7_(0, PACKET_1BYTE_SEQUENCE_NUMBER, nullptr, 0, nullptr) {}
 
-  virtual ~QuicPacketGeneratorTest() override {
+  ~QuicPacketGeneratorTest() override {
     delete packet_.packet;
     delete packet_.retransmittable_frames;
     delete packet2_.packet;
@@ -560,15 +560,15 @@ TEST_F(QuicPacketGeneratorTest, FecGroupSizeOnCongestionWindowChange) {
   EXPECT_FALSE(creator_->IsFecGroupOpen());
 
   // On reduced cwnd.
-  generator_.OnCongestionWindowChange(7 * kDefaultTCPMSS);
+  generator_.OnCongestionWindowChange(7);
   EXPECT_EQ(3u, creator_->max_packets_per_fec_group());
 
   // On increased cwnd.
-  generator_.OnCongestionWindowChange(100 * kDefaultTCPMSS);
+  generator_.OnCongestionWindowChange(100);
   EXPECT_EQ(50u, creator_->max_packets_per_fec_group());
 
   // On collapsed cwnd.
-  generator_.OnCongestionWindowChange(1 * kDefaultTCPMSS);
+  generator_.OnCongestionWindowChange(1);
   EXPECT_EQ(2u, creator_->max_packets_per_fec_group());
 }
 
@@ -599,7 +599,7 @@ TEST_F(QuicPacketGeneratorTest, FecGroupSizeChangeWithOpenGroup) {
   EXPECT_TRUE(creator_->IsFecGroupOpen());
 
   // Change FEC groupsize.
-  generator_.OnCongestionWindowChange(2 * kDefaultTCPMSS);
+  generator_.OnCongestionWindowChange(2);
   EXPECT_EQ(2u, creator_->max_packets_per_fec_group());
 
   // Send enough data to trigger one unprotected data packet,

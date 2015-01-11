@@ -352,6 +352,18 @@ TEST_P(GLES2DecoderTest1, ColorMaskValidArgs) {
 // TODO(gman): CompressedTexSubImage2DBucket
 // TODO(gman): CompressedTexSubImage2D
 
+TEST_P(GLES2DecoderTest1, CopyBufferSubDataValidArgs) {
+  EXPECT_CALL(*gl_,
+              CopyBufferSubData(GL_ARRAY_BUFFER, GL_ARRAY_BUFFER, 3, 4, 5));
+  SpecializedSetup<cmds::CopyBufferSubData, 0>(true);
+  cmds::CopyBufferSubData cmd;
+  cmd.Init(GL_ARRAY_BUFFER, GL_ARRAY_BUFFER, 3, 4, 5);
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
+}
 // TODO(gman): CopyTexImage2D
 
 TEST_P(GLES2DecoderTest1, CopyTexSubImage2DValidArgs) {
@@ -662,16 +674,12 @@ TEST_P(GLES2DecoderTest1, FlushValidArgs) {
 }
 
 TEST_P(GLES2DecoderTest1, FramebufferRenderbufferValidArgs) {
-  EXPECT_CALL(*gl_,
-              FramebufferRenderbufferEXT(GL_FRAMEBUFFER,
-                                         GL_COLOR_ATTACHMENT0,
-                                         GL_RENDERBUFFER,
-                                         kServiceRenderbufferId));
+  EXPECT_CALL(*gl_, FramebufferRenderbufferEXT(
+                        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
+                        kServiceRenderbufferId));
   SpecializedSetup<cmds::FramebufferRenderbuffer, 0>(true);
   cmds::FramebufferRenderbuffer cmd;
-  cmd.Init(GL_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_RENDERBUFFER,
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
            client_renderbuffer_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
@@ -681,9 +689,7 @@ TEST_P(GLES2DecoderTest1, FramebufferRenderbufferInvalidArgs0_0) {
   EXPECT_CALL(*gl_, FramebufferRenderbufferEXT(_, _, _, _)).Times(0);
   SpecializedSetup<cmds::FramebufferRenderbuffer, 0>(false);
   cmds::FramebufferRenderbuffer cmd;
-  cmd.Init(GL_DRAW_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_RENDERBUFFER,
+  cmd.Init(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
            client_renderbuffer_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
@@ -693,9 +699,7 @@ TEST_P(GLES2DecoderTest1, FramebufferRenderbufferInvalidArgs0_1) {
   EXPECT_CALL(*gl_, FramebufferRenderbufferEXT(_, _, _, _)).Times(0);
   SpecializedSetup<cmds::FramebufferRenderbuffer, 0>(false);
   cmds::FramebufferRenderbuffer cmd;
-  cmd.Init(GL_READ_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_RENDERBUFFER,
+  cmd.Init(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
            client_renderbuffer_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
@@ -705,9 +709,7 @@ TEST_P(GLES2DecoderTest1, FramebufferRenderbufferInvalidArgs2_0) {
   EXPECT_CALL(*gl_, FramebufferRenderbufferEXT(_, _, _, _)).Times(0);
   SpecializedSetup<cmds::FramebufferRenderbuffer, 0>(false);
   cmds::FramebufferRenderbuffer cmd;
-  cmd.Init(GL_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_FRAMEBUFFER,
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER,
            client_renderbuffer_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
@@ -715,15 +717,12 @@ TEST_P(GLES2DecoderTest1, FramebufferRenderbufferInvalidArgs2_0) {
 
 TEST_P(GLES2DecoderTest1, FramebufferTexture2DValidArgs) {
   EXPECT_CALL(*gl_,
-              FramebufferTexture2DEXT(GL_FRAMEBUFFER,
-                                      GL_COLOR_ATTACHMENT0,
-                                      GL_TEXTURE_2D,
-                                      kServiceTextureId,
-                                      0));
+              FramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      GL_TEXTURE_2D, kServiceTextureId, 0));
   SpecializedSetup<cmds::FramebufferTexture2D, 0>(true);
   cmds::FramebufferTexture2D cmd;
-  cmd.Init(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, client_texture_id_);
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+           client_texture_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
@@ -732,9 +731,7 @@ TEST_P(GLES2DecoderTest1, FramebufferTexture2DInvalidArgs0_0) {
   EXPECT_CALL(*gl_, FramebufferTexture2DEXT(_, _, _, _, _)).Times(0);
   SpecializedSetup<cmds::FramebufferTexture2D, 0>(false);
   cmds::FramebufferTexture2D cmd;
-  cmd.Init(GL_DRAW_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_TEXTURE_2D,
+  cmd.Init(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
            client_texture_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
@@ -744,9 +741,7 @@ TEST_P(GLES2DecoderTest1, FramebufferTexture2DInvalidArgs0_1) {
   EXPECT_CALL(*gl_, FramebufferTexture2DEXT(_, _, _, _, _)).Times(0);
   SpecializedSetup<cmds::FramebufferTexture2D, 0>(false);
   cmds::FramebufferTexture2D cmd;
-  cmd.Init(GL_READ_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_TEXTURE_2D,
+  cmd.Init(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
            client_texture_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
@@ -756,12 +751,24 @@ TEST_P(GLES2DecoderTest1, FramebufferTexture2DInvalidArgs2_0) {
   EXPECT_CALL(*gl_, FramebufferTexture2DEXT(_, _, _, _, _)).Times(0);
   SpecializedSetup<cmds::FramebufferTexture2D, 0>(false);
   cmds::FramebufferTexture2D cmd;
-  cmd.Init(GL_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_PROXY_TEXTURE_CUBE_MAP,
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_PROXY_TEXTURE_CUBE_MAP,
            client_texture_id_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
+}
+
+TEST_P(GLES2DecoderTest1, FramebufferTextureLayerValidArgs) {
+  EXPECT_CALL(*gl_,
+              FramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      kServiceTextureId, 4, 5));
+  SpecializedSetup<cmds::FramebufferTextureLayer, 0>(true);
+  cmds::FramebufferTextureLayer cmd;
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, client_texture_id_, 4, 5);
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
 }
 
 TEST_P(GLES2DecoderTest1, FrontFaceValidArgs) {
@@ -958,9 +965,7 @@ TEST_P(GLES2DecoderTest1, GetBufferParameterivValidArgs) {
   Result* result = static_cast<Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetBufferParameteriv cmd;
-  cmd.Init(GL_ARRAY_BUFFER,
-           GL_BUFFER_SIZE,
-           shared_memory_id_,
+  cmd.Init(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(GL_BUFFER_SIZE),
@@ -975,9 +980,7 @@ TEST_P(GLES2DecoderTest1, GetBufferParameterivInvalidArgs0_0) {
       static_cast<cmds::GetBufferParameteriv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetBufferParameteriv cmd;
-  cmd.Init(GL_RENDERBUFFER,
-           GL_BUFFER_SIZE,
-           shared_memory_id_,
+  cmd.Init(GL_RENDERBUFFER, GL_BUFFER_SIZE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -991,9 +994,7 @@ TEST_P(GLES2DecoderTest1, GetBufferParameterivInvalidArgs1_0) {
       static_cast<cmds::GetBufferParameteriv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetBufferParameteriv cmd;
-  cmd.Init(GL_ARRAY_BUFFER,
-           GL_PIXEL_PACK_BUFFER,
-           shared_memory_id_,
+  cmd.Init(GL_ARRAY_BUFFER, GL_PIXEL_PACK_BUFFER, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1019,9 +1020,7 @@ TEST_P(GLES2DecoderTest1, GetBufferParameterivInvalidArgs2_1) {
       static_cast<cmds::GetBufferParameteriv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetBufferParameteriv cmd;
-  cmd.Init(GL_ARRAY_BUFFER,
-           GL_BUFFER_SIZE,
-           shared_memory_id_,
+  cmd.Init(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1111,16 +1110,12 @@ TEST_P(GLES2DecoderTest1, GetFramebufferAttachmentParameterivValidArgs) {
   Result* result = static_cast<Result*>(shared_memory_address_);
   EXPECT_CALL(*gl_,
               GetFramebufferAttachmentParameterivEXT(
-                  GL_FRAMEBUFFER,
-                  GL_COLOR_ATTACHMENT0,
-                  GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-                  result->GetData()));
+                  GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                  GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, result->GetData()));
   result->size = 0;
   cmds::GetFramebufferAttachmentParameteriv cmd;
-  cmd.Init(GL_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-           shared_memory_id_,
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(
@@ -1138,10 +1133,8 @@ TEST_P(GLES2DecoderTest1, GetFramebufferAttachmentParameterivInvalidArgs0_0) {
           shared_memory_address_);
   result->size = 0;
   cmds::GetFramebufferAttachmentParameteriv cmd;
-  cmd.Init(GL_DRAW_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-           shared_memory_id_,
+  cmd.Init(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1157,10 +1150,8 @@ TEST_P(GLES2DecoderTest1, GetFramebufferAttachmentParameterivInvalidArgs0_1) {
           shared_memory_address_);
   result->size = 0;
   cmds::GetFramebufferAttachmentParameteriv cmd;
-  cmd.Init(GL_READ_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-           shared_memory_id_,
+  cmd.Init(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1176,11 +1167,8 @@ TEST_P(GLES2DecoderTest1, GetFramebufferAttachmentParameterivInvalidArgs3_0) {
           shared_memory_address_);
   result->size = 0;
   cmds::GetFramebufferAttachmentParameteriv cmd;
-  cmd.Init(GL_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-           kInvalidSharedMemoryId,
-           0);
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, kInvalidSharedMemoryId, 0);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
 }
@@ -1194,10 +1182,8 @@ TEST_P(GLES2DecoderTest1, GetFramebufferAttachmentParameterivInvalidArgs3_1) {
           shared_memory_address_);
   result->size = 0;
   cmds::GetFramebufferAttachmentParameteriv cmd;
-  cmd.Init(GL_FRAMEBUFFER,
-           GL_COLOR_ATTACHMENT0,
-           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-           shared_memory_id_,
+  cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+           GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1258,15 +1244,38 @@ TEST_P(GLES2DecoderTest1, GetIntegervInvalidArgs1_1) {
   EXPECT_EQ(0u, result->size);
 }
 
+TEST_P(GLES2DecoderTest1, GetInternalformativValidArgs) {
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  SpecializedSetup<cmds::GetInternalformativ, 0>(true);
+  typedef cmds::GetInternalformativ::Result Result;
+  Result* result = static_cast<Result*>(shared_memory_address_);
+  EXPECT_CALL(*gl_, GetInternalformativ(GL_RENDERBUFFER, GL_RGBA4,
+                                        GL_RENDERBUFFER_RED_SIZE, 4,
+                                        result->GetData()));
+  result->size = 0;
+  cmds::GetInternalformativ cmd;
+  cmd.Init(GL_RENDERBUFFER, GL_RGBA4, GL_RENDERBUFFER_RED_SIZE, 4,
+           shared_memory_id_, shared_memory_offset_);
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(
+                GL_RENDERBUFFER_RED_SIZE),
+            result->GetNumResults());
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
+}
+
 TEST_P(GLES2DecoderTest1, GetProgramivValidArgs) {
   SpecializedSetup<cmds::GetProgramiv, 0>(true);
   typedef cmds::GetProgramiv::Result Result;
   Result* result = static_cast<Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetProgramiv cmd;
-  cmd.Init(client_program_id_,
-           GL_DELETE_STATUS,
-           shared_memory_id_,
+  cmd.Init(client_program_id_, GL_DELETE_STATUS, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(GL_DELETE_STATUS),
@@ -1293,9 +1302,7 @@ TEST_P(GLES2DecoderTest1, GetProgramivInvalidArgs2_1) {
       static_cast<cmds::GetProgramiv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetProgramiv cmd;
-  cmd.Init(client_program_id_,
-           GL_DELETE_STATUS,
-           shared_memory_id_,
+  cmd.Init(client_program_id_, GL_DELETE_STATUS, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1334,14 +1341,11 @@ TEST_P(GLES2DecoderTest1, GetRenderbufferParameterivValidArgs) {
   typedef cmds::GetRenderbufferParameteriv::Result Result;
   Result* result = static_cast<Result*>(shared_memory_address_);
   EXPECT_CALL(
-      *gl_,
-      GetRenderbufferParameterivEXT(
-          GL_RENDERBUFFER, GL_RENDERBUFFER_RED_SIZE, result->GetData()));
+      *gl_, GetRenderbufferParameterivEXT(
+                GL_RENDERBUFFER, GL_RENDERBUFFER_RED_SIZE, result->GetData()));
   result->size = 0;
   cmds::GetRenderbufferParameteriv cmd;
-  cmd.Init(GL_RENDERBUFFER,
-           GL_RENDERBUFFER_RED_SIZE,
-           shared_memory_id_,
+  cmd.Init(GL_RENDERBUFFER, GL_RENDERBUFFER_RED_SIZE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(
@@ -1358,9 +1362,7 @@ TEST_P(GLES2DecoderTest1, GetRenderbufferParameterivInvalidArgs0_0) {
           shared_memory_address_);
   result->size = 0;
   cmds::GetRenderbufferParameteriv cmd;
-  cmd.Init(GL_FRAMEBUFFER,
-           GL_RENDERBUFFER_RED_SIZE,
-           shared_memory_id_,
+  cmd.Init(GL_FRAMEBUFFER, GL_RENDERBUFFER_RED_SIZE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1375,8 +1377,8 @@ TEST_P(GLES2DecoderTest1, GetRenderbufferParameterivInvalidArgs2_0) {
           shared_memory_address_);
   result->size = 0;
   cmds::GetRenderbufferParameteriv cmd;
-  cmd.Init(
-      GL_RENDERBUFFER, GL_RENDERBUFFER_RED_SIZE, kInvalidSharedMemoryId, 0);
+  cmd.Init(GL_RENDERBUFFER, GL_RENDERBUFFER_RED_SIZE, kInvalidSharedMemoryId,
+           0);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
 }
@@ -1389,9 +1391,7 @@ TEST_P(GLES2DecoderTest1, GetRenderbufferParameterivInvalidArgs2_1) {
           shared_memory_address_);
   result->size = 0;
   cmds::GetRenderbufferParameteriv cmd;
-  cmd.Init(GL_RENDERBUFFER,
-           GL_RENDERBUFFER_RED_SIZE,
-           shared_memory_id_,
+  cmd.Init(GL_RENDERBUFFER, GL_RENDERBUFFER_RED_SIZE, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1409,9 +1409,7 @@ TEST_P(GLES2DecoderTest1, GetShaderivValidArgs) {
               GetShaderiv(kServiceShaderId, GL_SHADER_TYPE, result->GetData()));
   result->size = 0;
   cmds::GetShaderiv cmd;
-  cmd.Init(client_shader_id_,
-           GL_SHADER_TYPE,
-           shared_memory_id_,
+  cmd.Init(client_shader_id_, GL_SHADER_TYPE, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(GL_SHADER_TYPE),
@@ -1438,9 +1436,7 @@ TEST_P(GLES2DecoderTest1, GetShaderivInvalidArgs2_1) {
       static_cast<cmds::GetShaderiv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetShaderiv cmd;
-  cmd.Init(client_shader_id_,
-           GL_SHADER_TYPE,
-           shared_memory_id_,
+  cmd.Init(client_shader_id_, GL_SHADER_TYPE, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1459,14 +1455,11 @@ TEST_P(GLES2DecoderTest1, GetTexParameterfvValidArgs) {
   SpecializedSetup<cmds::GetTexParameterfv, 0>(true);
   typedef cmds::GetTexParameterfv::Result Result;
   Result* result = static_cast<Result*>(shared_memory_address_);
-  EXPECT_CALL(*gl_,
-              GetTexParameterfv(
-                  GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, result->GetData()));
+  EXPECT_CALL(*gl_, GetTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                                      result->GetData()));
   result->size = 0;
   cmds::GetTexParameterfv cmd;
-  cmd.Init(GL_TEXTURE_2D,
-           GL_TEXTURE_MAG_FILTER,
-           shared_memory_id_,
+  cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(
@@ -1482,9 +1475,7 @@ TEST_P(GLES2DecoderTest1, GetTexParameterfvInvalidArgs0_0) {
       static_cast<cmds::GetTexParameterfv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetTexParameterfv cmd;
-  cmd.Init(GL_PROXY_TEXTURE_CUBE_MAP,
-           GL_TEXTURE_MAG_FILTER,
-           shared_memory_id_,
+  cmd.Init(GL_PROXY_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1498,9 +1489,7 @@ TEST_P(GLES2DecoderTest1, GetTexParameterfvInvalidArgs1_0) {
       static_cast<cmds::GetTexParameterfv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetTexParameterfv cmd;
-  cmd.Init(GL_TEXTURE_2D,
-           GL_GENERATE_MIPMAP,
-           shared_memory_id_,
+  cmd.Init(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1526,9 +1515,7 @@ TEST_P(GLES2DecoderTest1, GetTexParameterfvInvalidArgs2_1) {
       static_cast<cmds::GetTexParameterfv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetTexParameterfv cmd;
-  cmd.Init(GL_TEXTURE_2D,
-           GL_TEXTURE_MAG_FILTER,
-           shared_memory_id_,
+  cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1542,14 +1529,11 @@ TEST_P(GLES2DecoderTest1, GetTexParameterivValidArgs) {
   SpecializedSetup<cmds::GetTexParameteriv, 0>(true);
   typedef cmds::GetTexParameteriv::Result Result;
   Result* result = static_cast<Result*>(shared_memory_address_);
-  EXPECT_CALL(*gl_,
-              GetTexParameteriv(
-                  GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, result->GetData()));
+  EXPECT_CALL(*gl_, GetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                                      result->GetData()));
   result->size = 0;
   cmds::GetTexParameteriv cmd;
-  cmd.Init(GL_TEXTURE_2D,
-           GL_TEXTURE_MAG_FILTER,
-           shared_memory_id_,
+  cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(
@@ -1565,9 +1549,7 @@ TEST_P(GLES2DecoderTest1, GetTexParameterivInvalidArgs0_0) {
       static_cast<cmds::GetTexParameteriv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetTexParameteriv cmd;
-  cmd.Init(GL_PROXY_TEXTURE_CUBE_MAP,
-           GL_TEXTURE_MAG_FILTER,
-           shared_memory_id_,
+  cmd.Init(GL_PROXY_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1581,9 +1563,7 @@ TEST_P(GLES2DecoderTest1, GetTexParameterivInvalidArgs1_0) {
       static_cast<cmds::GetTexParameteriv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetTexParameteriv cmd;
-  cmd.Init(GL_TEXTURE_2D,
-           GL_GENERATE_MIPMAP,
-           shared_memory_id_,
+  cmd.Init(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1609,9 +1589,7 @@ TEST_P(GLES2DecoderTest1, GetTexParameterivInvalidArgs2_1) {
       static_cast<cmds::GetTexParameteriv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetTexParameteriv cmd;
-  cmd.Init(GL_TEXTURE_2D,
-           GL_TEXTURE_MAG_FILTER,
-           shared_memory_id_,
+  cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1628,9 +1606,7 @@ TEST_P(GLES2DecoderTest1, GetVertexAttribfvValidArgs) {
   Result* result = static_cast<Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetVertexAttribfv cmd;
-  cmd.Init(1,
-           GL_VERTEX_ATTRIB_ARRAY_NORMALIZED,
-           shared_memory_id_,
+  cmd.Init(1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(
@@ -1658,9 +1634,7 @@ TEST_P(GLES2DecoderTest1, GetVertexAttribfvInvalidArgs2_1) {
       static_cast<cmds::GetVertexAttribfv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetVertexAttribfv cmd;
-  cmd.Init(1,
-           GL_VERTEX_ATTRIB_ARRAY_NORMALIZED,
-           shared_memory_id_,
+  cmd.Init(1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1672,9 +1646,7 @@ TEST_P(GLES2DecoderTest1, GetVertexAttribivValidArgs) {
   Result* result = static_cast<Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetVertexAttribiv cmd;
-  cmd.Init(1,
-           GL_VERTEX_ATTRIB_ARRAY_NORMALIZED,
-           shared_memory_id_,
+  cmd.Init(1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
            shared_memory_offset_);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(decoder_->GetGLES2Util()->GLGetNumValuesReturned(
@@ -1702,9 +1674,7 @@ TEST_P(GLES2DecoderTest1, GetVertexAttribivInvalidArgs2_1) {
       static_cast<cmds::GetVertexAttribiv::Result*>(shared_memory_address_);
   result->size = 0;
   cmds::GetVertexAttribiv cmd;
-  cmd.Init(1,
-           GL_VERTEX_ATTRIB_ARRAY_NORMALIZED,
-           shared_memory_id_,
+  cmd.Init(1, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, shared_memory_id_,
            kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
   EXPECT_EQ(0u, result->size);
@@ -1792,11 +1762,11 @@ TEST_P(GLES2DecoderTest1, IsFramebufferValidArgs) {
 TEST_P(GLES2DecoderTest1, IsFramebufferInvalidArgsBadSharedMemoryId) {
   SpecializedSetup<cmds::IsFramebuffer, 0>(false);
   cmds::IsFramebuffer cmd;
-  cmd.Init(
-      client_framebuffer_id_, kInvalidSharedMemoryId, shared_memory_offset_);
+  cmd.Init(client_framebuffer_id_, kInvalidSharedMemoryId,
+           shared_memory_offset_);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  cmd.Init(
-      client_framebuffer_id_, shared_memory_id_, kInvalidSharedMemoryOffset);
+  cmd.Init(client_framebuffer_id_, shared_memory_id_,
+           kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
 }
 
@@ -1828,11 +1798,11 @@ TEST_P(GLES2DecoderTest1, IsRenderbufferValidArgs) {
 TEST_P(GLES2DecoderTest1, IsRenderbufferInvalidArgsBadSharedMemoryId) {
   SpecializedSetup<cmds::IsRenderbuffer, 0>(false);
   cmds::IsRenderbuffer cmd;
-  cmd.Init(
-      client_renderbuffer_id_, kInvalidSharedMemoryId, shared_memory_offset_);
+  cmd.Init(client_renderbuffer_id_, kInvalidSharedMemoryId,
+           shared_memory_offset_);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
-  cmd.Init(
-      client_renderbuffer_id_, shared_memory_id_, kInvalidSharedMemoryOffset);
+  cmd.Init(client_renderbuffer_id_, shared_memory_id_,
+           kInvalidSharedMemoryOffset);
   EXPECT_EQ(error::kOutOfBounds, ExecuteCmd(cmd));
 }
 
@@ -1915,49 +1885,4 @@ TEST_P(GLES2DecoderTest1, PolygonOffsetValidArgs) {
 }
 // TODO(gman): ReadPixels
 
-// TODO(gman): ReleaseShaderCompiler
-
-TEST_P(GLES2DecoderTest1, RenderbufferStorageValidArgs) {
-  SpecializedSetup<cmds::RenderbufferStorage, 0>(true);
-  cmds::RenderbufferStorage cmd;
-  cmd.Init(GL_RENDERBUFFER, GL_RGBA4, 3, 4);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest1, RenderbufferStorageInvalidArgs0_0) {
-  EXPECT_CALL(*gl_, RenderbufferStorageEXT(_, _, _, _)).Times(0);
-  SpecializedSetup<cmds::RenderbufferStorage, 0>(false);
-  cmds::RenderbufferStorage cmd;
-  cmd.Init(GL_FRAMEBUFFER, GL_RGBA4, 3, 4);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest1, RenderbufferStorageInvalidArgs2_0) {
-  EXPECT_CALL(*gl_, RenderbufferStorageEXT(_, _, _, _)).Times(0);
-  SpecializedSetup<cmds::RenderbufferStorage, 0>(false);
-  cmds::RenderbufferStorage cmd;
-  cmd.Init(GL_RENDERBUFFER, GL_RGBA4, -1, 4);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest1, RenderbufferStorageInvalidArgs3_0) {
-  EXPECT_CALL(*gl_, RenderbufferStorageEXT(_, _, _, _)).Times(0);
-  SpecializedSetup<cmds::RenderbufferStorage, 0>(false);
-  cmds::RenderbufferStorage cmd;
-  cmd.Init(GL_RENDERBUFFER, GL_RGBA4, 3, -1);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_INVALID_VALUE, GetGLError());
-}
-
-TEST_P(GLES2DecoderTest1, SampleCoverageValidArgs) {
-  EXPECT_CALL(*gl_, SampleCoverage(1, true));
-  SpecializedSetup<cmds::SampleCoverage, 0>(true);
-  cmds::SampleCoverage cmd;
-  cmd.Init(1, true);
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
-  EXPECT_EQ(GL_NO_ERROR, GetGLError());
-}
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_1_AUTOGEN_H_

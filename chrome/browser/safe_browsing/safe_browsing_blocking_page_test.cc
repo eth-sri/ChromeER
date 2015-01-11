@@ -408,6 +408,8 @@ class SafeBrowsingBlockingPageBrowserTest
             InterstitialPage::GetInterstitialPage(contents)->
                 GetDelegateForTesting());
     ASSERT_TRUE(interstitial_page);
+    ASSERT_EQ(SafeBrowsingBlockingPage::kTypeForTesting,
+              interstitial_page->GetTypeForTesting());
     interstitial_page->CommandReceived(command);
   }
 
@@ -438,6 +440,8 @@ class SafeBrowsingBlockingPageBrowserTest
       TestSafeBrowsingBlockingPage* page =
           static_cast<TestSafeBrowsingBlockingPage*>(
               contents->GetInterstitialPage()->GetDelegateForTesting());
+      ASSERT_EQ(SafeBrowsingBlockingPage::kTypeForTesting,
+                page->GetTypeForTesting());
       page->WaitForDelete();
     }
 
@@ -634,7 +638,7 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageBrowserTest,
     return;
 #endif
 
-  SetupWarningAndNavigate(SB_THREAT_TYPE_URL_HARMFUL);
+  SetupWarningAndNavigate(SB_THREAT_TYPE_URL_UNWANTED);
 
   EXPECT_EQ(VISIBLE, GetVisibility("primary-button"));
   EXPECT_EQ(HIDDEN, GetVisibility("details"));
@@ -661,7 +665,7 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageBrowserTest, MalwareProceed) {
 }
 
 IN_PROC_BROWSER_TEST_F(SafeBrowsingBlockingPageBrowserTest, HarmfulProceed) {
-  GURL url = SetupWarningAndNavigate(SB_THREAT_TYPE_URL_HARMFUL);
+  GURL url = SetupWarningAndNavigate(SB_THREAT_TYPE_URL_UNWANTED);
 
   EXPECT_TRUE(ClickAndWaitForDetach("proceed-link"));
   AssertNoInterstitial(true);  // Assert the interstitial is gone.

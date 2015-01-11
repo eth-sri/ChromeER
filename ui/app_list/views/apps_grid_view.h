@@ -163,7 +163,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void InitiateDragFromReparentItemInRootLevelGridView(
       AppListItemView* original_drag_view,
       const gfx::Rect& drag_view_rect,
-      const gfx::Point& drag_point);
+      const gfx::Point& drag_point,
+      bool has_native_drag);
 
   // Updates drag in the root level grid view when receiving the drag event
   // dispatched from the hidden grid view for reparenting a folder item.
@@ -342,8 +343,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void ReparentItemForReorder(AppListItemView* item_view, const Index& target);
 
   // Updates both data model and view_model_ for re-parenting a folder item
-  // to anther folder target.
-  void ReparentItemToAnotherFolder(AppListItemView* item_view,
+  // to anther folder target. Returns whether the reparent succeeded.
+  bool ReparentItemToAnotherFolder(AppListItemView* item_view,
                                    const Index& target);
 
   // If there is only 1 item left in the source folder after reparenting an item

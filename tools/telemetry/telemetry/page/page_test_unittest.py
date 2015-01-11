@@ -12,27 +12,13 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set
 from telemetry.page import page_set_archive_info
 from telemetry.page import page_test
-from telemetry.unittest import options_for_unittests
-from telemetry.unittest import page_test_test_case
-from telemetry.value import scalar
+from telemetry.unittest_util import options_for_unittests
+from telemetry.unittest_util import page_test_test_case
 
 
 class PageTestThatFails(page_test.PageTest):
   def ValidateAndMeasurePage(self, page, tab, results):
     raise exceptions.IntentionalException
-
-
-class PageTestThatHasDefaults(page_test.PageTest):
-  def AddCommandLineArgs(self, parser):
-    parser.add_option('-x', dest='x', default=3)
-
-  def ValidateAndMeasurePage(self, page, tab, results):
-    if not hasattr(self.options, 'x'):
-      raise page_test.MeasurementFailure('Default option was not set.')
-    if self.options.x != 3:
-      raise page_test.MeasurementFailure(
-          'Expected x == 3, got x == ' + self.options.x)
-    results.AddValue(scalar.ScalarValue(page, 'x', 'ms', 7))
 
 
 class PageTestForBlank(page_test.PageTest):
@@ -101,14 +87,6 @@ class PageTestUnitTest(page_test_test_case.PageTestTestCase):
     all_results = self.RunMeasurement(measurement, ps, options=self._options)
     self.assertEquals(1, len(all_results.failures))
 
-  def testDefaults(self):
-    ps = self.CreatePageSetFromFileInUnittestDataDir('blank.html')
-    measurement = PageTestThatHasDefaults()
-    all_results = self.RunMeasurement(measurement, ps, options=self._options)
-    self.assertEquals(len(all_results.all_page_specific_values), 1)
-    self.assertEquals(
-      all_results.all_page_specific_values[0].value, 7)
-
   # This test is disabled because it runs against live sites, and needs to be
   # fixed. crbug.com/179038
   @benchmark.Disabled
@@ -131,8 +109,8 @@ class PageTestUnitTest(page_test_test_case.PageTestTestCase):
       self._options.browser_options.wpr_mode = wpr_modes.WPR_RECORD
 
       ps.wpr_archive_info = page_set_archive_info.PageSetArchiveInfo(
-          '', '', json.loads(archive_info_template %
-                             (test_archive, google_url)))
+          '', '', ps.bucket, json.loads(archive_info_template %
+                                        (test_archive, google_url)))
       ps.pages = [page_module.Page(google_url, ps)]
       all_results = self.RunMeasurement(measurement, ps, options=self._options)
       self.assertEquals(0, len(all_results.failures))
@@ -141,14 +119,15 @@ class PageTestUnitTest(page_test_test_case.PageTestTestCase):
       self._options.browser_options.wpr_mode = wpr_modes.WPR_REPLAY
 
       ps.wpr_archive_info = page_set_archive_info.PageSetArchiveInfo(
-          '', '', json.loads(archive_info_template % (test_archive, foo_url)))
+          '', '', ps.bucket, json.loads(archive_info_template %
+                                        (test_archive, foo_url)))
       ps.pages = [page_module.Page(foo_url, ps)]
       all_results = self.RunMeasurement(measurement, ps, options=self._options)
       self.assertEquals(1, len(all_results.failures))
 
       ps.wpr_archive_info = page_set_archive_info.PageSetArchiveInfo(
-          '', '', json.loads(archive_info_template %
-                             (test_archive, google_url)))
+          '', '', ps.bucket, json.loads(archive_info_template %
+                                        (test_archive, google_url)))
       ps.pages = [page_module.Page(google_url, ps)]
       all_results = self.RunMeasurement(measurement, ps, options=self._options)
       self.assertEquals(0, len(all_results.failures))

@@ -81,25 +81,13 @@ Status CreateWebCryptoRsaPublicKey(
     blink::WebCryptoKeyUsageMask usages,
     blink::WebCryptoKey* key) {
   blink::WebCryptoKeyAlgorithm key_algorithm;
-  Status status = CreateRsaHashedKeyAlgorithm(
-      rsa_algorithm_id, hash.id(), public_key.get(), &key_algorithm);
+  Status status = CreateRsaHashedKeyAlgorithm(rsa_algorithm_id, hash.id(),
+                                              public_key.get(), &key_algorithm);
   if (status.IsError())
     return status;
 
   return CreateWebCryptoPublicKey(public_key.Pass(), key_algorithm, extractable,
                                   usages, key);
-}
-
-// Converts a BIGNUM to a big endian byte array.
-std::vector<uint8_t> BIGNUMToVector(BIGNUM* n) {
-  std::vector<uint8_t> v(BN_num_bytes(n));
-  BN_bn2bin(n, vector_as_array(&v));
-  return v;
-}
-
-// Allocates a new BIGNUM given a std::string big-endian representation.
-BIGNUM* CreateBIGNUM(const std::string& n) {
-  return BN_bin2bn(reinterpret_cast<const uint8_t*>(n.data()), n.size(), NULL);
 }
 
 Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
@@ -199,8 +187,8 @@ Status RsaHashedAlgorithm::GenerateKey(
     return Status::OperationError();
   }
 
-  if (!RSA_generate_key_ex(
-          rsa_private_key.get(), modulus_length_bits, bn.get(), NULL)) {
+  if (!RSA_generate_key_ex(rsa_private_key.get(), modulus_length_bits, bn.get(),
+                           NULL)) {
     return Status::OperationError();
   }
 
@@ -394,6 +382,67 @@ Status RsaHashedAlgorithm::ExportKeyJwk(const blink::WebCryptoKey& key,
     default:
       return Status::ErrorUnexpected();
   }
+}
+
+Status RsaHashedAlgorithm::SerializeKeyForClone(
+    const blink::WebCryptoKey& key,
+    blink::WebVector<uint8_t>* key_data) const {
+  key_data->assign(AsymKeyOpenSsl::Cast(key)->serialized_key_data());
+  return Status::Success();
+}
+
+// TODO(eroman): Defer import to the crypto thread. http://crbug.com/430763
+Status RsaHashedAlgorithm::DeserializeKeyForClone(
+    const blink::WebCryptoKeyAlgorithm& algorithm,
+    blink::WebCryptoKeyType type,
+    bool extractable,
+    blink::WebCryptoKeyUsageMask usages,
+    const CryptoData& key_data,
+    blink::WebCryptoKey* key) const {
+  blink::WebCryptoAlgorithm import_algorithm = CreateRsaHashedImportAlgorithm(
+      algorithm.id(), algorithm.rsaHashedParams()->hash().id());
+
+  Status status;
+
+  switch (type) {
+    case blink::WebCryptoKeyTypePublic:
+      status =
+          ImportKeySpki(key_data, import_algorithm, extractable, usages, key);
+      break;
+    case blink::WebCryptoKeyTypePrivate:
+      status =
+          ImportKeyPkcs8(key_data, import_algorithm, extractable, usages, key);
+      break;
+    default:
+      return Status::ErrorUnexpected();
+  }
+
+  // There is some duplicated information in the serialized format used by
+  // structured clone (since the KeyAlgorithm is serialized separately from the
+  // key data). Use this extra information to further validate what was
+  // deserialized from the key data.
+
+  if (algorithm.id() != key->algorithm().id())
+    return Status::ErrorUnexpected();
+
+  if (key->type() != type)
+    return Status::ErrorUnexpected();
+
+  if (algorithm.rsaHashedParams()->modulusLengthBits() !=
+      key->algorithm().rsaHashedParams()->modulusLengthBits()) {
+    return Status::ErrorUnexpected();
+  }
+
+  if (algorithm.rsaHashedParams()->publicExponent().size() !=
+          key->algorithm().rsaHashedParams()->publicExponent().size() ||
+      0 !=
+          memcmp(algorithm.rsaHashedParams()->publicExponent().data(),
+                 key->algorithm().rsaHashedParams()->publicExponent().data(),
+                 key->algorithm().rsaHashedParams()->publicExponent().size())) {
+    return Status::ErrorUnexpected();
+  }
+
+  return Status::Success();
 }
 
 }  // namespace webcrypto

@@ -37,6 +37,7 @@ class ContextProvider;
 class Layer;
 class LayerTreeDebugState;
 class LayerTreeHost;
+class RendererSettings;
 class SharedBitmapManager;
 class SurfaceIdAllocator;
 }
@@ -216,11 +217,11 @@ class COMPOSITOR_EXPORT Compositor
   // observer to remove itself when it is done observing.
   void AddObserver(CompositorObserver* observer);
   void RemoveObserver(CompositorObserver* observer);
-  bool HasObserver(CompositorObserver* observer);
+  bool HasObserver(const CompositorObserver* observer) const;
 
   void AddAnimationObserver(CompositorAnimationObserver* observer);
   void RemoveAnimationObserver(CompositorAnimationObserver* observer);
-  bool HasAnimationObserver(CompositorAnimationObserver* observer);
+  bool HasAnimationObserver(const CompositorAnimationObserver* observer) const;
 
   // Creates a compositor lock. Returns NULL if it is not possible to lock at
   // this time (i.e. we're waiting to complete a previous unlock).
@@ -270,14 +271,11 @@ class COMPOSITOR_EXPORT Compositor
 
   const cc::LayerTreeDebugState& GetLayerTreeDebugState() const;
   void SetLayerTreeDebugState(const cc::LayerTreeDebugState& debug_state);
+  const cc::RendererSettings& GetRendererSettings() const;
 
   LayerAnimatorCollection* layer_animator_collection() {
     return &layer_animator_collection_;
   }
-
-  // Inserts a SurfaceSequence that will be satisfied on the next frame this
-  // compositor commits and swaps.
-  cc::SurfaceSequence InsertSurfaceSequenceForNextFrame();
 
   cc::SurfaceIdAllocator* surface_id_allocator() {
     return surface_id_allocator_.get();
@@ -308,7 +306,6 @@ class COMPOSITOR_EXPORT Compositor
 
   gfx::AcceleratedWidget widget_;
   scoped_ptr<cc::SurfaceIdAllocator> surface_id_allocator_;
-  uint32_t surface_sequence_number_;
   scoped_refptr<cc::Layer> root_web_layer_;
   scoped_ptr<cc::LayerTreeHost> host_;
   scoped_refptr<base::MessageLoopProxy> compositor_thread_loop_;

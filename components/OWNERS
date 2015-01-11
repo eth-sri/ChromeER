@@ -3,7 +3,7 @@ caitkp@chromium.org
 erikwright@chromium.org
 jochen@chromium.org
 
-per-file app_modal_dialog*=avi@chromium.org
+per-file app_modal*=avi@chromium.org
 
 # Can not match autofill* due to crbug.com/397984
 per-file autofill.gypi=estade@chromium.org
@@ -11,6 +11,7 @@ per-file autofill.gypi=isherman@chromium.org
 per-file autofill_strings.grdp=estade@chromium.org
 per-file autofill_strings.grdp=isherman@chromium.org
 
+per-file bookmark_bar_strings.grdp=sky@chromium.org
 per-file bookmarks.gypi=sky@chromium.org
 
 per-file cloud_devices*=gene@chromium.org
@@ -43,6 +44,9 @@ per-file data_reduction_proxy*=bolian@chromium.org
 
 per-file devtools_bridge.gyp=mnaganov@chromium.org
 per-file devtools_bridge.gyp=serya@chromium.org
+
+per-file dns_prefetch*=jar@chromium.org
+per-file dns_prefetch*=ttuttle@chromium.org
 
 per-file dom_distiller*=bengr@chromium.org
 per-file dom_distiller*=cjhopman@chromium.org
@@ -203,6 +207,7 @@ per-file sync_driver*=haitaol@chromium.org
 per-file sync_driver*=maniscalco@chromium.org
 per-file sync_driver*=pavely@chromium.org
 per-file sync_driver*=rlarocque@chromium.org
+per-file sync_driver*=stanisc@chromium.org
 per-file sync_driver*=tim@chromium.org
 per-file sync_driver*=zea@chromium.org
 
@@ -216,12 +221,12 @@ per-file translate.gypi=andrewhayden@chromium.org
 per-file translate.gypi=droger@chromium.org
 per-file translate.gypi=hajimehoshi@chromium.org
 per-file translate.gypi=toyoshim@chromium.org
+per-file translate_strings.grdp=andrewhayden@chromium.org
+per-file translate_strings.grdp=droger@chromium.org
+per-file translate_strings.grdp=hajimehoshi@chromium.org
+per-file translate_strings.grdp=toyoshim@chromium.org
 
 per-file startup_metric_utils.gypi=jeremy@chromium.org
-
-per-file usb_service.gypi=pfeldman@chromium.org
-per-file usb_service.gypi=rockot@chromium.org
-per-file usb_service.gypi=rpaquay@chromium.org
 
 per-file user_manager.gypi=antrim@chromium.org
 per-file user_manager.gypi=dpolukhin@chromium.org
@@ -239,6 +244,9 @@ per-file user_prefs.gypi=pam@chromium.org
 per-file variations.gypi=asvitkine@chromium.org
 per-file variations.gypi=jwd@chromium.org
 per-file variations.gypi=stevet@chromium.org
+
+per-file web_resource.gypi=asvitkine@chromium.org
+per-file web_resource.gypi=stevet@chromium.org
 
 per-file wifi.gypi=mef@chromium.org
 

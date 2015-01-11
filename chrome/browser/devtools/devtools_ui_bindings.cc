@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -16,7 +17,6 @@
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/devtools/devtools_target_impl.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -45,8 +45,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/common/extension_set.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/page_transition_types.h"
@@ -65,6 +64,11 @@ static const char kFrontendHostId[] = "id";
 static const char kFrontendHostMethod[] = "method";
 static const char kFrontendHostParams[] = "params";
 static const char kTitleFormat[] = "Developer Tools - %s";
+
+static const char kDevToolsActionTakenHistogram[] = "DevTools.ActionTaken";
+static const int kDevToolsActionTakenBoundary = 100;
+static const char kDevToolsPanelShownHistogram[] = "DevTools.PanelShown";
+static const int kDevToolsPanelShownBoundary = 20;
 
 const size_t kMaxMessageChunkSize = IPC::Channel::kMaximumMessageSize / 4;
 
@@ -193,7 +197,6 @@ class DefaultBindingsDelegate : public DevToolsUIBindings::Delegate {
   void CloseWindow() override {}
   void SetInspectedPageBounds(const gfx::Rect& rect) override {}
   void InspectElementCompleted() override {}
-  void MoveWindow(int x, int y) override {}
   void SetIsDocked(bool is_docked) override {}
   void OpenInNewTab(const std::string& url) override;
   void SetWhitelistedShortcuts(const std::string& message) override {}
@@ -201,7 +204,7 @@ class DefaultBindingsDelegate : public DevToolsUIBindings::Delegate {
   void InspectedContentsClosing() override;
   void OnLoadCompleted() override {}
   InfoBarService* GetInfoBarService() override;
-  void RenderProcessGone() override {}
+  void RenderProcessGone(bool crashed) override {}
 
   content::WebContents* web_contents_;
   DISALLOW_COPY_AND_ASSIGN(DefaultBindingsDelegate);
@@ -241,8 +244,10 @@ class DevToolsUIBindings::FrontendWebContentsObserver
  private:
   // contents::WebContentsObserver:
   void RenderProcessGone(base::TerminationStatus status) override;
-  void AboutToNavigateRenderView(
-      content::RenderViewHost* render_view_host) override;
+  // TODO(creis): Replace with RenderFrameCreated when http://crbug.com/425397
+  // is fixed.  See also http://crbug.com/424641.
+  void AboutToNavigateRenderFrame(
+      content::RenderFrameHost* render_frame_host) override;
   void DocumentOnLoadCompletedInMainFrame() override;
   void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
@@ -264,6 +269,7 @@ DevToolsUIBindings::FrontendWebContentsObserver::
 
 void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
     base::TerminationStatus status) {
+  bool crashed = true;
   switch (status) {
     case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
@@ -272,16 +278,19 @@ void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
         devtools_bindings_->Detach();
       break;
     default:
+      crashed = false;
       break;
   }
-  devtools_bindings_->delegate_->RenderProcessGone();
+  devtools_bindings_->delegate_->RenderProcessGone(crashed);
 }
 
-void DevToolsUIBindings::FrontendWebContentsObserver::AboutToNavigateRenderView(
-    content::RenderViewHost* render_view_host) {
+void DevToolsUIBindings::FrontendWebContentsObserver::
+    AboutToNavigateRenderFrame(content::RenderFrameHost* render_frame_host) {
+  if (render_frame_host->GetParent())
+    return;
   devtools_bindings_->frontend_host_.reset(
-      content::DevToolsFrontendHost::Create(
-          render_view_host, devtools_bindings_));
+      content::DevToolsFrontendHost::Create(render_frame_host,
+                                            devtools_bindings_));
 }
 
 void DevToolsUIBindings::FrontendWebContentsObserver::
@@ -365,9 +374,8 @@ DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents)
   embedder_message_dispatcher_.reset(
       DevToolsEmbedderMessageDispatcher::createForDevToolsFrontend(this));
 
-  frontend_host_.reset(
-      content::DevToolsFrontendHost::Create(
-          web_contents_->GetRenderViewHost(), this));
+  frontend_host_.reset(content::DevToolsFrontendHost::Create(
+      web_contents_->GetMainFrame(), this));
 }
 
 DevToolsUIBindings::~DevToolsUIBindings() {
@@ -424,7 +432,7 @@ void DevToolsUIBindings::HandleMessageFromDevToolsFrontend(
   if (id) {
     base::FundamentalValue id_value(id);
     base::StringValue error_value(error);
-    CallClientFunction("InspectorFrontendAPI.embedderMessageAck",
+    CallClientFunction("DevToolsAPI.embedderMessageAck",
                        &id_value, &error_value, NULL);
   }
 }
@@ -442,7 +450,7 @@ void DevToolsUIBindings::DispatchProtocolMessage(
 
   if (message.length() < kMaxMessageChunkSize) {
     base::StringValue message_value(message);
-    CallClientFunction("InspectorFrontendAPI.dispatchMessage",
+    CallClientFunction("DevToolsAPI.dispatchMessage",
                        &message_value, NULL, NULL);
     return;
   }
@@ -450,7 +458,7 @@ void DevToolsUIBindings::DispatchProtocolMessage(
   base::FundamentalValue total_size(static_cast<int>(message.length()));
   for (size_t pos = 0; pos < message.length(); pos += kMaxMessageChunkSize) {
     base::StringValue message_value(message.substr(pos, kMaxMessageChunkSize));
-    CallClientFunction("InspectorFrontendAPI.dispatchMessageChunk",
+    CallClientFunction("DevToolsAPI.dispatchMessageChunk",
                        &message_value, pos ? NULL : &total_size, NULL);
   }
 }
@@ -478,10 +486,6 @@ void DevToolsUIBindings::LoadCompleted() {
 
 void DevToolsUIBindings::SetInspectedPageBounds(const gfx::Rect& rect) {
   delegate_->SetInspectedPageBounds(rect);
-}
-
-void DevToolsUIBindings::MoveWindow(int x, int y) {
-  delegate_->MoveWindow(x, y);
 }
 
 void DevToolsUIBindings::SetIsDocked(bool dock_requested) {
@@ -542,7 +546,7 @@ void DevToolsUIBindings::RemoveFileSystem(
   CHECK(web_contents_->GetURL().SchemeIs(content::kChromeDevToolsScheme));
   file_helper_->RemoveFileSystem(file_system_path);
   base::StringValue file_system_path_value(file_system_path);
-  CallClientFunction("InspectorFrontendAPI.fileSystemRemoved",
+  CallClientFunction("DevToolsAPI.fileSystemRemoved",
                      &file_system_path_value, NULL, NULL);
 }
 
@@ -674,33 +678,40 @@ void DevToolsUIBindings::SendMessageToBrowser(const std::string& message) {
     agent_host_->DispatchProtocolMessage(message);
 }
 
+void DevToolsUIBindings::RecordActionUMA(const std::string& name, int action) {
+  if (name == kDevToolsActionTakenHistogram)
+    UMA_HISTOGRAM_ENUMERATION(name, action, kDevToolsActionTakenBoundary);
+  else if (name == kDevToolsPanelShownHistogram)
+    UMA_HISTOGRAM_ENUMERATION(name, action, kDevToolsPanelShownBoundary);
+}
+
 void DevToolsUIBindings::DeviceCountChanged(int count) {
   base::FundamentalValue value(count);
-  CallClientFunction("InspectorFrontendAPI.deviceCountUpdated", &value, NULL,
+  CallClientFunction("DevToolsAPI.deviceCountUpdated", &value, NULL,
                      NULL);
 }
 
 void DevToolsUIBindings::DevicesUpdated(
     const std::string& source,
     const base::ListValue& targets) {
-  CallClientFunction("InspectorFrontendAPI.devicesUpdated", &targets, NULL,
+  CallClientFunction("DevToolsAPI.devicesUpdated", &targets, NULL,
                      NULL);
 }
 
 void DevToolsUIBindings::FileSavedAs(const std::string& url) {
   base::StringValue url_value(url);
-  CallClientFunction("InspectorFrontendAPI.savedURL", &url_value, NULL, NULL);
+  CallClientFunction("DevToolsAPI.savedURL", &url_value, NULL, NULL);
 }
 
 void DevToolsUIBindings::CanceledFileSaveAs(const std::string& url) {
   base::StringValue url_value(url);
-  CallClientFunction("InspectorFrontendAPI.canceledSaveURL",
+  CallClientFunction("DevToolsAPI.canceledSaveURL",
                      &url_value, NULL, NULL);
 }
 
 void DevToolsUIBindings::AppendedTo(const std::string& url) {
   base::StringValue url_value(url);
-  CallClientFunction("InspectorFrontendAPI.appendedToURL", &url_value, NULL,
+  CallClientFunction("DevToolsAPI.appendedToURL", &url_value, NULL,
                      NULL);
 }
 
@@ -709,7 +720,7 @@ void DevToolsUIBindings::FileSystemsLoaded(
   base::ListValue file_systems_value;
   for (size_t i = 0; i < file_systems.size(); ++i)
     file_systems_value.Append(CreateFileSystemValue(file_systems[i]));
-  CallClientFunction("InspectorFrontendAPI.fileSystemsLoaded",
+  CallClientFunction("DevToolsAPI.fileSystemsLoaded",
                      &file_systems_value, NULL, NULL);
 }
 
@@ -720,7 +731,7 @@ void DevToolsUIBindings::FileSystemAdded(
   scoped_ptr<base::DictionaryValue> file_system_value;
   if (!file_system.file_system_path.empty())
     file_system_value.reset(CreateFileSystemValue(file_system));
-  CallClientFunction("InspectorFrontendAPI.fileSystemAdded",
+  CallClientFunction("DevToolsAPI.fileSystemAdded",
                      error_string_value.get(), file_system_value.get(), NULL);
 }
 
@@ -732,7 +743,7 @@ void DevToolsUIBindings::IndexingTotalWorkCalculated(
   base::FundamentalValue request_id_value(request_id);
   base::StringValue file_system_path_value(file_system_path);
   base::FundamentalValue total_work_value(total_work);
-  CallClientFunction("InspectorFrontendAPI.indexingTotalWorkCalculated",
+  CallClientFunction("DevToolsAPI.indexingTotalWorkCalculated",
                      &request_id_value, &file_system_path_value,
                      &total_work_value);
 }
@@ -744,7 +755,7 @@ void DevToolsUIBindings::IndexingWorked(int request_id,
   base::FundamentalValue request_id_value(request_id);
   base::StringValue file_system_path_value(file_system_path);
   base::FundamentalValue worked_value(worked);
-  CallClientFunction("InspectorFrontendAPI.indexingWorked", &request_id_value,
+  CallClientFunction("DevToolsAPI.indexingWorked", &request_id_value,
                      &file_system_path_value, &worked_value);
 }
 
@@ -754,7 +765,7 @@ void DevToolsUIBindings::IndexingDone(int request_id,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::FundamentalValue request_id_value(request_id);
   base::StringValue file_system_path_value(file_system_path);
-  CallClientFunction("InspectorFrontendAPI.indexingDone", &request_id_value,
+  CallClientFunction("DevToolsAPI.indexingDone", &request_id_value,
                      &file_system_path_value, NULL);
 }
 
@@ -770,7 +781,7 @@ void DevToolsUIBindings::SearchCompleted(
   }
   base::FundamentalValue request_id_value(request_id);
   base::StringValue file_system_path_value(file_system_path);
-  CallClientFunction("InspectorFrontendAPI.searchCompleted", &request_id_value,
+  CallClientFunction("DevToolsAPI.searchCompleted", &request_id_value,
                      &file_system_path_value, &file_paths_value);
 }
 
@@ -785,7 +796,7 @@ void DevToolsUIBindings::UpdateTheme() {
   ThemeService* tp = ThemeServiceFactory::GetForProfile(profile_);
   DCHECK(tp);
 
-  std::string command("InspectorFrontendAPI.setToolbarColors(\"" +
+  std::string command("DevToolsAPI.setToolbarColors(\"" +
       SkColorToRGBAString(tp->GetColor(ThemeProperties::COLOR_TOOLBAR)) +
       "\", \"" +
       SkColorToRGBAString(tp->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT)) +
@@ -794,31 +805,31 @@ void DevToolsUIBindings::UpdateTheme() {
 }
 
 void DevToolsUIBindings::AddDevToolsExtensionsToClient() {
-  const ExtensionService* extension_service = extensions::ExtensionSystem::Get(
-      profile_->GetOriginalProfile())->extension_service();
-  if (!extension_service)
+  const extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile_->GetOriginalProfile());
+  if (!registry)
     return;
-  const extensions::ExtensionSet* extensions = extension_service->extensions();
 
   base::ListValue results;
-  for (extensions::ExtensionSet::const_iterator extension(extensions->begin());
-       extension != extensions->end(); ++extension) {
-    if (extensions::chrome_manifest_urls::GetDevToolsPage(extension->get())
+  for (const scoped_refptr<const extensions::Extension>& extension :
+       registry->enabled_extensions()) {
+    if (extensions::chrome_manifest_urls::GetDevToolsPage(extension.get())
             .is_empty())
       continue;
     base::DictionaryValue* extension_info = new base::DictionaryValue();
     extension_info->Set(
         "startPage",
         new base::StringValue(extensions::chrome_manifest_urls::GetDevToolsPage(
-                                  extension->get()).spec()));
-    extension_info->Set("name", new base::StringValue((*extension)->name()));
+                                  extension.get()).spec()));
+    extension_info->Set("name", new base::StringValue(extension->name()));
     extension_info->Set("exposeExperimentalAPIs",
                         new base::FundamentalValue(
-                            (*extension)->permissions_data()->HasAPIPermission(
+                            extension->permissions_data()->HasAPIPermission(
                                 extensions::APIPermission::kExperimental)));
     results.Append(extension_info);
   }
-  CallClientFunction("WebInspector.addExtensions", &results, NULL, NULL);
+  CallClientFunction("DevToolsAPI.addExtensions",
+                     &results, NULL, NULL);
 }
 
 void DevToolsUIBindings::SetDelegate(Delegate* delegate) {

@@ -16,7 +16,7 @@ function findAutomationNode(root, condition) {
   if (condition(root))
     return root;
 
-  var children = root.children();
+  var children = root.children;
   for (var i = 0; i < children.length; i++) {
     var result = findAutomationNode(children[i], condition);
     if (result)
@@ -25,9 +25,31 @@ function findAutomationNode(root, condition) {
   return null;
 }
 
-function setupAndRunTests(allTests) {
-  chrome.automation.getDesktop(function(rootNodeArg) {
-    rootNode = rootNodeArg;
-    chrome.test.runTests(allTests);
+function runWithDocument(docString, callback) {
+  var url = 'data:text/html,<!doctype html>' + docString;
+  var createParams = {
+    active: true,
+    url: url
+  };
+  chrome.tabs.create(createParams, function(tab) {
+    chrome.tabs.onUpdated.addListener(function(tabId, changeInfo) {
+      if (tabId == tab.id && changeInfo.status == 'complete') {
+        callback();
+      }
+    });
   });
+}
+
+function setupAndRunTests(allTests, opt_docString) {
+  function runTestInternal() {
+    chrome.automation.getDesktop(function(rootNodeArg) {
+      rootNode = rootNodeArg;
+      chrome.test.runTests(allTests);
+    });
+  }
+
+  if (opt_docString)
+    runWithDocument(opt_docString, runTestInternal);
+  else
+    runTestInternal();
 }

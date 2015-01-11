@@ -37,7 +37,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/background_printing_manager.h"
 #endif
 
@@ -87,8 +87,11 @@ void GetAllWebContents(std::set<content::WebContents*>* web_contents) {
   for (TabModelList::const_iterator iter = TabModelList::begin();
        iter != TabModelList::end(); ++iter) {
     TabModel* model = *iter;
-    for (int i = 0; i < model->GetTabCount(); ++i)
-      web_contents->insert(model->GetWebContentsAt(i));
+    for (int i = 0; i < model->GetTabCount(); ++i) {
+      content::WebContents* tab_web_contents = model->GetWebContentsAt(i);
+      if (tab_web_contents)
+        web_contents->insert(tab_web_contents);
+    }
   }
 #else
   for (TabContentsIterator iter; !iter.done(); iter.Next())
@@ -106,7 +109,7 @@ void GetAllWebContents(std::set<content::WebContents*>* web_contents) {
         prerender_manager->GetAllPrerenderingContents();
     web_contents->insert(contentses.begin(), contentses.end());
   }
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   // Add all the pages being background printed.
   printing::BackgroundPrintingManager* printing_manager =
       g_browser_process->background_printing_manager();
@@ -211,8 +214,11 @@ void MemoryInternalsProxy::RequestRendererDetails() {
   for (TabModelList::const_iterator iter = TabModelList::begin();
        iter != TabModelList::end(); ++iter) {
     TabModel* model = *iter;
-    for (int i = 0; i < model->GetTabCount(); ++i)
-      renderer_details_->AddWebContents(model->GetWebContentsAt(i));
+    for (int i = 0; i < model->GetTabCount(); ++i) {
+      content::WebContents* tab_web_contents = model->GetWebContentsAt(i);
+      if (tab_web_contents)
+        renderer_details_->AddWebContents(tab_web_contents);
+    }
   }
 #else
   for (TabContentsIterator iter; !iter.done(); iter.Next())
@@ -290,10 +296,12 @@ void MemoryInternalsProxy::ConvertTabsInformation(
   for (std::set<content::WebContents*>::const_iterator
            iter = web_contents.begin(); iter != web_contents.end(); ++iter) {
     content::WebContents* web = *iter;
-    const base::ProcessId pid = base::GetProcId(
-        web->GetRenderProcessHost()->GetHandle());
+    content::RenderProcessHost* process_host = web->GetRenderProcessHost();
+    if (!process_host)
+        continue;
 
     // Find which process renders the web contents.
+    const base::ProcessId pid = base::GetProcId(process_host->GetHandle());
     base::DictionaryValue* process = FindProcessFromPid(processes, pid);
     if (!process)
       continue;

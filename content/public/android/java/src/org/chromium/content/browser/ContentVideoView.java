@@ -4,10 +4,8 @@
 
 package org.chromium.content.browser;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.DialogInterface;
 import android.graphics.Point;
 import android.provider.Settings;
@@ -68,7 +66,6 @@ public class ContentVideoView extends FrameLayout
     private SurfaceHolder mSurfaceHolder;
     private int mVideoWidth;
     private int mVideoHeight;
-    private int mDuration;
 
     // Native pointer to C++ ContentVideoView object.
     private long mNativeContentVideoView;
@@ -165,7 +162,7 @@ public class ContentVideoView extends FrameLayout
         }
     };
 
-    protected ContentVideoView(Context context, long nativeContentVideoView,
+    private ContentVideoView(Context context, long nativeContentVideoView,
             ContentVideoViewClient client) {
         super(context);
         mNativeContentVideoView = nativeContentVideoView;
@@ -178,7 +175,7 @@ public class ContentVideoView extends FrameLayout
         setVisibility(View.VISIBLE);
     }
 
-    protected ContentVideoViewClient getContentVideoViewClient() {
+    private ContentVideoViewClient getContentVideoViewClient() {
         return mClient;
     }
 
@@ -196,7 +193,7 @@ public class ContentVideoView extends FrameLayout
                 org.chromium.content.R.string.media_player_loading_video);
     }
 
-    protected void showContentVideoView() {
+    private void showContentVideoView() {
         mVideoSurfaceView.getHolder().addCallback(this);
         this.addView(mVideoSurfaceView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -213,7 +210,7 @@ public class ContentVideoView extends FrameLayout
                 Gravity.CENTER));
     }
 
-    protected SurfaceView getSurfaceView() {
+    private SurfaceView getSurfaceView() {
         return mVideoSurfaceView;
     }
 
@@ -231,7 +228,7 @@ public class ContentVideoView extends FrameLayout
 
         mCurrentState = STATE_ERROR;
 
-        if (!isActivityContext(getContext())) {
+        if (ContentViewCore.activityFromContext(getContext()) == null) {
             Log.w(TAG, "Unable to show alert dialog because it requires an activity context");
             return;
         }
@@ -282,7 +279,7 @@ public class ContentVideoView extends FrameLayout
     }
 
     @CalledByNative
-    protected void onBufferingUpdate(int percent) {
+    private void onBufferingUpdate(int percent) {
     }
 
     @CalledByNative
@@ -291,14 +288,13 @@ public class ContentVideoView extends FrameLayout
     }
 
     @CalledByNative
-    protected void onUpdateMediaMetadata(
+    private void onUpdateMediaMetadata(
             int videoWidth,
             int videoHeight,
             int duration,
             boolean canPause,
             boolean canSeekBack,
             boolean canSeekForward) {
-        mDuration = duration;
         mProgressView.setVisibility(View.GONE);
         mCurrentState = isPlaying() ? STATE_PLAYING : STATE_PAUSED;
         onVideoSizeChanged(videoWidth, videoHeight);
@@ -339,7 +335,7 @@ public class ContentVideoView extends FrameLayout
     }
 
     @CalledByNative
-    protected void openVideo() {
+    private void openVideo() {
         if (mSurfaceHolder != null) {
             mCurrentState = STATE_IDLE;
             if (mNativeContentVideoView != 0) {
@@ -350,63 +346,8 @@ public class ContentVideoView extends FrameLayout
         }
     }
 
-    protected void onCompletion() {
+    private void onCompletion() {
         mCurrentState = STATE_PLAYBACK_COMPLETED;
-    }
-
-
-    protected boolean isInPlaybackState() {
-        return (mCurrentState != STATE_ERROR && mCurrentState != STATE_IDLE);
-    }
-
-    protected void start() {
-        if (isInPlaybackState()) {
-            if (mNativeContentVideoView != 0) {
-                nativePlay(mNativeContentVideoView);
-            }
-            mCurrentState = STATE_PLAYING;
-        }
-    }
-
-    protected void pause() {
-        if (isInPlaybackState()) {
-            if (isPlaying()) {
-                if (mNativeContentVideoView != 0) {
-                    nativePause(mNativeContentVideoView);
-                }
-                mCurrentState = STATE_PAUSED;
-            }
-        }
-    }
-
-    // cache duration as mDuration for faster access
-    protected int getDuration() {
-        if (isInPlaybackState()) {
-            if (mDuration > 0) {
-                return mDuration;
-            }
-            if (mNativeContentVideoView != 0) {
-                mDuration = nativeGetDurationInMilliSeconds(mNativeContentVideoView);
-            } else {
-                mDuration = 0;
-            }
-            return mDuration;
-        }
-        mDuration = -1;
-        return mDuration;
-    }
-
-    protected int getCurrentPosition() {
-        if (isInPlaybackState() && mNativeContentVideoView != 0) {
-            return nativeGetCurrentPosition(mNativeContentVideoView);
-        }
-        return 0;
-    }
-
-    protected void seekTo(int msec) {
-        if (mNativeContentVideoView != 0) {
-            nativeSeekTo(mNativeContentVideoView, msec);
-        }
     }
 
     public boolean isPlaying() {
@@ -422,16 +363,6 @@ public class ContentVideoView extends FrameLayout
         ContentVideoView videoView = new ContentVideoView(context, nativeContentVideoView, client);
         client.enterFullscreenVideo(videoView);
         return videoView;
-    }
-
-    private static boolean isActivityContext(Context context) {
-        // Only retrieve the base context if the supplied context is a ContextWrapper but not
-        // an Activity, given that Activity is already a subclass of ContextWrapper.
-        if (context instanceof ContextWrapper && !(context instanceof Activity)) {
-            context = ((ContextWrapper) context).getBaseContext();
-            return isActivityContext(context);
-        }
-        return context instanceof Activity;
     }
 
     public void removeSurfaceView() {
@@ -470,7 +401,7 @@ public class ContentVideoView extends FrameLayout
      * To exit fullscreen, use exitFullscreen in Java.
      */
     @CalledByNative
-    protected void destroyContentVideoView(boolean nativeViewDestroyed) {
+    private void destroyContentVideoView(boolean nativeViewDestroyed) {
         if (mVideoSurfaceView != null) {
             removeSurfaceView();
             setVisibility(View.GONE);
@@ -508,15 +439,8 @@ public class ContentVideoView extends FrameLayout
     private static native ContentVideoView nativeGetSingletonJavaContentVideoView();
     private native void nativeExitFullscreen(long nativeContentVideoView,
             boolean relaseMediaPlayer);
-    private native int nativeGetCurrentPosition(long nativeContentVideoView);
-    private native int nativeGetDurationInMilliSeconds(long nativeContentVideoView);
     private native void nativeRequestMediaMetadata(long nativeContentVideoView);
-    private native int nativeGetVideoWidth(long nativeContentVideoView);
-    private native int nativeGetVideoHeight(long nativeContentVideoView);
     private native boolean nativeIsPlaying(long nativeContentVideoView);
-    private native void nativePause(long nativeContentVideoView);
-    private native void nativePlay(long nativeContentVideoView);
-    private native void nativeSeekTo(long nativeContentVideoView, int msec);
     private native void nativeSetSurface(long nativeContentVideoView, Surface surface);
     private native void nativeRecordFullscreenPlayback(
             long nativeContentVideoView, boolean isVideoPortrait, boolean isOrientationPortrait);

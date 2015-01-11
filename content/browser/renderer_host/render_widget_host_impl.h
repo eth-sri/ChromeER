@@ -33,6 +33,7 @@
 #include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/view_message_enums.h"
+#include "content/public/browser/readback_types.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/page_zoom.h"
 #include "ipc/ipc_listener.h"
@@ -46,6 +47,7 @@ struct ViewHostMsg_BeginSmoothScroll_Params;
 struct ViewHostMsg_SelectionBounds_Params;
 struct ViewHostMsg_TextInputState_Params;
 struct ViewHostMsg_UpdateRect_Params;
+struct ViewMsg_Resize_Params;
 
 namespace base {
 class TimeTicks;
@@ -131,11 +133,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void Focus() override;
   void Blur() override;
   void SetActive(bool active) override;
-  void CopyFromBackingStore(
-      const gfx::Rect& src_rect,
-      const gfx::Size& accelerated_dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkColorType color_type) override;
+  void CopyFromBackingStore(const gfx::Rect& src_rect,
+                            const gfx::Size& accelerated_dst_size,
+                            ReadbackRequestCallback& callback,
+                            const SkColorType color_type) override;
   bool CanCopyFromBackingStore() override;
 #if defined(OS_ANDROID)
   virtual void LockBackingStore() override;
@@ -435,15 +436,24 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Indicates whether the renderer drives the RenderWidgetHosts's size or the
   // other way around.
-  bool should_auto_resize() { return should_auto_resize_; }
+  bool auto_resize_enabled() { return auto_resize_enabled_; }
 
-  void ComputeTouchLatency(const ui::LatencyInfo& latency_info);
+  // The minimum size of this renderer when auto-resize is enabled.
+  const gfx::Size& min_size_for_auto_resize() const {
+    return min_size_for_auto_resize_;
+  }
+
+  // The maximum size of this renderer when auto-resize is enabled.
+  const gfx::Size& max_size_for_auto_resize() const {
+    return max_size_for_auto_resize_;
+  }
+
   void FrameSwapped(const ui::LatencyInfo& latency_info);
   void DidReceiveRendererFrame();
 
   // Returns the ID that uniquely describes this component to the latency
   // subsystem.
-  int64 GetLatencyComponentId();
+  int64 GetLatencyComponentId() const;
 
   static void CompositorFrameDrawn(
       const std::vector<ui::LatencyInfo>& latency_info);
@@ -483,11 +493,16 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Create a LatencyInfo struct with INPUT_EVENT_LATENCY_RWH_COMPONENT
   // component if it is not already in |original|. And if |original| is
   // not NULL, it is also merged into the resulting LatencyInfo.
-  ui::LatencyInfo CreateRWHLatencyInfoIfNotExist(
+  ui::LatencyInfo CreateInputEventLatencyInfoIfNotExist(
       const ui::LatencyInfo* original,
       blink::WebInputEvent::Type type,
       const ui::LatencyInfo::InputCoordinate* logical_coordinates,
       size_t logical_coordinates_size);
+  // Add UMA histograms for the latency to the renderer and roundtrip latency
+  // for a given event type.
+  void ComputeInputLatencyHistograms(
+      blink::WebInputEvent::Type type,
+      const ui::LatencyInfo& latency_info) const;
 
   // Called when we receive a notification indicating that the renderer
   // process has gone. This will reset our state so that our state will be
@@ -539,7 +554,16 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Indicates if the render widget host should track the render widget's size
   // as opposed to visa versa.
-  void SetShouldAutoResize(bool enable);
+  void SetAutoResize(bool enable,
+                     const gfx::Size& min_size,
+                     const gfx::Size& max_size);
+
+  // Fills in the |resize_params| struct.
+  void GetResizeParams(ViewMsg_Resize_Params* resize_params);
+
+  // Sets the |resize_params| that were sent to the renderer bundled with the
+  // request to create a new RenderWidget.
+  void SetInitialRenderSizeParams(const ViewMsg_Resize_Params& resize_params);
 
   // Expose increment/decrement of the in-flight event count, so
   // RenderViewHostImpl can account for in-flight beforeunload/unload events.
@@ -698,9 +722,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // most recent call to process_->WidgetRestored() / WidgetHidden().
   bool is_hidden_;
 
-  // Indicates whether a page is fullscreen or not.
-  bool is_fullscreen_;
-
   // Set if we are waiting for a repaint ack for the view.
   bool repaint_ack_pending_;
 
@@ -718,31 +739,21 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // The current size of the RenderWidget.
   gfx::Size current_size_;
 
-  // The size of the view's backing surface in non-DPI-adjusted pixels.
-  gfx::Size physical_backing_size_;
-
-  // The amount that the viewport size given to Blink was shrunk by the URL-bar
-  // (always 0 on platforms where URL-bar hiding isn't supported).
-  float top_controls_layout_height_;
-
-  // The size of the visible viewport, which may be smaller than the view if the
-  // view is partially occluded (e.g. by a virtual keyboard).  The size is in
-  // DPI-adjusted pixels.
-  gfx::Size visible_viewport_size_;
-
-  // The size we last sent as requested size to the renderer. |current_size_|
-  // is only updated once the resize message has been ack'd. This on the other
-  // hand is updated when the resize message is sent. This is very similar to
-  // |resize_ack_pending_|, but the latter is not set if the new size has width
-  // or height zero, which is why we need this too.
-  gfx::Size last_requested_size_;
+  // Resize information that was previously sent to the renderer.
+  scoped_ptr<ViewMsg_Resize_Params> old_resize_params_;
 
   // The next auto resize to send.
   gfx::Size new_auto_size_;
 
   // True if the render widget host should track the render widget's size as
   // opposed to visa versa.
-  bool should_auto_resize_;
+  bool auto_resize_enabled_;
+
+  // The minimum size for the render widget if auto-resize is enabled.
+  gfx::Size min_size_for_auto_resize_;
+
+  // The maximum size for the render widget if auto-resize is enabled.
+  gfx::Size max_size_for_auto_resize_;
 
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;

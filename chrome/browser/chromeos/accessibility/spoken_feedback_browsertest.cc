@@ -99,10 +99,10 @@ class LoggedInSpokenFeedbackTest : public InProcessBrowserTest {
         "window.ontouchstart = function() {};");
   }
 
- bool PerformAcceleratorAction(int action) {
+ bool PerformAcceleratorAction(ash::AcceleratorAction action) {
     ash::AcceleratorController* controller =
         ash::Shell::GetInstance()->accelerator_controller();
-    return controller->PerformAction(action, ui::Accelerator());
+    return controller->PerformActionIfEnabled(action);
   }
 
   void DisableEarcons() {

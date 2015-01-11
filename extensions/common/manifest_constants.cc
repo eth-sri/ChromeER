@@ -185,8 +185,6 @@ namespace manifest_values {
 const char kBrowserActionCommandEvent[] = "_execute_browser_action";
 const char kIncognitoSplit[] = "split";
 const char kIncognitoSpanning[] = "spanning";
-const char kIntentDispositionWindow[] = "window";
-const char kIntentDispositionInline[] = "inline";
 const char kIsolatedStorage[] = "storage";
 const char kKeybindingPlatformChromeOs[] = "chromeos";
 const char kKeybindingPlatformDefault[] = "default";
@@ -215,6 +213,7 @@ const char kKeyRight[] = "Right";
 const char kKeySearch[] = "Search";
 const char kKeySeparator[] = "+";
 const char kKeyShift[] = "Shift";
+const char kKeySpace[] = "Space";
 const char kKeyTab[] = "Tab";
 const char kKeyUp[] = "Up";
 const char kRunAtDocumentStart[] = "document_start";
@@ -402,34 +401,6 @@ const char kInvalidInputComponentType[] =
     "Invalid value for 'input_components[*].type";
 const char kInvalidInputView[] =
     "Invalid value for 'input_view'.";
-const char kInvalidIntent[] =
-    "Invalid value for intents[*]";
-const char kInvalidIntentDisposition[] =
-    "Invalid value for intents[*].disposition";
-const char kInvalidIntentDispositionInPlatformApp[] =
-    "Invalid value for intents[*].disposition. Packaged apps cannot specify "
-    "a disposition";
-const char kInvalidIntentHref[] =
-    "Invalid value for intents[*].href";
-const char kInvalidIntentHrefEmpty[] =
-    "Missing value for intents[*].href";
-const char kInvalidIntentHrefInPlatformApp[] =
-    "Invalid value for intents[*].href. Packaged apps cannot specify a "
-    "URL for intents";
-const char kInvalidIntentHrefOldAndNewKey[] =
-    "intents[*]: Key \"*\" is deprecated.  Key \"*\" has the same meaning. "
-    "You can not use both.";
-const char kInvalidIntentPageInHostedApp[] =
-    "Invalid value for intents[*].href. Hosted apps must specify an "
-    "absolute URL within app.urls[].";
-const char kInvalidIntents[] =
-    "Invalid value for intents";
-const char kInvalidIntentType[] =
-    "Invalid value for intents[*].type";
-const char kInvalidIntentTypeElement[] =
-    "Invalid value for intents[*].type[*]";
-const char kInvalidIntentTitle[] =
-    "Invalid value for intents[*].title";
 const char kInvalidIsolation[] =
     "Invalid value for 'app.isolation'.";
 const char kInvalidIsolationValue[] =

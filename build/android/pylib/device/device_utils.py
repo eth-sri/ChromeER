@@ -24,7 +24,9 @@ from pylib.device import decorators
 from pylib.device import device_errors
 from pylib.device.commands import install_commands
 from pylib.utils import apk_helper
+from pylib.utils import device_temp_file
 from pylib.utils import host_utils
+from pylib.utils import md5sum
 from pylib.utils import parallelizer
 from pylib.utils import timeout_retry
 
@@ -92,8 +94,8 @@ class DeviceUtils(object):
     self._default_timeout = default_timeout
     self._default_retries = default_retries
     self._cache = {}
-    assert(hasattr(self, decorators.DEFAULT_TIMEOUT_ATTR))
-    assert(hasattr(self, decorators.DEFAULT_RETRIES_ATTR))
+    assert hasattr(self, decorators.DEFAULT_TIMEOUT_ATTR)
+    assert hasattr(self, decorators.DEFAULT_RETRIES_ATTR)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def IsOnline(self, timeout=None, retries=None):
@@ -109,7 +111,11 @@ class DeviceUtils(object):
     Raises:
       CommandTimeoutError on timeout.
     """
-    return self.adb.GetState() == 'device'
+    try:
+      return self.adb.GetState() == 'device'
+    except device_errors.BaseError as exc:
+      logging.info('Failed to get state: %s', exc)
+      return False
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def HasRoot(self, timeout=None, retries=None):
@@ -126,14 +132,38 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    return self._HasRootImpl()
-
-  def _HasRootImpl(self):
     try:
-      self._RunShellCommandImpl('ls /root', check_return=True)
+      self.RunShellCommand('ls /root', check_return=True)
       return True
-    except device_errors.AdbShellCommandFailedError:
+    except device_errors.AdbCommandFailedError:
       return False
+
+  def NeedsSU(self, timeout=None, retries=None):
+    """Checks whether 'su' is needed to access protected resources.
+
+    Args:
+      timeout: timeout in seconds
+      retries: number of retries
+
+    Returns:
+      True if 'su' is available on the device and is needed to to access
+        protected resources; False otherwise if either 'su' is not available
+        (e.g. because the device has a user build), or not needed (because adbd
+        already has root privileges).
+
+    Raises:
+      CommandTimeoutError on timeout.
+      DeviceUnreachableError on missing device.
+    """
+    if 'needs_su' not in self._cache:
+      try:
+        self.RunShellCommand('su -c ls /root && ! ls /root', check_return=True,
+                             timeout=timeout, retries=retries)
+        self._cache['needs_su'] = True
+      except device_errors.AdbCommandFailedError:
+        self._cache['needs_su'] = False
+    return self._cache['needs_su']
+
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def EnableRoot(self, timeout=None, retries=None):
@@ -147,9 +177,11 @@ class DeviceUtils(object):
       CommandFailedError if root could not be enabled.
       CommandTimeoutError on timeout.
     """
+    if 'needs_su' in self._cache:
+      del self._cache['needs_su']
     if not self.old_interface.EnableAdbRoot():
       raise device_errors.CommandFailedError(
-          'Could not enable root.', device=str(self))
+          'Could not enable root.', str(self))
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def IsUserBuild(self, timeout=None, retries=None):
@@ -185,15 +217,12 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    return self._GetExternalStoragePathImpl()
-
-  def _GetExternalStoragePathImpl(self):
     if 'external_storage' in self._cache:
       return self._cache['external_storage']
 
-    value = self._RunShellCommandImpl('echo $EXTERNAL_STORAGE',
-                                      single_line=True,
-                                      check_return=True)
+    value = self.RunShellCommand('echo $EXTERNAL_STORAGE',
+                                 single_line=True,
+                                 check_return=True)
     if not value:
       raise device_errors.CommandFailedError('$EXTERNAL_STORAGE is not set',
                                              str(self))
@@ -238,8 +267,12 @@ class DeviceUtils(object):
       DeviceUnreachableError if the device becomes unresponsive.
     """
     def sd_card_ready():
-      return self.RunShellCommand(['ls', self.GetExternalStoragePath()],
-                                    single_line=True, check_return=True)
+      try:
+        self.RunShellCommand(['test', '-d', self.GetExternalStoragePath()],
+                             check_return=True)
+        return True
+      except device_errors.AdbCommandFailedError:
+        return False
 
     def pm_ready():
       try:
@@ -251,7 +284,8 @@ class DeviceUtils(object):
       return self.GetProp('sys.boot_completed') == '1'
 
     def wifi_enabled():
-      return 'Wi-Fi is enabled' in self.RunShellCommand(['dumpsys', 'wifi'])
+      return 'Wi-Fi is enabled' in self.RunShellCommand(['dumpsys', 'wifi'],
+                                                        check_return=False)
 
     self.adb.WaitForDevice()
     timeout_retry.WaitFor(sd_card_ready)
@@ -283,7 +317,7 @@ class DeviceUtils(object):
 
     self.adb.Reboot()
     self._cache = {}
-    timeout_retry.WaitFor(device_offline, wait_period=1, max_tries=5)
+    timeout_retry.WaitFor(device_offline, wait_period=1)
     if block:
       self.WaitUntilFullyBooted()
 
@@ -320,8 +354,7 @@ class DeviceUtils(object):
           out = self.old_interface.Uninstall(package_name)
           for line in out.splitlines():
             if 'Failure' in line:
-              raise device_errors.CommandFailedError(
-                  line.strip(), device=str(self))
+              raise device_errors.CommandFailedError(line.strip(), str(self))
       else:
         should_install = False
     else:
@@ -331,11 +364,10 @@ class DeviceUtils(object):
         out = self.old_interface.Install(apk_path, reinstall=reinstall)
         for line in out.splitlines():
           if 'Failure' in line:
-            raise device_errors.CommandFailedError(
-                line.strip(), device=str(self))
+            raise device_errors.CommandFailedError(line.strip(), str(self))
       except AssertionError as e:
         raise device_errors.CommandFailedError(
-            str(e), device=str(self)), None, sys.exc_info()[2]
+            str(e), str(self)), None, sys.exc_info()[2]
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def RunShellCommand(self, cmd, check_return=False, cwd=None, env=None,
@@ -382,18 +414,13 @@ class DeviceUtils(object):
       (with the optional newline at the end stripped).
 
     Raises:
-      AdbShellCommandFailedError if check_return is True and the exit code of
+      AdbCommandFailedError if check_return is True and the exit code of
         the command run on the device is non-zero.
       CommandFailedError if single_line is True but the output contains two or
         more lines.
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    return self._RunShellCommandImpl(cmd, check_return=check_return, cwd=cwd,
-        env=env, as_root=as_root, single_line=single_line, timeout=timeout)
-
-  def _RunShellCommandImpl(self, cmd, check_return=False, cwd=None, env=None,
-                           as_root=False, single_line=False, timeout=None):
     def env_quote(key, value):
       if not DeviceUtils._VALID_SHELL_VARIABLE.match(key):
         raise KeyError('Invalid shell variable name %r' % key)
@@ -402,21 +429,20 @@ class DeviceUtils(object):
 
     if not isinstance(cmd, basestring):
       cmd = ' '.join(cmd_helper.SingleQuote(s) for s in cmd)
-    if as_root and not self._HasRootImpl():
-      cmd = 'su -c %s' % cmd
     if env:
       env = ' '.join(env_quote(k, v) for k, v in env.iteritems())
       cmd = '%s %s' % (env, cmd)
     if cwd:
       cmd = 'cd %s && %s' % (cmd_helper.SingleQuote(cwd), cmd)
+    if as_root and self.NeedsSU():
+      # "su -c sh -c" allows using shell features in |cmd|
+      cmd = 'su -c sh -c %s' % cmd_helper.SingleQuote(cmd)
     if timeout is None:
       timeout = self._default_timeout
 
     try:
-      # TODO(perezju) still need to make sure that we call a version of
-      # adb.Shell without a timeout-and-retries wrapper.
-      output = self.adb.Shell(cmd, expect_rc=0, timeout=timeout, retries=0)
-    except device_errors.AdbShellCommandFailedError as e:
+      output = self.adb.Shell(cmd)
+    except device_errors.AdbCommandFailedError as e:
       if check_return:
         raise
       else:
@@ -458,10 +484,10 @@ class DeviceUtils(object):
     pids = self._GetPidsImpl(process_name)
     if not pids:
       raise device_errors.CommandFailedError(
-          'No process "%s"' % process_name, device=str(self))
+          'No process "%s"' % process_name, str(self))
 
     cmd = ['kill', '-%d' % signum] + pids.values()
-    self._RunShellCommandImpl(cmd, as_root=as_root, check_return=True)
+    self.RunShellCommand(cmd, as_root=as_root, check_return=True)
 
     if blocking:
       wait_period = 0.1
@@ -501,7 +527,23 @@ class DeviceUtils(object):
         force_stop=force_stop, flags=intent.flags)
     for l in output:
       if l.startswith('Error:'):
-        raise device_errors.CommandFailedError(l, device=str(self))
+        raise device_errors.CommandFailedError(l, str(self))
+
+  @decorators.WithTimeoutAndRetriesFromInstance()
+  def StartInstrumentation(self, component, finish=True, raw=False,
+                           extras=None, timeout=None, retries=None):
+    if extras is None:
+      extras = {}
+
+    cmd = ['am', 'instrument']
+    if finish:
+      cmd.append('-w')
+    if raw:
+      cmd.append('-r')
+    for k, v in extras.iteritems():
+      cmd.extend(['-e', k, v])
+    cmd.append(component)
+    return self.RunShellCommand(cmd, check_return=True)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def BroadcastIntent(self, intent, timeout=None, retries=None):
@@ -612,7 +654,7 @@ class DeviceUtils(object):
     files = []
     for h, d in host_device_tuples:
       if os.path.isdir(h):
-        self._RunShellCommandImpl(['mkdir', '-p', d], check_return=True)
+        self.RunShellCommand(['mkdir', '-p', d], check_return=True)
       files += self._GetChangedFilesImpl(h, d)
 
     if not files:
@@ -644,26 +686,27 @@ class DeviceUtils(object):
       self._PushChangedFilesIndividually(files)
     else:
       self._PushChangedFilesZipped(files)
-      self._RunShellCommandImpl(
+      self.RunShellCommand(
           ['chmod', '-R', '777'] + [d for _, d in host_device_tuples],
           as_root=True, check_return=True)
 
   def _GetChangedFilesImpl(self, host_path, device_path):
     real_host_path = os.path.realpath(host_path)
     try:
-      real_device_path = self._RunShellCommandImpl(
+      real_device_path = self.RunShellCommand(
           ['realpath', device_path], single_line=True, check_return=True)
     except device_errors.CommandFailedError:
       real_device_path = None
     if not real_device_path:
       return [(host_path, device_path)]
 
-    # TODO(jbudorick): Move the md5 logic up into DeviceUtils or base
-    # this function on mtime.
-    # pylint: disable=W0212
-    host_hash_tuples, device_hash_tuples = self.old_interface._RunMd5Sum(
-        real_host_path, real_device_path)
-    # pylint: enable=W0212
+    host_hash_tuples = md5sum.CalculateHostMd5Sums([real_host_path])
+    device_paths_to_md5 = (
+        real_device_path if os.path.isfile(real_host_path)
+        else ('%s/%s' % (real_device_path, os.path.relpath(p, real_host_path))
+              for _, p in host_hash_tuples))
+    device_hash_tuples = md5sum.CalculateDeviceMd5Sums(
+        device_paths_to_md5, self)
 
     if os.path.isfile(host_path):
       if (not device_hash_tuples
@@ -724,7 +767,7 @@ class DeviceUtils(object):
     else:
       zip_time = 0
       transfer_time = byte_count / TRANSFER_RATE
-    return (adb_call_time + adb_push_setup_time + zip_time + transfer_time)
+    return adb_call_time + adb_push_setup_time + zip_time + transfer_time
 
   def _PushChangedFilesIndividually(self, files):
     for h, d in files:
@@ -741,10 +784,10 @@ class DeviceUtils(object):
       zip_proc.start()
       zip_proc.join()
 
-      zip_on_device = '%s/tmp.zip' % self._GetExternalStoragePathImpl()
+      zip_on_device = '%s/tmp.zip' % self.GetExternalStoragePath()
       try:
         self.adb.Push(zip_file.name, zip_on_device)
-        self._RunShellCommandImpl(
+        self.RunShellCommand(
             ['unzip', zip_on_device],
             as_root=True,
             env={'PATH': '$PATH:%s' % install_commands.BIN_DIR},
@@ -753,7 +796,7 @@ class DeviceUtils(object):
         if zip_proc.is_alive():
           zip_proc.terminate()
         if self.IsOnline():
-          self._RunShellCommandImpl(['rm', zip_on_device], check_return=True)
+          self.RunShellCommand(['rm', zip_on_device], check_return=True)
 
   @staticmethod
   def _CreateDeviceZip(zip_path, host_device_tuples):
@@ -786,7 +829,11 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    return self.old_interface.FileExistsOnDevice(device_path)
+    try:
+      self.RunShellCommand(['test', '-e', device_path], check_return=True)
+      return True
+    except device_errors.AdbCommandFailedError:
+      return False
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def PullFile(self, device_path, host_path, timeout=None, retries=None):
@@ -808,7 +855,7 @@ class DeviceUtils(object):
       self.old_interface.PullFileFromDevice(device_path, host_path)
     except AssertionError as e:
       raise device_errors.CommandFailedError(
-          str(e), device=str(self)), None, sys.exc_info()[2]
+          str(e), str(self)), None, sys.exc_info()[2]
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def ReadFile(self, device_path, as_root=False, timeout=None, retries=None):
@@ -841,16 +888,19 @@ class DeviceUtils(object):
       return self.old_interface.GetFileContents(device_path)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
-  def WriteFile(self, device_path, contents, as_root=False, timeout=None,
-                retries=None):
+  def WriteFile(self, device_path, contents, as_root=False, force_push=False,
+                timeout=None, retries=None):
     """Writes |contents| to a file on the device.
 
     Args:
       device_path: A string containing the absolute path to the file to write
-                   on the device.
+          on the device.
       contents: A string containing the data to write to the device.
       as_root: A boolean indicating whether the write should be executed with
-               root privileges.
+          root privileges (if available).
+      force_push: A boolean indicating whether to force the operation to be
+          performed by pushing a file to the device. The default is, when the
+          contents are short, to pass the contents using a shell script instead.
       timeout: timeout in seconds
       retries: number of retries
 
@@ -859,39 +909,24 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    if as_root:
-      if not self.old_interface.CanAccessProtectedFileContents():
-        raise device_errors.CommandFailedError(
-            'Cannot write to %s with root privileges.' % device_path)
-      self.old_interface.SetProtectedFileContents(device_path, contents)
+    if len(contents) < 512 and not force_push:
+      cmd = 'echo -n %s > %s' % (cmd_helper.SingleQuote(contents),
+                                 cmd_helper.SingleQuote(device_path))
+      self.RunShellCommand(cmd, as_root=as_root, check_return=True)
     else:
-      self.old_interface.SetFileContents(device_path, contents)
-
-  @decorators.WithTimeoutAndRetriesFromInstance()
-  def WriteTextFile(self, device_path, text, as_root=False, timeout=None,
-                    retries=None):
-    """Writes |text| to a file on the device.
-
-    Assuming that |text| is a small string, this is typically more efficient
-    than |WriteFile|, as no files are pushed into the device.
-
-    Args:
-      device_path: A string containing the absolute path to the file to write
-                   on the device.
-      text: A short string of text to write to the file on the device.
-      as_root: A boolean indicating whether the write should be executed with
-               root privileges.
-      timeout: timeout in seconds
-      retries: number of retries
-
-    Raises:
-      CommandFailedError if the file could not be written on the device.
-      CommandTimeoutError on timeout.
-      DeviceUnreachableError on missing device.
-    """
-    cmd = 'echo %s > %s' % (cmd_helper.SingleQuote(text),
-                            cmd_helper.SingleQuote(device_path))
-    self._RunShellCommandImpl(cmd, as_root=as_root, check_return=True)
+      with tempfile.NamedTemporaryFile() as host_temp:
+        host_temp.write(contents)
+        host_temp.flush()
+        if as_root and self.NeedsSU():
+          with device_temp_file.DeviceTempFile(self) as device_temp:
+            self.adb.Push(host_temp.name, device_temp.name)
+            # Here we need 'cp' rather than 'mv' because the temp and
+            # destination files might be on different file systems (e.g.
+            # on internal storage and an external sd card)
+            self.RunShellCommand(['cp', device_temp.name, device_path],
+                                 as_root=True, check_return=True)
+        else:
+          self.adb.Push(host_temp.name, device_path)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def Ls(self, device_path, timeout=None, retries=None):
@@ -952,6 +987,9 @@ class DeviceUtils(object):
     Raises:
       CommandTimeoutError on timeout.
     """
+    assert isinstance(property_name, basestring), (
+        "property_name is not a string: %r" % property_name)
+
     cache_key = '_prop:' + property_name
     if cache and cache_key in self._cache:
       return self._cache[cache_key]
@@ -985,6 +1023,10 @@ class DeviceUtils(object):
         set on the device (e.g. because it is not rooted).
       CommandTimeoutError on timeout.
     """
+    assert isinstance(property_name, basestring), (
+        "property_name is not a string: %r" % property_name)
+    assert isinstance(value, basestring), "value is not a string: %r" % value
+
     self.RunShellCommand(['setprop', property_name, value], check_return=True)
     if property_name in self._cache:
       del self._cache[property_name]
@@ -1034,7 +1076,7 @@ class DeviceUtils(object):
 
   def _GetPidsImpl(self, process_name):
     procs_pids = {}
-    for line in self._RunShellCommandImpl('ps', check_return=True):
+    for line in self.RunShellCommand('ps', check_return=True):
       try:
         ps_data = line.split()
         if process_name in ps_data[-1]:

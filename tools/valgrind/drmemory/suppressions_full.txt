@@ -1864,3 +1864,40 @@ UNADDRESSABLE ACCESS
 name=bug_425097
 ...
 *!ash::test::ShelfViewTest_CheckDragAndDropFromOverflowBubbleToShelf_Test::TestBody
+
+UNINITIALIZED READ
+name=bug_432067
+system call NtCreateFile parameter #9
+MSWSOCK.dll!*
+content.dll!content::AppCacheStorageImpl::DatabaseTask::CallRun
+
+UNINITIALIZED READ
+name=bug_434033
+*!`anonymous namespace'::TOutputTraverser::visitConstantUnion
+*!TIntermBinary::traverse
+*!TIntermBinary::traverse
+*!TIntermAggregate::traverse
+*!TIntermAggregate::traverse
+*!TIntermAggregate::traverse
+*!TIntermediate::outputTree
+*!TCompiler::compile
+*!TypeTrackingTest::compile
+*!TypeTrackingTest_StructConstructorResultNoPrecision_Test::TestBody
+
+UNADDRESSABLE ACCESS
+name=bug_436131
+*!ash::test::ShelfViewTestAPI::RunMessageLoopUntilAnimationsDone
+*!ash::test::ShelfViewTest_OverflowBubbleSize_Test::TestBody
+*!testing::internal::HandleExceptionsInMethodIfSupported<>
+
+UNADDRESSABLE ACCESS
+name=bug_436131_b
+views.dll!ObserverListBase<>::RemoveObserver
+*!ash::test::ShelfViewTestAPI::RunMessageLoopUntilAnimationsDone
+*!testing::internal::HandleExceptionsInMethodIfSupported<>
+
+UNADDRESSABLE ACCESS
+name=bug_436131_c
+*!ash::test::ShelfViewTestAPI::GetPreferredSize
+*!ash::test::ShelfViewTest_OverflowBubbleSize_Test::TestBody
+*!testing::internal::HandleExceptionsInMethodIfSupported<>

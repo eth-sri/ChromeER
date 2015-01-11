@@ -11,6 +11,7 @@
 #include "base/values.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
 #include "chrome/common/pref_names.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_event_store.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_info.h"
@@ -19,8 +20,17 @@
 
 DataReductionProxyChromeConfigurator::DataReductionProxyChromeConfigurator(
     PrefService* prefs,
-    scoped_refptr<base::SequencedTaskRunner> network_task_runner)
-    : prefs_(prefs), network_task_runner_(network_task_runner) {
+    scoped_refptr<base::SequencedTaskRunner> network_task_runner,
+    net::NetLog* net_log,
+    data_reduction_proxy::DataReductionProxyEventStore* event_store)
+    : prefs_(prefs),
+      network_task_runner_(network_task_runner),
+      net_log_(net_log),
+      data_reduction_proxy_event_store_(event_store) {
+  DCHECK(prefs);
+  DCHECK(network_task_runner.get());
+  DCHECK(net_log);
+  DCHECK(event_store);
 }
 
 DataReductionProxyChromeConfigurator::~DataReductionProxyChromeConfigurator() {
@@ -101,10 +111,13 @@ void DataReductionProxyChromeConfigurator::Enable(
   // config will return invalid.
   net::ProxyConfig::ID unused_id = 1;
   config.set_id(unused_id);
+  data_reduction_proxy_event_store_->AddProxyEnabledEvent(
+      net_log_, primary_restricted, fallback_restricted, primary_origin,
+      fallback_origin, ssl_origin);
   network_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(
-          &DataReductionProxyChromeConfigurator::UpdateProxyConfigOnIO,
+          &DataReductionProxyChromeConfigurator::UpdateProxyConfigOnIOThread,
           base::Unretained(this),
           config));
 }
@@ -112,10 +125,11 @@ void DataReductionProxyChromeConfigurator::Enable(
 void DataReductionProxyChromeConfigurator::Disable() {
   DisableInProxyConfigPref(prefs_);
   net::ProxyConfig config = net::ProxyConfig::CreateDirect();
+  data_reduction_proxy_event_store_->AddProxyDisabledEvent(net_log_);
   network_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(
-          &DataReductionProxyChromeConfigurator::UpdateProxyConfigOnIO,
+          &DataReductionProxyChromeConfigurator::UpdateProxyConfigOnIOThread,
           base::Unretained(this),
           config));
 }
@@ -170,12 +184,12 @@ bool DataReductionProxyChromeConfigurator::ContainsDataReductionProxy(
   return false;
 }
 
-void DataReductionProxyChromeConfigurator::UpdateProxyConfigOnIO(
+void DataReductionProxyChromeConfigurator::UpdateProxyConfigOnIOThread(
     const net::ProxyConfig& config) {
   config_ = config;
 }
 
 const net::ProxyConfig&
-DataReductionProxyChromeConfigurator::GetProxyConfigOnIO() const {
+DataReductionProxyChromeConfigurator::GetProxyConfigOnIOThread() const {
   return config_;
 }

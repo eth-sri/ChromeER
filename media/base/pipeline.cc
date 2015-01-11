@@ -44,6 +44,7 @@ Pipeline::Pipeline(
       renderer_ended_(false),
       text_renderer_ended_(false),
       demuxer_(NULL),
+      pending_cdm_context_(nullptr),
       weak_factory_(this) {
   media_log_->AddEvent(media_log_->CreatePipelineStateChangedEvent(kCreated));
   media_log_->AddEvent(
@@ -68,6 +69,7 @@ void Pipeline::Start(Demuxer* demuxer,
                      const PipelineStatusCB& seek_cb,
                      const PipelineMetadataCB& metadata_cb,
                      const BufferingStateCB& buffering_state_cb,
+                     const PaintCB& paint_cb,
                      const base::Closure& duration_change_cb,
                      const AddTextTrackCB& add_text_track_cb) {
   DCHECK(!ended_cb.is_null());
@@ -75,6 +77,7 @@ void Pipeline::Start(Demuxer* demuxer,
   DCHECK(!seek_cb.is_null());
   DCHECK(!metadata_cb.is_null());
   DCHECK(!buffering_state_cb.is_null());
+  DCHECK(!paint_cb.is_null());
 
   base::AutoLock auto_lock(lock_);
   CHECK(!running_) << "Media pipeline is already running";
@@ -87,6 +90,7 @@ void Pipeline::Start(Demuxer* demuxer,
   seek_cb_ = seek_cb;
   metadata_cb_ = metadata_cb;
   buffering_state_cb_ = buffering_state_cb;
+  paint_cb_ = paint_cb;
   duration_change_cb_ = duration_change_cb;
   add_text_track_cb_ = add_text_track_cb;
 
@@ -186,6 +190,13 @@ bool Pipeline::DidLoadingProgress() {
 PipelineStatistics Pipeline::GetStatistics() const {
   base::AutoLock auto_lock(lock_);
   return statistics_;
+}
+
+void Pipeline::SetCdm(CdmContext* cdm_context,
+                      const CdmAttachedCB& cdm_attached_cb) {
+  task_runner_->PostTask(
+      FROM_HERE, base::Bind(&Pipeline::SetCdmTask, weak_factory_.GetWeakPtr(),
+                            cdm_context, cdm_attached_cb));
 }
 
 void Pipeline::SetErrorForTesting(PipelineStatus status) {
@@ -493,6 +504,12 @@ void Pipeline::StartTask() {
         base::Bind(&Pipeline::OnTextRendererEnded, weak_factory_.GetWeakPtr()));
   }
 
+  // Set CDM early to avoid unnecessary delay in Renderer::Initialize().
+  if (pending_cdm_context_) {
+    renderer_->SetCdm(pending_cdm_context_, base::Bind(&IgnoreCdmAttached));
+    pending_cdm_context_ = nullptr;
+  }
+
   StateTransitionTask(PIPELINE_OK);
 }
 
@@ -599,6 +616,17 @@ void Pipeline::SeekTask(TimeDelta time, const PipelineStatusCB& seek_cb) {
          base::Bind(&Pipeline::OnStateTransition, weak_factory_.GetWeakPtr()));
 }
 
+void Pipeline::SetCdmTask(CdmContext* cdm_context,
+                          const CdmAttachedCB& cdm_attached_cb) {
+  if (!renderer_) {
+    pending_cdm_context_ = cdm_context;
+    cdm_attached_cb.Run(true);
+    return;
+  }
+
+  renderer_->SetCdm(cdm_context, cdm_attached_cb);
+}
+
 void Pipeline::OnRendererEnded() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   media_log_->AddEvent(media_log_->CreateEvent(MediaLogEvent::ENDED));
@@ -694,9 +722,10 @@ void Pipeline::InitializeRenderer(const base::Closure& done_cb) {
       demuxer_,
       done_cb,
       base::Bind(&Pipeline::OnUpdateStatistics, weak_this),
+      base::Bind(&Pipeline::BufferingStateChanged, weak_this),
+      base::ResetAndReturn(&paint_cb_),
       base::Bind(&Pipeline::OnRendererEnded, weak_this),
-      base::Bind(&Pipeline::OnError, weak_this),
-      base::Bind(&Pipeline::BufferingStateChanged, weak_this));
+      base::Bind(&Pipeline::OnError, weak_this));
 }
 
 void Pipeline::ReportMetadata() {

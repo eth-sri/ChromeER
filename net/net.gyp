@@ -299,8 +299,6 @@
                 ],
               }]
             ],
-            # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-            'msvs_disabled_warnings': [4267, ],
           },
         ],
         [ 'use_openssl_certs == 0', {
@@ -378,12 +376,7 @@
         }],
         [ 'enable_websockets != 1', {
             'sources/': [
-              ['exclude', '^socket_stream/'],
               ['exclude', '^websockets/'],
-            ],
-            'sources!': [
-              'spdy/spdy_websocket_stream.cc',
-              'spdy/spdy_websocket_stream.h',
             ],
         }],
         [ 'enable_mdns != 1', {
@@ -410,6 +403,8 @@
               'udp/udp_socket_libevent.cc',
               'udp/udp_socket_libevent.h',
             ],
+             # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+            'msvs_disabled_warnings': [4267, ],
           }, { # else: OS != "win"
             'sources!': [
               'base/winsock_init.cc',
@@ -492,10 +487,14 @@
             ['include', '^base/platform_mime_util_linux\\.cc$'],
             ['include', '^base/address_tracker_linux\\.cc$'],
             ['include', '^base/address_tracker_linux\\.h$'],
+            ['include', '^base/net_util_linux\\.cc$'],
+            ['include', '^base/net_util_linux\\.h$'],
           ],
         }],
         ['OS == "ios"', {
           'sources/': [
+            ['include', '^base/net_util_mac\\.cc$'],
+            ['include', '^base/net_util_mac\\.h$'],
             ['include', '^base/network_change_notifier_mac\\.cc$'],
             ['include', '^base/network_config_watcher_mac\\.cc$'],
             ['include', '^base/platform_mime_util_mac\\.mm$'],
@@ -597,8 +596,6 @@
               ],
             }],
           ],
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [4267, ],
         }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
@@ -656,9 +653,7 @@
         }],
         [ 'enable_websockets != 1', {
             'sources/': [
-              ['exclude', '^socket_stream/'],
               ['exclude', '^websockets/'],
-              ['exclude', '^spdy/spdy_websocket_stream_unittest\\.cc$'],
             ],
         }],
         ['disable_file_support==1', {
@@ -712,6 +707,8 @@
               'dns/dns_config_service_posix_unittest.cc',
               'http/http_auth_gssapi_posix_unittest.cc',
             ],
+            # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+            'msvs_disabled_warnings': [4267, ],
             'conditions': [
               [ 'icu_use_data_file_flag == 0', {
                 # This is needed to trigger the dll copy step on windows.
@@ -879,8 +876,12 @@
         '../testing/gmock.gyp:gmock',
       ],
       'sources': [
+        'base/captured_net_log_entry.cc',
+        'base/captured_net_log_entry.h',
         'base/capturing_net_log.cc',
         'base/capturing_net_log.h',
+        'base/capturing_net_log_observer.cc',
+        'base/capturing_net_log_observer.h',
         'base/load_timing_info_test_util.cc',
         'base/load_timing_info_test_util.h',
         'base/mock_file_stream.cc',
@@ -976,8 +977,6 @@
               ],
             }],
           ],
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [4267, ],
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
@@ -1656,22 +1655,34 @@
             'net_javatests',
             'net_unittests',
           ],
+          'conditions': [
+            ['v8_use_external_startup_data==1', {
+              'dependencies': [
+                '../v8/tools/gyp/v8.gyp:v8_external_snapshot',
+              ],
+              'copies': [
+                {
+                'destination': '<(asset_location)',
+                  'files': [
+                    '<(PRODUCT_DIR)/natives_blob.bin',
+                    '<(PRODUCT_DIR)/snapshot_blob.bin',
+                  ],
+                },
+              ],
+            }],
+          ],
           'variables': {
             'test_suite_name': 'net_unittests',
             'conditions': [
               ['v8_use_external_startup_data==1', {
+                'asset_location': '<(PRODUCT_DIR)/net_unittests_apk/assets',
                 'additional_input_paths': [
+                  '<(PRODUCT_DIR)/net_unittests_apk/assets/natives_blob.bin',
+                  '<(PRODUCT_DIR)/net_unittests_apk/assets/snapshot_blob.bin',
+                ],
+                'inputs': [
                   '<(PRODUCT_DIR)/natives_blob.bin',
                   '<(PRODUCT_DIR)/snapshot_blob.bin',
-                ],
-                'copies': [
-                  {
-                  'destination': '<(PRODUCT_DIR)/net_unittests_apk/assets',
-                    'files': [
-                      '<(PRODUCT_DIR)/natives_blob.bin',
-                      '<(PRODUCT_DIR)/snapshot_blob.bin',
-                    ],
-                  },
                 ],
               }],
             ],

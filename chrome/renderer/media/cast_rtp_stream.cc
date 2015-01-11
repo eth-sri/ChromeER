@@ -105,6 +105,7 @@ CastRtpPayloadParams DefaultH264Payload() {
 bool IsHardwareVP8EncodingSupported() {
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kDisableCastStreamingHWEncoding)) {
+    DVLOG(1) << "Disabled hardware VP8 support for Cast Streaming.";
     return false;
   }
 
@@ -123,6 +124,7 @@ bool IsHardwareVP8EncodingSupported() {
 bool IsHardwareH264EncodingSupported() {
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kDisableCastStreamingHWEncoding)) {
+    DVLOG(1) << "Disabled hardware h264 support for Cast Streaming.";
     return false;
   }
 
@@ -169,8 +171,8 @@ std::vector<CastRtpParams> SupportedVideoParams() {
 bool ToAudioSenderConfig(const CastRtpParams& params,
                          AudioSenderConfig* config) {
   config->ssrc = params.payload.ssrc;
-  config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
-  if (config->ssrc == config->incoming_feedback_ssrc)
+  config->receiver_ssrc = params.payload.feedback_ssrc;
+  if (config->ssrc == config->receiver_ssrc)
     return false;
   config->min_playout_delay =
       base::TimeDelta::FromMilliseconds(
@@ -204,8 +206,8 @@ bool ToAudioSenderConfig(const CastRtpParams& params,
 bool ToVideoSenderConfig(const CastRtpParams& params,
                          VideoSenderConfig* config) {
   config->ssrc = params.payload.ssrc;
-  config->incoming_feedback_ssrc = params.payload.feedback_ssrc;
-  if (config->ssrc == config->incoming_feedback_ssrc)
+  config->receiver_ssrc = params.payload.feedback_ssrc;
+  if (config->ssrc == config->receiver_ssrc)
     return false;
   config->min_playout_delay =
       base::TimeDelta::FromMilliseconds(
@@ -526,7 +528,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
                           const base::Closure& start_callback,
                           const base::Closure& stop_callback,
                           const ErrorCallback& error_callback) {
-  VLOG(1) << "CastRtpStream::Start = " << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::Start = " << (IsAudio() ? "audio" : "video");
   stop_callback_ = stop_callback;
   error_callback_ = error_callback;
 
@@ -573,7 +575,7 @@ void CastRtpStream::Start(const CastRtpParams& params,
 }
 
 void CastRtpStream::Stop() {
-  VLOG(1) << "CastRtpStream::Stop = " << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::Stop = " << (IsAudio() ? "audio" : "video");
   audio_sink_.reset();
   video_sink_.reset();
   if (!stop_callback_.is_null())
@@ -581,23 +583,23 @@ void CastRtpStream::Stop() {
 }
 
 void CastRtpStream::ToggleLogging(bool enable) {
-  VLOG(1) << "CastRtpStream::ToggleLogging(" << enable << ") = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::ToggleLogging(" << enable << ") = "
+           << (IsAudio() ? "audio" : "video");
   cast_session_->ToggleLogging(IsAudio(), enable);
 }
 
 void CastRtpStream::GetRawEvents(
     const base::Callback<void(scoped_ptr<base::BinaryValue>)>& callback,
     const std::string& extra_data) {
-  VLOG(1) << "CastRtpStream::GetRawEvents = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::GetRawEvents = "
+           << (IsAudio() ? "audio" : "video");
   cast_session_->GetEventLogsAndReset(IsAudio(), extra_data, callback);
 }
 
 void CastRtpStream::GetStats(
     const base::Callback<void(scoped_ptr<base::DictionaryValue>)>& callback) {
-  VLOG(1) << "CastRtpStream::GetStats = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::GetStats = "
+           << (IsAudio() ? "audio" : "video");
   cast_session_->GetStatsAndReset(IsAudio(), callback);
 }
 
@@ -606,8 +608,8 @@ bool CastRtpStream::IsAudio() const {
 }
 
 void CastRtpStream::DidEncounterError(const std::string& message) {
-  VLOG(1) << "CastRtpStream::DidEncounterError(" << message << ") = "
-          << (IsAudio() ? "audio" : "video");
+  DVLOG(1) << "CastRtpStream::DidEncounterError(" << message << ") = "
+           << (IsAudio() ? "audio" : "video");
   // Save the WeakPtr first because the error callback might delete this object.
   base::WeakPtr<CastRtpStream> ptr = weak_factory_.GetWeakPtr();
   error_callback_.Run(message);

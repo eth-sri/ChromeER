@@ -30,9 +30,9 @@ class AppLoadService : public KeyedService,
                        public extensions::ExtensionRegistryObserver {
  public:
   enum PostReloadActionType {
-    LAUNCH,
+    LAUNCH_FOR_RELOAD,
     RESTART,
-    LAUNCH_WITH_COMMAND_LINE,
+    LAUNCH_FOR_LOAD_AND_LAUNCH,
   };
 
   struct PostReloadAction {
@@ -60,6 +60,10 @@ class AppLoadService : public KeyedService,
   bool LoadAndLaunch(const base::FilePath& extension_path,
                      const base::CommandLine& command_line,
                      const base::FilePath& current_dir);
+
+  // Loads (or reloads) the app with |extension_path|. Returns true if loading
+  // the app has begun successfully.
+  bool Load(const base::FilePath& extension_path);
 
   static AppLoadService* Get(Profile* profile);
 

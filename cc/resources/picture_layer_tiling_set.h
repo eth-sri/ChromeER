@@ -5,6 +5,9 @@
 #ifndef CC_RESOURCES_PICTURE_LAYER_TILING_SET_H_
 #define CC_RESOURCES_PICTURE_LAYER_TILING_SET_H_
 
+#include <set>
+#include <vector>
+
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/resources/picture_layer_tiling.h"
@@ -34,13 +37,21 @@ class CC_EXPORT PictureLayerTilingSet {
     size_t end;
   };
 
-  explicit PictureLayerTilingSet(PictureLayerTilingClient* client);
+  static scoped_ptr<PictureLayerTilingSet> Create(
+      PictureLayerTilingClient* client);
+
   ~PictureLayerTilingSet();
 
   void SetClient(PictureLayerTilingClient* client);
   const PictureLayerTilingClient* client() const { return client_; }
 
   void RemoveTilesInRegion(const Region& region);
+  void CleanUpTilings(float min_acceptable_high_res_scale,
+                      float max_acceptable_high_res_scale,
+                      const std::vector<PictureLayerTiling*>& needed_tilings,
+                      bool should_have_low_res,
+                      PictureLayerTilingSet* twin_set,
+                      PictureLayerTilingSet* recycled_twin_set);
 
   // Make this set of tilings match the same set of content scales from |other|.
   // Delete any tilings that don't meet |minimum_contents_scale|.  Recreate
@@ -50,7 +61,8 @@ class CC_EXPORT PictureLayerTilingSet {
   bool SyncTilings(const PictureLayerTilingSet& other,
                    const gfx::Size& new_layer_bounds,
                    const Region& layer_invalidation,
-                   float minimum_contents_scale);
+                   float minimum_contents_scale,
+                   RasterSource* raster_source);
 
   PictureLayerTiling* AddTiling(float contents_scale,
                                 const gfx::Size& layer_bounds);
@@ -61,16 +73,36 @@ class CC_EXPORT PictureLayerTilingSet {
     return tilings_[idx];
   }
 
-  PictureLayerTiling* TilingAtScale(float scale) const;
+  PictureLayerTiling* FindTilingWithScale(float scale) const;
+  PictureLayerTiling* FindTilingWithResolution(TileResolution resolution) const;
+
+  void MarkAllTilingsNonIdeal();
+
+  // If a tiling exists whose scale is within |snap_to_existing_tiling_ratio|
+  // ratio of |start_scale|, then return that tiling's scale. Otherwise, return
+  // |start_scale|. If multiple tilings match the criteria, return the one with
+  // the least ratio to |start_scale|.
+  float GetSnappedContentsScale(float start_scale,
+                                float snap_to_existing_tiling_ratio) const;
+
+  // Returns the maximum contents scale of all tilings, or 0 if no tilings
+  // exist.
+  float GetMaximumContentsScale() const;
 
   // Remove all tilings.
   void RemoveAllTilings();
 
-  // Remove one tiling.
-  void Remove(PictureLayerTiling* tiling);
-
   // Remove all tiles; keep all tilings.
   void RemoveAllTiles();
+
+  // Update the rects and priorities for tiles based on the given information.
+  bool UpdateTilePriorities(const gfx::Rect& required_rect_in_layer_space,
+                            float ideal_contents_scale,
+                            double current_frame_time_in_seconds,
+                            const Occlusion& occlusion_in_layer_space,
+                            bool can_require_tiles_for_activation);
+
+  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
 
   // For a given rect, iterates through tiles that can fill it.  If no
   // set of tiles with resources can fill the rect, then it will iterate
@@ -123,6 +155,11 @@ class CC_EXPORT PictureLayerTilingSet {
   TilingRange GetTilingRange(TilingRangeType type) const;
 
  private:
+  explicit PictureLayerTilingSet(PictureLayerTilingClient* client);
+
+  // Remove one tiling.
+  void Remove(PictureLayerTiling* tiling);
+
   PictureLayerTilingClient* client_;
   ScopedPtrVector<PictureLayerTiling> tilings_;
 

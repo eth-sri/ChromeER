@@ -32,6 +32,12 @@ const char kAdviseOnGclientSolution[] =
     "}";
 const char kTitlePageOfAppEngineAdminPage[] = "Instances";
 
+const char kIsApprtcCallUpJavascript[] =
+    "var remoteVideoActive ="
+    "    typeof remoteVideo != undefined &&"
+    "    remoteVideo.classList.contains('active');"
+    "window.domAutomationController.send(remoteVideoActive.toString());";
+
 
 // WebRTC-AppRTC integration test. Requires a real webcam and microphone
 // on the running system. This test is not meant to run in the main browser
@@ -96,7 +102,7 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
     command_line.AppendArg("--admin_port=9998");
     command_line.AppendArg("--skip_sdk_update_check");
 
-    VLOG(1) << "Running " << command_line.GetCommandLineString();
+    DVLOG(1) << "Running " << command_line.GetCommandLineString();
     return base::LaunchProcess(command_line, base::LaunchOptions(),
                                &dev_appserver_);
   }
@@ -117,17 +123,13 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
   }
 
   bool WaitForCallToComeUp(content::WebContents* tab_contents) {
-    // Apprtc will set remoteVideo.style.opacity to 1 when the call comes up.
-    std::string javascript =
-        "window.domAutomationController.send(remoteVideo.style.opacity)";
-    return test::PollingWaitUntil(javascript, "1", tab_contents);
+    return test::PollingWaitUntil(kIsApprtcCallUpJavascript, "true",
+                                  tab_contents);
   }
 
   bool WaitForCallToHangUp(content::WebContents* tab_contents) {
-    // Apprtc will set remoteVideo.style.opacity to 1 when the call comes up.
-    std::string javascript =
-        "window.domAutomationController.send(remoteVideo.style.opacity)";
-    return test::PollingWaitUntil(javascript, "0", tab_contents);
+    return test::PollingWaitUntil(kIsApprtcCallUpJavascript, "false",
+                                  tab_contents);
   }
 
   bool EvalInJavascriptFile(content::WebContents* tab_contents,
@@ -155,14 +157,14 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
       return false;
 
     // The remote video tag is called remoteVideo in the AppRTC code.
-    StartDetectingVideo(tab_contents, "remoteVideo");
+    StartDetectingVideo(tab_contents, "remote-video");
     WaitForVideoToPlay(tab_contents);
     return true;
   }
 
   bool HangUpApprtcCall(content::WebContents* tab_contents) {
     // This is the same as clicking the Hangup button in the AppRTC call.
-    return content::ExecuteScript(tab_contents, "onHangup()");
+    return content::ExecuteScript(tab_contents, "hangup()");
   }
 
   base::FilePath GetSourceDir() {
@@ -193,7 +195,7 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
     command_line.AppendSwitchPath("--binary", firefox_binary);
     command_line.AppendSwitchASCII("--webpage", url.spec());
 
-    VLOG(1) << "Running " << command_line.GetCommandLineString();
+    DVLOG(1) << "Running " << command_line.GetCommandLineString();
     return base::LaunchProcess(command_line, base::LaunchOptions(),
                                &firefox_);
   }
@@ -227,7 +229,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
   DetectErrorsInJavaScript();
   ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());
   while (!LocalApprtcInstanceIsUp())
-    VLOG(1) << "Waiting for AppRTC to come up...";
+    DVLOG(1) << "Waiting for AppRTC to come up...";
 
   GURL room_url = GURL(base::StringPrintf("localhost:9999?r=room_%d",
                                           base::RandInt(0, 65536)));
@@ -266,20 +268,13 @@ IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest,
   if (OnWinXp())
     return;
 
-  if (!HasWebcamOnSystem()) {
-    LOG(INFO)
-        << "Didn't find a webcam on the system; skipping test since Firefox "
-        << "needs to be able to acquire a webcam.";
-    return;
-  }
-
   DetectErrorsInJavaScript();
   ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());
   while (!LocalApprtcInstanceIsUp())
-    VLOG(1) << "Waiting for AppRTC to come up...";
+    DVLOG(1) << "Waiting for AppRTC to come up...";
 
-  GURL room_url = GURL(base::StringPrintf("http://localhost:9999?r=room_%d",
-                                          base::RandInt(0, 65536)));
+  GURL room_url = GURL(
+      "http://localhost:9999?r=some_room_id&firefox_fake_device=1");
   content::WebContents* chrome_tab = OpenPageAndAcceptUserMedia(room_url);
 
   ASSERT_TRUE(LaunchFirefoxWithUrl(room_url));

@@ -125,9 +125,15 @@ class EasyUnlockService : public KeyedService {
   // Returns the hardlock state for the associated user.
   EasyUnlockScreenlockStateHandler::HardlockState GetHardlockState() const;
 
-  // Ensures the hardlock state is visible even when there is no cryptohome
-  // keys and no state update from the app.
-  void MaybeShowHardlockUI();
+  // Gets the persisted hardlock state. Return true if there is persisted
+  // hardlock state and the value would be set to |state|. Otherwise,
+  // returns false and |state| is unchanged.
+  bool GetPersistedHardlockState(
+      EasyUnlockScreenlockStateHandler::HardlockState* state) const;
+
+  // Shows the hardlock or connecting state as initial UI before cryptohome
+  // keys checking and state update from the app.
+  void ShowInitialUserState();
 
   // Updates the user pod on the signin/lock screen for the user associated with
   // the service to reflect the provided screenlock state.
@@ -215,6 +221,12 @@ class EasyUnlockService : public KeyedService {
     return screenlock_state_handler_.get();
   }
 
+  // Saves hardlock state for the given user. Update UI if the currently
+  // associated user is the same.
+  void SetHardlockStateForUser(
+      const std::string& user_id,
+      EasyUnlockScreenlockStateHandler::HardlockState state);
+
  private:
   // A class to detect whether a bluetooth adapter is present.
   class BluetoothDetector;
@@ -230,12 +242,6 @@ class EasyUnlockService : public KeyedService {
 
   // Callback when Bluetooth adapter present state changes.
   void OnBluetoothAdapterPresentChanged();
-
-  // Saves hardlock state for the given user. Update UI if the currently
-  // associated user is the same.
-  void SetHardlockStateForUser(
-      const std::string& user_id,
-      EasyUnlockScreenlockStateHandler::HardlockState state);
 
 #if defined(OS_CHROMEOS)
   // Callback for get key operation from CheckCryptohomeKeysAndMaybeHardlock.

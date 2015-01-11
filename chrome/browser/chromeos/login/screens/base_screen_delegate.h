@@ -7,6 +7,10 @@
 
 #include <string>
 
+namespace login {
+class ScreenContext;
+}
+
 namespace chromeos {
 
 class ErrorScreen;
@@ -49,12 +53,15 @@ class BaseScreenDelegate {
     WRONG_HWID_WARNING_SKIPPED = 20,
     CONTROLLER_PAIRING_FINISHED = 21,
     HOST_PAIRING_FINISHED = 22,
-    DEVICE_NOT_DISABLED = 23,
+    ENABLE_DEBUGGING_FINISHED = 23,
+    ENABLE_DEBUGGING_CANCELED = 24,
     EXIT_CODES_COUNT  // not a real code, must be the last
   };
 
   // Method called by a screen when user's done with it.
-  virtual void OnExit(ExitCodes exit_code) = 0;
+  virtual void OnExit(BaseScreen& screen,
+                      ExitCodes exit_code,
+                      const ::login::ScreenContext* context) = 0;
 
   // Forces current screen showing.
   virtual void ShowCurrentScreen() = 0;

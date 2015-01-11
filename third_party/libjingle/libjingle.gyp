@@ -434,6 +434,8 @@
             '<(libjingle_source)/talk/media/base/videocommon.h',
             '<(libjingle_source)/talk/media/base/videoframe.cc',
             '<(libjingle_source)/talk/media/base/videoframe.h',
+            '<(libjingle_source)/talk/media/base/videoframefactory.cc',
+            '<(libjingle_source)/talk/media/base/videoframefactory.h',
             '<(libjingle_source)/talk/media/devices/dummydevicemanager.cc',
             '<(libjingle_source)/talk/media/devices/dummydevicemanager.h',
             '<(libjingle_source)/talk/media/devices/filevideocapturer.cc',
@@ -574,6 +576,13 @@
           'dependencies': [
             'libjingle_webrtc_common',
           ],
+          'conditions': [
+            ['libpeer_target_type=="static_library"', {
+              'dependencies': [
+                '<(DEPTH)/third_party/webrtc/modules/modules.gyp:audio_processing',
+              ],
+            }],
+          ],
         },
         {
           # GN version: //third_party/libjingle:libpeerconnection
@@ -591,7 +600,6 @@
             '<(libjingle_source)/talk/media/webrtc/webrtcvoiceengine.h',
           ],
           'dependencies': [
-            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:audio_processing',
             '<(DEPTH)/third_party/webrtc/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(DEPTH)/third_party/webrtc/voice_engine/voice_engine.gyp:voice_engine',
             '<(DEPTH)/third_party/webrtc/webrtc.gyp:webrtc',

@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/public/platform/WebPushError.h"
+#include "third_party/WebKit/public/platform/WebPushPermissionStatus.h"
 #include "third_party/WebKit/public/platform/WebPushRegistration.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 
@@ -56,4 +57,19 @@ void MockWebPushClient::registerPushMessaging(
   delete callbacks;
 }
 
-}  // namespace content
+void MockWebPushClient::getPermissionStatus(
+    blink::WebPushPermissionStatusCallback* callback,
+    blink::WebServiceWorkerProvider* provider) {
+  blink::WebPushPermissionStatus status;
+  if (error_message_.empty())
+    status = blink::WebPushPermissionStatusGranted;
+  else if (error_message_ == "deny_permission")
+    status = blink::WebPushPermissionStatusDenied;
+  else
+    status = blink::WebPushPermissionStatusDefault;
+
+  callback->onSuccess(&status);
+  delete callback;
+}
+
+}  // Namespace content

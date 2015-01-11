@@ -86,8 +86,8 @@
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/common/extensions/extension_metrics.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -96,12 +96,10 @@
 #endif
 
 #if defined(ENABLE_PRINTING)
-#if defined(ENABLE_FULL_PRINTING)
+#include "chrome/browser/printing/print_view_manager_common.h"
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
-#include "chrome/browser/printing/print_view_manager.h"
-#else
-#include "chrome/browser/printing/print_view_manager_basic.h"
-#endif  // defined(ENABLE_FULL_PRINTING)
+#endif  // defined(ENABLE_PRINT_PREVIEW)
 #endif  // defined(ENABLE_PRINTING)
 
 namespace {
@@ -268,8 +266,9 @@ bool IsShowingWebContentsModalDialog(Browser* browser) {
   return browser->popup_manager()->IsWebModalDialogActive(web_contents);
 }
 
+#if defined(ENABLE_BASIC_PRINTING)
 bool PrintPreviewShowing(const Browser* browser) {
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   WebContents* contents = browser->tab_strip_model()->GetActiveWebContents();
   printing::PrintPreviewDialogController* controller =
       printing::PrintPreviewDialogController::GetInstance();
@@ -279,6 +278,7 @@ bool PrintPreviewShowing(const Browser* browser) {
   return false;
 #endif
 }
+#endif  // ENABLE_BASIC_PRINTING
 
 }  // namespace
 
@@ -540,9 +540,8 @@ void OpenCurrentURL(Browser* browser) {
       extensions::ExtensionRegistry::Get(browser->profile())
           ->enabled_extensions().GetAppByURL(url);
   if (extension) {
-    CoreAppLauncherHandler::RecordAppLaunchType(
-        extension_misc::APP_LAUNCH_OMNIBOX_LOCATION,
-        extension->GetType());
+    extensions::RecordAppLaunchType(extension_misc::APP_LAUNCH_OMNIBOX_LOCATION,
+                                    extension->GetType());
   }
 #endif
 }
@@ -857,25 +856,10 @@ void ShowWebsiteSettings(Browser* browser,
 
 void Print(Browser* browser) {
 #if defined(ENABLE_PRINTING)
-  WebContents* contents = browser->tab_strip_model()->GetActiveWebContents();
-
-#if defined(ENABLE_FULL_PRINTING)
-  printing::PrintViewManager* print_view_manager =
-      printing::PrintViewManager::FromWebContents(contents);
-  if (!browser->profile()->GetPrefs()->GetBoolean(
-          prefs::kPrintPreviewDisabled)) {
-    print_view_manager->PrintPreviewNow(false);
-    return;
-  }
-#else   // ENABLE_FULL_PRINTING
-  printing::PrintViewManagerBasic* print_view_manager =
-      printing::PrintViewManagerBasic::FromWebContents(contents);
-#endif  // ENABLE_FULL_PRINTING
-
-#if !defined(DISABLE_BASIC_PRINTING)
-  print_view_manager->PrintNow();
-#endif  // DISABLE_BASIC_PRINTING
-
+  printing::StartPrint(
+      browser->tab_strip_model()->GetActiveWebContents(),
+      browser->profile()->GetPrefs()->GetBoolean(prefs::kPrintPreviewDisabled),
+      false);
 #endif  // defined(ENABLE_PRINTING)
 }
 
@@ -891,14 +875,9 @@ bool CanPrint(Browser* browser) {
       GetContentRestrictions(browser) & CONTENT_RESTRICTION_PRINT);
 }
 
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
 void BasicPrint(Browser* browser) {
-#if defined(ENABLE_FULL_PRINTING)
-  printing::PrintViewManager* print_view_manager =
-      printing::PrintViewManager::FromWebContents(
-          browser->tab_strip_model()->GetActiveWebContents());
-  print_view_manager->BasicPrint();
-#endif
+  printing::StartBasicPrint(browser->tab_strip_model()->GetActiveWebContents());
 }
 
 bool CanBasicPrint(Browser* browser) {
@@ -914,7 +893,7 @@ bool CanBasicPrint(Browser* browser) {
   return browser->profile()->GetPrefs()->GetBoolean(prefs::kPrintingEnabled) &&
       (PrintPreviewShowing(browser) || CanPrint(browser));
 }
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
 
 void EmailPageLocation(Browser* browser) {
   content::RecordAction(UserMetricsAction("EmailPageLocation"));

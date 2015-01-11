@@ -7,40 +7,40 @@
 
 #include <string>
 
-#include "base/callback.h"
 #include "base/macros.h"
-#include "base/memory/scoped_ptr.h"
-#include "components/copresence/handlers/audio/audio_directive_handler.h"
-#include "components/copresence/mediums/audio/audio_manager.h"
+#include "components/copresence/public/copresence_constants.h"
 
 namespace copresence {
 
 class Directive;
+class WhispernetClient;
 
-// The directive handler manages transmit and receive directives
-// given to it by the manager.
+// The directive handler manages transmit and receive directives.
 class DirectiveHandler {
  public:
-  DirectiveHandler();
-  virtual ~DirectiveHandler();
+  DirectiveHandler() {}
+  virtual ~DirectiveHandler() {}
 
-  // Initialize the |audio_handler_| with the appropriate callbacks.
-  // This function must be called before any others.
-  // TODO(ckehoe): Instead of this, use a static Create() method
-  //               and make the constructor private.
-  virtual void Initialize(const AudioManager::DecodeSamplesCallback& decode_cb,
-                          const AudioManager::EncodeTokenCallback& encode_cb);
+  // Starts processing directives with the provided Whispernet client.
+  // Directives will be queued until this function is called.
+  // |whispernet_client| is owned by the caller and must outlive the
+  // DirectiveHandler.
+  // |tokens_cb| is called for all audio tokens found in recorded audio.
+  virtual void Start(WhispernetClient* whispernet_client,
+                     const TokensCallback& tokens_cb) = 0;
 
   // Adds a directive to handle.
-  virtual void AddDirective(const copresence::Directive& directive);
-  // Removes any directives associated with the given operation id.
-  virtual void RemoveDirectives(const std::string& op_id);
+  virtual void AddDirective(const Directive& directive) = 0;
 
-  const std::string GetCurrentAudioToken(AudioType type) const;
+  // Removes any directives associated with the given operation id.
+  virtual void RemoveDirectives(const std::string& op_id) = 0;
+
+  // TODO(rkc): Too many audio specific functions here.
+  // Find a better way to get this information to the copresence manager.
+  virtual const std::string GetCurrentAudioToken(AudioType type) const = 0;
+  virtual bool IsAudioTokenHeard(AudioType type) const = 0;
 
  private:
-  scoped_ptr<AudioDirectiveHandler> audio_handler_;
-
   DISALLOW_COPY_AND_ASSIGN(DirectiveHandler);
 };
 

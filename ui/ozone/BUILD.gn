@@ -59,6 +59,7 @@ component("ozone_base") {
     "public/surface_factory_ozone.h",
     "public/surface_ozone_canvas.h",
     "public/surface_ozone_egl.h",
+    "public/system_input_injector.h",
   ]
 
   defines = [ "OZONE_BASE_IMPLEMENTATION" ]
@@ -82,6 +83,8 @@ component("ozone") {
     "common/display_snapshot_proxy.h",
     "common/display_util.cc",
     "common/display_util.h",
+    "common/egl_util.cc",
+    "common/egl_util.h",
     "common/gpu/ozone_gpu_message_generator.cc",
     "common/gpu/ozone_gpu_message_generator.h",
     "common/gpu/ozone_gpu_message_params.cc",
@@ -109,6 +112,7 @@ component("ozone") {
     "//ipc",
     "//skia",
     "//ui/display/types",
+    "//ui/display/util",
     "//ui/events",
     "//ui/events/ozone:events_ozone",
     "//ui/gfx",
@@ -141,7 +145,7 @@ action("generate_ozone_platform_list") {
 action("generate_constructor_list") {
   script = "generate_constructor_list.py"
 
-  source_prereqs = [
+  inputs = [
     platform_list_txt_file,
   ]
   outputs = [

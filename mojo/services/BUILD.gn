@@ -15,7 +15,6 @@ group("services") {
     "//mojo/services/public/interfaces/network",
     "//mojo/services/public/interfaces/surfaces",
     "//mojo/services/public/interfaces/view_manager",
-    "//mojo/services/public/interfaces/window_manager2",
   ]
 
   if (!is_component_build) {
@@ -23,5 +22,12 @@ group("services") {
       "//mojo/services/html_viewer",
       "//mojo/services/network",
     ]
+  
+    # TODO(GYP): Make this work.
+    if (is_mac) {
+      deps -= [
+        "//mojo/services/html_viewer",
+      ]
+    }
   }
 }

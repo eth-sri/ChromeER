@@ -16,8 +16,8 @@
 #include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
 #include "chrome/browser/chromeos/policy/server_backed_state_keys_broker.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
-#include "policy/proto/device_management_backend.pb.h"
 
 class PrefService;
 
@@ -70,9 +70,10 @@ class DeviceCloudPolicyInitializer : public CloudPolicyStore::Observer {
   // operation.
   // |allowed_modes| specifies acceptable DEVICE_MODE_* constants for
   // enrollment.
-  // |management_mode| should be either ENTERPRISE_MANAGED or CONSUMER_MANAGED.
+  // |management_mode| should be either MANAGEMENT_MODE_ENTERPRISE or
+  // MANAGEMENT_MODE_CONSUMER.
   virtual void StartEnrollment(
-      enterprise_management::PolicyData::ManagementMode management_mode,
+      ManagementMode management_mode,
       DeviceManagementService* device_management_service,
       const std::string& auth_token,
       bool is_auto_enrollment,
@@ -110,9 +111,6 @@ class DeviceCloudPolicyInitializer : public CloudPolicyStore::Observer {
   void TryToCreateClient();
   void StartConnection(scoped_ptr<CloudPolicyClient> client);
 
-  // Gets the device restore mode as stored in |local_state_|.
-  std::string GetRestoreMode() const;
-
   PrefService* local_state_;
   DeviceManagementService* enterprise_service_;
   DeviceManagementService* consumer_service_;
@@ -129,8 +127,6 @@ class DeviceCloudPolicyInitializer : public CloudPolicyStore::Observer {
   scoped_ptr<EnrollmentHandlerChromeOS> enrollment_handler_;
 
   ServerBackedStateKeysBroker::Subscription state_keys_update_subscription_;
-
-  scoped_ptr<CloudPolicyClient::StatusProvider> device_status_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceCloudPolicyInitializer);
 };

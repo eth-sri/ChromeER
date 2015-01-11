@@ -278,7 +278,8 @@ class SpeechRecognitionAudioSinkTest : public testing::Test {
     blink::WebMediaStreamSource blink_audio_source;
     blink_audio_source.initialize(base::UTF8ToUTF16("dummy_source_id"),
                                   blink::WebMediaStreamSource::TypeAudio,
-                                  base::UTF8ToUTF16("dummy_source_name"));
+                                  base::UTF8ToUTF16("dummy_source_name"),
+                                  false /* remote */, true /* readonly */);
     MediaStreamSource::SourceStoppedCallback cb;
     blink_audio_source.setExtraData(
         new MediaStreamAudioSource(-1, device_info, cb, NULL));
@@ -290,9 +291,7 @@ class SpeechRecognitionAudioSinkTest : public testing::Test {
   // Emulates an audio capture device capturing data from the source.
   inline void CaptureAudio(const uint32 buffers) {
     for (uint32 i = 0; i < buffers; ++i)
-      native_track()->Capture(source_data(),
-                             base::TimeDelta::FromMilliseconds(0), 1, false,
-                             false, false);
+      native_track()->Capture(source_data(), false);
   }
 
   // Used to simulate a problem with sockets.
@@ -375,7 +374,7 @@ TEST_F(SpeechRecognitionAudioSinkTest, CheckIsSupportedAudioTrack) {
   p[MEDIA_TAB_AUDIO_CAPTURE] = false;
   p[MEDIA_TAB_VIDEO_CAPTURE] = false;
   p[MEDIA_DESKTOP_VIDEO_CAPTURE] = false;
-  p[MEDIA_LOOPBACK_AUDIO_CAPTURE] = false;
+  p[MEDIA_DESKTOP_AUDIO_CAPTURE] = false;
   p[MEDIA_DEVICE_AUDIO_OUTPUT] = false;
 
   // Ensure this test gets updated along with |content::MediaStreamType| enum.

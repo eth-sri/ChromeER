@@ -7,7 +7,7 @@ var input_focused_event;
 
 if (!chrome.virtualKeyboardPrivate) {
   define('main', [
-      'mojo/public/js/bindings/connection',
+      'mojo/public/js/connection',
       'ui/keyboard/webui/keyboard.mojom',
       'content/public/renderer/service_provider',
   ], function(connector, keyboard, serviceProvider) {
@@ -56,7 +56,13 @@ if (!chrome.virtualKeyboardPrivate) {
   chrome.virtualKeyboardPrivate.moveCursor = function() {};
   chrome.virtualKeyboardPrivate.lockKeyboard = function() {};
   chrome.virtualKeyboardPrivate.keyboardLoaded = function() {};
-  chrome.virtualKeyboardPrivate.getKeyboardConfig = function() {};
+  chrome.virtualKeyboardPrivate.getKeyboardConfig = function(callback) {
+    callback({
+      layout: 'qwerty',
+      a11ymode: false,
+      experimental: false
+    });
+  };
 
   function BrowserEvent() {
     this.listeners_ = [];

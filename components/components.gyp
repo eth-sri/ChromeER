@@ -21,6 +21,7 @@
     'cronet.gypi',
     'crx_file.gypi',
     'data_reduction_proxy.gypi',
+    'dns_prefetch.gypi',
     'dom_distiller.gypi',
     'domain_reliability.gypi',
     'enhanced_bookmarks.gypi',
@@ -28,6 +29,7 @@
     'favicon.gypi',
     'favicon_base.gypi',
     'google.gypi',
+    'handoff.gypi',
     'history.gypi',
     'infobars.gypi',
     'json_schema.gypi',
@@ -38,7 +40,7 @@
     'metrics.gypi',
     'navigation_metrics.gypi',
     'network_time.gypi',
-    'omaha_query_params.gypi',
+    'omaha_client.gypi',
     'onc.gypi',
     'os_crypt.gypi',
     'ownership.gypi',
@@ -60,11 +62,12 @@
     'user_prefs.gypi',
     'variations.gypi',
     'webdata.gypi',
+    'web_resource.gypi',
   ],
   'conditions': [
     ['OS != "ios"', {
       'includes': [
-        'app_modal_dialogs.gypi',
+        'app_modal.gypi',
         'cdm.gypi',
         'copresence_sockets.gypi',
         'navigation_interception.gypi',
@@ -97,6 +100,11 @@
     ['OS == "win" or OS == "mac"', {
       'includes': [
         'wifi.gypi',
+      ],
+    }],
+    ['OS == "win"', {
+      'includes': [
+        'browser_watcher.gypi',
       ],
     }],
     ['chromeos == 1 or use_ash == 1', {

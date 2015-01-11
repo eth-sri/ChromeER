@@ -6,21 +6,18 @@ package org.chromium.cronet_test_apk;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.res.AssetManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
 
-import org.chromium.base.PathUtils;
 import org.chromium.net.HttpUrlRequest;
 import org.chromium.net.HttpUrlRequestFactory;
-import org.chromium.net.HttpUrlRequestFactoryConfig;
 import org.chromium.net.HttpUrlRequestListener;
+import org.chromium.net.UrlRequestContext;
+import org.chromium.net.UrlRequestContextConfig;
 
 import java.io.ByteArrayInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
 
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
@@ -38,6 +35,7 @@ public class CronetTestActivity extends Activity {
     public static final String SKIP_FACTORY_INIT_KEY = "skipFactoryInit";
 
     HttpUrlRequestFactory mRequestFactory;
+    UrlRequestContext mUrlRequestContext;
 
     String mUrl;
 
@@ -64,11 +62,6 @@ public class CronetTestActivity extends Activity {
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        if (!loadTestFiles()) {
-            Log.e(TAG, "Loading test files failed");
-            return;
-        }
-
         try {
             System.loadLibrary("cronet_tests");
         } catch (UnsatisfiedLinkError e) {
@@ -94,8 +87,8 @@ public class CronetTestActivity extends Activity {
 
     // Helper function to initialize request factory. Also used in testing.
     public HttpUrlRequestFactory initRequestFactory() {
-        HttpUrlRequestFactoryConfig config = new HttpUrlRequestFactoryConfig();
-        config.enableHttpCache(HttpUrlRequestFactoryConfig.HttpCache.IN_MEMORY,
+        UrlRequestContextConfig config = new UrlRequestContextConfig();
+        config.enableHttpCache(UrlRequestContextConfig.HttpCache.IN_MEMORY,
                                100 * 1024)
               .enableSPDY(true)
               .enableQUIC(true);
@@ -105,7 +98,7 @@ public class CronetTestActivity extends Activity {
         if (configString != null) {
             try {
                 Log.i(TAG, "Using Config: " + configString);
-                config = new HttpUrlRequestFactoryConfig(configString);
+                config = new UrlRequestContextConfig(configString);
             } catch (org.json.JSONException e) {
                 Log.e(TAG, "Invalid Config.", e);
                 finish();
@@ -116,52 +109,11 @@ public class CronetTestActivity extends Activity {
         // Setting this here so it isn't overridden on the command line
         config.setLibraryName("cronet_tests");
 
+        mUrlRequestContext = UrlRequestContext.createContext(
+                getApplicationContext(), config);
+
         return HttpUrlRequestFactory.createFactory(getApplicationContext(),
                                                    config);
-    }
-
-    private boolean loadTestFiles() {
-        String testFilePath = "test";
-        String toPath = PathUtils.getDataDirectory(getApplicationContext());
-        AssetManager assetManager = getAssets();
-        try {
-            String[] files = assetManager.list(testFilePath);
-            Log.i(TAG, "Begin loading " + files.length + " test files.");
-            for (String file : files) {
-                Log.i(TAG, "Loading " + file);
-                if (!copyTestFile(assetManager,
-                                  testFilePath + "/" + file,
-                                  toPath + "/" + file)) {
-                    return false;
-                }
-            }
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    // Helper function to copy a file to a destination.
-    private static boolean copyTestFile(AssetManager assetManager,
-                                        String testFile,
-                                        String testFileCopy) {
-        try {
-            InputStream in = assetManager.open(testFile);
-            OutputStream out = new FileOutputStream(testFileCopy);
-            byte[] buffer = new byte[1024];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                out.write(buffer, 0, read);
-            }
-            in.close();
-            out.flush();
-            out.close();
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
     }
 
     private static String getUrlFromIntent(Intent intent) {
@@ -226,8 +178,8 @@ public class CronetTestActivity extends Activity {
 
     public void startNetLog() {
         mRequestFactory.startNetLogToFile(
-                Environment.getExternalStorageDirectory().getPath() +
-                        "/cronet_sample_netlog.json");
+                Environment.getExternalStorageDirectory().getPath()
+                        + "/cronet_sample_netlog.json");
     }
 
     public void stopNetLog() {

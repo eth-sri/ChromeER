@@ -377,6 +377,18 @@
       ],
     },
     {
+      # TODO(pasko): Remove this target when crbug.com/424562 is fixed.
+      # GN: //base:protect_file_posix
+      'target_name': 'protect_file_posix',
+      'type': 'static_library',
+      'dependencies': [
+        'base',
+      ],
+      'sources': [
+        'files/protect_file_posix.cc',
+      ],
+    },
+    {
       'target_name': 'base_prefs_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -435,6 +447,7 @@
       'type': '<(gtest_target_type)',
       'sources': [
         'android/application_status_listener_unittest.cc',
+        'android/content_uri_utils_unittest.cc',
         'android/jni_android_unittest.cc',
         'android/jni_array_unittest.cc',
         'android/jni_string_unittest.cc',
@@ -899,6 +912,8 @@
         'test/expectations/expectation.h',
         'test/expectations/parser.cc',
         'test/expectations/parser.h',
+        'test/gtest_util.cc',
+        'test/gtest_util.h',
         'test/gtest_xml_util.cc',
         'test/gtest_xml_util.h',
         'test/launcher/test_launcher.cc',

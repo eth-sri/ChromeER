@@ -150,6 +150,7 @@ cr.define('options.autofillOptions', function() {
       }
 
       this.addEventListener('commitedit', this.onEditCommitted_);
+      this.closeButtonFocusAllowed = true;
     },
 
     /**
@@ -455,7 +456,7 @@ cr.define('options.autofillOptions', function() {
         // selected.
         var firstItem = this.getListItemByIndex(0);
         if (!selectedItem && firstItem && e.newValue)
-          firstItem.handleFocus_();
+          firstItem.handleFocus();
       }
     },
 

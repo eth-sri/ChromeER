@@ -147,7 +147,6 @@ int ToGestureEventType(WebInputEvent::Type type) {
     case WebInputEvent::GesturePinchUpdate:
       return GESTURE_EVENT_TYPE_PINCH_BY;
     case WebInputEvent::GestureTwoFingerTap:
-    case WebInputEvent::GestureScrollUpdateWithoutPropagation:
     default:
       NOTREACHED() << "Invalid source gesture type: "
                    << WebInputEventTraits::GetName(type);
@@ -337,7 +336,7 @@ void ContentViewCoreImpl::RenderViewHostChanged(RenderViewHost* old_host,
 }
 
 RenderWidgetHostViewAndroid*
-    ContentViewCoreImpl::GetRenderWidgetHostViewAndroid() {
+    ContentViewCoreImpl::GetRenderWidgetHostViewAndroid() const {
   RenderWidgetHostView* rwhv = NULL;
   if (web_contents_) {
     rwhv = web_contents_->GetRenderWidgetHostView();
@@ -633,10 +632,10 @@ void ContentViewCoreImpl::GetScaledContentBitmap(
     float scale,
     SkColorType color_type,
     gfx::Rect src_subrect,
-    const base::Callback<void(bool, const SkBitmap&)>& result_callback) {
+    ReadbackRequestCallback& result_callback) {
   RenderWidgetHostViewAndroid* view = GetRenderWidgetHostViewAndroid();
   if (!view) {
-    result_callback.Run(false, SkBitmap());
+    result_callback.Run(SkBitmap(), READBACK_FAILED);
     return;
   }
 
@@ -770,17 +769,24 @@ void ContentViewCoreImpl::RemoveLayer(scoped_refptr<cc::Layer> layer) {
     root_layer_->SetIsDrawable(true);
 }
 
-void ContentViewCoreImpl::SelectBetweenCoordinates(const gfx::PointF& start,
-                                                   const gfx::PointF& end) {
+void ContentViewCoreImpl::MoveRangeSelectionExtent(const gfx::PointF& extent) {
   if (!web_contents_)
     return;
 
-  gfx::Point start_point = gfx::Point(start.x(), start.y());
-  gfx::Point end_point = gfx::Point(end.x(), end.y());
-  if (start_point == end_point)
+  web_contents_->MoveRangeSelectionExtent(gfx::Point(extent.x(), extent.y()));
+}
+
+void ContentViewCoreImpl::SelectBetweenCoordinates(const gfx::PointF& base,
+                                                   const gfx::PointF& extent) {
+  if (!web_contents_)
     return;
 
-  web_contents_->SelectRange(start_point, end_point);
+  gfx::Point base_point = gfx::Point(base.x(), base.y());
+  gfx::Point extent_point = gfx::Point(extent.x(), extent.y());
+  if (base_point == extent_point)
+    return;
+
+  web_contents_->SelectRange(base_point, extent_point);
 }
 
 ui::ViewAndroid* ContentViewCoreImpl::GetViewAndroid() const {
@@ -791,8 +797,8 @@ ui::WindowAndroid* ContentViewCoreImpl::GetWindowAndroid() const {
   return window_android_;
 }
 
-scoped_refptr<cc::Layer> ContentViewCoreImpl::GetLayer() const {
-  return root_layer_.get();
+const scoped_refptr<cc::Layer>& ContentViewCoreImpl::GetLayer() const {
+  return root_layer_;
 }
 
 // ----------------------------------------------------------------------------
@@ -1021,11 +1027,17 @@ void ContentViewCoreImpl::FlingCancel(JNIEnv* env, jobject obj, jlong time_ms) {
 
 void ContentViewCoreImpl::SingleTap(JNIEnv* env, jobject obj, jlong time_ms,
                                     jfloat x, jfloat y) {
-  WebGestureEvent event = MakeGestureEvent(
-      WebInputEvent::GestureTap, time_ms, x, y);
-  event.data.tap.tapCount = 1;
+  // Tap gestures should always be preceded by a TapDown, ensuring consistency
+  // with the touch-based gesture detection pipeline.
+  WebGestureEvent tap_down_event = MakeGestureEvent(
+      WebInputEvent::GestureTapDown, time_ms, x, y);
+  tap_down_event.data.tap.tapCount = 1;
+  SendGestureEvent(tap_down_event);
 
-  SendGestureEvent(event);
+  WebGestureEvent tap_event = MakeGestureEvent(
+      WebInputEvent::GestureTap, time_ms, x, y);
+  tap_event.data.tap.tapCount = 1;
+  SendGestureEvent(tap_event);
 }
 
 void ContentViewCoreImpl::DoubleTap(JNIEnv* env, jobject obj, jlong time_ms,
@@ -1079,15 +1091,23 @@ void ContentViewCoreImpl::SelectBetweenCoordinates(JNIEnv* env, jobject obj,
 
 void ContentViewCoreImpl::MoveCaret(JNIEnv* env, jobject obj,
                                     jfloat x, jfloat y) {
-  if (GetRenderWidgetHostViewAndroid()) {
-    GetRenderWidgetHostViewAndroid()->MoveCaret(
-        gfx::Point(x / dpi_scale_, y / dpi_scale_));
-  }
+  RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
+  if (rwhv)
+    rwhv->MoveCaret(gfx::Point(x / dpi_scale_, y / dpi_scale_));
 }
 
-void ContentViewCoreImpl::HideTextHandles(JNIEnv* env, jobject obj) {
-  if (GetRenderWidgetHostViewAndroid())
-    GetRenderWidgetHostViewAndroid()->HideTextHandles();
+void ContentViewCoreImpl::DismissTextHandles(JNIEnv* env, jobject obj) {
+  RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
+  if (rwhv)
+    rwhv->DismissTextHandles();
+}
+
+void ContentViewCoreImpl::SetTextHandlesTemporarilyHidden(JNIEnv* env,
+                                                          jobject obj,
+                                                          jboolean hidden) {
+  RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
+  if (rwhv)
+    rwhv->SetTextHandlesTemporarilyHidden(hidden);
 }
 
 void ContentViewCoreImpl::ResetGestureDetection(JNIEnv* env, jobject obj) {

@@ -114,6 +114,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (!command_line.HasSwitch(switches::kEnableSpeechRecognition))
     WebRuntimeFeatures::enableScriptedSpeech(false);
 
+  if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
+    WebRuntimeFeatures::enableNotifications(true);
+
   // WebAudio is enabled by default on ARM and X86, if the MediaCodec
   // API is available.
   WebRuntimeFeatures::enableWebAudio(
@@ -144,6 +147,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kDisableDisplayList2dCanvas)) {
     WebRuntimeFeatures::enableDisplayList2dCanvas(false);
+  } else if (command_line.HasSwitch(switches::kForceDisplayList2dCanvas)) {
+    WebRuntimeFeatures::forceDisplayList2dCanvas(true);
   } else if (command_line.HasSwitch(switches::kEnableDisplayList2dCanvas)) {
     WebRuntimeFeatures::enableDisplayList2dCanvas(true);
   } else {
@@ -188,6 +193,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableSVG1DOM)) {
     WebRuntimeFeatures::enableSVG1DOM(false);
   }
+
+  if (command_line.HasSwitch(switches::kReducedReferrerGranularity))
+    WebRuntimeFeatures::enableReducedReferrerGranularity(true);
 }
 
 }  // namespace content

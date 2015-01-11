@@ -10,10 +10,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
 #include "printing/metafile.h"
+#include "skia/ext/vector_canvas.h"
 
 #if defined(OS_WIN)
 #include <windows.h>
 #endif
+
+class SkBaseDevice;
 
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID)
 namespace base {
@@ -34,10 +37,6 @@ class PRINTING_EXPORT PdfMetafileSkia : public Metafile {
   // Metafile methods.
   bool Init() override;
   bool InitFromData(const void* src_buffer, uint32 src_buffer_size) override;
-
-  SkBaseDevice* StartPageForVectorCanvas(const gfx::Size& page_size,
-                                         const gfx::Rect& content_area,
-                                         const float& scale_factor) override;
 
   bool StartPage(const gfx::Size& page_size,
                  const gfx::Rect& content_area,
@@ -64,6 +63,8 @@ class PRINTING_EXPORT PdfMetafileSkia : public Metafile {
                   const MacRenderPageParams& params) const override;
 #endif
 
+  bool SaveTo(base::File* file) const override;
+
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID)
   // TODO(vitalybuka): replace with SaveTo().
   bool SaveToFD(const base::FileDescriptor& fd) const;
@@ -72,11 +73,18 @@ class PRINTING_EXPORT PdfMetafileSkia : public Metafile {
   // Return a new metafile containing just the current page in draft mode.
   scoped_ptr<PdfMetafileSkia> GetMetafileForCurrentPage();
 
+  // This method calls StartPage and then returns an appropriate
+  // VectorCanvas implementation bound to the context created by
+  // StartPage or NULL on error.  The skia::VectorCanvas pointer that
+  // is returned is owned by this PdfMetafileSkia object and does not
+  // need to be ref()ed or unref()ed.  The canvas will remain valid
+  // until FinishPage() or FinishDocument() is called.
+  skia::VectorCanvas* GetVectorCanvasForNewPage(const gfx::Size& page_size,
+                                                const gfx::Rect& content_area,
+                                                const float& scale_factor);
+
  private:
   scoped_ptr<PdfMetafileSkiaData> data_;
-
-  // True when finish page is outstanding for current page.
-  bool page_outstanding_;
 
   DISALLOW_COPY_AND_ASSIGN(PdfMetafileSkia);
 };

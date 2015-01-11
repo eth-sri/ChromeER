@@ -7,6 +7,8 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
+#include "content/common/gpu/gpu_memory_buffer_factory.h"
+#include "gpu/command_buffer/service/image_factory.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
@@ -17,26 +19,36 @@ class SurfaceTexture;
 
 namespace content {
 
-class GpuMemoryBufferFactorySurfaceTexture {
+class GpuMemoryBufferFactorySurfaceTexture : public GpuMemoryBufferFactory,
+                                             public gpu::ImageFactory {
  public:
   GpuMemoryBufferFactorySurfaceTexture();
   ~GpuMemoryBufferFactorySurfaceTexture();
 
-  // Creates a SurfaceTexture backed GPU memory buffer with |size| and
-  // |internalformat|. A valid handle is returned on success.
+  static bool IsGpuMemoryBufferConfigurationSupported(
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage);
+
+  // Overridden from GpuMemoryBufferFactory:
+  void GetSupportedGpuMemoryBufferConfigurations(
+      std::vector<Configuration>* configurations) override;
   gfx::GpuMemoryBufferHandle CreateGpuMemoryBuffer(
-      const gfx::GpuMemoryBufferId& id,
+      gfx::GpuMemoryBufferId id,
       const gfx::Size& size,
-      unsigned internalformat);
+      gfx::GpuMemoryBuffer::Format format,
+      gfx::GpuMemoryBuffer::Usage usage,
+      int client_id) override;
+  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                              int client_id) override;
+  gpu::ImageFactory* AsImageFactory() override;
 
-  // Destroy a previously created GPU memory buffer.
-  void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferId& id);
-
-  // Creates a GLImage instance for a GPU memory buffer.
+  // Overridden from gpu::ImageFactory:
   scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
-      const gfx::GpuMemoryBufferId& id,
+      const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat);
+      gfx::GpuMemoryBuffer::Format format,
+      unsigned internalformat,
+      int client_id) override;
 
  private:
   typedef std::pair<int, int> SurfaceTextureMapKey;

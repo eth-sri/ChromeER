@@ -218,9 +218,9 @@ group("browser_dependencies") {
     ]
   }
 
-  if (printing_mode != 0) {
+  if (enable_basic_printing || enable_print_preview) {
     deps += [ "//printing" ]
-    if (printing_mode == 1) {
+    if (enable_print_preview) {
       deps += [ "//chrome/service" ]
     }
   }
@@ -240,6 +240,11 @@ group("child_dependencies") {
       "//chrome/utility",
       "//content/public/child",
       "//third_party/WebKit/public:blink_devtools_frontend_resources",
+    ]
+  }
+  if (cld_version == 0 || cld_version == 2) {
+    deps += [
+      "//third_party/cld_2:cld2_platform_impl",
     ]
   }
 }
@@ -403,6 +408,14 @@ repack("packed_extra_resources") {
   } else {
     output = "$root_out_dir/resources.pak"
   }
+}
+
+# GYP version: chrome/chrome_resources.gyp:browser_tests_pak
+repack("browser_tests_pak") {
+  sources = [
+    "$root_gen_dir/chrome/options_test_resources.pak",
+  ]
+  output = "$root_out_dir/browser_tests.pak"
 }
 
 # Collects per-locale grit files from many sources into global per-locale files.

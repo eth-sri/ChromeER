@@ -9,6 +9,9 @@
 namespace app_list {
 
 SearchResultTileItemView::SearchResultTileItemView() : item_(NULL) {
+  // When |item_| is null, the tile is invisible. Calling SetSearchResult with a
+  // non-null item makes the tile visible.
+  SetVisible(false);
 }
 
 SearchResultTileItemView::~SearchResultTileItemView() {
@@ -43,6 +46,15 @@ void SearchResultTileItemView::SetSearchResult(SearchResult* item) {
 void SearchResultTileItemView::ButtonPressed(views::Button* sender,
                                              const ui::Event& event) {
   item_->Open(event.flags());
+}
+
+bool SearchResultTileItemView::OnKeyPressed(const ui::KeyEvent& event) {
+  if (event.key_code() == ui::VKEY_RETURN) {
+    item_->Open(event.flags());
+    return true;
+  }
+
+  return false;
 }
 
 void SearchResultTileItemView::OnIconChanged() {

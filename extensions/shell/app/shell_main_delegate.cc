@@ -15,6 +15,7 @@
 #include "extensions/shell/browser/shell_content_browser_client.h"
 #include "extensions/shell/common/shell_content_client.h"
 #include "extensions/shell/renderer/shell_content_renderer_client.h"
+#include "extensions/shell/utility/shell_content_utility_client.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
@@ -25,8 +26,10 @@
 #include "components/nacl/common/nacl_switches.h"
 #if defined(OS_LINUX)
 #include "components/nacl/common/nacl_paths.h"
-#include "components/nacl/zygote/nacl_fork_delegate_linux.h"
 #endif  // OS_LINUX
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#include "components/nacl/zygote/nacl_fork_delegate_linux.h"
+#endif  // OS_POSIX && !OS_MACOSX && !OS_ANDROID
 #endif  // !DISABLE_NACL
 
 namespace {
@@ -87,6 +90,11 @@ ShellMainDelegate::CreateContentRendererClient() {
   return renderer_client_.get();
 }
 
+content::ContentUtilityClient* ShellMainDelegate::CreateContentUtilityClient() {
+  utility_client_.reset(CreateShellContentUtilityClient());
+  return utility_client_.get();
+}
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 void ShellMainDelegate::ZygoteStarting(
     ScopedVector<content::ZygoteForkDelegate>* delegates) {
@@ -110,6 +118,11 @@ ShellMainDelegate::CreateShellContentRendererClient() {
   return new ShellContentRendererClient();
 }
 
+content::ContentUtilityClient*
+ShellMainDelegate::CreateShellContentUtilityClient() {
+  return new ShellContentUtilityClient();
+}
+
 void ShellMainDelegate::InitializeResourceBundle() {
   base::FilePath extensions_shell_and_test_pak_path;
   PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
@@ -128,6 +141,9 @@ bool ShellMainDelegate::ProcessNeedsResourceBundle(
          process_type == switches::kRendererProcess ||
 #if !defined(DISABLE_NACL)
          process_type == switches::kNaClLoaderProcess ||
+#endif
+#if defined(OS_MACOSX)
+         process_type == switches::kGpuProcess ||
 #endif
          process_type == switches::kUtilityProcess;
 }

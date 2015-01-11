@@ -11,9 +11,7 @@ using blink::WebEventActionEdge;
 using blink::WebVector;
 using blink::WebString;
 
-class RenderEventRacerLogClient
-    : public IPC::Sender,
-      NON_EXPORTED_BASE(public blink::WebEventRacerLogClient) {
+class RenderEventRacerLogClient : public IPC::Sender, public blink::WebEventRacerLogClient {
 public:
   RenderEventRacerLogClient(int32);
   virtual ~RenderEventRacerLogClient();

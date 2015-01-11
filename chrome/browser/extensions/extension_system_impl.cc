@@ -15,7 +15,6 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/extensions/blacklist.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/declarative_user_script_master.h"
 #include "chrome/browser/extensions/error_console/error_console.h"
@@ -24,7 +23,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/extension_warning_badge_service.h"
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/navigation_observer.h"
 #include "chrome/browser/extensions/shared_module_service.h"
@@ -37,7 +35,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/url_data_source.h"
@@ -55,11 +52,10 @@
 #include "extensions/browser/quota_service.h"
 #include "extensions/browser/runtime_data.h"
 #include "extensions/browser/state_store.h"
-#include "extensions/browser/warning_service.h"
-#include "extensions/browser/warning_set.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
+#include "extensions/common/extensions_client.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_url_handlers.h"
 #include "net/base/escape.h"
@@ -120,8 +116,6 @@ void ExtensionSystemImpl::Shared::InitPrefs() {
       profile_,
       profile_->GetPath().AppendASCII(extensions::kRulesStoreName),
       false));
-
-  blacklist_.reset(new Blacklist(ExtensionPrefs::Get(profile_)));
 
 #if defined(OS_CHROMEOS)
   const user_manager::User* user =
@@ -211,7 +205,7 @@ class ContentVerifierDelegateImpl : public ContentVerifierDelegate {
 
   std::set<base::FilePath> GetBrowserImagePaths(
       const extensions::Extension* extension) override {
-    return extension_file_util::GetBrowserImagePaths(extension);
+    return ExtensionsClient::Get()->GetBrowserImagePaths(extension);
   }
 
   void VerifyFailed(const std::string& extension_id,
@@ -322,7 +316,7 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
       CommandLine::ForCurrentProcess(),
       profile_->GetPath().AppendASCII(extensions::kInstallDirectoryName),
       ExtensionPrefs::Get(profile_),
-      blacklist_.get(),
+      Blacklist::Get(profile_),
       autoupdate_enabled,
       extensions_enabled,
       &ready_));
@@ -383,11 +377,6 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
   // Make the chrome://extension-icon/ resource available.
   content::URLDataSource::Add(profile_, new ExtensionIconSource(profile_));
 
-  warning_service_.reset(new WarningService(profile_));
-  extension_warning_badge_service_.reset(
-      new ExtensionWarningBadgeService(profile_));
-  warning_service_->AddObserver(
-      extension_warning_badge_service_.get());
   error_console_.reset(new ErrorConsole(profile_));
   quota_service_.reset(new QuotaService);
 
@@ -411,10 +400,6 @@ void ExtensionSystemImpl::Shared::Init(bool extensions_enabled) {
 }
 
 void ExtensionSystemImpl::Shared::Shutdown() {
-  if (warning_service_) {
-    warning_service_->RemoveObserver(
-        extension_warning_badge_service_.get());
-  }
   if (content_verifier_.get())
     content_verifier_->Shutdown();
   if (extension_service_)
@@ -459,14 +444,6 @@ LazyBackgroundTaskQueue*
 
 EventRouter* ExtensionSystemImpl::Shared::event_router() {
   return event_router_.get();
-}
-
-WarningService* ExtensionSystemImpl::Shared::warning_service() {
-  return warning_service_.get();
-}
-
-Blacklist* ExtensionSystemImpl::Shared::blacklist() {
-  return blacklist_.get();
 }
 
 ErrorConsole* ExtensionSystemImpl::Shared::error_console() {
@@ -567,14 +544,6 @@ LazyBackgroundTaskQueue* ExtensionSystemImpl::lazy_background_task_queue() {
 
 EventRouter* ExtensionSystemImpl::event_router() {
   return shared_->event_router();
-}
-
-WarningService* ExtensionSystemImpl::warning_service() {
-  return shared_->warning_service();
-}
-
-Blacklist* ExtensionSystemImpl::blacklist() {
-  return shared_->blacklist();
 }
 
 const OneShotEvent& ExtensionSystemImpl::ready() const {

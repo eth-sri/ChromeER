@@ -17,7 +17,6 @@
 #include "android_webview/browser/gl_view_renderer_manager.h"
 #include "android_webview/browser/icon_helper.h"
 #include "android_webview/browser/renderer_host/aw_render_view_host_ext.h"
-#include "android_webview/browser/shared_renderer_state.h"
 #include "android_webview/native/permission/permission_request_handler_client.h"
 #include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
@@ -98,7 +97,11 @@ class AwContents : public FindHelper::Listener,
   void AddVisitedLinks(JNIEnv* env, jobject obj, jobjectArray jvisited_links);
   base::android::ScopedJavaLocalRef<jbyteArray> GetCertificate(
       JNIEnv* env, jobject obj);
-  void RequestNewHitTestDataAt(JNIEnv* env, jobject obj, jint x, jint y);
+  void RequestNewHitTestDataAt(JNIEnv* env,
+                               jobject obj,
+                               jfloat x,
+                               jfloat y,
+                               jfloat touch_major);
   void UpdateLastHitTestData(JNIEnv* env, jobject obj);
   void OnSizeChanged(JNIEnv* env, jobject obj, int w, int h, int ow, int oh);
   void SetViewVisibility(JNIEnv* env, jobject obj, bool visible);
@@ -127,8 +130,6 @@ class AwContents : public FindHelper::Listener,
   void ClearView(JNIEnv* env, jobject obj);
   void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                              jstring url, jstring extra_headers);
-
-  void DrawGL(AwDrawGLInfo* draw_info);
 
   void InvokeGeolocationCallback(JNIEnv* env,
                                  jobject obj,
@@ -192,8 +193,6 @@ class AwContents : public FindHelper::Listener,
   virtual bool RequestDrawGL(bool wait_for_completion) override;
   virtual void PostInvalidate() override;
   virtual void InvalidateOnFunctorDestroy() override;
-  virtual void UpdateParentDrawConstraints() override;
-  virtual void DidSkipCommitFrame() override;
   virtual void OnNewPicture() override;
   virtual gfx::Point GetLocationOnScreen() override;
   virtual void ScrollContainerViewTo(gfx::Vector2d new_value) override;
@@ -221,30 +220,28 @@ class AwContents : public FindHelper::Listener,
   void SetJsOnlineProperty(JNIEnv* env, jobject obj, jboolean network_up);
   void TrimMemory(JNIEnv* env, jobject obj, jint level, jboolean visible);
 
+  void PostMessageToFrame(JNIEnv* env, jobject obj, jstring frame_id,
+      jstring message, jstring source_origin, jstring target_origin,
+      jintArray msgPorts);
+  void CreateMessageChannel(JNIEnv* env, jobject obj, jobject callback);
+
  private:
   void InitDataReductionProxyIfNecessary();
   void InitAutofillIfNecessary(bool enabled);
-
-  void InitializeHardwareDrawIfNeeded();
-  void ReleaseHardwareDrawIfNeeded();
 
   // Geolocation API support
   void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
   void HideGeolocationPrompt(const GURL& origin);
 
   JavaObjectWeakGlobalRef java_ref_;
-  scoped_ptr<content::WebContents> web_contents_;
   scoped_ptr<AwWebContentsDelegate> web_contents_delegate_;
   scoped_ptr<AwContentsClientBridge> contents_client_bridge_;
+  scoped_ptr<content::WebContents> web_contents_;
   scoped_ptr<AwRenderViewHostExt> render_view_host_ext_;
   scoped_ptr<FindHelper> find_helper_;
   scoped_ptr<IconHelper> icon_helper_;
   scoped_ptr<AwContents> pending_contents_;
   BrowserViewRenderer browser_view_renderer_;
-  // SharedRendererState is owned by BrowserViewRenderer.
-  // So keep a raw pointer here.
-  // TODO(hush): remove this pointer from AwContents.
-  SharedRendererState* shared_renderer_state_;
   scoped_ptr<AwPdfExporter> pdf_exporter_;
   scoped_ptr<PermissionRequestHandler> permission_request_handler_;
 

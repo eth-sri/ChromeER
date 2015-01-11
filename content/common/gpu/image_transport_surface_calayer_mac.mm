@@ -13,6 +13,11 @@
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_switches.h"
+#include "ui/gl/gpu_switching_manager.h"
+
+namespace {
+const size_t kFramesToKeepCAContextAfterDiscard = 2;
+}
 
 @interface ImageTransportLayer : CAOpenGLLayer {
   content::CALayerStorageProvider* storageProvider_;
@@ -97,9 +102,13 @@ CALayerStorageProvider::CALayerStorageProvider(
           can_draw_returned_false_count_(0),
           fbo_texture_(0),
           fbo_scale_factor_(1),
-          pending_draw_weak_factory_(this) {}
+          recreate_layer_after_gpu_switch_(false),
+          pending_draw_weak_factory_(this) {
+  ui::GpuSwitchingManager::GetInstance()->AddObserver(this);
+}
 
 CALayerStorageProvider::~CALayerStorageProvider() {
+  ui::GpuSwitchingManager::GetInstance()->RemoveObserver(this);
 }
 
 gfx::Size CALayerStorageProvider::GetRoundedSize(gfx::Size size) {
@@ -131,9 +140,6 @@ bool CALayerStorageProvider::AllocateColorBufferStorage(
   }
   glFlush();
 
-  // Disable the fade-in animation as the layer is changed.
-  ScopedCAActionDisabler disabler;
-
   // Set the parameters that will be used to allocate the CALayer to draw the
   // texture into.
   share_group_context_.reset(CGLRetainContext(context));
@@ -158,10 +164,22 @@ void CALayerStorageProvider::FreeColorBufferStorage() {
 void CALayerStorageProvider::SwapBuffers(
     const gfx::Size& size, float scale_factor) {
   DCHECK(!has_pending_draw_);
+
+  // Recreate the CALayer on the new GPU if a GPU switch has occurred. Note
+  // that the CAContext will retain a reference to the old CALayer until the
+  // call to -[CAContext setLayer:] replaces the old CALayer with the new one.
+  if (recreate_layer_after_gpu_switch_) {
+    [layer_ resetStorageProvider];
+    layer_.reset();
+    recreate_layer_after_gpu_switch_ = false;
+  }
+
+  // Set the pending draw flag only after destroying the old layer (otherwise
+  // destroying it will un-set the flag).
   has_pending_draw_ = true;
 
   // Allocate a CAContext to use to transport the CALayer to the browser
-  // process.
+  // process, if needed.
   if (!context_) {
     base::scoped_nsobject<NSDictionary> dict([[NSDictionary alloc] init]);
     CGSConnectionID connection_id = CGSMainConnectionID();
@@ -170,7 +188,7 @@ void CALayerStorageProvider::SwapBuffers(
     [context_ retain];
   }
 
-  // Allocate a CALayer to use to draw the content.
+  // Allocate a CALayer to use to draw the content, if needed.
   if (!layer_) {
     layer_.reset([[ImageTransportLayer alloc] initWithStorageProvider:this]);
     gfx::Size dip_size(gfx::ToFlooredSize(gfx::ScaleSize(
@@ -182,6 +200,11 @@ void CALayerStorageProvider::SwapBuffers(
     // immediately.
     [context_ setLayer:layer_];
   }
+
+  // Replacing the CAContext's CALayer will sometimes results in an immediate
+  // draw. If that happens, early-out.
+  if (!has_pending_draw_)
+    return;
 
   // Tell CoreAnimation to draw our frame.
   if (gpu_vsync_disabled_ || throttling_disabled_) {
@@ -231,12 +254,27 @@ void CALayerStorageProvider::DiscardBackbuffer() {
   // at the next swap.
   [layer_ resetStorageProvider];
   layer_.reset();
+
+  // If we remove all references to the CAContext in this process, it will be
+  // blanked-out in the browser process (even if the browser process is inside
+  // a NSDisableScreenUpdates block). Ensure that the context is kept around
+  // until a fixed number of frames (determined empirically) have been acked.
+  // http://crbug.com/425819
+  while (previously_discarded_contexts_.size() <
+      kFramesToKeepCAContextAfterDiscard) {
+    previously_discarded_contexts_.push_back(
+        base::scoped_nsobject<CAContext>());
+  }
+  previously_discarded_contexts_.push_back(context_);
+
   context_.reset();
 }
 
 void CALayerStorageProvider::SwapBuffersAckedByBrowser(
     bool disable_throttling) {
   throttling_disabled_ = disable_throttling;
+  if (!previously_discarded_contexts_.empty())
+    previously_discarded_contexts_.pop_front();
 }
 
 CGLContextObj CALayerStorageProvider::LayerShareGroupContext() {
@@ -313,6 +351,10 @@ void CALayerStorageProvider::LayerResetStorageProvider() {
   // If we are providing back-pressure by waiting for a draw, that draw will
   // now never come, so release the pressure now.
   UnblockBrowserIfNeeded();
+}
+
+void CALayerStorageProvider::OnGpuSwitched() {
+  recreate_layer_after_gpu_switch_ = true;
 }
 
 void CALayerStorageProvider::UnblockBrowserIfNeeded() {

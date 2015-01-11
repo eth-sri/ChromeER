@@ -129,44 +129,43 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
     }
 
     private static final String TEST_PAGE_COMMON_HEADERS =
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> " +
-            "<style type=\"text/css\"> " +
-            "   body { " +
-            "      margin: 0px; " +
-            "   } " +
-            "   div { " +
-            "      width:1000px; " +
-            "      height:10000px; " +
-            "      background-color: blue; " +
-            "   } " +
-            "</style> ";
+            "<meta name=\"viewport\" content=\""
+            + "width=device-width, initial-scale=1, minimum-scale=1\"> "
+            + "<style type=\"text/css\"> "
+            + "   body { "
+            + "      margin: 0px; "
+            + "   } "
+            + "   div { "
+            + "      width:1000px; "
+            + "      height:10000px; "
+            + "      background-color: blue; "
+            + "   } "
+            + "</style> ";
     private static final String TEST_PAGE_COMMON_CONTENT = "<div>test div</div> ";
 
     private String makeTestPage(String onscrollObserver, String firstFrameObserver,
             String extraContent) {
         String content = TEST_PAGE_COMMON_CONTENT + extraContent;
         if (onscrollObserver != null) {
-            content +=
-                    "<script> " +
-                    "   window.onscroll = function(oEvent) { " +
-                    "       " + onscrollObserver + ".notifyJava(); " +
-                    "   } " +
-                    "</script>";
+            content += "<script> "
+                     + "   window.onscroll = function(oEvent) { "
+                     + "       " + onscrollObserver + ".notifyJava(); "
+                     + "   } "
+                     + "</script>";
         }
         if (firstFrameObserver != null) {
-            content +=
-                    "<script> " +
-                    "   window.framesToIgnore = 20; " +
-                    "   window.onAnimationFrame = function(timestamp) { " +
-                    "     if (window.framesToIgnore == 0) { " +
-                    "         " + firstFrameObserver + ".notifyJava(); " +
-                    "     } else {" +
-                    "       window.framesToIgnore -= 1; " +
-                    "       window.requestAnimationFrame(window.onAnimationFrame); " +
-                    "     } " +
-                    "   }; " +
-                    "   window.requestAnimationFrame(window.onAnimationFrame); " +
-                    "</script>";
+            content += "<script> "
+                     + "   window.framesToIgnore = 20; "
+                     + "   window.onAnimationFrame = function(timestamp) { "
+                     + "     if (window.framesToIgnore == 0) { "
+                     + "         " + firstFrameObserver + ".notifyJava(); "
+                     + "     } else {"
+                     + "       window.framesToIgnore -= 1; "
+                     + "       window.requestAnimationFrame(window.onAnimationFrame); "
+                     + "     } "
+                     + "   }; "
+                     + "   window.requestAnimationFrame(window.onAnimationFrame); "
+                     + "</script>";
         }
         return CommonResources.makeHtmlPageFrom(TEST_PAGE_COMMON_HEADERS, content);
     }
@@ -197,8 +196,8 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                equal.set((scrollXPix == testContainerView.getScrollX()) &&
-                        (scrollYPix == testContainerView.getScrollY()));
+                equal.set((scrollXPix == testContainerView.getScrollX())
+                        && (scrollYPix == testContainerView.getScrollY()));
             }
         });
         return equal.get();
@@ -225,16 +224,16 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
                         "window.scrollX");
                 String y = executeJavaScriptAndWaitForResult(awContents, contentsClient,
                         "window.scrollY");
-                return (Integer.toString(xCss).equals(x) &&
-                        Integer.toString(yCss).equals(y));
+                return (Integer.toString(xCss).equals(x)
+                        && Integer.toString(yCss).equals(y));
             }
         });
     }
 
     private void assertScrolledToBottomInJs(final AwContents awContents,
             final TestAwContentsClient contentsClient) throws Exception {
-        final String isBottomScript = "window.scrollY == " +
-                "(window.document.documentElement.scrollHeight - window.innerHeight)";
+        final String isBottomScript = "window.scrollY == "
+                + "(window.document.documentElement.scrollHeight - window.innerHeight)";
         poll(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
@@ -348,9 +347,9 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
         final int targetScrollYPix = (int) Math.floor(targetScrollYCss * deviceDIPScale);
 
         final String scrollFromBodyScript =
-                "<script> " +
-                "  window.scrollTo(" + targetScrollXCss + ", " + targetScrollYCss + "); " +
-                "</script> ";
+                "<script> "
+                + "  window.scrollTo(" + targetScrollXCss + ", " + targetScrollYCss + "); "
+                + "</script> ";
 
         final CallbackHelper onScrollToCallbackHelper =
                 testContainerView.getOnScrollToCallbackHelper();
@@ -540,82 +539,6 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
 
     @SmallTest
     @Feature({"AndroidWebView"})
-    public void testScrollToBottomAtPageScaleX0dot5() throws Throwable {
-        // The idea behind this test is to check that scrolling to the bottom on ther renderer side
-        // results in the view also reporting as being scrolled to the bottom.
-        final TestAwContentsClient contentsClient = new TestAwContentsClient();
-        final ScrollTestContainerView testContainerView =
-                (ScrollTestContainerView) createAwTestContainerViewOnMainSync(contentsClient);
-        enableJavaScriptOnUiThread(testContainerView.getAwContents());
-
-        final int targetScrollXCss = 1000;
-        final int targetScrollYCss = 10000;
-
-        final String pageHeaders =
-                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=0.6\"> " +
-                "<style type=\"text/css\"> " +
-                "   div { " +
-                "      width:1000px; " +
-                "      height:10000px; " +
-                "      background-color: blue; " +
-                "   } " +
-                "   body { " +
-                "      margin: 0px; " +
-                "      padding: 0px; " +
-                "   } " +
-                "</style> ";
-
-        loadDataSync(testContainerView.getAwContents(), contentsClient.getOnPageFinishedHelper(),
-                CommonResources.makeHtmlPageFrom(pageHeaders, TEST_PAGE_COMMON_CONTENT),
-                "text/html", false);
-
-        final double deviceDIPScale =
-                DeviceDisplayInfo.create(testContainerView.getContext()).getDIPScale();
-
-        final CallbackHelper onScrollToCallbackHelper =
-                testContainerView.getOnScrollToCallbackHelper();
-        int scrollToCallCount = onScrollToCallbackHelper.getCallCount();
-        executeJavaScriptAndWaitForResult(testContainerView.getAwContents(), contentsClient,
-                "window.scrollTo(" + targetScrollXCss + "," + targetScrollYCss + ")");
-        onScrollToCallbackHelper.waitForCallback(scrollToCallCount);
-
-        getInstrumentation().runOnMainSync(new Runnable() {
-            @Override
-            public void run() {
-                AwContents awContents = testContainerView.getAwContents();
-                int maxHorizontal = awContents.computeHorizontalScrollRange() -
-                                testContainerView.getWidth();
-                int maxVertical = awContents.computeVerticalScrollRange() -
-                                testContainerView.getHeight();
-                // Due to rounding going from CSS -> physical pixels it is possible that more than
-                // one physical pixels corespond to one CSS pixel, which is why we can't do a
-                // simple equality test here.
-                assertTrue(maxHorizontal - awContents.computeHorizontalScrollOffset() < 3);
-                assertTrue(maxVertical - awContents.computeVerticalScrollOffset() < 3);
-            }
-        });
-
-        scrollToCallCount = onScrollToCallbackHelper.getCallCount();
-        executeJavaScriptAndWaitForResult(testContainerView.getAwContents(), contentsClient,
-                "window.scrollTo(0, 0)");
-        onScrollToCallbackHelper.waitForCallback(scrollToCallCount);
-
-        getInstrumentation().runOnMainSync(new Runnable() {
-            @Override
-            public void run() {
-                AwContents awContents = testContainerView.getAwContents();
-                int maxHorizontal = awContents.computeHorizontalScrollRange() -
-                                testContainerView.getWidth();
-                int maxVertical = awContents.computeVerticalScrollRange() -
-                                testContainerView.getHeight();
-                testContainerView.scrollTo(maxHorizontal, maxVertical);
-            }
-        });
-        assertScrolledToBottomInJs(testContainerView.getAwContents(), contentsClient);
-    }
-
-    @SmallTest
-    @Feature({"AndroidWebView"})
     public void testFlingScroll() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final ScrollTestContainerView testContainerView =
@@ -663,8 +586,8 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
         final int maxScrollYPix = runTestOnUiThreadAndGetResult(new Callable<Integer>() {
             @Override
             public Integer call() {
-                return (testContainerView.getAwContents().computeVerticalScrollRange() -
-                    testContainerView.getHeight());
+                return (testContainerView.getAwContents().computeVerticalScrollRange()
+                        - testContainerView.getHeight());
             }
         });
 
@@ -774,9 +697,9 @@ public class AndroidScrollIntegrationTest extends AwTestBase {
         final int targetScrollYPix = dragStepSize * dragSteps;
 
         loadTestPageAndWaitForFirstFrame(testContainerView, contentsClient, null,
-                "<div>" +
-                "  <div style=\"width:10000px; height: 10000px;\"> force scrolling </div>" +
-                "</div>");
+                "<div>"
+                + "  <div style=\"width:10000px; height: 10000px;\"> force scrolling </div>"
+                + "</div>");
 
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override

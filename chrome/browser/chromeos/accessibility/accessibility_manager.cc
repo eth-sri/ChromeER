@@ -36,7 +36,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/browser_resources.h"
 #include "chromeos/audio/chromeos_sounds.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_accessibility_state.h"
@@ -48,12 +47,14 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/file_reader.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_resource.h"
 #include "media/audio/sounds/sounds_manager.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_util.h"
@@ -198,8 +199,9 @@ void InjectChromeVoxContentScript(
   if (!render_view_host)
     return;
   const extensions::Extension* extension =
-      extension_service->extensions()->GetByID(
-          extension_misc::kChromeVoxExtensionId);
+      extensions::ExtensionRegistry::Get(extension_service->profile())
+          ->enabled_extensions()
+          .GetByID(extension_misc::kChromeVoxExtensionId);
 
   // Set a flag to tell ChromeVox that it's just been enabled,
   // so that it won't interrupt our speech feedback enabled message.
@@ -481,7 +483,9 @@ void AccessibilityManager::UpdateLargeCursorFromPref() {
 
 bool AccessibilityManager::IsIncognitoAllowed() {
   // Supervised users can't create incognito-mode windows.
-  return !(user_manager::UserManager::Get()->IsLoggedInAsSupervisedUser());
+  return !user_manager::UserManager::Get()->IsLoggedInAsSupervisedUser() &&
+         !user_manager::UserManager::Get()->
+               IsLoggedInAsRegularSupervisedUser();
 }
 
 bool AccessibilityManager::IsLargeCursorEnabled() {
@@ -802,13 +806,6 @@ void AccessibilityManager::UpdateVirtualKeyboardFromPref() {
     return;
   virtual_keyboard_enabled_ = enabled;
 
-  AccessibilityStatusEventDetails details(
-      ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
-      enabled,
-      ui::A11Y_NOTIFICATION_NONE);
-
-  NotifyAccessibilityStatusChanged(details);
-
 #if defined(USE_ASH) && !defined(USE_ATHENA)
   keyboard::SetAccessibilityKeyboardEnabled(enabled);
   // Note that there are two versions of the on-screen keyboard. A full layout
@@ -823,6 +820,12 @@ void AccessibilityManager::UpdateVirtualKeyboardFromPref() {
   else
     ash::Shell::GetInstance()->DeactivateKeyboard();
 #endif
+
+  AccessibilityStatusEventDetails details(
+      ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
+      enabled,
+      ui::A11Y_NOTIFICATION_NONE);
+  NotifyAccessibilityStatusChanged(details);
 }
 
 bool AccessibilityManager::IsBrailleDisplayConnected() const {

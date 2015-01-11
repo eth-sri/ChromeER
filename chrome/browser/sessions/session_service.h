@@ -15,26 +15,29 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/time/time.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/sessions/base_session_service.h"
-#include "chrome/browser/sessions/session_service_commands.h"
+#include "chrome/browser/sessions/base_session_service_delegate_impl.h"
 #include "chrome/browser/sessions/session_service_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/sessions/session_service_commands.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/ui_base_types.h"
 
 class Profile;
-class SessionCommand;
-struct SessionTab;
-struct SessionWindow;
 
 namespace content {
 class NavigationEntry;
 class WebContents;
-}
+}  // namespace content
+
+namespace sessions {
+class SessionCommand;
+struct SessionTab;
+struct SessionWindow;
+}  // namespace sessions
 
 // SessionService ------------------------------------------------------------
 
@@ -56,7 +59,7 @@ class WebContents;
 // flushed to |SessionBackend| and written to a file. Every so often
 // |SessionService| rebuilds the contents of the file from the open state of the
 // browser.
-class SessionService : public BaseSessionService,
+class SessionService : public BaseSessionServiceDelegateImpl,
                        public KeyedService,
                        public content::NotificationObserver,
                        public chrome::BrowserListObserver {
@@ -99,6 +102,9 @@ class SessionService : public BaseSessionService,
   // checkpoint occurs, such as when the user launches the app and no tabbed
   // browsers are running.
   void MoveCurrentSessionToLastSession();
+
+  // Deletes the last session.
+  void DeleteLastSession();
 
   // Associates a tab with a window.
   void SetTabWindow(const SessionID& window_id,
@@ -197,8 +203,8 @@ class SessionService : public BaseSessionService,
 
   // Callback from GetLastSession.
   // The second parameter is the id of the window that was last active.
-  typedef base::Callback<void(ScopedVector<SessionWindow>, SessionID::id_type)>
-      SessionCallback;
+  typedef base::Callback<void(ScopedVector<sessions::SessionWindow>,
+                         SessionID::id_type)> SessionCallback;
 
   // Fetches the contents of the last session, notifying the callback when
   // done. If the callback is supplied an empty vector of SessionWindows
@@ -207,12 +213,12 @@ class SessionService : public BaseSessionService,
       const SessionCallback& callback,
       base::CancelableTaskTracker* tracker);
 
-  // Overridden from BaseSessionService because we want some UMA reporting on
-  // session update activities.
-  void Save() override;
+  // BaseSessionServiceDelegateImpl:
+  void OnSavedCommands() override;
 
  private:
   // Allow tests to access our innards for testing purposes.
+  FRIEND_TEST_ALL_PREFIXES(SessionServiceTest, SavedSessionNotification);
   FRIEND_TEST_ALL_PREFIXES(SessionServiceTest, RestoreActivation1);
   FRIEND_TEST_ALL_PREFIXES(SessionServiceTest, RestoreActivation2);
   FRIEND_TEST_ALL_PREFIXES(NoStartupWindowTest, DontInitSessionServiceForApps);
@@ -223,15 +229,12 @@ class SessionService : public BaseSessionService,
 
   // Returns true if a window of given |window_type| and |app_type| should get
   // restored upon session restore.
-  bool ShouldRestoreWindowOfType(SessionWindow::WindowType type,
+  bool ShouldRestoreWindowOfType(sessions::SessionWindow::WindowType type,
                                  AppType app_type) const;
 
   // Removes unrestorable windows from the previous windows list.
-  void RemoveUnusedRestoreWindows(std::vector<SessionWindow*>* window_list);
-
-  // Returns true if we have scheduled any commands, or any scheduled commands
-  // have been saved.
-  bool processed_any_commands();
+  void RemoveUnusedRestoreWindows(
+      std::vector<sessions::SessionWindow*>* window_list);
 
   // Implementation of RestoreIfNecessary. If |browser| is non-null and we need
   // to restore, the tabs are added to it, otherwise a new browser is created.
@@ -249,7 +252,7 @@ class SessionService : public BaseSessionService,
 
   // Converts |commands| to SessionWindows and notifies the callback.
   void OnGotSessionCommands(const SessionCallback& callback,
-                            ScopedVector<SessionCommand> commands);
+                            ScopedVector<sessions::SessionCommand> commands);
 
   // Adds commands to commands that will recreate the state of the specified
   // tab. This adds at most kMaxNavigationCountToPersist navigations (in each
@@ -261,7 +264,6 @@ class SessionService : public BaseSessionService,
       content::WebContents* tab,
       int index_in_window,
       bool is_pinned,
-      ScopedVector<SessionCommand>* commands,
       IdToRange* tab_to_available_range);
 
   // Adds commands to create the specified browser, and invokes
@@ -269,7 +271,6 @@ class SessionService : public BaseSessionService,
   // any tabs not in the profile we were created with.
   void BuildCommandsForBrowser(
       Browser* browser,
-      ScopedVector<SessionCommand>* commands,
       IdToRange* tab_to_available_range,
       std::set<SessionID::id_type>* windows_to_track);
 
@@ -278,7 +279,6 @@ class SessionService : public BaseSessionService,
   // returns true). All browsers that are tracked are added to windows_to_track
   // (as long as it is non-null).
   void BuildCommandsFromBrowsers(
-      ScopedVector<SessionCommand>* commands,
       IdToRange* tab_to_available_range,
       std::set<SessionID::id_type>* windows_to_track);
 
@@ -287,7 +287,7 @@ class SessionService : public BaseSessionService,
   void ScheduleResetCommands();
 
   // Schedules the specified command.
-  void ScheduleCommand(scoped_ptr<SessionCommand> command) override;
+  void ScheduleCommand(scoped_ptr<sessions::SessionCommand> command);
 
   // Converts all pending tab/window closes to commands and schedules them.
   void CommitPendingCloses();
@@ -327,8 +327,14 @@ class SessionService : public BaseSessionService,
   // Deletes session data if no windows are open for the current profile.
   void MaybeDeleteSessionOnlyData();
 
+  // Unit test accessors.
+  sessions::BaseSessionService* GetBaseSessionServiceForTest();
+
   // The profile. This may be null during testing.
   Profile* profile_;
+
+  // The owned BaseSessionService.
+  scoped_ptr<sessions::BaseSessionService> base_session_service_;
 
   content::NotificationRegistrar registrar_;
 

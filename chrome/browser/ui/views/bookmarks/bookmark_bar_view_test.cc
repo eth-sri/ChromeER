@@ -318,7 +318,7 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
 
     ViewEventTestBase::TearDown();
     BookmarkBarView::DisableAnimationsForTesting(false);
-    SetConstrainedWindowViewsClient(scoped_ptr<ConstrainedWindowViewsClient>());
+    constrained_window::SetConstrainedWindowViewsClient(nullptr);
 
     browser_content_client_.reset();
     content_client_.reset();
@@ -1042,7 +1042,14 @@ class BookmarkBarViewTest9 : public BookmarkBarViewEventTestBase {
   views::MenuItemView* first_menu_;
 };
 
-VIEW_TEST(BookmarkBarViewTest9, ScrollButtonScrolls)
+// Fails on official cros bot. crbug.com/431427.
+#if defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD)
+#define MAYBE_ScrollButtonScrolls DISABLED_ScrollButtonScrolls
+#else
+#define MAYBE_ScrollButtonScrolls ScrollButtonScrolls
+#endif
+
+VIEW_TEST(BookmarkBarViewTest9, MAYBE_ScrollButtonScrolls)
 
 // Tests up/down/left/enter key messages.
 class BookmarkBarViewTest10 : public BookmarkBarViewEventTestBase {

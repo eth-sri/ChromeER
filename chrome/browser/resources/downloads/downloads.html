@@ -11,9 +11,9 @@
   <script src="chrome://resources/js/util.js"></script>
   <script src="chrome://downloads/downloads.js"></script>
 </head>
-<body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
+<body>
   <header>
-    <h2 i18n-content="downloads"></h2>
+    <h1 i18n-content="downloads"></h1>
     <input id="term" type="search" tabindex=1
         i18n-values="placeholder:searchbutton" autofocus incremental>
   </header>
@@ -27,6 +27,7 @@
       </span>
     </div>
     <div id="downloads-display"></div>
+    <div id="no-downloads-or-results"></div>
   </div>
   <script src="chrome://downloads/strings.js"></script>
   <script src="chrome://resources/js/i18n_template2.js"></script>

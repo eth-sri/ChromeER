@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/pending_task.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/power_monitor/power_monitor_device_source.h"
@@ -232,16 +231,6 @@ void OnStoppedStartupTracing(const base::FilePath& trace_file) {
   VLOG(0) << "Completed startup tracing to " << trace_file.value();
 }
 
-#if defined(USE_AURA)
-bool ShouldInitializeBrowserGpuChannelAndTransportSurface() {
-  return true;
-}
-#elif defined(OS_MACOSX) && !defined(OS_IOS)
-bool ShouldInitializeBrowserGpuChannelAndTransportSurface() {
-  return IsDelegatedRendererEnabled();
-}
-#endif
-
 // Disable optimizations for this block of functions so the compiler doesn't
 // merge them all together. This makes it possible to tell what thread was
 // unresponsive by inspecting the callstack.
@@ -440,6 +429,16 @@ void BrowserMainLoop::EarlyInitialization() {
     }
   }
 #endif  // !defined(OS_IOS)
+
+  if (parsed_command_line_.HasSwitch(switches::kEnableNativeGpuMemoryBuffers)) {
+    BrowserGpuChannelHostFactory::EnableGpuMemoryBufferFactoryUsage(
+        gfx::GpuMemoryBuffer::MAP);
+  }
+
+#if defined(USE_OZONE)
+  BrowserGpuChannelHostFactory::EnableGpuMemoryBufferFactoryUsage(
+      gfx::GpuMemoryBuffer::SCANOUT);
+#endif
 
   if (parts_)
     parts_->PostEarlyInitialization();
@@ -810,7 +809,7 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
   }
 
 #if defined(USE_AURA) || defined(OS_MACOSX)
-  if (ShouldInitializeBrowserGpuChannelAndTransportSurface()) {
+  {
     TRACE_EVENT0("shutdown",
                  "BrowserMainLoop::Subsystem:ImageTransportFactory");
     ImageTransportFactory::Terminate();
@@ -1007,19 +1006,17 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   bool always_uses_gpu = true;
   bool established_gpu_channel = false;
 #if defined(USE_AURA) || defined(OS_MACOSX)
-  if (ShouldInitializeBrowserGpuChannelAndTransportSurface()) {
-    established_gpu_channel = true;
-    if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
-      established_gpu_channel = always_uses_gpu = false;
-    }
-    BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
-    ImageTransportFactory::Initialize();
-#if defined(USE_AURA)
-    if (aura::Env::GetInstance()) {
-      aura::Env::GetInstance()->set_context_factory(GetContextFactory());
-    }
-#endif
+  established_gpu_channel = true;
+  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
+    established_gpu_channel = always_uses_gpu = false;
   }
+  BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
+  ImageTransportFactory::Initialize();
+#if defined(USE_AURA)
+  if (aura::Env::GetInstance()) {
+    aura::Env::GetInstance()->set_context_factory(GetContextFactory());
+  }
+#endif
 #elif defined(OS_ANDROID)
   established_gpu_channel = true;
   BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);

@@ -194,6 +194,11 @@ void EmbeddedWorkerContextClient::workerContextStarted(
       "ExecuteScript");
 }
 
+void EmbeddedWorkerContextClient::didEvaluateWorkerScript(bool success) {
+  Send(new EmbeddedWorkerHostMsg_WorkerScriptEvaluated(
+      embedded_worker_id_, success));
+}
+
 void EmbeddedWorkerContextClient::willDestroyWorkerContext() {
   // At this point OnWorkerRunLoopStopped is already called, so
   // worker_task_runner_->RunsTasksOnCurrentThread() returns false
@@ -307,9 +312,24 @@ void EmbeddedWorkerContextClient::didHandleFetchEvent(
                                  web_response.responseType(),
                                  headers,
                                  web_response.blobUUID().utf8(),
-                                 web_response.blobSize());
+                                 web_response.blobSize(),
+                                 web_response.streamURL());
   script_context_->DidHandleFetchEvent(
       request_id, SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE, response);
+}
+
+void EmbeddedWorkerContextClient::didHandleNotificationClickEvent(
+    int request_id,
+    blink::WebServiceWorkerEventResult result) {
+  DCHECK(script_context_);
+  script_context_->DidHandleNotificationClickEvent(request_id, result);
+}
+
+void EmbeddedWorkerContextClient::didHandlePushEvent(
+    int request_id,
+    blink::WebServiceWorkerEventResult result) {
+  DCHECK(script_context_);
+  script_context_->DidHandlePushEvent(request_id, result);
 }
 
 void EmbeddedWorkerContextClient::didHandleSyncEvent(int request_id) {

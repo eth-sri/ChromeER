@@ -32,10 +32,39 @@ remoting.getChromeMajorVersion = function() {
 };
 
 /**
- * Returns whether the app is running on ChromeOS.
+ * Tests whether we are running on Mac.
  *
- * @return {boolean} True if the app is running on ChromeOS.
+ * @return {boolean} True if the platform is Mac.
  */
-remoting.runningOnChromeOS = function() {
-  return !!navigator.userAgent.match(/\bCrOS\b/);
+remoting.platformIsMac = function() {
+  return navigator.platform.indexOf('Mac') != -1;
+}
+
+/**
+ * Tests whether we are running on Windows.
+ *
+ * @return {boolean} True if the platform is Windows.
+ */
+remoting.platformIsWindows = function() {
+  return (navigator.platform.indexOf('Win32') != -1) ||
+         (navigator.platform.indexOf('Win64') != -1);
+}
+
+/**
+ * Tests whether we are running on Linux.
+ *
+ * @return {boolean} True if the platform is Linux.
+ */
+remoting.platformIsLinux = function() {
+  return (navigator.platform.indexOf('Linux') != -1) &&
+         !remoting.platformIsChromeOS();
+}
+
+/**
+ * Tests whether we are running on ChromeOS.
+ *
+ * @return {boolean} True if the platform is ChromeOS.
+ */
+remoting.platformIsChromeOS = function() {
+  return navigator.userAgent.match(/\bCrOS\b/) != null;
 }

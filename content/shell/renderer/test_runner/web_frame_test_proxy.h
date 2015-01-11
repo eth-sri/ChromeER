@@ -129,10 +129,6 @@ class WebFrameTestProxy : public Base {
     base_proxy_->DidFinishLoad(frame);
   }
 
-  virtual blink::WebNotificationPresenter* notificationPresenter() {
-    return base_proxy_->GetNotificationPresenter();
-  }
-
   virtual void didChangeSelection(bool is_selection_empty) {
     base_proxy_->DidChangeSelection(is_selection_empty);
     Base::didChangeSelection(is_selection_empty);
@@ -267,6 +263,10 @@ class WebFrameTestProxy : public Base {
 
   virtual blink::WebMIDIClient* webMIDIClient() {
     return base_proxy_->GetWebMIDIClient();
+  }
+
+  virtual blink::WebPushClient* pushClient() {
+    return base_proxy_->GetWebPushClient();
   }
 
   virtual bool willCheckAndDispatchMessageEvent(

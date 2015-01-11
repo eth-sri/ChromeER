@@ -541,7 +541,7 @@ class Browser : public TabStripModelObserver,
   content::WebContents* OpenURLFromTab(
       content::WebContents* source,
       const content::OpenURLParams& params) override;
-  void NavigationStateChanged(const content::WebContents* source,
+  void NavigationStateChanged(content::WebContents* source,
                               content::InvalidateTypes changed_flags) override;
   void VisibleSSLStateChanged(const content::WebContents* source) override;
   void AddNewContents(content::WebContents* source,
@@ -597,7 +597,8 @@ class Browser : public TabStripModelObserver,
   void DidNavigateMainFramePostCommit(
       content::WebContents* web_contents) override;
   void DidNavigateToPendingEntry(content::WebContents* web_contents) override;
-  content::JavaScriptDialogManager* GetJavaScriptDialogManager() override;
+  content::JavaScriptDialogManager* GetJavaScriptDialogManager(
+      content::WebContents* source) override;
   content::ColorChooser* OpenColorChooser(
       content::WebContents* web_contents,
       SkColor color,
@@ -730,7 +731,7 @@ class Browser : public TabStripModelObserver,
   //   updates), then scheduled_updates_ is updated for the |source| and update
   //   pair and a task is scheduled (assuming it isn't running already)
   //   that invokes ProcessPendingUIUpdates.
-  void ScheduleUIUpdate(const content::WebContents* source,
+  void ScheduleUIUpdate(content::WebContents* source,
                         unsigned changed_flags);
 
   // Processes all pending updates to the UI that have been scheduled by

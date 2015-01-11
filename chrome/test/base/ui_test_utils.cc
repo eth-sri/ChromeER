@@ -46,9 +46,10 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/find_in_page_observer.h"
-#include "components/app_modal_dialogs/app_modal_dialog.h"
-#include "components/app_modal_dialogs/app_modal_dialog_queue.h"
+#include "components/app_modal/app_modal_dialog.h"
+#include "components/app_modal/app_modal_dialog_queue.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/history/core/browser/history_service_observer.h"
 #include "components/search_engines/template_url_service.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/download_item.h"
@@ -107,7 +108,7 @@ Browser* WaitForBrowserNotInSet(std::set<Browser*> excluded_browsers) {
   return new_browser;
 }
 
-class AppModalDialogWaiter : public AppModalDialogObserver {
+class AppModalDialogWaiter : public app_modal::AppModalDialogObserver {
  public:
   AppModalDialogWaiter()
       : dialog_(NULL) {
@@ -115,7 +116,7 @@ class AppModalDialogWaiter : public AppModalDialogObserver {
   ~AppModalDialogWaiter() override {
   }
 
-  AppModalDialog* Wait() {
+  app_modal::AppModalDialog* Wait() {
     if (dialog_)
       return dialog_;
     message_loop_runner_ = new content::MessageLoopRunner;
@@ -125,7 +126,7 @@ class AppModalDialogWaiter : public AppModalDialogObserver {
   }
 
   // AppModalDialogWaiter:
-  void Notify(AppModalDialog* dialog) override {
+  void Notify(app_modal::AppModalDialog* dialog) override {
     DCHECK(!dialog_);
     dialog_ = dialog;
     if (message_loop_runner_.get() && message_loop_runner_->loop_running())
@@ -133,7 +134,7 @@ class AppModalDialogWaiter : public AppModalDialogObserver {
   }
 
  private:
-  AppModalDialog* dialog_;
+  app_modal::AppModalDialog* dialog_;
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(AppModalDialogWaiter);
@@ -324,8 +325,9 @@ bool GetRelativeBuildDirectory(base::FilePath* build_dir) {
   return true;
 }
 
-AppModalDialog* WaitForAppModalDialog() {
-  AppModalDialogQueue* dialog_queue = AppModalDialogQueue::GetInstance();
+app_modal::AppModalDialog* WaitForAppModalDialog() {
+  app_modal::AppModalDialogQueue* dialog_queue =
+      app_modal::AppModalDialogQueue::GetInstance();
   if (dialog_queue->HasActiveDialog())
     return dialog_queue->active_dialog();
   AppModalDialogWaiter waiter;
@@ -361,14 +363,6 @@ void WaitForTemplateURLServiceToLoad(TemplateURLService* service) {
   message_loop_runner->Run();
 
   ASSERT_TRUE(service->loaded());
-}
-
-void WaitForHistoryToLoad(HistoryService* history_service) {
-  content::WindowedNotificationObserver history_loaded_observer(
-      chrome::NOTIFICATION_HISTORY_LOADED,
-      content::NotificationService::AllSources());
-  if (!history_service->BackendLoaded())
-    history_loaded_observer.Wait();
 }
 
 void DownloadURL(Browser* browser, const GURL& download_url) {
@@ -538,6 +532,45 @@ void HistoryEnumerator::HistoryQueryComplete(
   for (size_t i = 0; i < results->size(); ++i)
     urls_.push_back((*results)[i].url());
   quit_task.Run();
+}
+
+// Wait for HistoryService to load.
+class WaitHistoryLoadedObserver : public history::HistoryServiceObserver {
+ public:
+  explicit WaitHistoryLoadedObserver(content::MessageLoopRunner* runner);
+  ~WaitHistoryLoadedObserver() override;
+
+  // history::HistoryServiceObserver:
+  void OnHistoryServiceLoaded(HistoryService* service) override;
+
+ private:
+  // weak
+  content::MessageLoopRunner* runner_;
+};
+
+WaitHistoryLoadedObserver::WaitHistoryLoadedObserver(
+    content::MessageLoopRunner* runner)
+    : runner_(runner) {
+}
+
+WaitHistoryLoadedObserver::~WaitHistoryLoadedObserver() {
+}
+
+void WaitHistoryLoadedObserver::OnHistoryServiceLoaded(
+    HistoryService* service) {
+  runner_->Quit();
+}
+
+void WaitForHistoryToLoad(HistoryService* history_service) {
+  if (!history_service->BackendLoaded()) {
+    scoped_refptr<content::MessageLoopRunner> runner =
+        new content::MessageLoopRunner;
+    WaitHistoryLoadedObserver observer(runner.get());
+    ScopedObserver<HistoryService, history::HistoryServiceObserver>
+        scoped_observer(&observer);
+    scoped_observer.Add(history_service);
+    runner->Run();
+  }
 }
 
 }  // namespace ui_test_utils

@@ -74,6 +74,7 @@
 #include "net/proxy/proxy_service.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_utils.h"
 #include "net/socket/tcp_client_socket.h"
 #include "net/spdy/spdy_session.h"
 #include "net/ssl/channel_id_service.h"
@@ -800,24 +801,14 @@ void IOThread::InitializeNetworkOptions(const CommandLine& command_line) {
     } else if (command_line.HasSwitch(switches::kEnableSpdy4)) {
       globals_->next_protos = net::NextProtosSpdy4Http2();
       globals_->use_alternate_protocols.set(true);
-    } else if (command_line.HasSwitch(switches::kDisableSpdy31)) {
-      globals_->next_protos = net::NextProtosSpdy3();
-      globals_->use_alternate_protocols.set(true);
     } else if (command_line.HasSwitch(switches::kEnableNpnHttpOnly)) {
       globals_->next_protos = net::NextProtosHttpOnly();
       globals_->use_alternate_protocols.set(false);
-    } else if (command_line.HasSwitch(switches::kEnableWebSocketOverSpdy)) {
-      // Use the current SPDY default (SPDY/3.1).
-      globals_->next_protos = net::NextProtosSpdy31();
-      globals_->use_alternate_protocols.set(true);
     } else {
       // No SPDY command-line flags have been specified. Examine trial groups.
       ConfigureSpdyFromTrial(
           base::FieldTrialList::FindFullName(kSpdyFieldTrialName), globals_);
     }
-
-    if (command_line.HasSwitch(switches::kEnableWebSocketOverSpdy))
-      globals_->enable_websocket_over_spdy.set(true);
   }
 
   ConfigureTCPFastOpen(command_line);
@@ -851,7 +842,7 @@ void IOThread::ConfigureSpdyFromTrial(base::StringPiece spdy_trial_group,
     globals->use_alternate_protocols.set(true);
   } else if (spdy_trial_group.starts_with(
                  kSpdyFieldTrialSpdy31GroupNamePrefix)) {
-    globals->next_protos = net::NextProtosSpdy4Http2();
+    globals->next_protos = net::NextProtosSpdy31();
     globals->use_alternate_protocols.set(true);
   } else if (spdy_trial_group.starts_with(
                  kSpdyFieldTrialSpdy4GroupNamePrefix)) {
@@ -897,11 +888,11 @@ void IOThread::EnableSpdy(const std::string& mode) {
     if (option == kOff) {
       net::HttpStreamFactory::set_spdy_enabled(false);
     } else if (option == kDisableSSL) {
-      globals_->spdy_default_protocol.set(net::kProtoSPDY3);
+      globals_->spdy_default_protocol.set(net::kProtoSPDY31);
       globals_->force_spdy_over_ssl.set(false);
       globals_->force_spdy_always.set(true);
     } else if (option == kSSL) {
-      globals_->spdy_default_protocol.set(net::kProtoSPDY3);
+      globals_->spdy_default_protocol.set(net::kProtoSPDY31);
       globals_->force_spdy_over_ssl.set(true);
       globals_->force_spdy_always.set(true);
     } else if (option == kDisablePing) {
@@ -1031,8 +1022,6 @@ void IOThread::InitializeNetworkSessionParamsFromGlobals(
       &params->use_alternate_protocols);
   globals.alternate_protocol_probability_threshold.CopyToIfSet(
       &params->alternate_protocol_probability_threshold);
-  globals.enable_websocket_over_spdy.CopyToIfSet(
-      &params->enable_websocket_over_spdy);
 
   globals.enable_quic.CopyToIfSet(&params->enable_quic);
   globals.quic_always_require_handshake_confirmation.CopyToIfSet(
@@ -1295,7 +1284,7 @@ net::QuicTagVector IOThread::GetQuicConnectionOptions(
     const CommandLine& command_line,
     const VariationParameters& quic_trial_params) {
   if (command_line.HasSwitch(switches::kQuicConnectionOptions)) {
-    return ParseQuicConnectionOptions(
+    return net::QuicUtils::ParseQuicConnectionOptions(
         command_line.GetSwitchValueASCII(switches::kQuicConnectionOptions));
   }
 
@@ -1308,27 +1297,7 @@ net::QuicTagVector IOThread::GetQuicConnectionOptions(
       return net::QuicTagVector();
   }
 
-  return ParseQuicConnectionOptions(it->second);
-}
-
-// static
-net::QuicTagVector IOThread::ParseQuicConnectionOptions(
-    const std::string& connection_options) {
-  net::QuicTagVector options;
-  std::vector<std::string> tokens;
-  base::SplitString(connection_options, ',', &tokens);
-  // Tokens are expected to be no more than 4 characters long, but we
-  // handle overflow gracefully.
-  for (std::vector<std::string>::iterator token = tokens.begin();
-       token != tokens.end(); ++token) {
-    uint32 option = 0;
-    for (size_t i = token->length() ; i > 0; --i) {
-      option <<= 8;
-      option |= static_cast<unsigned char>((*token)[i - 1]);
-    }
-    options.push_back(static_cast<net::QuicTag>(option));
-  }
-  return options;
+  return net::QuicUtils::ParseQuicConnectionOptions(it->second);
 }
 
 // static

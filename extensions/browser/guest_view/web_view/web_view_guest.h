@@ -86,8 +86,7 @@ class WebViewGuest : public GuestView<WebViewGuest>,
   // GuestViewBase implementation.
   const char* GetAPINamespace() const override;
   int GetTaskPrefix() const override;
-  void CreateWebContents(const std::string& embedder_extension_id,
-                         int embedder_render_process_id,
+  void CreateWebContents(int embedder_render_process_id,
                          const GURL& embedder_site_url,
                          const base::DictionaryValue& create_params,
                          const WebContentsCreatedCallback& callback) override;
@@ -136,7 +135,8 @@ class WebViewGuest : public GuestView<WebViewGuest>,
                    const GURL& url,
                    const std::string& request_method,
                    const base::Callback<void(bool)>& callback) override;
-  content::JavaScriptDialogManager* GetJavaScriptDialogManager() override;
+  content::JavaScriptDialogManager* GetJavaScriptDialogManager(
+      content::WebContents* source) override;
   content::ColorChooser* OpenColorChooser(
       content::WebContents* web_contents,
       SkColor color,
@@ -293,10 +293,6 @@ class WebViewGuest : public GuestView<WebViewGuest>,
       const gfx::Rect& initial_bounds,
       bool user_gesture,
       content::WebContents* new_contents);
-
-  // Destroy unattached new windows that have been opened by this
-  // WebViewGuest.
-  void DestroyUnattachedWindows();
 
   // Requests resolution of a potentially relative URL.
   GURL ResolveURL(const std::string& src);

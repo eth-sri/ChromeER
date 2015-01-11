@@ -21,6 +21,7 @@
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_blink_platform_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
+#include "content/renderer/scheduler/renderer_scheduler.h"
 #include "content/test/mock_render_process.h"
 #include "content/test/test_content_client.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
@@ -60,6 +61,9 @@ namespace content {
 class RendererBlinkPlatformImplNoSandboxImpl
     : public RendererBlinkPlatformImpl {
  public:
+  RendererBlinkPlatformImplNoSandboxImpl(RendererScheduler* scheduler)
+      : RendererBlinkPlatformImpl(scheduler) {}
+
   virtual blink::WebSandboxSupport* sandboxSupport() {
     return NULL;
   }
@@ -67,7 +71,9 @@ class RendererBlinkPlatformImplNoSandboxImpl
 
 RenderViewTest::RendererBlinkPlatformImplNoSandbox::
     RendererBlinkPlatformImplNoSandbox() {
-  blink_platform_impl_.reset(new RendererBlinkPlatformImplNoSandboxImpl());
+  renderer_scheduler_ = RendererScheduler::Create();
+  blink_platform_impl_.reset(
+      new RendererBlinkPlatformImplNoSandboxImpl(renderer_scheduler_.get()));
 }
 
 RenderViewTest::RendererBlinkPlatformImplNoSandbox::
@@ -181,24 +187,28 @@ void RenderViewTest::SetUp() {
 
   mock_process_.reset(new MockRenderProcess);
 
+  ViewMsg_New_Params view_params;
+  view_params.opener_route_id = kOpenerId;
+  view_params.window_was_created_with_opener = false;
+  view_params.renderer_preferences = RendererPreferences();
+  view_params.web_preferences = WebPreferences();
+  view_params.view_id = kRouteId;
+  view_params.main_frame_routing_id = kMainFrameRouteId;
+  view_params.surface_id = kSurfaceId;
+  view_params.session_storage_namespace_id = kInvalidSessionStorageNamespaceId;
+  view_params.frame_name = base::string16();
+  view_params.swapped_out = false;
+  view_params.proxy_routing_id = MSG_ROUTING_NONE;
+  view_params.hidden = false;
+  view_params.never_visible = false;
+  view_params.next_page_id = 1;
+  view_params.initial_size = *InitialSizeParams();
+  view_params.enable_auto_resize = false;
+  view_params.min_size = gfx::Size();
+  view_params.max_size = gfx::Size();
+
   // This needs to pass the mock render thread to the view.
-  RenderViewImpl* view =
-      RenderViewImpl::Create(kOpenerId,
-                             false,  // window_was_created_with_opener
-                             RendererPreferences(),
-                             WebPreferences(),
-                             kRouteId,
-                             kMainFrameRouteId,
-                             kSurfaceId,
-                             kInvalidSessionStorageNamespaceId,
-                             base::string16(),
-                             false,  // is_renderer_created
-                             false,  // swapped_out
-                             MSG_ROUTING_NONE, // proxy_routing_id
-                             false,  // hidden
-                             false,  // never_visible
-                             1,      // next_page_id
-                             blink::WebScreenInfo());
+  RenderViewImpl* view = RenderViewImpl::Create(view_params, false);
   view->AddRef();
   view_ = view;
 }
@@ -399,6 +409,10 @@ ContentBrowserClient* RenderViewTest::CreateContentBrowserClient() {
 
 ContentRendererClient* RenderViewTest::CreateContentRendererClient() {
   return new ContentRendererClient;
+}
+
+scoped_ptr<ViewMsg_Resize_Params> RenderViewTest::InitialSizeParams() {
+  return make_scoped_ptr(new ViewMsg_Resize_Params());
 }
 
 void RenderViewTest::GoToOffset(int offset, const PageState& state) {

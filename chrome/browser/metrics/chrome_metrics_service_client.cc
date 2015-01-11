@@ -45,7 +45,7 @@
 #include "chrome/browser/metrics/android_metrics_provider.h"
 #endif
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/service_process/service_process_control.h"
 #endif
 
@@ -65,6 +65,7 @@
 #include <windows.h>
 #include "base/win/registry.h"
 #include "chrome/browser/metrics/google_update_metrics_provider_win.h"
+#include "components/browser_watcher/watcher_metrics_provider_win.h"
 #endif
 
 #if !defined(OS_CHROMEOS) && !defined(OS_IOS)
@@ -316,6 +317,11 @@ void ChromeMetricsServiceClient::Initialize() {
   google_update_metrics_provider_ = new GoogleUpdateMetricsProviderWin;
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(google_update_metrics_provider_));
+
+  metrics_service_->RegisterMetricsProvider(
+      scoped_ptr<metrics::MetricsProvider>(
+          new browser_watcher::WatcherMetricsProviderWin(
+              chrome::kBrowserExitCodesRegistryPath)));
 #endif  // defined(OS_WIN)
 
 #if defined(ENABLE_PLUGINS)
@@ -398,9 +404,9 @@ void ChromeMetricsServiceClient::OnMemoryDetailCollectionDone() {
 
   DCHECK_EQ(num_async_histogram_fetches_in_progress_, 0);
 
-#if !defined(ENABLE_FULL_PRINTING)
+#if !defined(ENABLE_PRINT_PREVIEW)
   num_async_histogram_fetches_in_progress_ = 1;
-#else  // !ENABLE_FULL_PRINTING
+#else   // !ENABLE_PRINT_PREVIEW
   num_async_histogram_fetches_in_progress_ = 2;
   // Run requests to service and content in parallel.
   if (!ServiceProcessControl::GetInstance()->GetHistograms(callback, timeout)) {
@@ -411,7 +417,7 @@ void ChromeMetricsServiceClient::OnMemoryDetailCollectionDone() {
     // here to make code work even if |GetHistograms()| fired |callback|.
     --num_async_histogram_fetches_in_progress_;
   }
-#endif  // !ENABLE_FULL_PRINTING
+#endif  // !ENABLE_PRINT_PREVIEW
 
   // Set up the callback to task to call after we receive histograms from all
   // child processes. |timeout| specifies how long to wait before absolutely

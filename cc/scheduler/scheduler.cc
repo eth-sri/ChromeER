@@ -5,6 +5,7 @@
 #include "cc/scheduler/scheduler.h"
 
 #include <algorithm>
+
 #include "base/auto_reset.h"
 #include "base/debug/trace_event.h"
 #include "base/debug/trace_event_argument.h"
@@ -28,12 +29,14 @@ BeginFrameSource* SchedulerFrameSourcesConstructor::ConstructPrimaryFrameSource(
     scheduler->primary_frame_source_internal_ =
         BackToBackBeginFrameSource::Create(scheduler->task_runner_.get());
     return scheduler->primary_frame_source_internal_.get();
-  } else if (scheduler->settings_.begin_frame_scheduling_enabled) {
+  } else if (scheduler->settings_.use_external_begin_frame_source) {
     TRACE_EVENT1("cc",
                  "Scheduler::Scheduler()",
                  "PrimaryFrameSource",
-                 "SchedulerClient");
-    return scheduler->client_->ExternalBeginFrameSource();
+                 "ExternalBeginFrameSource");
+    DCHECK(scheduler->primary_frame_source_internal_)
+        << "Need external BeginFrameSource";
+    return scheduler->primary_frame_source_internal_.get();
   } else {
     TRACE_EVENT1("cc",
                  "Scheduler::Scheduler()",
@@ -62,9 +65,9 @@ SchedulerFrameSourcesConstructor::ConstructBackgroundFrameSource(
                "SyntheticBeginFrameSource");
   DCHECK(!(scheduler->background_frame_source_internal_));
   scheduler->background_frame_source_internal_ =
-      SyntheticBeginFrameSource::Create(scheduler->task_runner_.get(),
-                                        scheduler->Now(),
-                                        base::TimeDelta::FromSeconds(1));
+      SyntheticBeginFrameSource::Create(
+          scheduler->task_runner_.get(), scheduler->Now(),
+          scheduler->settings_.background_frame_interval);
   return scheduler->background_frame_source_internal_.get();
 }
 
@@ -74,11 +77,12 @@ Scheduler::Scheduler(
     int layer_tree_host_id,
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     base::PowerMonitor* power_monitor,
+    scoped_ptr<BeginFrameSource> external_begin_frame_source,
     SchedulerFrameSourcesConstructor* frame_sources_constructor)
     : frame_source_(),
       primary_frame_source_(NULL),
       background_frame_source_(NULL),
-      primary_frame_source_internal_(),
+      primary_frame_source_internal_(external_begin_frame_source.Pass()),
       background_frame_source_internal_(),
       vsync_observer_(NULL),
       settings_(scheduler_settings),
@@ -114,6 +118,7 @@ Scheduler::Scheduler(
   primary_frame_source_ =
       frame_sources_constructor->ConstructPrimaryFrameSource(this);
   frame_source_->AddSource(primary_frame_source_);
+  primary_frame_source_->SetClientReady();
 
   // Background ticking frame source
   background_frame_source_ =
@@ -125,6 +130,8 @@ Scheduler::Scheduler(
 
 Scheduler::~Scheduler() {
   TeardownPowerMonitoring();
+  if (frame_source_->NeedsBeginFrames())
+    frame_source_->SetNeedsBeginFrames(false);
 }
 
 base::TimeTicks Scheduler::Now() const {
@@ -197,6 +204,11 @@ void Scheduler::NotifyReadyToActivate() {
   ProcessScheduledActions();
 }
 
+void Scheduler::NotifyReadyToDraw() {
+  // Empty for now, until we take action based on the notification as part of
+  // crbugs 352894, 383157, 421923.
+}
+
 void Scheduler::SetNeedsCommit() {
   state_machine_.SetNeedsCommit();
   ProcessScheduledActions();
@@ -230,11 +242,6 @@ void Scheduler::DidSwapBuffers() {
   if (!inside_process_scheduled_actions_) {
     DCHECK_EQ(state_machine_.NextAction(), SchedulerStateMachine::ACTION_NONE);
   }
-}
-
-void Scheduler::SetSwapUsedIncompleteTile(bool used_incomplete_tile) {
-  state_machine_.SetSwapUsedIncompleteTile(used_incomplete_tile);
-  ProcessScheduledActions();
 }
 
 void Scheduler::DidSwapBuffersComplete() {
@@ -386,6 +393,21 @@ void Scheduler::SetupPollingMechanisms(bool needs_begin_frame) {
 bool Scheduler::OnBeginFrameMixInDelegate(const BeginFrameArgs& args) {
   TRACE_EVENT1("cc", "Scheduler::BeginFrame", "args", args.AsValue());
 
+  // Deliver BeginFrames to children.
+  if (settings_.forward_begin_frames_to_children &&
+      state_machine_.children_need_begin_frames()) {
+    BeginFrameArgs adjusted_args_for_children(args);
+    // Adjust a deadline for child schedulers.
+    // TODO(simonhong): Once we have commitless update, we can get rid of
+    // BeginMainFrameToCommitDurationEstimate() +
+    // CommitToActivateDurationEstimate().
+    adjusted_args_for_children.deadline -=
+        (client_->BeginMainFrameToCommitDurationEstimate() +
+         client_->CommitToActivateDurationEstimate() +
+         client_->DrawDurationEstimate() + EstimatedParentDrawTime());
+    client_->SendBeginFramesToChildren(adjusted_args_for_children);
+  }
+
   // We have just called SetNeedsBeginFrame(true) and the BeginFrameSource has
   // sent us the last BeginFrame we have missed. As we might not be able to
   // actually make rendering for this call, handle it like a "retro frame".
@@ -421,6 +443,12 @@ bool Scheduler::OnBeginFrameMixInDelegate(const BeginFrameArgs& args) {
   return true;
 }
 
+void Scheduler::SetChildrenNeedBeginFrames(bool children_need_begin_frames) {
+  DCHECK(settings_.forward_begin_frames_to_children);
+  state_machine_.SetChildrenNeedBeginFrames(children_need_begin_frames);
+  DCHECK_EQ(state_machine_.NextAction(), SchedulerStateMachine::ACTION_NONE);
+}
+
 // BeginRetroFrame is called for BeginFrames that we've deferred because
 // the scheduler was in the middle of processing a previous BeginFrame.
 void Scheduler::BeginRetroFrame() {
@@ -442,20 +470,16 @@ void Scheduler::BeginRetroFrame() {
   // draining the queue if we don't catch up. If we consistently can't catch
   // up, our fallback should be to lower our frame rate.
   base::TimeTicks now = Now();
-  base::TimeDelta draw_duration_estimate = client_->DrawDurationEstimate();
-  while (!begin_retro_frame_args_.empty()) {
-    base::TimeTicks adjusted_deadline = AdjustedBeginImplFrameDeadline(
-        begin_retro_frame_args_.front(), draw_duration_estimate);
-    if (now <= adjusted_deadline)
-      break;
 
-    TRACE_EVENT_INSTANT2("cc",
-                         "Scheduler::BeginRetroFrame discarding",
-                         TRACE_EVENT_SCOPE_THREAD,
-                         "deadline - now",
-                         (adjusted_deadline - now).InMicroseconds(),
-                         "BeginFrameArgs",
-                         begin_retro_frame_args_.front().AsValue());
+  while (!begin_retro_frame_args_.empty()) {
+    const BeginFrameArgs& args = begin_retro_frame_args_.front();
+    base::TimeTicks expiration_time = args.frame_time + args.interval;
+    if (now <= expiration_time)
+      break;
+    TRACE_EVENT_INSTANT2(
+        "cc", "Scheduler::BeginRetroFrame discarding", TRACE_EVENT_SCOPE_THREAD,
+        "expiration_time - now", (expiration_time - now).InMillisecondsF(),
+        "BeginFrameArgs", begin_retro_frame_args_.front().AsValue());
     begin_retro_frame_args_.pop_front();
     frame_source_->DidFinishFrame(begin_retro_frame_args_.size());
   }
@@ -465,8 +489,9 @@ void Scheduler::BeginRetroFrame() {
                          "Scheduler::BeginRetroFrames all expired",
                          TRACE_EVENT_SCOPE_THREAD);
   } else {
-    BeginImplFrame(begin_retro_frame_args_.front());
+    BeginFrameArgs front = begin_retro_frame_args_.front();
     begin_retro_frame_args_.pop_front();
+    BeginImplFrame(front);
   }
 }
 
@@ -535,18 +560,28 @@ void Scheduler::BeginImplFrame(const BeginFrameArgs& args) {
   ProcessScheduledActions();
 
   state_machine_.OnBeginImplFrameDeadlinePending();
-  ScheduleBeginImplFrameDeadline(
-      AdjustedBeginImplFrameDeadline(args, draw_duration_estimate));
+
+  if (settings_.using_synchronous_renderer_compositor) {
+    // The synchronous renderer compositor has to make its GL calls
+    // within this call.
+    // TODO(brianderson): Have the OutputSurface initiate the deadline tasks
+    // so the synchronous renderer compositor can take advantage of splitting
+    // up the BeginImplFrame and deadline as well.
+    OnBeginImplFrameDeadline();
+  } else {
+    ScheduleBeginImplFrameDeadline(
+        AdjustedBeginImplFrameDeadline(args, draw_duration_estimate));
+  }
 }
 
 base::TimeTicks Scheduler::AdjustedBeginImplFrameDeadline(
     const BeginFrameArgs& args,
     base::TimeDelta draw_duration_estimate) const {
-  if (settings_.using_synchronous_renderer_compositor) {
-    // The synchronous compositor needs to draw right away.
-    return base::TimeTicks();
-  } else if (state_machine_.ShouldTriggerBeginImplFrameDeadlineEarly()) {
+  // The synchronous compositor does not post a deadline task.
+  DCHECK(!settings_.using_synchronous_renderer_compositor);
+  if (state_machine_.ShouldTriggerBeginImplFrameDeadlineEarly()) {
     // We are ready to draw a new active tree immediately.
+    // We don't use Now() here because it's somewhat expensive to call.
     return base::TimeTicks();
   } else if (state_machine_.needs_redraw()) {
     // We have an animation or fast input path on the impl thread that wants
@@ -567,15 +602,7 @@ base::TimeTicks Scheduler::AdjustedBeginImplFrameDeadline(
 void Scheduler::ScheduleBeginImplFrameDeadline(base::TimeTicks deadline) {
   TRACE_EVENT1(
       "cc", "Scheduler::ScheduleBeginImplFrameDeadline", "deadline", deadline);
-  if (settings_.using_synchronous_renderer_compositor) {
-    // The synchronous renderer compositor has to make its GL calls
-    // within this call.
-    // TODO(brianderson): Have the OutputSurface initiate the deadline tasks
-    // so the sychronous renderer compositor can take advantage of splitting
-    // up the BeginImplFrame and deadline as well.
-    OnBeginImplFrameDeadline();
-    return;
-  }
+
   begin_impl_frame_deadline_task_.Cancel();
   begin_impl_frame_deadline_task_.Reset(begin_impl_frame_deadline_closure_);
 
@@ -656,9 +683,6 @@ void Scheduler::ProcessScheduledActions() {
         break;
       case SchedulerStateMachine::ACTION_COMMIT:
         client_->ScheduledActionCommit();
-        break;
-      case SchedulerStateMachine::ACTION_UPDATE_VISIBLE_TILES:
-        client_->ScheduledActionUpdateVisibleTiles();
         break;
       case SchedulerStateMachine::ACTION_ACTIVATE_SYNC_TREE:
         client_->ScheduledActionActivateSyncTree();

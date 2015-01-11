@@ -19,7 +19,6 @@
 #include "base/memory/singleton.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/metrics/stats_table.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
@@ -888,6 +887,10 @@ std::string AboutSandbox() {
                   std::string(),
                   IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX,
                   status & content::kSandboxLinuxSeccompBPF);
+  AboutSandboxRow(&data,
+                  std::string(),
+                  IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX_TSYNC,
+                  status & content::kSandboxLinuxSeccompTSYNC);
   AboutSandboxRow(&data,
                   std::string(),
                   IDS_ABOUT_SANDBOX_YAMA_LSM,

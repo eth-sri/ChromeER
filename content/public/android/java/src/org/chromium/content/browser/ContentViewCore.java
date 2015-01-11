@@ -10,6 +10,7 @@ import android.app.SearchManager;
 import android.content.ClipboardManager;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -190,13 +191,13 @@ public class ContentViewCore
         }
 
         @Override
-        @SuppressWarnings("deprecation")  // AbsoluteLayout
         public void setAnchorViewPosition(
                 View view, float x, float y, float width, float height) {
             mAnchorViews.put(view, new Position(x, y, width, height));
             doSetAnchorViewPosition(view, x, y, width, height);
         }
 
+        @SuppressWarnings("deprecation")  // AbsoluteLayout
         private void doSetAnchorViewPosition(
                 View view, float x, float y, float width, float height) {
             if (view.getParent() == null) {
@@ -356,6 +357,22 @@ public class ContentViewCore
      */
     public interface SmartClipDataListener {
         public void onSmartClipDataExtracted(String text, String html, Rect clipRect);
+    }
+
+    /**
+     * Cast from Context to Activity taking ContextWrapper into account.
+     */
+    public static Activity activityFromContext(Context context) {
+        // Only retrieve the base context if the supplied context is a ContextWrapper but not
+        // an Activity, given that Activity is already a subclass of ContextWrapper.
+        if (context instanceof Activity) {
+            return ((Activity) context);
+        } else if (context instanceof ContextWrapper) {
+            context = ((ContextWrapper) context).getBaseContext();
+            return activityFromContext(context);
+        } else {
+            return null;
+        }
     }
 
     private final Context mContext;
@@ -618,7 +635,7 @@ public class ContentViewCore
                     public void onImeEvent() {
                         mPopupZoomer.hide(true);
                         getContentViewClient().onImeEvent();
-                        if (mFocusedNodeEditable) hideTextHandles();
+                        if (mFocusedNodeEditable) dismissTextHandles();
                     }
 
                     @Override
@@ -700,10 +717,20 @@ public class ContentViewCore
         mRenderCoordinates.reset();
         initPopupZoomer(mContext);
         mImeAdapter = createImeAdapter(mContext);
+        attachImeAdapter();
 
         mAccessibilityInjector = AccessibilityInjector.newInstance(this);
 
         mWebContentsObserver = new WebContentsObserver(mWebContents) {
+            @Override
+            public void didFailLoad(boolean isProvisionalLoad, boolean isMainFrame, int errorCode,
+                    String description, String failingUrl) {
+                // Navigation that fails the provisional load will have the strong binding removed
+                // here. One for which the provisional load is commited will have the strong binding
+                // removed in navigationEntryCommitted() below.
+                if (isProvisionalLoad) determinedProcessVisibility();
+            }
+
             @Override
             public void didNavigateMainFrame(String url, String baseUrl,
                     boolean isNavigationToDifferentPage, boolean isFragmentNavigation) {
@@ -719,6 +746,19 @@ public class ContentViewCore
                 resetScrollInProgress();
                 // No need to reset gesture detection as the detector will have
                 // been destroyed in the RenderWidgetHostView.
+            }
+
+            @Override
+            public void navigationEntryCommitted() {
+                determinedProcessVisibility();
+            }
+
+            private void determinedProcessVisibility() {
+                // Signal to the process management logic that we can now rely on the process
+                // visibility signal for binding management. Before the navigation commits, its
+                // renderer is considered background even if the pending navigation happens in the
+                // foreground renderer.
+                ChildProcessLauncher.determinedVisibility(getCurrentRenderProcessId());
             }
         };
     }
@@ -1085,10 +1125,6 @@ public class ContentViewCore
                 || eventAction == MotionEvent.ACTION_POINTER_UP;
     }
 
-    public void setIgnoreRemainingTouchEvents() {
-        resetGestureDetection();
-    }
-
     public boolean isScrollInProgress() {
         return mTouchScrollInProgress || mPotentiallyActiveFlingCount > 0;
     }
@@ -1270,7 +1306,6 @@ public class ContentViewCore
      * @return The ID of the renderer process that backs this tab or
      *         {@link #INVALID_RENDER_PROCESS_PID} if there is none.
      */
-    @VisibleForTesting
     public int getCurrentRenderProcessId() {
         return nativeGetCurrentRenderProcessId(mNativeContentViewCore);
     }
@@ -1298,6 +1333,10 @@ public class ContentViewCore
     private void hidePopupsAndClearSelection() {
         mUnselectAllOnActionModeDismiss = true;
         hidePopups();
+        // Clear the selection. The selection is cleared on destroying IME
+        // and also here since we may receive destroy first, for example
+        // when focus is lost in webview.
+        clearUserSelection();
     }
 
     private void hidePopupsAndPreserveSelection() {
@@ -1305,12 +1344,23 @@ public class ContentViewCore
         hidePopups();
     }
 
+    private void clearUserSelection() {
+        if (mFocusedNodeEditable) {
+            if (mInputConnection != null) {
+                int selectionEnd = Selection.getSelectionEnd(mEditable);
+                mInputConnection.setSelection(selectionEnd, selectionEnd);
+            }
+        } else if (mImeAdapter != null) {
+            mImeAdapter.unselect();
+        }
+    }
+
     private void hidePopups() {
         hideSelectActionBar();
         hidePastePopup();
         hideSelectPopup();
         mPopupZoomer.hide(false);
-        if (mUnselectAllOnActionModeDismiss) hideTextHandles();
+        if (mUnselectAllOnActionModeDismiss) dismissTextHandles();
     }
 
     private void restoreSelectionPopupsIfNecessary() {
@@ -1339,6 +1389,7 @@ public class ContentViewCore
     @SuppressWarnings("javadoc")
     public void onAttachedToWindow() {
         setAccessibilityState(mAccessibilityManager.isEnabled());
+        setTextHandlesTemporarilyHidden(false);
         restoreSelectionPopupsIfNecessary();
         ScreenOrientationListener.getInstance().addObserver(this, mContext);
         GamepadList.onAttachedToWindow(mContext);
@@ -1351,12 +1402,19 @@ public class ContentViewCore
     @SuppressLint("MissingSuperCall")
     public void onDetachedFromWindow() {
         setInjectedAccessibility(false);
-        hidePopupsAndPreserveSelection();
         mZoomControlsDelegate.dismissZoomPicker();
         unregisterAccessibilityContentObserver();
 
         ScreenOrientationListener.getInstance().removeObserver(this);
         GamepadList.onDetachedFromWindow();
+
+        // WebView uses PopupWindows for handle rendering, which may remain
+        // unintentionally visible even after the WebView has been detached.
+        // Override the handle visibility explicitly to address this, but
+        // preserve the underlying selection for detachment cases like screen
+        // locking and app switching.
+        setTextHandlesTemporarilyHidden(true);
+        hidePopupsAndPreserveSelection();
     }
 
     /**
@@ -1648,6 +1706,10 @@ public class ContentViewCore
         final float dyPix = yPix - yCurrentPix;
         if (dxPix != 0 || dyPix != 0) {
             long time = SystemClock.uptimeMillis();
+            // It's a very real (and valid) possibility that a fling may still
+            // be active when programatically scrolling. Cancelling the fling in
+            // such cases ensures a consistent gesture event stream.
+            if (mPotentiallyActiveFlingCount > 0) nativeFlingCancel(mNativeContentViewCore, time);
             nativeScrollBegin(mNativeContentViewCore, time,
                     xCurrentPix, yCurrentPix, -dxPix, -dyPix);
             nativeScrollBy(mNativeContentViewCore,
@@ -1885,7 +1947,7 @@ public class ContentViewCore
                     i.putExtra(SearchManager.EXTRA_NEW_SEARCH, true);
                     i.putExtra(SearchManager.QUERY, query);
                     i.putExtra(Browser.EXTRA_APPLICATION_ID, getContext().getPackageName());
-                    if (!(getContext() instanceof Activity)) {
+                    if (activityFromContext(getContext()) == null) {
                         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     }
                     try {
@@ -1909,13 +1971,8 @@ public class ContentViewCore
                 public void onDestroyActionMode() {
                     mActionMode = null;
                     if (mUnselectAllOnActionModeDismiss) {
-                        hideTextHandles();
-                        if (isSelectionEditable()) {
-                            int selectionEnd = Selection.getSelectionEnd(mEditable);
-                            mInputConnection.setSelection(selectionEnd, selectionEnd);
-                        } else {
-                            mImeAdapter.unselect();
-                        }
+                        dismissTextHandles();
+                        clearUserSelection();
                     }
                     getContentViewClient().onContextualActionBarHidden();
                 }
@@ -2053,10 +2110,15 @@ public class ContentViewCore
         getContentViewClient().onSelectionEvent(eventType, posXDip * scale, posYDip * scale);
     }
 
-    private void hideTextHandles() {
+    private void dismissTextHandles() {
         mHasSelection = false;
         mHasInsertion = false;
-        if (mNativeContentViewCore != 0) nativeHideTextHandles(mNativeContentViewCore);
+        if (mNativeContentViewCore != 0) nativeDismissTextHandles(mNativeContentViewCore);
+    }
+
+    private void setTextHandlesTemporarilyHidden(boolean hide) {
+        if (mNativeContentViewCore == 0) return;
+        nativeSetTextHandlesTemporarilyHidden(mNativeContentViewCore, hide);
     }
 
     /**
@@ -2206,7 +2268,7 @@ public class ContentViewCore
         for (int i = 0; i < items.length; i++) {
             popupItems.add(new SelectPopupItem(items[i], enabled[i]));
         }
-        if (DeviceFormFactor.isTablet(mContext) && !multiple) {
+        if (DeviceFormFactor.isTablet(mContext) && !multiple && !isTouchExplorationEnabled()) {
             mSelectPopup = new SelectPopupDropdown(this, popupItems, bounds, selectedIndices);
         } else {
             mSelectPopup = new SelectPopupDialog(this, popupItems, multiple, selectedIndices);
@@ -2306,7 +2368,7 @@ public class ContentViewCore
                     @Override
                     public void paste() {
                         mImeAdapter.paste();
-                        hideTextHandles();
+                        dismissTextHandles();
                     }
                 });
         }
@@ -2343,7 +2405,10 @@ public class ContentViewCore
      * @see View#hasFocus()
      */
     @CalledByNative
-    public boolean hasFocus() {
+    private boolean hasFocus() {
+        // If the container view is not focusable, we consider it always focused from
+        // Chromium's point of view.
+        if (!mContainerView.isFocusable()) return true;
         return mContainerView.hasFocus();
     }
 
@@ -2977,7 +3042,9 @@ public class ContentViewCore
 
     private native void nativeMoveCaret(long nativeContentViewCoreImpl, float x, float y);
 
-    private native void nativeHideTextHandles(long nativeContentViewCoreImpl);
+    private native void nativeDismissTextHandles(long nativeContentViewCoreImpl);
+    private native void nativeSetTextHandlesTemporarilyHidden(
+            long nativeContentViewCoreImpl, boolean hidden);
 
     private native void nativeResetGestureDetection(long nativeContentViewCoreImpl);
 

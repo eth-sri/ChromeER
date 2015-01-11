@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import "mojo/public/interfaces/bindings/tests/rect.mojom";
-
 [JavaPackage="org.chromium.mojo.bindings.test.mojom.test_structs"]
-module mojo.test {
+module mojo.test;
+
+import "mojo/public/interfaces/bindings/tests/rect.mojom";
 
 struct NamedRegion {
   string? name;
@@ -136,6 +136,9 @@ struct MapValueTypes {
   map<string, array<string, 2>> f3;
   map<string, array<array<string, 2>?>> f4;
   map<string, array<array<string, 2>, 1>> f5;
+  map<string, Rect?> f6;
+  // TODO(hansmuller, yzshen): Uncomment these once the JavaScript bindings
+  // generator is fixed.
+  // map<string, map<string, string>> f7;
+  // map<string, array<map<string, string>>> f8;
 };
-
-}

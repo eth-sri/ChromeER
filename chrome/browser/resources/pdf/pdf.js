@@ -60,7 +60,7 @@ function PDFViewer(streamDetails) {
   // element is sized to fill the entire window and is set to be fixed
   // positioning, acting as a viewport. The plugin renders into this viewport
   // according to the scroll position of the window.
-  this.plugin_ = document.createElement('object');
+  this.plugin_ = document.createElement('embed');
   // NOTE: The plugin's 'id' field must be set to 'plugin' since
   // chrome/renderer/printing/print_web_view_helper.cc actually references it.
   this.plugin_.id = 'plugin';
@@ -84,7 +84,7 @@ function PDFViewer(streamDetails) {
   }
   this.plugin_.setAttribute('headers', headers);
 
-  if (window.top == window)
+  if (!this.streamDetails.embedded)
     this.plugin_.setAttribute('full-frame', '');
   document.body.appendChild(this.plugin_);
 
@@ -106,17 +106,20 @@ function PDFViewer(streamDetails) {
       this.viewport_.zoomIn.bind(this.viewport_));
   $('zoom-out-button').addEventListener('click',
       this.viewport_.zoomOut.bind(this.viewport_));
-  $('save-button-link').href = this.streamDetails.originalUrl;
+  $('save-button').addEventListener('click', this.save_.bind(this));
   $('print-button').addEventListener('click', this.print_.bind(this));
 
   // Setup the keyboard event listener.
   document.onkeydown = this.handleKeyEvent_.bind(this);
 
   // Set up the zoom API.
-  if (chrome.tabs) {
-    chrome.tabs.setZoomSettings({mode: 'manual', scope: 'per-tab'},
+  if (this.shouldManageZoom_()) {
+    chrome.tabs.setZoomSettings(this.streamDetails.tabId,
+                                {mode: 'manual', scope: 'per-tab'},
                                 this.afterZoom_.bind(this));
     chrome.tabs.onZoomChange.addListener(function(zoomChangeInfo) {
+      if (zoomChangeInfo.tabId != this.streamDetails.tabId)
+        return;
       // If the zoom level is close enough to the current zoom level, don't
       // change it. This avoids us getting into an infinite loop of zoom changes
       // due to floating point error.
@@ -225,15 +228,6 @@ PDFViewer.prototype = {
           });
         }
         return;
-      case 83:  // s key.
-        if (e.ctrlKey || e.metaKey) {
-          // Simulate a click on the button so that the <a download ...>
-          // attribute is used.
-          $('save-button-link').click();
-          // Since we do the saving of the page.
-          e.preventDefault();
-        }
-        return;
       case 80:  // p key.
         if (e.ctrlKey || e.metaKey) {
           this.print_();
@@ -265,6 +259,16 @@ PDFViewer.prototype = {
   print_: function() {
     this.plugin_.postMessage({
       type: 'print',
+    });
+  },
+
+  /**
+   * @private
+   * Notify the plugin to save.
+   */
+  save_: function() {
+    this.plugin_.postMessage({
+      type: 'save',
     });
   },
 
@@ -342,7 +346,6 @@ PDFViewer.prototype = {
       case 'documentDimensions':
         this.documentDimensions_ = message.data;
         this.viewport_.setDocumentDimensions(this.documentDimensions_);
-        this.toolbar_.style.visibility = 'visible';
         // If we received the document dimensions, the password was good so we
         // can dismiss the password screen.
         if (this.passwordScreen_.active)
@@ -420,9 +423,10 @@ PDFViewer.prototype = {
   afterZoom_: function() {
     var position = this.viewport_.position;
     var zoom = this.viewport_.zoom;
-    if (chrome.tabs && !this.setZoomInProgress_) {
+    if (this.shouldManageZoom_() && !this.setZoomInProgress_) {
       this.setZoomInProgress_ = true;
-      chrome.tabs.setZoom(zoom, this.setZoomComplete_.bind(this, zoom));
+      chrome.tabs.setZoom(this.streamDetails.tabId, zoom,
+                          this.setZoomComplete_.bind(this, zoom));
     }
     this.plugin_.postMessage({
       type: 'viewport',
@@ -442,10 +446,12 @@ PDFViewer.prototype = {
    */
   setZoomComplete_: function(lastZoom) {
     var zoom = this.viewport_.zoom;
-    if (zoom != lastZoom)
-      chrome.tabs.setZoom(zoom, this.setZoomComplete_.bind(this, zoom));
-    else
+    if (zoom != lastZoom) {
+      chrome.tabs.setZoom(this.streamDetails.tabId, zoom,
+                          this.setZoomComplete_.bind(this, zoom));
+    } else {
       this.setZoomInProgress_ = false;
+    }
   },
 
   /**
@@ -477,6 +483,11 @@ PDFViewer.prototype = {
       toolbarBottom -= scrollbarWidth;
     this.toolbar_.style.right = toolbarRight + 'px';
     this.toolbar_.style.bottom = toolbarBottom + 'px';
+    // Hide the toolbar if it doesn't fit in the viewport.
+    if (this.toolbar_.offsetLeft < 0 || this.toolbar_.offsetTop < 0)
+      this.toolbar_.style.visibility = 'hidden';
+    else
+      this.toolbar_.style.visibility = 'visible';
 
     // Update the page indicator.
     var visiblePage = this.viewport_.getMostVisiblePage();
@@ -561,6 +572,17 @@ PDFViewer.prototype = {
    */
   sendScriptingMessage_: function(message) {
     window.parent.postMessage(message, '*');
+  },
+
+  /**
+   * @private
+   * Return whether this PDFViewer should manage zoom for its containing page.
+   * @return {boolean} Whether this PDFViewer should manage zoom for its
+   *     containing page.
+   */
+  shouldManageZoom_: function() {
+    return !!(chrome.tabs && !this.streamDetails.embedded &&
+              this.streamDetails.tabId != -1);
   },
 
   /**

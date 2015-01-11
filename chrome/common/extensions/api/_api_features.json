@@ -44,7 +44,8 @@
       "3727DD3E564B6055387425027AD74C58784ACC15",  // Quickoffice internal
       "12E618C3C6E97495AAECF2AC12DEB082353241C6",  // QO component extension
       "06BE211D5F014BAB34BC22D9DDA09C63A81D828E",  // Official xkb extension
-      "F94EE6AB36D6C6588670B2B01EB65212D9C64E33"   // Open source xkb extension
+      "F94EE6AB36D6C6588670B2B01EB65212D9C64E33",  // Open source xkb extension
+      "B9EF10DDFEA11EF77873CC5009809E5037FC4C7A"   // Google input tools
     ],
     "channel": "stable",
     "extension_types": ["hosted_app", "extension", "legacy_packaged_app"],
@@ -174,7 +175,7 @@
     "internal": true,
     "channel": "dev",
     "contexts": ["webui"],
-    "matches": ["chrome://chrome-signin/*"]
+    "matches": ["chrome://chrome-signin/*", "chrome://oobe/*"]
   }],
   "cloudPrintPrivate": {
     "dependencies": ["permission:cloudPrintPrivate"],
@@ -248,6 +249,11 @@
   },
   "dial": {
     "dependencies": ["permission:dial"],
+    "contexts": ["blessed_extension"]
+  },
+  "documentScan": {
+    "platforms": ["chromeos"],
+    "dependencies": ["permission:documentScan"],
     "contexts": ["blessed_extension"]
   },
   "downloads": {
@@ -463,6 +469,10 @@
     "dependencies": ["permission:inputMethodPrivate"],
     "contexts": ["blessed_extension"]
   },
+  "launcherPage": {
+    "dependencies": ["manifest:launcher_page"],
+    "contexts": ["blessed_extension"]
+  },
   "location": {
     "dependencies": ["permission:location"],
     "contexts": ["blessed_extension"]
@@ -474,25 +484,6 @@
   "webcamPrivate": {
     "dependencies": ["permission:webcamPrivate"],
     "contexts": ["blessed_extension"]
-  },
-  "management": {
-    "dependencies": ["permission:management"],
-    "contexts": ["blessed_extension"]
-  },
-  "management.getPermissionWarningsByManifest": {
-    "dependencies": [],
-    "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
-  },
-  "management.getSelf": {
-    "dependencies": [],
-    "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
-  },
-  "management.uninstallSelf": {
-    "dependencies": [],
-    "channel": "stable",
-    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
   },
   // This is not a real API, only here for documentation purposes.
   // See http://crbug.com/275944 for background.

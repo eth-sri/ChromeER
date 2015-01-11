@@ -6,8 +6,6 @@
 
 #include <algorithm>
 
-#include "ash/ime/input_method_menu_item.h"
-#include "ash/ime/input_method_menu_manager.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -23,14 +21,16 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "chromeos/ime/extension_ime_util.h"
-#include "chromeos/ime/fake_ime_keyboard.h"
-#include "chromeos/ime/fake_input_method_delegate.h"
-#include "chromeos/ime/mock_component_extension_ime_manager_delegate.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/accelerators/accelerator.h"
+#include "ui/base/ime/chromeos/extension_ime_util.h"
+#include "ui/base/ime/chromeos/fake_ime_keyboard.h"
+#include "ui/base/ime/chromeos/fake_input_method_delegate.h"
+#include "ui/base/ime/chromeos/mock_component_extension_ime_manager_delegate.h"
 #include "ui/base/ime/chromeos/mock_ime_engine_handler.h"
 #include "ui/base/ime/input_method_initializer.h"
+#include "ui/chromeos/ime/input_method_menu_item.h"
+#include "ui/chromeos/ime/input_method_menu_manager.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace chromeos {
@@ -61,7 +61,7 @@ std::string ImeIdFromEngineId(const std::string& id) {
 }
 
 class TestObserver : public InputMethodManager::Observer,
-                     public ash::ime::InputMethodMenuManager::Observer {
+                     public ui::ime::InputMethodMenuManager::Observer {
  public:
   TestObserver()
       : input_method_changed_count_(0),
@@ -76,7 +76,7 @@ class TestObserver : public InputMethodManager::Observer,
     last_show_message_ = show_message;
   }
   virtual void InputMethodMenuItemChanged(
-      ash::ime::InputMethodMenuManager* manager) override {
+      ui::ime::InputMethodMenuManager* manager) override {
     ++input_method_menu_item_changed_count_;
   }
 
@@ -141,7 +141,7 @@ class InputMethodManagerImplTest :  public BrowserWithTestWindowTest {
     IMEBridge::Initialize();
     IMEBridge::Get()->SetCurrentEngineHandler(mock_engine_handler_.get());
 
-    menu_manager_ = ash::ime::InputMethodMenuManager::GetInstance();
+    menu_manager_ = ui::ime::InputMethodMenuManager::GetInstance();
 
     InitImeList();
 
@@ -168,6 +168,8 @@ class InputMethodManagerImplTest :  public BrowserWithTestWindowTest {
     mock_delegate_->set_ime_list(ime_list_);
     scoped_ptr<ComponentExtensionIMEManagerDelegate> delegate(mock_delegate_);
 
+    // CreateNewState(NULL) returns state with non-empty current_input_method.
+    // So SetState() triggers ChangeInputMethod().
     manager_->SetState(manager_->CreateNewState(NULL));
 
     std::vector<std::string> layouts;
@@ -325,7 +327,7 @@ class InputMethodManagerImplTest :  public BrowserWithTestWindowTest {
   FakeImeKeyboard* keyboard_;
   MockComponentExtIMEManagerDelegate* mock_delegate_;
   std::vector<ComponentExtensionIME> ime_list_;
-  ash::ime::InputMethodMenuManager* menu_manager_;
+  ui::ime::InputMethodMenuManager* menu_manager_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InputMethodManagerImplTest);
@@ -366,12 +368,13 @@ TEST_F(InputMethodManagerImplTest, TestObserver) {
   manager_->GetActiveIMEState()->EnableLoginLayouts("en-US", keyboard_layouts);
   EXPECT_EQ(5U, manager_->GetActiveIMEState()->GetActiveInputMethods()->size());
   EXPECT_EQ(1, observer.input_method_changed_count_);
-  EXPECT_EQ(1, observer.input_method_menu_item_changed_count_);
+  // Menu change is triggered only if current input method was actually changed.
+  EXPECT_EQ(0, observer.input_method_menu_item_changed_count_);
   manager_->GetActiveIMEState()->ChangeInputMethod(
       ImeIdFromEngineId("xkb:us:dvorak:eng"), false /* show_message */);
   EXPECT_FALSE(observer.last_show_message_);
   EXPECT_EQ(2, observer.input_method_changed_count_);
-  EXPECT_EQ(2, observer.input_method_menu_item_changed_count_);
+  EXPECT_EQ(1, observer.input_method_menu_item_changed_count_);
   manager_->GetActiveIMEState()->ChangeInputMethod(
       ImeIdFromEngineId("xkb:us:dvorak:eng"), false /* show_message */);
   EXPECT_FALSE(observer.last_show_message_);
@@ -383,7 +386,7 @@ TEST_F(InputMethodManagerImplTest, TestObserver) {
 
   // If the same input method ID is passed, PropertyChanged() is not
   // notified.
-  EXPECT_EQ(2, observer.input_method_menu_item_changed_count_);
+  EXPECT_EQ(1, observer.input_method_menu_item_changed_count_);
 
   manager_->RemoveObserver(&observer);
   menu_manager_->RemoveObserver(&observer);
@@ -514,8 +517,8 @@ TEST_F(InputMethodManagerImplTest, TestActiveInputMethods) {
 TEST_F(InputMethodManagerImplTest, TestEnableTwoLayouts) {
   // For http://crbug.com/19655#c11 - (8), step 6.
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us:dvorak:eng"));
@@ -542,8 +545,8 @@ TEST_F(InputMethodManagerImplTest, TestEnableTwoLayouts) {
 TEST_F(InputMethodManagerImplTest, TestEnableThreeLayouts) {
   // For http://crbug.com/19655#c11 - (9).
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us::eng"));
@@ -575,8 +578,8 @@ TEST_F(InputMethodManagerImplTest, TestEnableThreeLayouts) {
 TEST_F(InputMethodManagerImplTest, TestEnableLayoutAndIme) {
   // For http://crbug.com/19655#c11 - (10).
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us:dvorak:eng"));
@@ -604,8 +607,8 @@ TEST_F(InputMethodManagerImplTest, TestEnableLayoutAndIme) {
 TEST_F(InputMethodManagerImplTest, TestEnableLayoutAndIme2) {
   // For http://crbug.com/19655#c11 - (11).
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us:dvorak:eng"));
@@ -628,8 +631,8 @@ TEST_F(InputMethodManagerImplTest, TestEnableLayoutAndIme2) {
 
 TEST_F(InputMethodManagerImplTest, TestEnableImes) {
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId(kExt2Engine1Id));
@@ -644,8 +647,8 @@ TEST_F(InputMethodManagerImplTest, TestEnableImes) {
 
 TEST_F(InputMethodManagerImplTest, TestEnableUnknownIds) {
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back("xkb:tl::tlh");  // Klingon, which is not supported.
@@ -662,8 +665,8 @@ TEST_F(InputMethodManagerImplTest, TestEnableUnknownIds) {
 TEST_F(InputMethodManagerImplTest, TestEnableLayoutsThenLock) {
   // For http://crbug.com/19655#c11 - (14).
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us::eng"));
@@ -712,8 +715,8 @@ TEST_F(InputMethodManagerImplTest, TestEnableLayoutsThenLock) {
 TEST_F(InputMethodManagerImplTest, SwitchInputMethodTest) {
   // For http://crbug.com/19655#c11 - (15).
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us:dvorak:eng"));
@@ -764,8 +767,10 @@ TEST_F(InputMethodManagerImplTest, SwitchInputMethodTest) {
 }
 
 TEST_F(InputMethodManagerImplTest, TestXkbSetting) {
+  EXPECT_EQ(0, keyboard_->set_current_keyboard_layout_by_name_count_);
   // For http://crbug.com/19655#c11 - (8), step 7-11.
   InitComponentExtension();
+  EXPECT_EQ(1, keyboard_->set_current_keyboard_layout_by_name_count_);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us:dvorak:eng"));
@@ -774,33 +779,33 @@ TEST_F(InputMethodManagerImplTest, TestXkbSetting) {
   ids.push_back(ImeIdFromEngineId(kNaclMozcUsId));
   EXPECT_TRUE(manager_->GetActiveIMEState()->ReplaceEnabledInputMethods(ids));
   EXPECT_EQ(4U, manager_->GetActiveIMEState()->GetNumActiveInputMethods());
-  EXPECT_EQ(1, keyboard_->set_current_keyboard_layout_by_name_count_);
+  EXPECT_EQ(2, keyboard_->set_current_keyboard_layout_by_name_count_);
   // See input_methods.txt for an expected XKB layout name.
   EXPECT_EQ("us(dvorak)", keyboard_->last_layout_);
   manager_->GetActiveIMEState()->SwitchToNextInputMethod();
-  EXPECT_EQ(2, keyboard_->set_current_keyboard_layout_by_name_count_);
+  EXPECT_EQ(3, keyboard_->set_current_keyboard_layout_by_name_count_);
   EXPECT_EQ("us(colemak)", keyboard_->last_layout_);
   manager_->GetActiveIMEState()->SwitchToNextInputMethod();
-  EXPECT_EQ(3, keyboard_->set_current_keyboard_layout_by_name_count_);
+  EXPECT_EQ(4, keyboard_->set_current_keyboard_layout_by_name_count_);
   EXPECT_EQ("jp", keyboard_->last_layout_);
   manager_->GetActiveIMEState()->SwitchToNextInputMethod();
-  EXPECT_EQ(4, keyboard_->set_current_keyboard_layout_by_name_count_);
+  EXPECT_EQ(5, keyboard_->set_current_keyboard_layout_by_name_count_);
   EXPECT_EQ("us", keyboard_->last_layout_);
   manager_->GetActiveIMEState()->SwitchToNextInputMethod();
-  EXPECT_EQ(5, keyboard_->set_current_keyboard_layout_by_name_count_);
+  EXPECT_EQ(6, keyboard_->set_current_keyboard_layout_by_name_count_);
   EXPECT_EQ("us(dvorak)", keyboard_->last_layout_);
   // Disable Dvorak.
   ids.erase(ids.begin());
   EXPECT_TRUE(manager_->GetActiveIMEState()->ReplaceEnabledInputMethods(ids));
   EXPECT_EQ(3U, manager_->GetActiveIMEState()->GetNumActiveInputMethods());
-  EXPECT_EQ(6, keyboard_->set_current_keyboard_layout_by_name_count_);
+  EXPECT_EQ(7, keyboard_->set_current_keyboard_layout_by_name_count_);
   EXPECT_EQ("us(colemak)", keyboard_->last_layout_);
 }
 
 TEST_F(InputMethodManagerImplTest, TestActivateInputMethodMenuItem) {
   const std::string kKey = "key";
-  ash::ime::InputMethodMenuItemList menu_list;
-  menu_list.push_back(ash::ime::InputMethodMenuItem(
+  ui::ime::InputMethodMenuItemList menu_list;
+  menu_list.push_back(ui::ime::InputMethodMenuItem(
       kKey, "label", false, false));
   menu_manager_->SetCurrentInputMethodMenuItemList(menu_list);
 
@@ -826,8 +831,8 @@ TEST_F(InputMethodManagerImplTest, TestGetCurrentInputMethodProperties) {
   manager_->GetActiveIMEState()->ChangeInputMethod(
       ImeIdFromEngineId(kNaclMozcUsId), false /* show_message */);
 
-  ash::ime::InputMethodMenuItemList current_property_list;
-  current_property_list.push_back(ash::ime::InputMethodMenuItem(
+  ui::ime::InputMethodMenuItemList current_property_list;
+  current_property_list.push_back(ui::ime::InputMethodMenuItem(
       "key", "label", false, false));
   menu_manager_->SetCurrentInputMethodMenuItemList(current_property_list);
 
@@ -852,8 +857,8 @@ TEST_F(InputMethodManagerImplTest, TestGetCurrentInputMethodPropertiesTwoImes) {
   EXPECT_EQ(2U, manager_->GetActiveIMEState()->GetNumActiveInputMethods());
   EXPECT_TRUE(menu_manager_->GetCurrentInputMethodMenuItemList().empty());
 
-  ash::ime::InputMethodMenuItemList current_property_list;
-  current_property_list.push_back(ash::ime::InputMethodMenuItem("key-mozc",
+  ui::ime::InputMethodMenuItemList current_property_list;
+  current_property_list.push_back(ui::ime::InputMethodMenuItem("key-mozc",
                                                                 "label",
                                                                 false,
                                                                 false));
@@ -870,7 +875,7 @@ TEST_F(InputMethodManagerImplTest, TestGetCurrentInputMethodPropertiesTwoImes) {
 
   // Asynchronous property update signal from mozc-chewing.
   current_property_list.clear();
-  current_property_list.push_back(ash::ime::InputMethodMenuItem(
+  current_property_list.push_back(ui::ime::InputMethodMenuItem(
       "key-chewing", "label", false, false));
   menu_manager_->SetCurrentInputMethodMenuItemList(current_property_list);
   ASSERT_EQ(1U, menu_manager_->GetCurrentInputMethodMenuItemList().size());
@@ -880,8 +885,8 @@ TEST_F(InputMethodManagerImplTest, TestGetCurrentInputMethodPropertiesTwoImes) {
 
 TEST_F(InputMethodManagerImplTest, TestNextInputMethod) {
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   std::vector<std::string> keyboard_layouts;
   keyboard_layouts.push_back(ImeIdFromEngineId("xkb:us::eng"));
   // For http://crbug.com/19655#c11 - (1)
@@ -921,8 +926,8 @@ TEST_F(InputMethodManagerImplTest, TestNextInputMethod) {
 
 TEST_F(InputMethodManagerImplTest, TestPreviousInputMethod) {
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
 
   ui::Accelerator keydown_accelerator(ui::VKEY_SPACE, ui::EF_CONTROL_DOWN);
   keydown_accelerator.set_type(ui::ET_KEY_PRESSED);
@@ -998,8 +1003,8 @@ TEST_F(InputMethodManagerImplTest, TestPreviousInputMethod) {
 TEST_F(InputMethodManagerImplTest,
        TestSwitchToPreviousInputMethodForOneActiveInputMethod) {
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
 
   ui::Accelerator keydown_accelerator(ui::VKEY_SPACE, ui::EF_CONTROL_DOWN);
   keydown_accelerator.set_type(ui::ET_KEY_PRESSED);
@@ -1024,8 +1029,8 @@ TEST_F(InputMethodManagerImplTest,
 TEST_F(InputMethodManagerImplTest, TestSwitchInputMethodWithUsLayouts) {
   std::string expect_id = ImeIdFromEngineId("xkb:us::eng");
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   std::vector<std::string> keyboard_layouts;
   keyboard_layouts.push_back(ImeIdFromEngineId("xkb:us::eng"));
   manager_->GetActiveIMEState()->EnableLoginLayouts("en-US", keyboard_layouts);
@@ -1169,8 +1174,8 @@ TEST_F(InputMethodManagerImplTest, TestSwitchInputMethodWithJpIme) {
 
 TEST_F(InputMethodManagerImplTest, TestAddRemoveExtensionInputMethods) {
   TestObserver observer;
-  manager_->AddObserver(&observer);
   InitComponentExtension();
+  manager_->AddObserver(&observer);
   manager_->SetUISessionState(InputMethodManager::STATE_BROWSER_SCREEN);
   std::vector<std::string> ids;
   ids.push_back(ImeIdFromEngineId("xkb:us:dvorak:eng"));

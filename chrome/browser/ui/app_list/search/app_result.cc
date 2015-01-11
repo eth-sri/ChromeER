@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/search/search_util.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
-#include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
+#include "chrome/common/extensions/extension_metrics.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
@@ -38,12 +38,8 @@ AppResult::AppResult(Profile* profile,
       controller_(controller),
       extension_registry_(NULL) {
   set_id(extensions::Extension::GetBaseURLFromExtensionId(app_id_).spec());
-#if !defined(USE_ATHENA)
-  // TODO(mukai): Athena also needs to use tile-styled search results for apps.
-  // Implement it and then remove this ifdef.
   if (app_list::switches::IsExperimentalAppListEnabled())
     set_display_type(DISPLAY_TILE);
-#endif
 
   const extensions::Extension* extension =
       extensions::ExtensionSystem::Get(profile_)->extension_service()
@@ -109,7 +105,7 @@ void AppResult::Open(int event_flags) {
   if (RunExtensionEnableFlow())
     return;
 
-  CoreAppLauncherHandler::RecordAppListSearchLaunch(extension);
+  extensions::RecordAppListSearchLaunch(extension);
   content::RecordAction(
       base::UserMetricsAction("AppList_ClickOnAppFromSearch"));
 

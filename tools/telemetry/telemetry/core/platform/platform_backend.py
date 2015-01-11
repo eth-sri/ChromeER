@@ -31,17 +31,17 @@ class OSVersion(str):
     return self._sortable_name >= other._sortable_name
 
 
-XP =           OSVersion('xp',            5.1)
-VISTA =        OSVersion('vista',         6.0)
-WIN7 =         OSVersion('win7',          6.1)
-WIN8 =         OSVersion('win8',          6.2)
+XP = OSVersion('xp', 5.1)
+VISTA = OSVersion('vista', 6.0)
+WIN7 = OSVersion('win7', 6.1)
+WIN8 = OSVersion('win8', 6.2)
 
-LEOPARD =      OSVersion('leopard',      105)
-SNOWLEOPARD =  OSVersion('snowleopard',  106)
-LION =         OSVersion('lion',         107)
+LEOPARD = OSVersion('leopard', 105)
+SNOWLEOPARD = OSVersion('snowleopard', 106)
+LION = OSVersion('lion', 107)
 MOUNTAINLION = OSVersion('mountainlion', 108)
-MAVERICKS =    OSVersion('mavericks',    109)
-YOSEMITE =     OSVersion('yosemite',     1010)
+MAVERICKS = OSVersion('mavericks', 109)
+YOSEMITE = OSVersion('yosemite', 1010)
 
 
 class PlatformBackend(object):
@@ -82,6 +82,10 @@ class PlatformBackend(object):
     return self._platform
 
   @property
+  def is_host_platform(self):
+    return self._platform.is_host_platform
+
+  @property
   def running_browser_backends(self):
     return list(self._running_browser_backends)
 
@@ -119,11 +123,11 @@ class PlatformBackend(object):
     # tied to the browser. https://crbug.com/424777
     self._network_controller_backend.StopReplay()
 
-    is_last_browser = len(self._running_browser_backends) == 1
+    is_last_browser = len(self._running_browser_backends) <= 1
     if is_last_browser:
       self.SetFullPerformanceModeEnabled(False)
 
-    self._running_browser_backends.remove(browser_backend)
+    self._running_browser_backends.discard(browser_backend)
 
   def GetBackendForBrowser(self, browser):
     matches = [x for x in self._running_browser_backends
@@ -132,6 +136,14 @@ class PlatformBackend(object):
       raise Exception('No browser found')
     assert len(matches) == 1
     return matches[0]
+
+  @property
+  def wpr_http_device_port(self):
+    return self._network_controller_backend.wpr_http_device_port
+
+  @property
+  def wpr_https_device_port(self):
+    return self._network_controller_backend.wpr_https_device_port
 
   def IsRawDisplayFrameRateSupported(self):
     return False
@@ -254,5 +266,30 @@ class PlatformBackend(object):
       start: The least significant bit to read, zero-indexed.
           (Said another way, the number of bits to right-shift the MSR value.)
       length: The number of bits to read. MSRs are 64 bits, even on 32-bit CPUs.
+    """
+    raise NotImplementedError()
+
+  @property
+  def wpr_ca_cert_path(self):
+    return None
+
+  def IsCooperativeShutdownSupported(self):
+    """Indicates whether CooperativelyShutdown, below, is supported.
+    It is not necessary to implement it on all platforms."""
+    return False
+
+  def CooperativelyShutdown(self, proc, app_name):
+    """Cooperatively shut down the given process from subprocess.Popen.
+
+    Currently this is only implemented on Windows. See
+    crbug.com/424024 for background on why it was added.
+
+    Args:
+      proc: a process object returned from subprocess.Popen.
+      app_name: on Windows, is the prefix of the application's window
+          class name that should be searched for. This helps ensure
+          that only the application's windows are closed.
+
+    Returns True if it is believed the attempt succeeded.
     """
     raise NotImplementedError()

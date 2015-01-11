@@ -167,8 +167,8 @@ public class ChildProcessService extends Service {
                         isLoaded = true;
                     } catch (ProcessInitException e) {
                         if (requestedSharedRelro) {
-                            Log.w(TAG, "Failed to load native library with shared RELRO, " +
-                                    "retrying without");
+                            Log.w(TAG, "Failed to load native library with shared RELRO, "
+                                    + "retrying without");
                             loadAtFixedAddressFailed = true;
                         } else {
                             Log.e(TAG, "Failed to load native library", e);
@@ -358,14 +358,14 @@ public class ChildProcessService extends Service {
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private Surface getSurfaceTextureSurface(int surfaceTextureId, int clientId) {
+    private Surface getSurfaceTextureSurface(int surfaceTextureId) {
         if (mCallback == null) {
             Log.e(TAG, "No callback interface has been provided.");
             return null;
         }
 
         try {
-            return mCallback.getSurfaceTextureSurface(surfaceTextureId, clientId).getSurface();
+            return mCallback.getSurfaceTextureSurface(surfaceTextureId).getSurface();
         } catch (RemoteException e) {
             Log.e(TAG, "Unable to call getSurfaceTextureSurface: " + e);
             return null;

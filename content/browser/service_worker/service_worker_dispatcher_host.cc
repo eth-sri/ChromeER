@@ -119,21 +119,33 @@ void ServiceWorkerDispatcherHost::Init(
                    this, make_scoped_refptr(context_wrapper)));
     return;
   }
+
   context_wrapper_ = context_wrapper;
   GetContext()->embedded_worker_registry()->AddChildProcessSender(
-      render_process_id_, this);
+      render_process_id_, this, message_port_message_filter_);
 }
 
 void ServiceWorkerDispatcherHost::OnFilterAdded(IPC::Sender* sender) {
   TRACE_EVENT0("ServiceWorker",
                "ServiceWorkerDispatcherHost::OnFilterAdded");
-  BrowserMessageFilter::OnFilterAdded(sender);
   channel_ready_ = true;
   std::vector<IPC::Message*> messages;
   pending_messages_.release(&messages);
   for (size_t i = 0; i < messages.size(); ++i) {
     BrowserMessageFilter::Send(messages[i]);
   }
+}
+
+void ServiceWorkerDispatcherHost::OnFilterRemoved() {
+  // Don't wait until the destructor to teardown since a new dispatcher host
+  // for this process might be created before then.
+  if (GetContext()) {
+    GetContext()->RemoveAllProviderHostsForProcess(render_process_id_);
+    GetContext()->embedded_worker_registry()->RemoveChildProcessSender(
+        render_process_id_);
+  }
+  context_wrapper_ = nullptr;
+  channel_ready_ = false;
 }
 
 void ServiceWorkerDispatcherHost::OnDestruct() const {
@@ -164,6 +176,8 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnWorkerScriptLoaded)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptLoadFailed,
                         OnWorkerScriptLoadFailed)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptEvaluated,
+                        OnWorkerScriptEvaluated)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStarted,
                         OnWorkerStarted)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerStopped,
@@ -182,6 +196,7 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnIncrementRegistrationRefCount)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_DecrementRegistrationRefCount,
                         OnDecrementRegistrationRefCount)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_TerminateWorker, OnTerminateWorker)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -456,13 +471,8 @@ void ServiceWorkerDispatcherHost::OnPostMessageToWorker(
     return;
   }
 
-  std::vector<int> new_routing_ids;
-  message_port_message_filter_->UpdateMessagePortsWithNewRoutes(
-      sent_message_port_ids, &new_routing_ids);
-  handle->version()->SendMessage(
-      ServiceWorkerMsg_MessageToWorker(message,
-                                       sent_message_port_ids,
-                                       new_routing_ids),
+  handle->version()->DispatchMessageEvent(
+      message, sent_message_port_ids,
       base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
 }
 
@@ -613,6 +623,20 @@ void ServiceWorkerDispatcherHost::OnWorkerScriptLoadFailed(
   if (!registry->CanHandle(embedded_worker_id))
     return;
   registry->OnWorkerScriptLoadFailed(render_process_id_, embedded_worker_id);
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerScriptEvaluated(
+    int embedded_worker_id,
+    bool success) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerDispatcherHost::OnWorkerScriptEvaluated");
+  if (!GetContext())
+    return;
+  EmbeddedWorkerRegistry* registry = GetContext()->embedded_worker_registry();
+  if (!registry->CanHandle(embedded_worker_id))
+    return;
+  registry->OnWorkerScriptEvaluated(
+      render_process_id_, embedded_worker_id, success);
 }
 
 void ServiceWorkerDispatcherHost::OnWorkerStarted(int embedded_worker_id) {
@@ -770,6 +794,10 @@ void ServiceWorkerDispatcherHost::GetRegistrationComplete(
                          "Registration ID",
                          registration.get() ? registration->id()
                              : kInvalidServiceWorkerRegistrationId);
+
+  if (!GetContext())
+    return;
+
   if (status != SERVICE_WORKER_OK && status != SERVICE_WORKER_ERROR_NOT_FOUND) {
     SendGetRegistrationError(thread_id, request_id, status);
     return;
@@ -826,7 +854,19 @@ void ServiceWorkerDispatcherHost::SendGetRegistrationError(
 }
 
 ServiceWorkerContextCore* ServiceWorkerDispatcherHost::GetContext() {
+  if (!context_wrapper_.get())
+    return nullptr;
   return context_wrapper_->context();
+}
+
+void ServiceWorkerDispatcherHost::OnTerminateWorker(int handle_id) {
+  ServiceWorkerHandle* handle = handles_.Lookup(handle_id);
+  if (!handle) {
+    BadMessageReceived();
+    return;
+  }
+  handle->version()->StopWorker(
+      base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
 }
 
 }  // namespace content

@@ -37,12 +37,17 @@
     // A phone eligible to unlock the device is detected, but it is not allowed
     // to unlock the device because it doesn't have lock screen enabled.
     PHONE_UNLOCKABLE,
-    // A phone eligible to unlock the device is detected, but it's not close
-    // enough to be allowed to unlock the device.
-    PHONE_NOT_NEARBY,
     // A phone eligible to unlock the device is detected, but it is not allowed
     // to unlock the device because it does not report its lock screen state.
     PHONE_UNSUPPORTED,
+    // A phone eligible to unlock the device is detected, but its received
+    // signal strength is too low, i.e. the phone is roughly more than 30 feet
+    // away, and therefore is not allowed to unlock the device.
+    RSSI_TOO_LOW,
+    // A phone eligible to unlock the device is found, but the local device's
+    // transmission power is too high, indicating that the phone is (probably)
+    // more than 1 foot away, and therefore is not allowed to unlock the device.
+    TX_POWER_TOO_HIGH,
     // The devie can be unlocked using Easy Unlock.
     AUTHENTICATED
   };
@@ -168,6 +173,18 @@
   // most one user.
   callback GetUserInfoCallback = void(UserInfo[] users);
 
+  // Callback for |getSignInChallenge()| method.
+  // In case challenge could not be created both |challenge| and |signedNonce|
+  // will be empty.
+  // If the requested nonce could not be signed, |signedNonce| will be empty.
+  // |challenge|: The sign in challenge to be used when signing in the user
+  //     currently associated with the Easy Unlock service.
+  // |signedNonce|: Nonce signed by Chrome OS TPM, provided as an argument to
+  //     the |getSignInChallenge()| function and signed by the TPM key
+  //     associated with the user.
+  callback SignInChallengeCallback = void(optional ArrayBuffer challenge,
+                                          optional ArrayBuffer signedNonce);
+
   interface Functions {
     // Gets localized strings required to render the API.
     //
@@ -281,7 +298,10 @@
     static void getRemoteDevices(GetRemoteDevicesCallback callback);
 
     // Gets the sign-in challenge for the current user.
-    static void getSignInChallenge(DataCallback callback);
+    // |nonce|: Nonce that should be signed by the Chrome OS TPM. The signed
+    //     nonce is returned with the sign-in challenge.
+    static void getSignInChallenge(ArrayBuffer nonce,
+                                   SignInChallengeCallback callback);
 
     // Tries to sign-in the current user with a secret obtained by decrypting
     // the sign-in challenge. Check chrome.runtime.lastError for failures. Upon
@@ -292,6 +312,9 @@
     // Retrieves information about the user associated with the Easy unlock
     // service.
     static void getUserInfo(GetUserInfoCallback callback);
+
+    // Gets the user's profile image as a bitmap.
+    static void getUserImage(DataCallback callback);
   };
 
   interface Events {

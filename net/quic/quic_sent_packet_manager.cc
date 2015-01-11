@@ -34,8 +34,8 @@ static const int64 kMinRetransmissionTimeMs = 200;
 static const int64 kMaxRetransmissionTimeMs = 60000;
 static const size_t kMaxRetransmissions = 10;
 
-// Only exponentially back off the handshake timer 5 times due to a timeout.
-static const size_t kMaxHandshakeRetransmissionBackoffs = 5;
+// Ensure the handshake timer isnt't faster than 10ms.
+// This limits the tenth retransmitted packet to 10s after the initial CHLO.
 static const int64 kMinHandshakeTimeoutMs = 10;
 
 // Sends up to two tail loss probes before firing an RTO,
@@ -48,6 +48,10 @@ static const size_t kNumMinRttSamplesAfterQuiescence = 2;
 
 // Number of unpaced packets to send after quiescence.
 static const size_t kInitialUnpacedBurst = 10;
+
+// Fraction of the receive buffer that can be used for encrypted bytes.
+// Allows a 5% overhead for IP and UDP framing, as well as ack only packets.
+static const float kUsableRecieveBufferFraction = 0.95f;
 
 bool HasCryptoHandshake(const TransmissionInfo& transmission_info) {
   if (transmission_info.retransmittable_frames == nullptr) {
@@ -66,18 +70,24 @@ QuicSentPacketManager::QuicSentPacketManager(
     const QuicClock* clock,
     QuicConnectionStats* stats,
     CongestionControlType congestion_control_type,
-    LossDetectionType loss_type)
+    LossDetectionType loss_type,
+    bool is_secure)
     : unacked_packets_(),
       is_server_(is_server),
       clock_(clock),
       stats_(stats),
       debug_delegate_(nullptr),
       network_change_visitor_(nullptr),
-      send_algorithm_(SendAlgorithmInterface::Create(clock,
-                                                     &rtt_stats_,
-                                                     congestion_control_type,
-                                                     stats)),
+      initial_congestion_window_(is_secure ? kInitialCongestionWindowSecure
+                                           : kInitialCongestionWindowInsecure),
+      send_algorithm_(
+          SendAlgorithmInterface::Create(clock,
+                                         &rtt_stats_,
+                                         congestion_control_type,
+                                         stats,
+                                         initial_congestion_window_)),
       loss_algorithm_(LossDetectionInterface::Create(loss_type)),
+      n_connection_simulation_(false),
       receive_buffer_bytes_(kDefaultSocketReceiveBuffer),
       least_packet_awaited_by_peer_(1),
       first_rto_transmission_(0),
@@ -96,12 +106,16 @@ QuicSentPacketManager::~QuicSentPacketManager() {
 void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
   if (config.HasReceivedInitialRoundTripTimeUs() &&
       config.ReceivedInitialRoundTripTimeUs() > 0) {
-    rtt_stats_.set_initial_rtt_us(min(kMaxInitialRoundTripTimeUs,
-                                      config.ReceivedInitialRoundTripTimeUs()));
-  } else if (config.HasInitialRoundTripTimeUsToSend()) {
     rtt_stats_.set_initial_rtt_us(
-        min(kMaxInitialRoundTripTimeUs,
-            config.GetInitialRoundTripTimeUsToSend()));
+        max(kMinInitialRoundTripTimeUs,
+            min(kMaxInitialRoundTripTimeUs,
+                config.ReceivedInitialRoundTripTimeUs())));
+  } else if (config.HasInitialRoundTripTimeUsToSend() &&
+             config.GetInitialRoundTripTimeUsToSend() > 0) {
+    rtt_stats_.set_initial_rtt_us(
+        max(kMinInitialRoundTripTimeUs,
+            min(kMaxInitialRoundTripTimeUs,
+                config.GetInitialRoundTripTimeUsToSend())));
   }
   // TODO(ianswett): BBR is currently a server only feature.
   if (FLAGS_quic_allow_bbr &&
@@ -111,19 +125,24 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
       rtt_stats_.set_recent_min_rtt_window(
           QuicTime::Delta::FromSeconds(FLAGS_quic_recent_min_rtt_window_s));
     }
-    send_algorithm_.reset(
-        SendAlgorithmInterface::Create(clock_, &rtt_stats_, kBBR, stats_));
+    send_algorithm_.reset(SendAlgorithmInterface::Create(
+        clock_, &rtt_stats_, kBBR, stats_, initial_congestion_window_));
   }
   if (config.HasReceivedConnectionOptions() &&
       ContainsQuicTag(config.ReceivedConnectionOptions(), kRENO)) {
-    send_algorithm_.reset(
-        SendAlgorithmInterface::Create(clock_, &rtt_stats_, kReno, stats_));
+    send_algorithm_.reset(SendAlgorithmInterface::Create(
+        clock_, &rtt_stats_, kReno, stats_, initial_congestion_window_));
   }
-  if (HasClientSentConnectionOption(config, kPACE)) {
+  if (HasClientSentConnectionOption(config, kPACE) ||
+      (FLAGS_quic_allow_bbr &&
+       HasClientSentConnectionOption(config, kTBBR))) {
     EnablePacing();
   }
   if (HasClientSentConnectionOption(config, k1CON)) {
     send_algorithm_->SetNumEmulatedConnections(1);
+  }
+  if (HasClientSentConnectionOption(config, kNCON)) {
+    n_connection_simulation_ = true;
   }
   if (HasClientSentConnectionOption(config, kNTLP)) {
     max_tail_loss_probes_ = 0;
@@ -137,10 +156,23 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
         max(kMinSocketReceiveBuffer,
             static_cast<QuicByteCount>(config.ReceivedSocketReceiveBuffer()));
   }
-  send_algorithm_->SetFromConfig(config, is_server_);
+  send_algorithm_->SetFromConfig(config, is_server_, using_pacing_);
 
   if (network_change_visitor_ != nullptr) {
-    network_change_visitor_->OnCongestionWindowChange(GetCongestionWindow());
+    network_change_visitor_->OnCongestionWindowChange();
+  }
+}
+
+bool QuicSentPacketManager::ResumeConnectionState(
+    const CachedNetworkParameters& cached_network_params) {
+  return send_algorithm_->ResumeConnectionState(cached_network_params);
+}
+
+void QuicSentPacketManager::SetNumOpenStreams(size_t num_streams) {
+  if (n_connection_simulation_) {
+    // Ensure the number of connections is between 1 and 5.
+    send_algorithm_->SetNumEmulatedConnections(
+        min<size_t>(5, max<size_t>(1, num_streams)));
   }
 }
 
@@ -180,7 +212,7 @@ void QuicSentPacketManager::OnIncomingAck(const QuicAckFrame& ack_frame,
       send_algorithm_->BandwidthEstimate(),
       ack_receive_time,
       clock_->WallNow(),
-      rtt_stats_.SmoothedRtt());
+      rtt_stats_.smoothed_rtt());
 
   // If we have received a truncated ack, then we need to clear out some
   // previous transmissions to allow the peer to actually ACK new packets.
@@ -225,7 +257,7 @@ void QuicSentPacketManager::MaybeInvokeCongestionEvent(
   packets_acked_.clear();
   packets_lost_.clear();
   if (network_change_visitor_ != nullptr) {
-    network_change_visitor_->OnCongestionWindowChange(GetCongestionWindow());
+    network_change_visitor_->OnCongestionWindowChange();
   }
 }
 
@@ -296,6 +328,9 @@ void QuicSentPacketManager::RetransmitUnackedPackets(
         (retransmission_type == ALL_UNACKED_RETRANSMISSION ||
          frames->encryption_level() == ENCRYPTION_INITIAL)) {
       MarkForRetransmission(sequence_number, retransmission_type);
+    } else if (it->is_fec_packet) {
+      // Remove FEC packets from the packet map, since we can't retransmit them.
+      unacked_packets_.RemoveFromInFlight(sequence_number);
     }
   }
 }
@@ -522,12 +557,18 @@ bool QuicSentPacketManager::OnPacketSent(
   }
 
   // Only track packets as in flight that the send algorithm wants us to track.
+  // Since FEC packets should also be counted towards the congestion window,
+  // consider them as retransmittable for the purposes of congestion control.
+  HasRetransmittableData has_congestion_controlled_data =
+      serialized_packet->packet->is_fec_packet() ?
+      HAS_RETRANSMITTABLE_DATA : has_retransmittable_data;
   const bool in_flight =
       send_algorithm_->OnPacketSent(sent_time,
                                     unacked_packets_.bytes_in_flight(),
                                     sequence_number,
                                     bytes,
-                                    has_retransmittable_data);
+                                    has_congestion_controlled_data);
+
   unacked_packets_.AddSentPacket(*serialized_packet,
                                  original_sequence_number,
                                  transmission_type,
@@ -579,10 +620,7 @@ void QuicSentPacketManager::OnRetransmissionTimeout() {
 
 void QuicSentPacketManager::RetransmitCryptoPackets() {
   DCHECK_EQ(HANDSHAKE_MODE, GetRetransmissionMode());
-  // TODO(ianswett): Typical TCP implementations only retransmit 5 times.
-  consecutive_crypto_retransmission_count_ =
-      min(kMaxHandshakeRetransmissionBackoffs,
-          consecutive_crypto_retransmission_count_ + 1);
+  ++consecutive_crypto_retransmission_count_;
   bool packet_retransmitted = false;
   QuicPacketSequenceNumber sequence_number = unacked_packets_.GetLeastUnacked();
   for (QuicUnackedPacketMap::const_iterator it = unacked_packets_.begin();
@@ -650,7 +688,7 @@ void QuicSentPacketManager::RetransmitAllPackets() {
   }
 
   if (network_change_visitor_ != nullptr) {
-    network_change_visitor_->OnCongestionWindowChange(GetCongestionWindow());
+    network_change_visitor_->OnCongestionWindowChange();
   }
 }
 
@@ -741,7 +779,8 @@ QuicTime::Delta QuicSentPacketManager::TimeUntilSend(
   if (pending_timer_transmission_count_ > 0) {
     return QuicTime::Delta::Zero();
   }
-  if (unacked_packets_.bytes_in_flight() >= receive_buffer_bytes_) {
+  if (unacked_packets_.bytes_in_flight() >=
+      kUsableRecieveBufferFraction * receive_buffer_bytes_) {
     return QuicTime::Delta::Infinite();
   }
   return send_algorithm_->TimeUntilSend(
@@ -807,19 +846,24 @@ const QuicTime::Delta QuicSentPacketManager::GetCryptoRetransmissionDelay()
     const {
   // This is equivalent to the TailLossProbeDelay, but slightly more aggressive
   // because crypto handshake messages don't incur a delayed ack time.
-  int64 delay_ms =
-      max(kMinHandshakeTimeoutMs,
-          static_cast<int64>(1.5 * rtt_stats_.SmoothedRtt().ToMilliseconds()));
+  QuicTime::Delta srtt = rtt_stats_.smoothed_rtt();
+  if (srtt.IsZero()) {
+    srtt = QuicTime::Delta::FromMicroseconds(rtt_stats_.initial_rtt_us());
+  }
+  int64 delay_ms = max(kMinHandshakeTimeoutMs,
+                       static_cast<int64>(1.5 * srtt.ToMilliseconds()));
   return QuicTime::Delta::FromMilliseconds(
       delay_ms << consecutive_crypto_retransmission_count_);
 }
 
 const QuicTime::Delta QuicSentPacketManager::GetTailLossProbeDelay() const {
-  QuicTime::Delta srtt = rtt_stats_.SmoothedRtt();
+  QuicTime::Delta srtt = rtt_stats_.smoothed_rtt();
+  if (srtt.IsZero()) {
+    srtt = QuicTime::Delta::FromMicroseconds(rtt_stats_.initial_rtt_us());
+  }
   if (!unacked_packets_.HasMultipleInFlightPackets()) {
     return QuicTime::Delta::Max(
-        srtt.Multiply(2),
-        srtt.Multiply(1.5).Add(
+        srtt.Multiply(2), srtt.Multiply(1.5).Add(
             QuicTime::Delta::FromMilliseconds(kMinRetransmissionTimeMs / 2)));
   }
   return QuicTime::Delta::FromMilliseconds(
@@ -854,6 +898,8 @@ const RttStats* QuicSentPacketManager::GetRttStats() const {
 }
 
 QuicBandwidth QuicSentPacketManager::BandwidthEstimate() const {
+  // TODO(ianswett): Remove BandwidthEstimate from SendAlgorithmInterface
+  // and implement the logic here.
   return send_algorithm_->BandwidthEstimate();
 }
 
@@ -866,12 +912,17 @@ QuicSentPacketManager::SustainedBandwidthRecorder() const {
   return sustained_bandwidth_recorder_;
 }
 
-QuicByteCount QuicSentPacketManager::GetCongestionWindow() const {
-  return send_algorithm_->GetCongestionWindow();
+QuicPacketCount QuicSentPacketManager::EstimateMaxPacketsInFlight(
+    QuicByteCount max_packet_length) const {
+  return send_algorithm_->GetCongestionWindow() / max_packet_length;
 }
 
-QuicByteCount QuicSentPacketManager::GetSlowStartThreshold() const {
-  return send_algorithm_->GetSlowStartThreshold();
+QuicPacketCount QuicSentPacketManager::GetCongestionWindowInTcpMss() const {
+  return send_algorithm_->GetCongestionWindow() / kDefaultTCPMSS;
+}
+
+QuicPacketCount QuicSentPacketManager::GetSlowStartThresholdInTcpMss() const {
+  return send_algorithm_->GetSlowStartThreshold() / kDefaultTCPMSS;
 }
 
 void QuicSentPacketManager::EnablePacing() {

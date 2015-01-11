@@ -29,7 +29,7 @@
 #include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/print_error_dialog.h"
 #endif
 
@@ -67,11 +67,11 @@ PrintViewManagerBase::~PrintViewManagerBase() {
   DisconnectFromCurrentPrintJob();
 }
 
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
 bool PrintViewManagerBase::PrintNow() {
   return PrintNowInternal(new PrintMsg_PrintPages(routing_id()));
 }
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
 
 void PrintViewManagerBase::UpdateScriptedPrintingBlocked() {
   Send(new PrintMsg_SetScriptedPrintingBlocked(
@@ -169,7 +169,7 @@ void PrintViewManagerBase::OnDidPrintPage(
         reinterpret_cast<const unsigned char*>(shared_buf.memory()),
         params.data_size);
 
-    document->DebugDumpData(bytes, FILE_PATH_LITERAL(".pdf"));
+    document->DebugDumpData(bytes.get(), FILE_PATH_LITERAL(".pdf"));
     print_job_->StartPdfToEmfConversion(
         bytes, params.page_size, params.content_area);
   }
@@ -182,7 +182,7 @@ void PrintViewManagerBase::OnPrintingFailed(int cookie) {
     return;
   }
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   chrome::ShowPrintErrorDialog();
 #endif
 

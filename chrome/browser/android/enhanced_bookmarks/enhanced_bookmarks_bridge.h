@@ -35,6 +35,11 @@ class EnhancedBookmarksBridge : public BookmarkServerServiceObserver {
                               jint type,
                               jstring description);
 
+  base::android::ScopedJavaLocalRef<jobjectArray> GetFiltersForBookmark(
+      JNIEnv* env,
+      jobject obj,
+      jlong id,
+      jint type);
   void GetBookmarksForFilter(JNIEnv* env,
                              jobject obj,
                              jstring filter,
@@ -51,8 +56,7 @@ class EnhancedBookmarksBridge : public BookmarkServerServiceObserver {
   void MoveBookmark(JNIEnv* env,
                     jobject obj,
                     jobject j_bookmark_id_obj,
-                    jobject j_parent_id_obj,
-                    jint index);
+                    jobject j_parent_id_obj);
 
   base::android::ScopedJavaLocalRef<jobject> AddBookmark(
       JNIEnv* env,

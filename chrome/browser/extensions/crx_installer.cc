@@ -12,7 +12,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -40,6 +39,7 @@
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/install/crx_installer_error.h"
 #include "extensions/browser/install/extension_install_ui.h"
@@ -598,8 +598,9 @@ void CrxInstaller::ConfirmInstall() {
   CheckUpdateFromSettingsPage();
 
   GURL overlapping_url;
+  ExtensionRegistry* registry = ExtensionRegistry::Get(service->profile());
   const Extension* overlapping_extension =
-      service->extensions()->GetHostedAppByOverlappingWebExtent(
+      registry->enabled_extensions().GetHostedAppByOverlappingWebExtent(
           extension()->web_extent());
   if (overlapping_extension &&
       overlapping_extension->id() != extension()->id()) {

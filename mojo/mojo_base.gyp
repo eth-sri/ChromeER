@@ -21,7 +21,6 @@
         # to be built.
         'mojo_common_lib',
         'mojo_common_unittests',
-        'mojo_message_generator',
       ],
       'conditions': [
         ['OS == "android"', {
@@ -72,9 +71,11 @@
       'type': 'executable',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:test_support_base',
         '../base/base.gyp:base_message_loop_tests',
         '../testing/gtest.gyp:gtest',
         '../url/url.gyp:url_lib',
+        'edk/mojo_edk.gyp:mojo_system_impl',
         'edk/mojo_edk.gyp:mojo_common_test_support',
         'edk/mojo_edk.gyp:mojo_run_all_unittests',
         'mojo_common_lib',
@@ -86,14 +87,6 @@
         'common/common_type_converters_unittest.cc',
         'common/handle_watcher_unittest.cc',
         'common/message_pump_mojo_unittest.cc',
-        'edk/test/multiprocess_test_helper_unittest.cc',
-      ],
-      'conditions': [
-        ['OS=="ios"', {
-          'sources!': [
-            'edk/test/multiprocess_test_helper_unittest.cc',
-          ],
-        }],
       ],
     },
     {
@@ -134,6 +127,8 @@
         'environment/default_async_waiter_impl.h',
         'environment/default_logger_impl.cc',
         'environment/default_logger_impl.h',
+        'environment/default_run_loop_impl.cc',
+        'environment/default_run_loop_impl.h',
       ],
       'include_dirs': [
         '..',
@@ -155,52 +150,6 @@
       'export_dependent_settings': [
         'public/mojo_public.gyp:mojo_application_base',
        ],
-    },
-    {
-      # GN version: //mojo/bindings/js
-      'target_name': 'mojo_js_bindings_lib',
-      'type': 'static_library',
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../gin/gin.gyp:gin',
-        '../v8/tools/gyp/v8.gyp:v8',
-        'mojo_common_lib',
-      ],
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-        '../gin/gin.gyp:gin',
-        'mojo_common_lib',
-      ],
-      'sources': [
-        # Sources list duplicated in GN build.
-        'bindings/js/core.cc',
-        'bindings/js/core.h',
-        'bindings/js/drain_data.cc',
-        'bindings/js/drain_data.h',
-        'bindings/js/handle.cc',
-        'bindings/js/handle.h',
-        'bindings/js/handle_close_observer.h',
-        'bindings/js/support.cc',
-        'bindings/js/support.h',
-        'bindings/js/waiting_callback.cc',
-        'bindings/js/waiting_callback.h',
-      ],
-    },
-    {
-      # GN version: //mojo/tools:message_generator
-      'target_name': 'mojo_message_generator',
-      'type': 'executable',
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../testing/gtest.gyp:gtest',
-        'edk/mojo_edk.gyp:mojo_system_impl',
-        'mojo_common_lib',
-        'mojo_environment_chromium',
-        'public/mojo_public.gyp:mojo_cpp_bindings',
-      ],
-      'sources': [
-        'tools/message_generator.cc',
-      ],
     },
   ],
   'conditions': [

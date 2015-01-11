@@ -1238,7 +1238,8 @@ void AutofillDialogViews::Show() {
   UpdateNotificationArea();
   UpdateButtonStripExtraView();
 
-  window_ = ShowWebModalDialogViews(this, delegate_->GetWebContents());
+  window_ = constrained_window::ShowWebModalDialogViews(
+      this, delegate_->GetWebContents());
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
 
@@ -1662,8 +1663,7 @@ void AutofillDialogViews::ContentsChanged(views::Textfield* sender,
 
 bool AutofillDialogViews::HandleKeyEvent(views::Textfield* sender,
                                          const ui::KeyEvent& key_event) {
-  ui::KeyEvent copy(key_event);
-  content::NativeWebKeyboardEvent event(&copy);
+  content::NativeWebKeyboardEvent event(key_event);
   return delegate_->HandleKeyPressEventInInput(event);
 }
 
@@ -2319,7 +2319,7 @@ void AutofillDialogViews::ContentsPreferredSizeChanged() {
   preferred_size_ = gfx::Size();
 
   if (GetWidget() && delegate_ && delegate_->GetWebContents()) {
-    UpdateWebContentsModalDialogPosition(
+    constrained_window::UpdateWebContentsModalDialogPosition(
         GetWidget(),
         web_modal::WebContentsModalDialogManager::FromWebContents(
             delegate_->GetWebContents())->delegate()->

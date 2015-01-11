@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
@@ -21,9 +20,9 @@
 #include "cc/layers/texture_layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/frame_messages.h"
 #include "content/common/input/web_input_event_traits.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/gpu/render_widget_compositor.h"
@@ -109,11 +108,11 @@
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/WebKit/public/web/WebPrintPresetOptions.h"
 #include "third_party/WebKit/public/web/WebPrintScalingOption.h"
 #include "third_party/WebKit/public/web/WebScopedUserGesture.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
@@ -488,8 +487,6 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       layer_bound_to_fullscreen_(false),
       layer_is_hardware_(false),
       plugin_url_(plugin_url),
-      power_saver_enabled_(false),
-      plugin_throttled_(false),
       full_frame_(false),
       sent_initial_did_change_view_(false),
       bound_graphics_2d_platform_(NULL),
@@ -582,16 +579,6 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
   if (GetContentClient()->renderer() &&  // NULL in unit tests.
       GetContentClient()->renderer()->IsExternalPepperPlugin(module->name()))
     external_document_load_ = true;
-
-  power_saver_enabled_ = CommandLine::ForCurrentProcess()->HasSwitch(
-                             switches::kEnablePluginPowerSaver) &&
-                         IsPeripheralContent();
-
-  if (power_saver_enabled_) {
-    throttler_.reset(new PepperPluginInstanceThrottler(
-        base::Bind(&PepperPluginInstanceImpl::SetPluginThrottled,
-                   weak_factory_.GetWeakPtr(), true /* throttled */)));
-  }
 }
 
 PepperPluginInstanceImpl::~PepperPluginInstanceImpl() {
@@ -848,6 +835,13 @@ bool PepperPluginInstanceImpl::Initialize(
     bool full_frame) {
   if (!render_frame_)
     return false;
+
+  throttler_.reset(new PepperPluginInstanceThrottler(
+      render_frame()->plugin_power_saver_helper(),
+      container()->element().boundsInViewportSpace(), module()->name(),
+      plugin_url_, base::Bind(&PepperPluginInstanceImpl::SendDidChangeView,
+                              weak_factory_.GetWeakPtr())));
+
   message_channel_ = MessageChannel::Create(this, &message_channel_object_);
 
   full_frame_ = full_frame;
@@ -1103,15 +1097,8 @@ bool PepperPluginInstanceImpl::HandleInputEvent(
     WebCursorInfo* cursor_info) {
   TRACE_EVENT0("ppapi", "PepperPluginInstanceImpl::HandleInputEvent");
 
-  if (event.type == blink::WebInputEvent::MouseUp && power_saver_enabled_)
-    power_saver_enabled_ = false;
-
-  if (plugin_throttled_) {
-    if (event.type == blink::WebInputEvent::MouseUp)
-      SetPluginThrottled(false /* throttled */);
-
+  if (throttler_->ConsumeInputEvent(event))
     return true;
-  }
 
   if (!render_frame_)
     return false;
@@ -1518,7 +1505,7 @@ bool PepperPluginInstanceImpl::LoadMouseLockInterface() {
 bool PepperPluginInstanceImpl::LoadPdfInterface() {
   if (!checked_for_plugin_pdf_interface_) {
     checked_for_plugin_pdf_interface_ = true;
-    plugin_pdf_interface_ = static_cast<const PPP_Pdf_1*>(
+    plugin_pdf_interface_ = static_cast<const PPP_Pdf*>(
         module_->GetPluginInterface(PPP_PDF_INTERFACE_1));
   }
 
@@ -1664,8 +1651,9 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
     return;
 
   // When plugin is throttled, send ViewData indicating it's in the background.
-  const ppapi::ViewData& view_data =
-      plugin_throttled_ ? empty_view_data_ : view_data_;
+  const ppapi::ViewData& view_data = (throttler_ && throttler_->is_throttled())
+                                         ? throttler_->throttled_view_data()
+                                         : view_data_;
 
   if (view_change_weak_ptr_factory_.HasWeakPtrs() ||
       (sent_initial_did_change_view_ &&
@@ -1827,6 +1815,25 @@ void PepperPluginInstanceImpl::PrintEnd() {
 #endif  // defined(OS_MACOSX)
 }
 
+bool PepperPluginInstanceImpl::GetPrintPresetOptionsFromDocument(
+    blink::WebPrintPresetOptions* preset_options) {
+  // Keep a reference on the stack. See NOTE above.
+  scoped_refptr<PepperPluginInstanceImpl> ref(this);
+  if (!LoadPdfInterface())
+    return false;
+
+  PP_PdfPrintPresetOptions_Dev options;
+  if (!plugin_pdf_interface_->GetPrintPresetOptionsFromDocument(pp_instance(),
+                                                                &options)) {
+    return false;
+  }
+
+  preset_options->isScalingDisabled = PP_ToBool(options.is_scaling_disabled);
+  preset_options->copies = options.copies;
+
+  return true;
+}
+
 bool PepperPluginInstanceImpl::CanRotateView() {
   if (!LoadPdfInterface())
     return false;
@@ -1879,7 +1886,7 @@ bool PepperPluginInstanceImpl::SetFullscreen(bool fullscreen) {
   if (fullscreen && !IsProcessingUserGesture())
     return false;
 
-  VLOG(1) << "Setting fullscreen to " << (fullscreen ? "on" : "off");
+  DVLOG(1) << "Setting fullscreen to " << (fullscreen ? "on" : "off");
   desired_fullscreen_state_ = fullscreen;
 
   if (fullscreen) {
@@ -3072,7 +3079,7 @@ bool PepperPluginInstanceImpl::FlashSetFullscreen(bool fullscreen,
     return false;
 
   // Unbind current 2D or 3D graphics context.
-  VLOG(1) << "Setting fullscreen to " << (fullscreen ? "on" : "off");
+  DVLOG(1) << "Setting fullscreen to " << (fullscreen ? "on" : "off");
   if (fullscreen) {
     DCHECK(!fullscreen_container_);
     fullscreen_container_ =
@@ -3293,36 +3300,6 @@ void PepperPluginInstanceImpl::DidDataFromWebURLResponse(
     dispatcher->Send(new PpapiMsg_PPPInstance_HandleDocumentLoad(
         ppapi::API_ID_PPP_INSTANCE, pp_instance(), pending_host_id, data));
   }
-}
-
-bool PepperPluginInstanceImpl::IsPeripheralContent() const {
-  if (module_->name() != kFlashPluginName)
-    return false;
-
-  // Peripheral plugin content is defined to be peripheral when the plugin
-  // content's origin differs from the top level frame's origin. For example:
-  //  - Peripheral:      a.com -> b.com/plugin.swf
-  //  - Peripheral:      a.com -> b.com/iframe.html -> b.com/plugin.swf
-  //  - NOT peripheral:  a.com -> b.com/iframe-to-a.html -> a.com/plugin.swf
-
-  // TODO(alexmos): Update this to use the origin of the RemoteFrame when 426512
-  // is fixed. For now, case 3 in the comment above doesn't work in
-  // --site-per-process mode.
-  WebFrame* main_frame = render_frame_->GetWebFrame()->view()->mainFrame();
-  if (main_frame->isWebRemoteFrame())
-     return true;
-
-  GURL main_frame_url = main_frame->document().url();
-  return plugin_url_.GetOrigin() != main_frame_url.GetOrigin();
-}
-
-void PepperPluginInstanceImpl::SetPluginThrottled(bool throttled) {
-  // Do not throttle if we've already disabled power saver.
-  if (!power_saver_enabled_ && throttled)
-    return;
-
-  plugin_throttled_ = throttled;
-  SendDidChangeView();
 }
 
 }  // namespace content

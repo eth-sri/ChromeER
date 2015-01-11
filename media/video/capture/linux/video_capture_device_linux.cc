@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #if defined(OS_OPENBSD)
 #include <sys/videoio.h>
 #else
@@ -27,13 +28,10 @@ namespace media {
 
 // Max number of video buffers VideoCaptureDeviceLinux can allocate.
 enum { kMaxVideoBuffers = 2 };
-// Timeout in microseconds v4l2_thread_ blocks waiting for a frame from the hw.
-enum { kCaptureTimeoutUs = 200000 };
+// Timeout in milliseconds v4l2_thread_ blocks waiting for a frame from the hw.
+enum { kCaptureTimeoutMs = 200 };
 // The number of continuous timeouts tolerated before treated as error.
 enum { kContinuousTimeoutLimit = 10 };
-// Time to wait in milliseconds before v4l2_thread_ reschedules OnCaptureTask
-// if an event is triggered (select) but no video frame is read.
-enum { kCaptureSelectWaitMs = 10 };
 // MJPEG is preferred if the width or height is larger than this.
 enum { kMjpegWidth = 640 };
 enum { kMjpegHeight = 480 };
@@ -134,7 +132,7 @@ const std::string VideoCaptureDevice::Name::GetModel() const {
 }
 
 VideoCaptureDeviceLinux::VideoCaptureDeviceLinux(const Name& device_name)
-    : state_(kIdle),
+    : is_capturing_(false),
       device_name_(device_name),
       v4l2_thread_("V4L2Thread"),
       buffer_pool_(NULL),
@@ -144,7 +142,6 @@ VideoCaptureDeviceLinux::VideoCaptureDeviceLinux(const Name& device_name)
 }
 
 VideoCaptureDeviceLinux::~VideoCaptureDeviceLinux() {
-  state_ = kIdle;
   // Check if the thread is running.
   // This means that the device have not been DeAllocated properly.
   DCHECK(!v4l2_thread_.IsRunning());
@@ -327,7 +324,7 @@ void VideoCaptureDeviceLinux::OnAllocateAndStart(int width,
     return;
   }
 
-  state_ = kCapturing;
+  is_capturing_ = true;
   // Post task to start fetching frames from v4l2.
   v4l2_thread_.message_loop()->PostTask(
       FROM_HERE,
@@ -351,44 +348,26 @@ void VideoCaptureDeviceLinux::OnStopAndDeAllocate() {
   // Otherwise VIDIOC_S_FMT will return error
   // Sad but true.
   device_fd_.reset();
-  state_ = kIdle;
+  is_capturing_ = false;
   client_.reset();
 }
 
 void VideoCaptureDeviceLinux::OnCaptureTask() {
   DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
+  if (!is_capturing_)
+    return;
 
-  if (state_ != kCapturing) {
+  pollfd device_pfd;
+  device_pfd.fd = device_fd_.get();
+  device_pfd.events = POLLIN;
+
+  const int result = HANDLE_EINTR(poll(&device_pfd, 1, kCaptureTimeoutMs));
+  if (result < 0) {
+    SetErrorState("Poll failed");
     return;
   }
 
-  fd_set r_set;
-  FD_ZERO(&r_set);
-  FD_SET(device_fd_.get(), &r_set);
-  timeval timeout;
-
-  timeout.tv_sec = 0;
-  timeout.tv_usec = kCaptureTimeoutUs;
-
-  // First argument to select is the highest numbered file descriptor +1.
-  // Refer to http://linux.die.net/man/2/select for more information.
-  int result =
-      HANDLE_EINTR(select(device_fd_.get() + 1, &r_set, NULL, NULL, &timeout));
-  // Check if select have failed.
-  if (result < 0) {
-    // EINTR is a signal. This is not really an error.
-    if (errno != EINTR) {
-      SetErrorState("Select failed");
-      return;
-    }
-    v4l2_thread_.message_loop()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&VideoCaptureDeviceLinux::OnCaptureTask,
-                   base::Unretained(this)),
-        base::TimeDelta::FromMilliseconds(kCaptureSelectWaitMs));
-  }
-
-  // Check if select timeout.
+  // Check if poll did timeout.
   if (result == 0) {
     timeout_count_++;
     if (timeout_count_ >= kContinuousTimeoutLimit) {
@@ -397,12 +376,12 @@ void VideoCaptureDeviceLinux::OnCaptureTask() {
       timeout_count_ = 0;
       return;
     }
-  } else {
-    timeout_count_ = 0;
   }
 
-  // Check if the driver have filled a buffer.
-  if (FD_ISSET(device_fd_.get(), &r_set)) {
+  timeout_count_ = 0;
+
+  // Check if the driver has filled a buffer.
+  if (device_pfd.revents & POLLIN) {
     v4l2_buffer buffer;
     memset(&buffer, 0, sizeof(buffer));
     buffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -507,7 +486,7 @@ void VideoCaptureDeviceLinux::DeAllocateVideoBuffers() {
 void VideoCaptureDeviceLinux::SetErrorState(const std::string& reason) {
   DCHECK(!v4l2_thread_.IsRunning() ||
          v4l2_thread_.message_loop() == base::MessageLoop::current());
-  state_ = kError;
+  is_capturing_ = false;
   client_->OnError(reason);
 }
 

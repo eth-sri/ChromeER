@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -66,7 +67,7 @@ bool GetUniformNameSansElement(
     return false;
   }
 
-  GLint index = 0;
+  base::CheckedNumeric<GLint> index = 0;
   size_t last = name.size() - 1;
   for (size_t pos = open_pos + 1; pos < last; ++pos) {
     int8 digit = name[pos] - '0';
@@ -75,8 +76,11 @@ bool GetUniformNameSansElement(
     }
     index = index * 10 + digit;
   }
+  if (!index.IsValid()) {
+    return false;
+  }
 
-  *element_index = index;
+  *element_index = index.ValueOrDie();
   *new_name = name.substr(0, open_pos);
   return true;
 }
@@ -193,8 +197,7 @@ bool ProgramManager::IsInvalidPrefix(const char* name, size_t length) {
       memcmp(name, kInvalidPrefix, sizeof(kInvalidPrefix)) == 0);
 }
 
-Program::Program(
-    ProgramManager* manager, GLuint service_id)
+Program::Program(ProgramManager* manager, GLuint service_id)
     : manager_(manager),
       use_count_(0),
       max_attrib_name_length_(0),

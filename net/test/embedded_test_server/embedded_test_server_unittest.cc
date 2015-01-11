@@ -4,6 +4,7 @@
 
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
+#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "net/http/http_response_headers.h"
@@ -111,12 +112,12 @@ class EmbeddedTestServerTest: public testing::Test,
 };
 
 TEST_F(EmbeddedTestServerTest, GetBaseURL) {
-  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%d/", server_->port()),
+  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%u/", server_->port()),
                                server_->base_url().spec());
 }
 
 TEST_F(EmbeddedTestServerTest, GetURL) {
-  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%d/path?query=foo",
+  EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%u/path?query=foo",
                                server_->port()),
             server_->GetURL("/path?query=foo").spec());
 }

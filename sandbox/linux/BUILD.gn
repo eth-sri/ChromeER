@@ -67,14 +67,17 @@ source_set("sandbox_linux_test_utils") {
 # The main sandboxing test target.
 test("sandbox_linux_unittests") {
   sources = [
-    "services/broker_process_unittest.cc",
     "services/scoped_process_unittest.cc",
+    "services/syscall_wrappers_unittest.cc",
     "services/thread_helpers_unittests.cc",
     "services/yama_unittests.cc",
+    "syscall_broker/broker_file_permission_unittest.cc",
+    "syscall_broker/broker_process_unittest.cc",
     "tests/main.cc",
     "tests/scoped_temporary_file.cc",
     "tests/scoped_temporary_file.h",
     "tests/scoped_temporary_file_unittest.cc",
+    "tests/test_utils_unittest.cc",
     "tests/unit_tests_unittest.cc",
   ]
 
@@ -106,6 +109,7 @@ test("sandbox_linux_unittests") {
       "seccomp-bpf/bpf_tests_unittest.cc",
       "seccomp-bpf/codegen_unittest.cc",
       "seccomp-bpf/errorcode_unittest.cc",
+      "seccomp-bpf/sandbox_bpf_unittest.cc",
       "seccomp-bpf/syscall_iterator_unittest.cc",
       "seccomp-bpf/syscall_unittest.cc",
     ]
@@ -113,6 +117,7 @@ test("sandbox_linux_unittests") {
   if (compile_credentials) {
     sources += [
       "services/credentials_unittest.cc",
+      "services/proc_util_unittest.cc",
       "services/unix_domain_socket_unittest.cc",
     ]
   }
@@ -150,15 +155,12 @@ component("seccomp_bpf") {
     "bpf_dsl/policy_compiler.cc",
     "bpf_dsl/policy_compiler.h",
     "bpf_dsl/trap_registry.h",
-    "seccomp-bpf/basicblock.cc",
-    "seccomp-bpf/basicblock.h",
     "seccomp-bpf/codegen.cc",
     "seccomp-bpf/codegen.h",
     "seccomp-bpf/die.cc",
     "seccomp-bpf/die.h",
     "seccomp-bpf/errorcode.cc",
     "seccomp-bpf/errorcode.h",
-    "seccomp-bpf/instruction.h",
     "seccomp-bpf/linux_seccomp.h",
     "seccomp-bpf/sandbox_bpf.cc",
     "seccomp-bpf/sandbox_bpf.h",
@@ -174,6 +176,7 @@ component("seccomp_bpf") {
   defines = [ "SANDBOX_IMPLEMENTATION" ]
 
   deps = [
+    ":sandbox_services",
     ":sandbox_services_headers",
     "//base",
   ]
@@ -221,16 +224,29 @@ if (is_linux) {
 
 component("sandbox_services") {
   sources = [
-    "services/broker_process.cc",
-    "services/broker_process.h",
     "services/init_process_reaper.cc",
     "services/init_process_reaper.h",
     "services/scoped_process.cc",
     "services/scoped_process.h",
+    "services/syscall_wrappers.cc",
+    "services/syscall_wrappers.h",
     "services/thread_helpers.cc",
     "services/thread_helpers.h",
     "services/yama.h",
     "services/yama.cc",
+    "syscall_broker/broker_channel.cc",
+    "syscall_broker/broker_channel.h",
+    "syscall_broker/broker_client.cc",
+    "syscall_broker/broker_client.h",
+    "syscall_broker/broker_common.h",
+    "syscall_broker/broker_file_permission.cc",
+    "syscall_broker/broker_file_permission.h",
+    "syscall_broker/broker_host.cc",
+    "syscall_broker/broker_host.h",
+    "syscall_broker/broker_policy.cc",
+    "syscall_broker/broker_policy.h",
+    "syscall_broker/broker_process.cc",
+    "syscall_broker/broker_process.h",
   ]
 
   defines = [ "SANDBOX_IMPLEMENTATION" ]
@@ -239,6 +255,8 @@ component("sandbox_services") {
     sources += [
       "services/credentials.cc",
       "services/credentials.h",
+      "services/proc_util.cc",
+      "services/proc_util.h",
     ]
     # For capabilities.cc.
     configs += [ "//build/config/linux:libcap" ]

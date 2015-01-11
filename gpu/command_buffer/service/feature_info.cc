@@ -394,8 +394,14 @@ void FeatureInfo::InitializeFeatures() {
     validators_.index_type.AddValue(GL_UNSIGNED_INT);
   }
 
-  if (is_es3 || extensions.Contains("GL_EXT_sRGB") ||
-      gfx::HasDesktopGLFeatures()) {
+  // With EXT_sRGB, unsized SRGB_EXT and SRGB_ALPHA_EXT are accepted by the
+  // <format> and <internalformat> parameter of TexImage2D. GLES3 adds support
+  // for SRGB Textures but the accepted internal formats for TexImage2D are only
+  // sized formats GL_SRGB8 and GL_SRGB8_ALPHA8. Also, SRGB_EXT isn't a valid
+  // <format> in this case. So, even with GLES3 explicitly check for
+  // GL_EXT_sRGB.
+  if (((is_es3 || extensions.Contains("GL_OES_rgb8_rgba8")) &&
+      extensions.Contains("GL_EXT_sRGB")) || gfx::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_sRGB");
     texture_format_validators_[GL_SRGB_EXT].AddValue(GL_UNSIGNED_BYTE);
     texture_format_validators_[GL_SRGB_ALPHA_EXT].AddValue(GL_UNSIGNED_BYTE);
@@ -477,16 +483,22 @@ void FeatureInfo::InitializeFeatures() {
     enable_texture_half_float_linear = true;
     may_enable_chromium_color_buffer_float = true;
   } else {
-    if (is_es3 || extensions.Contains("GL_OES_texture_float")) {
+    // GLES3 adds support for Float type by default but it doesn't support all
+    // formats as GL_OES_texture_float(i.e.LUMINANCE_ALPHA,LUMINANCE and Alpha)
+    if (extensions.Contains("GL_OES_texture_float")) {
       enable_texture_float = true;
       if (extensions.Contains("GL_OES_texture_float_linear")) {
         enable_texture_float_linear = true;
       }
+      // This extension allows a variety of floating point formats to be
+      // rendered to via framebuffer objects. Enable it's usage only if
+      // support for Floating textures is enabled.
       if ((is_es3 && extensions.Contains("GL_EXT_color_buffer_float")) ||
           feature_flags_.is_angle) {
         may_enable_chromium_color_buffer_float = true;
       }
     }
+
     // TODO(dshwang): GLES3 supports half float by default but GL_HALF_FLOAT_OES
     // isn't equal to GL_HALF_FLOAT.
     if (extensions.Contains("GL_OES_texture_half_float")) {
@@ -842,6 +854,9 @@ void FeatureInfo::InitializeFeatures() {
   if (workarounds_.disable_egl_khr_fence_sync) {
     gfx::g_driver_egl.ext.b_EGL_KHR_fence_sync = false;
   }
+  if (workarounds_.disable_egl_khr_wait_sync) {
+    gfx::g_driver_egl.ext.b_EGL_KHR_wait_sync = false;
+  }
 #endif
   if (workarounds_.disable_arb_sync)
     gfx::g_driver_gl.ext.b_GL_ARB_sync = false;
@@ -849,12 +864,14 @@ void FeatureInfo::InitializeFeatures() {
   UMA_HISTOGRAM_BOOLEAN("GPU.FenceSupport", ui_gl_fence_works);
 
   feature_flags_.map_buffer_range =
-      is_es3 || extensions.Contains("GL_ARB_map_buffer_range");
+      is_es3 || extensions.Contains("GL_ARB_map_buffer_range") ||
+      extensions.Contains("GL_EXT_map_buffer_range");
 
   // Really it's part of core OpenGL 2.1 and up, but let's assume the
   // extension is still advertised.
   bool has_pixel_buffers =
-      is_es3 || extensions.Contains("GL_ARB_pixel_buffer_object");
+      is_es3 || extensions.Contains("GL_ARB_pixel_buffer_object") ||
+      extensions.Contains("GL_NV_pixel_buffer_object");
 
   // We will use either glMapBuffer() or glMapBufferRange() for async readbacks.
   if (has_pixel_buffers && ui_gl_fence_works &&

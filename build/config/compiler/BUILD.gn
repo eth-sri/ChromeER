@@ -10,6 +10,8 @@ if (is_posix) {
   import("//build/config/gcc/gcc_version.gni")
 }
 
+import("//build/toolchain/ccache.gni")
+
 declare_args() {
   # Normally, Android builds are lightly optimized, even for debug builds, to
   # keep binary size down. Setting this flag to true disables such optimization
@@ -30,7 +32,7 @@ if (!is_win) {
   # with some utilities such as icecc and ccache. Requires gold and
   # gcc >= 4.8 or clang.
   # http://gcc.gnu.org/wiki/DebugFission
-  use_debug_fission = use_gold && linux_use_bundled_binutils
+  use_debug_fission = use_gold && linux_use_bundled_binutils && !use_ccache
 }
 
 # default_include_dirs ---------------------------------------------------------
@@ -46,7 +48,9 @@ config("default_include_dirs") {
 }
 
 # TODO(GYP): is_ubsan, is_ubsan_vptr
-using_sanitizer = is_asan || is_lsan || is_tsan || is_msan
+if (!is_win) {
+  using_sanitizer = is_asan || is_lsan || is_tsan || is_msan
+}
 
 # compiler ---------------------------------------------------------------------
 #
@@ -483,7 +487,11 @@ config("runtime_library") {
       "-isystem" + rebase_path("$android_stlport_root/stlport",
                                root_build_dir)
     ]
-    lib_dirs += [ "$android_stlport_root/libs/$android_app_abi" ]
+    if (arm_use_thumb) {
+      lib_dirs += [ "$android_stlport_root/libs/$android_app_abi/thumb" ]
+    } else {
+      lib_dirs += [ "$android_stlport_root/libs/$android_app_abi" ]
+    }
 
     if (component_mode == "shared_library") {
       libs += [ "stlport_shared" ]
@@ -529,7 +537,6 @@ config("chromium_code") {
   } else {
     cflags = [
       "-Wall",
-      "-Wextra",
 
       # GCC turns on -Wsign-compare for C++ under -Wall, but clang doesn't,
       # so we specify it explicitly.
@@ -555,6 +562,8 @@ config("no_chromium_code") {
     cflags += [
       "/W3",  # Warning level 3.
       "/wd4800",  # Disable warning when forcing value to bool.
+      "/wd4267",  # TODO(jschuh): size_t to int.
+      "/wd4996",  # Deprecated function warning.
     ]
     defines += [
       "_CRT_NONSTDC_NO_WARNINGS",
@@ -683,13 +692,14 @@ config("default_warnings") {
       # Warnings to evaluate and possibly fix/reenable later:
 
       "/wd4100",  # Unreferenced formal function parameter.
-      "/wd4189",  # A variable was declared and initialized but never used.
+      "/wd4121",  # Alignment of a member was sensitive to packing.
       "/wd4244",  # Conversion: possible loss of data.
       "/wd4481",  # Nonstandard extension: override specifier.
       "/wd4505",  # Unreferenced local function has been removed.
       "/wd4510",  # Default constructor could not be generated.
       "/wd4512",  # Assignment operator could not be generated.
       "/wd4610",  # Class can never be instantiated, constructor required.
+      "/wd4996",  # Deprecated function warning.
     ]
   } else {
     # Common GCC warning setup.
@@ -739,9 +749,6 @@ config("default_warnings") {
 
         # TODO(thakis): Remove, http://crbug.com/263960
         "-Wno-reserved-user-defined-literal",
-
-        # TODO(hans): Clean this up. Or disable with finer granularity.
-        "-Wno-unused-local-typedef",
       ]
     }
     if (gcc_version >= 48) {
@@ -912,15 +919,28 @@ config("optimize_max") {
   cflags = common_optimize_on_cflags
   ldflags = common_optimize_on_ldflags
   if (is_win) {
+    cflags -= [
+      "/Os",
+    ]
     cflags += [
       "/Ot",   # Favor speed over size.
-      "/GL",   # Whole program optimization.
-      # Disable Warning 4702 ("Unreachable code") for the WPO/PGO builds.
-      # Probably anything that this would catch that wouldn't be caught in a
-      # normal build isn't going to actually be a bug, so the incremental value
-      # of C4702 for PGO builds is likely very small.
-      "/wd4702",
     ]
+    if (is_official_build) {
+      # TODO(GYP): TODO(dpranke): Should these only be on in an official
+      # build, or on all the time? For now we'll require official build so
+      # that the compile is clean.
+      cflags += [
+        "/GL",   # Whole program optimization.
+        # Disable Warning 4702 ("Unreachable code") for the WPO/PGO builds.
+        # Probably anything that this would catch that wouldn't be caught in a
+        # normal build isn't going to actually be a bug, so the incremental
+        # value of C4702 for PGO builds is likely very small.
+        "/wd4702",
+      ]
+      ldflags += [
+        "/LTCG",
+      ]
+    }
   } else {
     cflags += [
       "-O2",

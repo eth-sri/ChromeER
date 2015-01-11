@@ -61,6 +61,8 @@
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/search_provider_install_state_message_filter.h"
+#include "chrome/browser/services/gcm/push_messaging_permission_context.h"
+#include "chrome/browser/services/gcm/push_messaging_permission_context_factory.h"
 #include "chrome/browser/signin/principals_message_filter.h"
 #include "chrome/browser/speech/chrome_speech_recognition_manager_delegate.h"
 #include "chrome/browser/speech/tts_controller.h"
@@ -221,10 +223,9 @@
 
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/guest_view/guest_view_base.h"
 #include "extensions/browser/guest_view/guest_view_manager.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
@@ -513,9 +514,15 @@ void SetApplicationLocaleOnIOThread(const std::string& locale) {
 }
 
 void HandleBlockedPopupOnUIThread(const BlockedWindowParams& params) {
-  WebContents* tab = tab_util::GetWebContentsByID(params.render_process_id(),
-                                                  params.opener_id());
-  if (!tab)
+  // TODO(jochen): This code path should use RenderFrameHosts. See
+  // http://crbug.com/431769 for details.
+  RenderViewHost* render_view_host =
+      RenderViewHost::FromID(params.render_process_id(), params.opener_id());
+  if (!render_view_host)
+    return;
+  WebContents* tab = WebContents::FromRenderViewHost(render_view_host);
+  // The tab might already have navigated away.
+  if (!tab || tab->GetRenderViewHost() != render_view_host)
     return;
 
   prerender::PrerenderContents* prerender_contents =
@@ -1338,11 +1345,12 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 
     // Please keep this in alphabetical order.
     static const char* const kSwitchNames[] = {
-      autofill::switches::kDisableIgnoreAutocompleteOff,
       autofill::switches::kDisablePasswordGeneration,
       autofill::switches::kEnablePasswordGeneration,
+      autofill::switches::kEnableSingleClickAutofill,
       autofill::switches::kIgnoreAutocompleteOffForAutofill,
       autofill::switches::kLocalHeuristicsOnlyForPasswordGeneration,
+      autofill::switches::kRespectAutocompleteOffForAutofill,
 #if defined(ENABLE_EXTENSIONS)
       extensions::switches::kAllowHTTPBackgroundPage,
       extensions::switches::kAllowLegacyExtensionManifests,
@@ -1358,6 +1366,8 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kCloudPrintURL,
       switches::kCloudPrintXmppEndpoint,
       switches::kDisableBundledPpapiFlash,
+      switches::kDisableCastStreamingHWEncoding,
+      switches::kDisableOutOfProcessPdf,
       switches::kEnableBenchmarking,
       switches::kEnableNaCl,
 #if !defined(DISABLE_NACL)
@@ -1365,13 +1375,13 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kEnableNaClNonSfiMode,
 #endif
       switches::kEnableNetBenchmarking,
+      switches::kEnableOutOfProcessPdf,
       switches::kEnablePluginPlaceholderShadowDom,
       switches::kEnableShowModalDialog,
       switches::kEnableStreamlinedHostedApps,
       switches::kEnableWebBasedSignin,
       switches::kJavaScriptHarmony,
       switches::kMessageLoopHistogrammer,
-      switches::kOutOfProcessPdf,
       switches::kPlaybackMode,
       switches::kPpapiFlashArgs,
       switches::kPpapiFlashPath,
@@ -1950,11 +1960,12 @@ void ChromeContentBrowserClient::RequestPermission(
 #endif
       break;
     case content::PERMISSION_PUSH_MESSAGING:
-      // Push messaging does not require this flow as it goes directly through
-      // the push service implementation so there is no reason to
-      // implement it here.
-      NOTIMPLEMENTED() << "RequestPermission not implemented for "
-                       << permission;
+      gcm::PushMessagingPermissionContextFactory::GetForProfile(profile)
+          ->RequestPermission(web_contents,
+                              request_id,
+                              requesting_frame.GetOrigin(),
+                              user_gesture,
+                              result_callback);
       break;
     case content::PERMISSION_NUM:
       NOTREACHED() << "Invalid RequestPermission for " << permission;
@@ -2017,6 +2028,8 @@ static ContentSettingsType PermissionToContentSetting(
   switch (permission) {
     case content::PERMISSION_MIDI_SYSEX:
       return CONTENT_SETTINGS_TYPE_MIDI_SYSEX;
+    case content::PERMISSION_PUSH_MESSAGING:
+      return CONTENT_SETTINGS_TYPE_PUSH_MESSAGING;
     case content::PERMISSION_NOTIFICATIONS:
       return CONTENT_SETTINGS_TYPE_NOTIFICATIONS;
     case content::PERMISSION_GEOLOCATION:
@@ -2140,9 +2153,8 @@ void ChromeContentBrowserClient::ResourceDispatcherHostCreated() {
   return g_browser_process->ResourceDispatcherHostCreated();
 }
 
-// TODO(tommi): Rename from Get to Create.
 content::SpeechRecognitionManagerDelegate*
-    ChromeContentBrowserClient::GetSpeechRecognitionManagerDelegate() {
+    ChromeContentBrowserClient::CreateSpeechRecognitionManagerDelegate() {
   return new speech::ChromeSpeechRecognitionManagerDelegate();
 }
 
@@ -2356,11 +2368,8 @@ bool ChromeContentBrowserClient::AllowPepperSocketAPI(
   Profile* profile = Profile::FromBrowserContext(browser_context);
   const extensions::ExtensionSet* extension_set = NULL;
   if (profile) {
-    const ExtensionService* ext_service =
-        extensions::ExtensionSystem::Get(profile)->extension_service();
-    if (ext_service) {
-      extension_set = ext_service->extensions();
-    }
+    extension_set =
+        &extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   }
 
   if (private_api) {
@@ -2593,11 +2602,8 @@ bool ChromeContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
   Profile* profile = Profile::FromBrowserContext(browser_context);
   const extensions::ExtensionSet* extension_set = NULL;
   if (profile) {
-    const ExtensionService* ext_service =
-        extensions::ExtensionSystem::Get(profile)->extension_service();
-    if (ext_service) {
-      extension_set = ext_service->extensions();
-    }
+    extension_set =
+        &extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   }
   return IsExtensionOrSharedModuleWhitelisted(url, extension_set,
                                               allowed_file_handle_origins_) ||
@@ -2621,11 +2627,8 @@ bool ChromeContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs(
   Profile* profile = Profile::FromBrowserContext(browser_context);
   const extensions::ExtensionSet* extension_set = NULL;
   if (profile) {
-    const ExtensionService* ext_service =
-        extensions::ExtensionSystem::Get(profile)->extension_service();
-    if (ext_service) {
-      extension_set = ext_service->extensions();
-    }
+    extension_set =
+        &extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   }
 
   // Allow access for whitelisted applications.

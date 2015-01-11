@@ -186,23 +186,6 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::GPUInfo)
   IPC_STRUCT_TRAITS_MEMBER(video_encode_accelerator_supported_profiles)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(gpu::Capabilities)
-  IPC_STRUCT_TRAITS_MEMBER(post_sub_buffer)
-  IPC_STRUCT_TRAITS_MEMBER(egl_image_external)
-  IPC_STRUCT_TRAITS_MEMBER(texture_format_bgra8888)
-  IPC_STRUCT_TRAITS_MEMBER(texture_format_etc1)
-  IPC_STRUCT_TRAITS_MEMBER(texture_format_etc1_npot)
-  IPC_STRUCT_TRAITS_MEMBER(texture_rectangle)
-  IPC_STRUCT_TRAITS_MEMBER(iosurface)
-  IPC_STRUCT_TRAITS_MEMBER(texture_usage)
-  IPC_STRUCT_TRAITS_MEMBER(texture_storage)
-  IPC_STRUCT_TRAITS_MEMBER(discard_framebuffer)
-  IPC_STRUCT_TRAITS_MEMBER(sync_query)
-  IPC_STRUCT_TRAITS_MEMBER(image)
-  IPC_STRUCT_TRAITS_MEMBER(blend_equation_advanced)
-  IPC_STRUCT_TRAITS_MEMBER(blend_equation_advanced_coherent)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(content::GPUVideoMemoryUsageStats::ProcessStats)
   IPC_STRUCT_TRAITS_MEMBER(video_memory)
   IPC_STRUCT_TRAITS_MEMBER(has_duplicates)
@@ -266,16 +249,18 @@ IPC_MESSAGE_CONTROL5(GpuMsg_CreateViewCommandBuffer,
                      GPUCreateCommandBufferConfig, /* init_params */
                      int32 /* route_id */)
 
-// Tells the GPU process to create a new gpu memory buffer for |handle|.
-IPC_MESSAGE_CONTROL4(GpuMsg_CreateGpuMemoryBuffer,
-                     gfx::GpuMemoryBufferHandle, /* handle */
+// Tells the GPU process to create a new gpu memory buffer.
+IPC_MESSAGE_CONTROL5(GpuMsg_CreateGpuMemoryBuffer,
+                     gfx::GpuMemoryBufferId, /* id */
                      gfx::Size, /* size */
                      gfx::GpuMemoryBuffer::Format, /* format */
-                     gfx::GpuMemoryBuffer::Usage /* usage */)
+                     gfx::GpuMemoryBuffer::Usage, /* usage */
+                     int32 /* client_id */)
 
 // Tells the GPU process to destroy buffer.
-IPC_MESSAGE_CONTROL2(GpuMsg_DestroyGpuMemoryBuffer,
-                     gfx::GpuMemoryBufferHandle, /* handle */
+IPC_MESSAGE_CONTROL3(GpuMsg_DestroyGpuMemoryBuffer,
+                     gfx::GpuMemoryBufferId, /* id */
+                     int32, /* client_id */
                      int32 /* sync_point */)
 
 // Tells the GPU process to create a context for collecting graphics card
@@ -309,6 +294,11 @@ IPC_MESSAGE_CONTROL0(GpuMsg_DisableWatchdog)
 
 // Tells the GPU process that the browser has seen a GPU switch.
 IPC_MESSAGE_CONTROL0(GpuMsg_GpuSwitched)
+
+// Tells the GPU process to delete the default_offscreen surface. It will also
+// close the display and any other resources when the last GL surface is
+// deleted. GPU process will respond with GphHosMsg_ResourcesRelinquished.
+IPC_MESSAGE_CONTROL0(GpuMsg_RelinquishResources)
 
 //------------------------------------------------------------------------------
 // GPU Host Messages
@@ -410,6 +400,9 @@ IPC_MESSAGE_CONTROL1(GpuHostMsg_DidDestroyOffscreenContext,
 // Tells the browser about GPU memory usage statistics for UMA logging.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_GpuMemoryUmaStats,
                      content::GPUMemoryUmaStats /* GPU memory UMA stats */)
+
+// Response to GpuMsg_RelinquishResources.
+IPC_MESSAGE_CONTROL0(GpuHostMsg_ResourcesRelinquished)
 
 //------------------------------------------------------------------------------
 // GPU Channel Messages

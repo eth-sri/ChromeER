@@ -89,6 +89,7 @@ function Downloads() {
    */
   this.downloads_ = {};
   this.node_ = $('downloads-display');
+  this.noDownloadsOrResults_ = $('no-downloads-or-results');
   this.summary_ = $('downloads-summary-text');
   this.searchText_ = '';
 
@@ -108,6 +109,8 @@ function Downloads() {
     'chrome://theme/IDR_DOWNLOAD_PROGRESS_FOREGROUND_32@2x';
 
   window.addEventListener('keydown', this.onKeyDown_.bind(this));
+
+  this.updateResults();
 }
 
 /**
@@ -136,7 +139,7 @@ Downloads.prototype.updated = function(download) {
   // TODO(benjhayden) Only do this if its nodeSince_ or nodeDate_ actually did
   // change since this may touch 150 elements and Downloads.prototype.updated
   // may be called 150 times.
-  this.updateDateDisplay_();
+  this.onDownloadListChanged_();
 };
 
 /**
@@ -148,7 +151,7 @@ Downloads.prototype.setSearchText = function(searchText) {
 };
 
 /**
- * Update the summary block above the results
+ * Update the summary block above the results.
  */
 Downloads.prototype.updateSummary = function() {
   if (this.searchText_) {
@@ -157,12 +160,19 @@ Downloads.prototype.updateSummary = function() {
   } else {
     this.summary_.textContent = '';
   }
+};
 
-  var hasDownloads = false;
-  for (var i in this.downloads_) {
-    hasDownloads = true;
-    break;
-  }
+/**
+ * Called when either a search or load completes to update whether there are
+ * results or not.
+ */
+Downloads.prototype.updateResults = function() {
+  this.noDownloadsOrResults_.textContent = loadTimeData.getString(
+      this.searchText_ ? 'no_search_results' : 'no_downloads');
+
+  var hasDownloads = this.size() > 0;
+  this.node_.hidden = !hasDownloads;
+  this.noDownloadsOrResults_.hidden = hasDownloads;
 };
 
 /**
@@ -174,11 +184,12 @@ Downloads.prototype.size = function() {
 };
 
 /**
- * Update the date visibility in our nodes so that no date is
- * repeated.
+ * Called whenever the downloads lists items have changed (either by being
+ * updated, added, or removed).
  * @private
  */
-Downloads.prototype.updateDateDisplay_ = function() {
+Downloads.prototype.onDownloadListChanged_ = function() {
+  // Update the date visibility in our nodes so that no date is repeated.
   var dateContainers = document.getElementsByClassName('date-container');
   var displayed = {};
   for (var i = 0, container; container = dateContainers[i]; i++) {
@@ -190,6 +201,8 @@ Downloads.prototype.updateDateDisplay_ = function() {
       container.style.display = 'block';
     }
   }
+
+  this.updateResults();
 };
 
 /**
@@ -199,7 +212,7 @@ Downloads.prototype.updateDateDisplay_ = function() {
 Downloads.prototype.remove = function(id) {
   this.node_.removeChild(this.downloads_[id].node);
   delete this.downloads_[id];
-  this.updateDateDisplay_();
+  this.onDownloadListChanged_();
 };
 
 /**
@@ -948,6 +961,7 @@ function downloadsList(results) {
     downloads.clear();
     downloadUpdated(results);
   }
+  downloads.updateResults();
   downloads.updateSummary();
 }
 

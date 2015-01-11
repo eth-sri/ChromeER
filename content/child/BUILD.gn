@@ -15,9 +15,14 @@ source_set("child") {
   sources = rebase_path(content_child_gypi_values.private_child_sources,
                         ".", "//content")
 
+  public_deps = [
+    "//mojo/edk/system",
+  ]
+
   deps = [
     "//base",
     "//components/tracing",
+    "//mojo/common",
     "//mojo/environment:chromium",
     "//mojo/public/interfaces/application",
     "//skia",
@@ -25,6 +30,7 @@ source_set("child") {
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/native_theme",
     "//url",
   ]
 
@@ -41,7 +47,9 @@ source_set("child") {
     ]
   }
 
-  if (!enable_plugins) {
+  if (enable_plugins) {
+    deps += [ "//ppapi:ppapi_proxy" ]
+  } else {
     sources -= [
       "browser_font_resource_trusted.cc",
       "npapi/plugin_host.cc",

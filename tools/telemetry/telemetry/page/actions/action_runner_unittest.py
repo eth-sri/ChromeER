@@ -10,7 +10,7 @@ from telemetry.core.platform import tracing_options
 from telemetry.page.actions import action_runner as action_runner_module
 from telemetry.page.actions import page_action
 from telemetry.timeline import model
-from telemetry.unittest import tab_test_case
+from telemetry.unittest_util import tab_test_case
 from telemetry.web_perf import timeline_interaction_record as tir_module
 
 
@@ -48,7 +48,8 @@ class ActionRunnerInteractionTest(tab_test_case.TabTestCase):
     for attribute_name in interaction_kwargs:
       self.assertTrue(getattr(records[0], attribute_name))
 
-  @benchmark.Disabled('chromeos')
+  # Test disabled for android: crbug.com/437057
+  @benchmark.Disabled('android', 'chromeos')
   def testIssuingMultipleMeasurementInteractionRecords(self):
     self.VerifyIssuingInteractionRecords(is_fast=True)
     self.VerifyIssuingInteractionRecords(is_responsive=True)
@@ -182,7 +183,7 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
       action_runner.ClickElement('#notfound')
     self.assertRaises(exceptions.EvaluateException, WillFail)
 
-  @benchmark.Disabled('debug')
+  @benchmark.Disabled('android', 'debug') # crbug.com/437068
   def testTapElement(self):
     self.Navigate('page_with_clickables.html')
     action_runner = action_runner_module.ActionRunner(self._tab,
@@ -205,6 +206,7 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
       action_runner.TapElement('#notfound')
     self.assertRaises(exceptions.EvaluateException, WillFail)
 
+  @benchmark.Disabled('android') # crbug.com/437065.
   def testScroll(self):
     if not page_action.IsGestureSourceTypeSupported(
         self._tab, 'touch'):
@@ -228,6 +230,7 @@ class ActionRunnerTest(tab_test_case.TabTestCase):
     self.assertTrue(action_runner.EvaluateJavaScript(
         'document.body.scrollLeft') > 75)
 
+  @benchmark.Disabled('android') # crbug.com/437065.
   def testSwipe(self):
     if not page_action.IsGestureSourceTypeSupported(
         self._tab, 'touch'):

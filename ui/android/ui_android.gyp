@@ -24,10 +24,26 @@
       'includes': [ '../../build/android/java_cpp_enum.gypi' ],
     },
     {
+      'target_name': 'system_ui_resource_type_java',
+      'type': 'none',
+      'variables': {
+        'source_file': '../base/android/system_ui_resource_type.h',
+      },
+      'includes': [ '../../build/android/java_cpp_enum.gypi' ],
+    },
+    {
       'target_name': 'window_open_disposition_java',
       'type': 'none',
       'variables': {
         'source_file': '../base/window_open_disposition.h',
+      },
+      'includes': [ '../../build/android/java_cpp_enum.gypi' ],
+    },
+    {
+      'target_name': 'text_input_type_java',
+      'type': 'none',
+      'variables': {
+        'source_file': '../base/ime/text_input_type.h',
       },
       'includes': [ '../../build/android/java_cpp_enum.gypi' ],
     },
@@ -44,8 +60,22 @@
         '../../base/base.gyp:base_java',
         'bitmap_format_java',
         'page_transition_types_java',
+        'system_ui_resource_type_java',
         'ui_strings_grd',
         'window_open_disposition_java',
+        'text_input_type_java',
+      ],
+      'includes': [ '../../build/java.gypi' ],
+    },
+    {
+      'target_name': 'ui_javatests',
+      'type': 'none',
+      'variables': {
+        'java_in_dir': '../../ui/android/javatests',
+      },
+      'dependencies': [
+        '../../base/base.gyp:base_java_test_support',
+        'ui_java',
       ],
       'includes': [ '../../build/java.gypi' ],
     },

@@ -133,8 +133,6 @@
       'common/extensions/api/extension_action/action_info.h',
       'common/extensions/api/file_browser_handlers/file_browser_handler.cc',
       'common/extensions/api/file_browser_handlers/file_browser_handler.h',
-      'common/extensions/api/i18n/default_locale_handler.cc',
-      'common/extensions/api/i18n/default_locale_handler.h',
       'common/extensions/api/input_ime/input_components_handler.cc',
       'common/extensions/api/input_ime/input_components_handler.h',
       'common/extensions/api/notifications/notification_style.cc',
@@ -169,8 +167,8 @@
       'common/extensions/command.h',
       'common/extensions/extension_constants.cc',
       'common/extensions/extension_constants.h',
-      'common/extensions/extension_file_util.cc',
-      'common/extensions/extension_file_util.h',
+      'common/extensions/extension_metrics.cc',
+      'common/extensions/extension_metrics.h',
       'common/extensions/extension_process_policy.cc',
       'common/extensions/extension_process_policy.h',
       'common/extensions/features/chrome_channel_feature_filter.cc',
@@ -414,7 +412,7 @@
             'common/pepper_permission_util.h',
           ],
         }],
-        ['enable_printing==0', {
+        ['enable_basic_printing==0 and enable_print_preview==0', {
           'sources!': [
             'common/print_messages.cc',
             'common/print_messages.h',
@@ -424,7 +422,7 @@
             '<(DEPTH)/printing/printing.gyp:printing',
           ],
         }],
-        ['enable_printing==1', {
+        ['enable_print_preview==1', {
           'sources': [ '<@(chrome_common_service_process_sources)' ],
         }],
         ['enable_service_discovery==1', {
@@ -591,7 +589,6 @@
       'sources': [
         'common/net/net_resource_provider.cc',
         'common/net/net_resource_provider.h',
-        'common/net/predictor_common.h',
         'common/net/url_util.cc',
         'common/net/url_util.h',
         'common/net/x509_certificate_model.cc',
@@ -603,12 +600,14 @@
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
+        '<(DEPTH)/components/components.gyp:dns_prefetch_common',
         '<(DEPTH)/components/components.gyp:error_page_common',
         '<(DEPTH)/crypto/crypto.gyp:crypto',
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+        '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
       ],
       'conditions': [
         ['OS != "ios"', {

@@ -3,19 +3,15 @@
 // found in the LICENSE file.
 
 /**
- * Returns the area of the intersection of two rectangles.
+ * Returns the height of the intersection of two rectangles.
  * @param {Object} rect1 the first rect
  * @param {Object} rect2 the second rect
- * @return {number} the area of the intersection of the rects
+ * @return {number} the height of the intersection of the rects
  */
-function getIntersectionArea(rect1, rect2) {
-  var xOverlap = Math.max(0,
-      Math.min(rect1.x + rect1.width, rect2.x + rect2.width) -
-      Math.max(rect1.x, rect2.x));
-  var yOverlap = Math.max(0,
+function getIntersectionHeight(rect1, rect2) {
+  return Math.max(0,
       Math.min(rect1.y + rect1.height, rect2.y + rect2.height) -
       Math.max(rect1.y, rect2.y));
-  return xOverlap * yOverlap;
 }
 
 /**
@@ -107,6 +103,14 @@ Viewport.prototype = {
     }
     var documentWidth = this.documentDimensions_.width * zoom;
     var documentHeight = this.documentDimensions_.height * zoom;
+
+    // If scrollbars are required for one direction, expand the document in the
+    // other direction to take the width of the scrollbars into account when
+    // deciding whether the other direction needs scrollbars.
+    if (documentWidth > this.window_.innerWidth)
+      documentHeight += this.scrollbarWidth_;
+    else if (documentHeight > this.window_.innerHeight)
+      documentWidth += this.scrollbarWidth_;
     return {
       horizontal: documentWidth > this.window_.innerWidth,
       vertical: documentHeight > this.window_.innerHeight
@@ -220,18 +224,16 @@ Viewport.prototype = {
       throw 'Called Viewport.setZoomInternal_ without calling ' +
             'Viewport.mightZoom_.';
     }
-    var oldZoom = this.zoom_;
-    this.zoom_ = newZoom;
-    // Record the scroll position (relative to the middle of the window).
+    // Record the scroll position (relative to the top-left of the window).
     var currentScrollPos = [
-      (this.window_.pageXOffset + this.window_.innerWidth / 2) / oldZoom,
-      (this.window_.pageYOffset + this.window_.innerHeight / 2) / oldZoom
+      this.window_.pageXOffset / this.zoom_,
+      this.window_.pageYOffset / this.zoom_
     ];
+    this.zoom_ = newZoom;
     this.contentSizeChanged_();
     // Scroll to the scaled scroll position.
-    this.window_.scrollTo(
-        currentScrollPos[0] * newZoom - this.window_.innerWidth / 2,
-        currentScrollPos[1] * newZoom - this.window_.innerHeight / 2);
+    this.window_.scrollTo(currentScrollPos[0] * newZoom,
+                          currentScrollPos[1] * newZoom);
   },
 
   /**
@@ -292,31 +294,30 @@ Viewport.prototype = {
   },
 
   /**
-   * Returns the page with the most pixels in the current viewport.
+   * Returns the page with the greatest proportion of its height in the current
+   * viewport.
    * @return {int} the index of the most visible page.
    */
   getMostVisiblePage: function() {
     var firstVisiblePage = this.getPageAtY_(this.position.y / this.zoom_);
-    var mostVisiblePage = {number: 0, area: 0};
+    if (firstVisiblePage == this.pageDimensions_.length - 1)
+      return firstVisiblePage;
+
     var viewportRect = {
       x: this.position.x / this.zoom_,
       y: this.position.y / this.zoom_,
       width: this.size.width / this.zoom_,
       height: this.size.height / this.zoom_
     };
-    for (var i = firstVisiblePage; i < this.pageDimensions_.length; i++) {
-      var area = getIntersectionArea(this.pageDimensions_[i],
-                                     viewportRect);
-      // If we hit a page with 0 area overlap, we must have gone past the
-      // pages visible in the viewport so we can break.
-      if (area == 0)
-        break;
-      if (area > mostVisiblePage.area) {
-        mostVisiblePage.area = area;
-        mostVisiblePage.number = i;
-      }
-    }
-    return mostVisiblePage.number;
+    var firstVisiblePageVisibility = getIntersectionHeight(
+        this.pageDimensions_[firstVisiblePage], viewportRect) /
+        this.pageDimensions_[firstVisiblePage].height;
+    var nextPageVisibility = getIntersectionHeight(
+        this.pageDimensions_[firstVisiblePage + 1], viewportRect) /
+        this.pageDimensions_[firstVisiblePage + 1].height;
+    if (nextPageVisibility > firstVisiblePageVisibility)
+      return firstVisiblePage + 1;
+    return firstVisiblePage;
   },
 
   /**
@@ -413,15 +414,13 @@ Viewport.prototype = {
       if (!this.documentDimensions_)
         return;
       var page = this.getMostVisiblePage();
-      this.setZoomInternal_(this.computeFittingZoom_(
-          this.pageDimensions_[page], false));
-      // Center the document in the page by scrolling by the amount of empty
-      // space to the left of the document.
-      var xOffset =
-          (this.documentDimensions_.width - this.pageDimensions_[page].width) *
-          this.zoom_ / 2;
-      this.window_.scrollTo(xOffset,
-                            this.pageDimensions_[page].y * this.zoom_);
+      // Fit to the current page's height and the widest page's width.
+      var dimensions = {
+        width: this.documentDimensions_.width,
+        height: this.pageDimensions_[page].height,
+      };
+      this.setZoomInternal_(this.computeFittingZoom_(dimensions, false));
+      this.window_.scrollTo(0, this.pageDimensions_[page].y * this.zoom_);
       this.updateViewport_();
     }.bind(this));
   },

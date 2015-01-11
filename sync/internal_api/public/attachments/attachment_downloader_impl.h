@@ -13,6 +13,10 @@
 #include "sync/internal_api/public/attachments/attachment_downloader.h"
 #include "url/gurl.h"
 
+namespace base {
+class RefCountedMemory;
+}  // namespace base
+
 namespace net {
 class HttpResponseHeaders;
 }  // namespace net
@@ -34,6 +38,8 @@ class AttachmentDownloaderImpl : public AttachmentDownloader,
   // |scopes| is the set of scopes to use for downloads.
   //
   // |token_service_provider| provides an OAuth2 token service.
+  //
+  // |store_birthday| is the raw, sync store birthday.
   AttachmentDownloaderImpl(
       const GURL& sync_service_url,
       const scoped_refptr<net::URLRequestContextGetter>&
@@ -41,7 +47,8 @@ class AttachmentDownloaderImpl : public AttachmentDownloader,
       const std::string& account_id,
       const OAuth2TokenService::ScopeSet& scopes,
       const scoped_refptr<OAuth2TokenServiceRequest::TokenServiceProvider>&
-          token_service_provider);
+          token_service_provider,
+      const std::string& store_birthday);
   ~AttachmentDownloaderImpl() override;
 
   // AttachmentDownloader implementation.
@@ -59,7 +66,10 @@ class AttachmentDownloaderImpl : public AttachmentDownloader,
   void OnURLFetchComplete(const net::URLFetcher* source) override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(AttachmentDownloaderImplTest,
+                           ExtractCrc32c_NoHeaders);
   FRIEND_TEST_ALL_PREFIXES(AttachmentDownloaderImplTest, ExtractCrc32c_First);
+  FRIEND_TEST_ALL_PREFIXES(AttachmentDownloaderImplTest, ExtractCrc32c_TooLong);
   FRIEND_TEST_ALL_PREFIXES(AttachmentDownloaderImplTest, ExtractCrc32c_None);
   FRIEND_TEST_ALL_PREFIXES(AttachmentDownloaderImplTest, ExtractCrc32c_Empty);
 
@@ -74,23 +84,17 @@ class AttachmentDownloaderImpl : public AttachmentDownloader,
   void ReportResult(
       const DownloadState& download_state,
       const DownloadResult& result,
-      const scoped_refptr<base::RefCountedString>& attachment_data);
-
-  // Verify the integrity of |data| using the hash received in |fetcher|.
-  //
-  // Assumes that the request in |fetcher| has completed.
-  //
-  // Returns true if the hash of |data| matches the hash contained in |fetcher|
-  // or if |fetcher| contains no hash (no hash, no problem).
-  static bool VerifyHashIfPresent(const net::URLFetcher& fetcher,
-                                  const std::string& data);
+      const scoped_refptr<base::RefCountedString>& attachment_data,
+      uint32_t attachment_crc32c);
 
   // Extract the crc32c from an X-Goog-Hash header in |headers|.
   //
-  // Return true if a crc32c was found and set |crc32c|.
+  // Return true if a crc32c was found and useable for checking data integrity.
+  // "Usable" means headers are present, there is "x-goog-hash" header with
+  // "crc32c" hash in it, this hash is correctly base64 encoded 32 bit integer.
   SYNC_EXPORT_PRIVATE static bool ExtractCrc32c(
-      const net::HttpResponseHeaders& headers,
-      std::string* crc32c);
+      const net::HttpResponseHeaders* headers,
+      uint32_t* crc32c);
 
   GURL sync_service_url_;
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
@@ -100,6 +104,7 @@ class AttachmentDownloaderImpl : public AttachmentDownloader,
   scoped_refptr<OAuth2TokenServiceRequest::TokenServiceProvider>
       token_service_provider_;
   scoped_ptr<OAuth2TokenService::Request> access_token_request_;
+  std::string raw_store_birthday_;
 
   StateMap state_map_;
   // |requests_waiting_for_access_token_| only keeps references to DownloadState

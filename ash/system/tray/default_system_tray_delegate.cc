@@ -21,15 +21,9 @@ class DefaultVolumnControlDelegate : public VolumeControlDelegate {
   DefaultVolumnControlDelegate() {}
   ~DefaultVolumnControlDelegate() override {}
 
-  bool HandleVolumeMute(const ui::Accelerator& accelerator) override {
-    return true;
-  }
-  bool HandleVolumeDown(const ui::Accelerator& accelerator) override {
-    return true;
-  }
-  bool HandleVolumeUp(const ui::Accelerator& accelerator) override {
-    return true;
-  }
+  void HandleVolumeMute(const ui::Accelerator& accelerator) override {}
+  void HandleVolumeDown(const ui::Accelerator& accelerator) override {}
+  void HandleVolumeUp(const ui::Accelerator& accelerator) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DefaultVolumnControlDelegate);
@@ -155,18 +149,6 @@ void DefaultSystemTrayDelegate::ShowSupervisedUserInfo() {
 }
 
 void DefaultSystemTrayDelegate::ShowUserLogin() {
-}
-
-bool DefaultSystemTrayDelegate::ShowSpringChargerReplacementDialog() {
-  return false;
-}
-
-bool DefaultSystemTrayDelegate::IsSpringChargerReplacementDialogVisible() {
-  return false;
-}
-
-bool DefaultSystemTrayDelegate::HasUserConfirmedSafeSpringCharger() {
-  return false;
 }
 
 void DefaultSystemTrayDelegate::ShutDown() {

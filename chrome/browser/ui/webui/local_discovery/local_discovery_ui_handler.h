@@ -19,7 +19,7 @@
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(OS_CHROMEOS)
 #define CLOUD_PRINT_CONNECTOR_UI_AVAILABLE
 #endif
 
@@ -72,8 +72,7 @@ class LocalDiscoveryUIHandler : public content::WebUIMessageHandler,
   void SwitchToSetupWiFi(const ResultCallback& callback) override;
   void CreatePrivetV3Client(const std::string& service_name,
                             const PrivetClientCallback& callback) override;
-  void ConfirmSecurityCode(const std::string& confirmation_code,
-                           const ResultCallback& callback) override;
+  void ConfirmSecurityCode(const ResultCallback& callback) override;
   void RestoreWifi(const ResultCallback& callback) override;
   void OnSetupDone() override;
   void OnSetupError() override;

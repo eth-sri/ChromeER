@@ -53,11 +53,9 @@
 #include "remoting/host/host_exit_codes.h"
 #include "remoting/host/host_main.h"
 #include "remoting/host/host_status_logger.h"
-#include "remoting/host/host_status_sender.h"
 #include "remoting/host/ipc_constants.h"
 #include "remoting/host/ipc_desktop_environment.h"
 #include "remoting/host/ipc_host_event_logger.h"
-#include "remoting/host/json_host_config.h"
 #include "remoting/host/logging.h"
 #include "remoting/host/me2me_desktop_environment.h"
 #include "remoting/host/pairing_registry_delegate.h"
@@ -142,7 +140,6 @@ namespace remoting {
 
 class HostProcess
     : public ConfigWatcher::Delegate,
-      public HeartbeatSender::Listener,
       public HostChangeNotificationListener::Listener,
       public IPC::Listener,
       public base::RefCountedThreadSafe<HostProcess> {
@@ -157,10 +154,6 @@ class HostProcess
   // IPC::Listener implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
   void OnChannelError() override;
-
-  // HeartbeatSender::Listener overrides.
-  void OnHeartbeatSuccessful() override;
-  void OnUnknownHostIdError() override;
 
   // HostChangeNotificationListener::Listener overrides.
   void OnHostDeleted() override;
@@ -229,10 +222,11 @@ class HostProcess
   void ShutdownOnUiThread();
 
   // Applies the host config, returning true if successful.
-  bool ApplyConfig(scoped_ptr<JsonHostConfig> config);
+  bool ApplyConfig(const base::DictionaryValue& config);
 
   // Handles policy updates, by calling On*PolicyUpdate methods.
   void OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies);
+  void OnPolicyError();
   void ApplyHostDomainPolicy();
   void ApplyUsernamePolicy();
   bool OnHostDomainPolicyUpdate(base::DictionaryValue* policies);
@@ -247,6 +241,9 @@ class HostProcess
   bool OnGnubbyAuthPolicyUpdate(base::DictionaryValue* policies);
 
   void StartHost();
+
+  void OnHeartbeatSuccessful();
+  void OnUnknownHostIdError();
 
   void OnAuthFailed();
 
@@ -306,8 +303,8 @@ class HostProcess
   bool host_username_match_required_;
   bool allow_nat_traversal_;
   bool allow_relay_;
-  int min_udp_port_;
-  int max_udp_port_;
+  uint16 min_udp_port_;
+  uint16 max_udp_port_;
   std::string talkgadget_prefix_;
   bool allow_pairing_;
 
@@ -326,7 +323,6 @@ class HostProcess
   scoped_ptr<XmppSignalStrategy> signal_strategy_;
   scoped_ptr<SignalingConnector> signaling_connector_;
   scoped_ptr<HeartbeatSender> heartbeat_sender_;
-  scoped_ptr<HostStatusSender> host_status_sender_;
   scoped_ptr<HostChangeNotificationListener> host_change_notification_listener_;
   scoped_ptr<HostStatusLogger> host_status_logger_;
   scoped_ptr<HostEventLogger> host_event_logger_;
@@ -507,14 +503,15 @@ void HostProcess::OnConfigUpdated(
   HOST_LOG << "Processing new host configuration.";
 
   serialized_config_ = serialized_config;
-  scoped_ptr<JsonHostConfig> config(new JsonHostConfig(base::FilePath()));
-  if (!config->SetSerializedData(serialized_config)) {
+  scoped_ptr<base::DictionaryValue> config(
+      HostConfigFromJson(serialized_config));
+  if (!config) {
     LOG(ERROR) << "Invalid configuration.";
     ShutdownHost(kInvalidHostConfigurationExitCode);
     return;
   }
 
-  if (!ApplyConfig(config.Pass())) {
+  if (!ApplyConfig(*config)) {
     LOG(ERROR) << "Failed to apply the configuration.";
     ShutdownHost(kInvalidHostConfigurationExitCode);
     return;
@@ -528,7 +525,8 @@ void HostProcess::OnConfigUpdated(
     policy_watcher_ = policy_hack::PolicyWatcher::Create(
         nullptr, context_->network_task_runner());
     policy_watcher_->StartWatching(
-        base::Bind(&HostProcess::OnPolicyUpdate, base::Unretained(this)));
+        base::Bind(&HostProcess::OnPolicyUpdate, base::Unretained(this)),
+        base::Bind(&HostProcess::OnPolicyError, base::Unretained(this)));
   } else {
     // Reapply policies that could be affected by a new config.
     ApplyHostDomainPolicy();
@@ -809,16 +807,16 @@ void HostProcess::OnInitializePairingRegistry(
 }
 
 // Applies the host config, returning true if successful.
-bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
+bool HostProcess::ApplyConfig(const base::DictionaryValue& config) {
   DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
 
-  if (!config->GetString(kHostIdConfigPath, &host_id_)) {
+  if (!config.GetString(kHostIdConfigPath, &host_id_)) {
     LOG(ERROR) << "host_id is not defined in the config.";
     return false;
   }
 
   std::string key_base64;
-  if (!config->GetString(kPrivateKeyConfigPath, &key_base64)) {
+  if (!config.GetString(kPrivateKeyConfigPath, &key_base64)) {
     LOG(ERROR) << "Private key couldn't be read from the config file.";
     return false;
   }
@@ -830,8 +828,8 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   }
 
   std::string host_secret_hash_string;
-  if (!config->GetString(kHostSecretHashConfigPath,
-                         &host_secret_hash_string)) {
+  if (!config.GetString(kHostSecretHashConfigPath,
+                        &host_secret_hash_string)) {
     host_secret_hash_string = "plain:";
   }
 
@@ -841,11 +839,11 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   }
 
   // Use an XMPP connection to the Talk network for session signalling.
-  if (!config->GetString(kXmppLoginConfigPath, &xmpp_server_config_.username) ||
-      !(config->GetString(kXmppAuthTokenConfigPath,
-                          &xmpp_server_config_.auth_token) ||
-        config->GetString(kOAuthRefreshTokenConfigPath,
-                          &oauth_refresh_token_))) {
+  if (!config.GetString(kXmppLoginConfigPath, &xmpp_server_config_.username) ||
+      !(config.GetString(kXmppAuthTokenConfigPath,
+                         &xmpp_server_config_.auth_token) ||
+        config.GetString(kOAuthRefreshTokenConfigPath,
+                         &oauth_refresh_token_))) {
     LOG(ERROR) << "XMPP credentials are not defined in the config.";
     return false;
   }
@@ -854,15 +852,15 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
     // SignalingConnector is responsible for getting OAuth token.
     xmpp_server_config_.auth_token = "";
     xmpp_server_config_.auth_service = "oauth2";
-  } else if (!config->GetString(kXmppAuthServiceConfigPath,
-                                &xmpp_server_config_.auth_service)) {
+  } else if (!config.GetString(kXmppAuthServiceConfigPath,
+                               &xmpp_server_config_.auth_service)) {
     // For the me2me host, we default to ClientLogin token for chromiumsync
     // because earlier versions of the host had no HTTP stack with which to
     // request an OAuth2 access token.
     xmpp_server_config_.auth_service = kChromotingTokenDefaultServiceName;
   }
 
-  if (config->GetString(kHostOwnerConfigPath, &host_owner_)) {
+  if (config.GetString(kHostOwnerConfigPath, &host_owner_)) {
     // Service account configs have a host_owner, different from the xmpp_login.
     use_service_account_ = true;
   } else {
@@ -874,7 +872,7 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   // For non-Gmail Google accounts, the owner base JID differs from the email.
   // host_owner_ contains the base JID (used for authenticating clients), while
   // host_owner_email contains the account's email (used for UI and logs).
-  if (!config->GetString(kHostOwnerEmailConfigPath, &host_owner_email_)) {
+  if (!config.GetString(kHostOwnerEmailConfigPath, &host_owner_email_)) {
     host_owner_email_ = host_owner_;
   }
 
@@ -882,25 +880,23 @@ bool HostProcess::ApplyConfig(scoped_ptr<JsonHostConfig> config) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(kEnableVp9SwitchName)) {
     enable_vp9_ = true;
   } else {
-    config->GetBoolean(kEnableVp9ConfigPath, &enable_vp9_);
+    config.GetBoolean(kEnableVp9ConfigPath, &enable_vp9_);
   }
 
   // Allow the command-line to override the size of the frame recorder buffer.
-  std::string frame_recorder_buffer_kb;
+  int frame_recorder_buffer_kb = 0;
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           kFrameRecorderBufferKbName)) {
-    frame_recorder_buffer_kb =
+    std::string switch_value =
         CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             kFrameRecorderBufferKbName);
+    base::StringToInt(switch_value, &frame_recorder_buffer_kb);
   } else {
-    config->GetString(kFrameRecorderBufferKbConfigPath,
+    config.GetInteger(kFrameRecorderBufferKbConfigPath,
                       &frame_recorder_buffer_kb);
   }
-  if (!frame_recorder_buffer_kb.empty()) {
-    int buffer_kb = 0;
-    if (base::StringToInt(frame_recorder_buffer_kb, &buffer_kb)) {
-      frame_recorder_buffer_size_ = 1024LL * buffer_kb;
-    }
+  if (frame_recorder_buffer_kb > 0) {
+    frame_recorder_buffer_size_ = 1024LL * frame_recorder_buffer_kb;
   }
 
   return true;
@@ -933,23 +929,33 @@ void HostProcess::OnPolicyUpdate(scoped_ptr<base::DictionaryValue> policies) {
   }
 }
 
+void HostProcess::OnPolicyError() {
+  context_->network_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &HostProcess::ShutdownHost,
+          this,
+          kInvalidHostConfigurationExitCode));
+}
+
 void HostProcess::ApplyHostDomainPolicy() {
   HOST_LOG << "Policy sets host domain: " << host_domain_;
 
-  // If the user does not have a Google email, their client JID will not be
-  // based on their email. In that case, the username/host domain policies would
-  // be meaningless, since there is no way to check that the JID attempting to
-  // connect actually corresponds to the owner email in question.
-  if (host_owner_ != host_owner_email_) {
-    LOG(ERROR) << "The username and host domain policies cannot be enabled for "
-               << "accounts with a non-Google email.";
-    ShutdownHost(kInvalidHostDomainExitCode);
-  }
+  if (!host_domain_.empty()) {
+    // If the user does not have a Google email, their client JID will not be
+    // based on their email. In that case, the username/host domain policies
+    // would be meaningless, since there is no way to check that the JID
+    // trying to connect actually corresponds to the owner email in question.
+    if (host_owner_ != host_owner_email_) {
+      LOG(ERROR) << "The username and host domain policies cannot be enabled "
+                 << "for accounts with a non-Google email.";
+      ShutdownHost(kInvalidHostDomainExitCode);
+    }
 
-  if (!host_domain_.empty() &&
-      !EndsWith(host_owner_, std::string("@") + host_domain_, false)) {
-    LOG(ERROR) << "The host domain does not match the policy.";
-    ShutdownHost(kInvalidHostDomainExitCode);
+    if (!EndsWith(host_owner_, std::string("@") + host_domain_, false)) {
+      LOG(ERROR) << "The host domain does not match the policy.";
+      ShutdownHost(kInvalidHostDomainExitCode);
+    }
   }
 }
 
@@ -967,15 +973,16 @@ bool HostProcess::OnHostDomainPolicyUpdate(base::DictionaryValue* policies) {
 }
 
 void HostProcess::ApplyUsernamePolicy() {
-  // See comment in ApplyHostDomainPolicy.
-  if (host_owner_ != host_owner_email_) {
-    LOG(ERROR) << "The username and host domain policies cannot be enabled for "
-               << "accounts with a non-Google email.";
-    ShutdownHost(kUsernameMismatchExitCode);
-  }
-
   if (host_username_match_required_) {
     HOST_LOG << "Policy requires host username match.";
+
+    // See comment in ApplyHostDomainPolicy.
+    if (host_owner_ != host_owner_email_) {
+      LOG(ERROR) << "The username and host domain policies cannot be enabled "
+                 << "for accounts with a non-Google email.";
+      ShutdownHost(kUsernameMismatchExitCode);
+    }
+
     std::string username = GetUsername();
     bool shutdown = username.empty() ||
         !StartsWithASCII(host_owner_, username + std::string("@"),
@@ -1067,8 +1074,8 @@ bool HostProcess::OnUdpPortPolicyUpdate(base::DictionaryValue* policies) {
   }
 
   // Use default values if policy setting is empty or invalid.
-  int min_udp_port = 0;
-  int max_udp_port = 0;
+  uint16 min_udp_port = 0;
+  uint16 max_udp_port = 0;
   if (!udp_port_range.empty() &&
       !NetworkSettings::ParsePortRange(udp_port_range, &min_udp_port,
                                        &max_udp_port)) {
@@ -1314,10 +1321,8 @@ void HostProcess::StartHost() {
 #endif
 
   heartbeat_sender_.reset(new HeartbeatSender(
-      this, host_id_, signal_strategy_.get(), key_pair_,
-      directory_bot_jid_));
-
-  host_status_sender_.reset(new HostStatusSender(
+      base::Bind(&HostProcess::OnHeartbeatSuccessful, base::Unretained(this)),
+      base::Bind(&HostProcess::OnUnknownHostIdError, base::Unretained(this)),
       host_id_, signal_strategy_.get(), key_pair_, directory_bot_jid_));
 
   host_change_notification_listener_.reset(new HostChangeNotificationListener(
@@ -1367,7 +1372,8 @@ void HostProcess::ShutdownHost(HostExitCodes exit_code) {
 
     case HOST_STARTED:
       state_ = HOST_STOPPING;
-      host_status_sender_->SendOfflineStatus(exit_code);
+      heartbeat_sender_->SetHostOfflineReason(
+          ExitCodeToString(exit_code), base::Bind(base::DoNothing));
       ScheduleHostShutdown();
       break;
 
@@ -1399,7 +1405,6 @@ void HostProcess::ShutdownOnNetworkThread() {
   host_event_logger_.reset();
   host_status_logger_.reset();
   heartbeat_sender_.reset();
-  host_status_sender_.reset();
   host_change_notification_listener_.reset();
   signaling_connector_.reset();
   oauth_token_getter_.reset();

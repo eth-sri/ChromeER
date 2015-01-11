@@ -4,12 +4,11 @@
 
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_model.h"
 
-#include "base/strings/string_split.h"
-#include "base/strings/string_util.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
+#include "chrome/browser/ui/passwords/password_bubble_experiment.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/common/password_manager_ui.h"
@@ -35,17 +34,13 @@ int GetFieldWidth(FieldType type) {
                                                    : kPasswordFieldSize);
 }
 
-void SetupLinkifiedText(const base::string16& string_with_separator,
-                        base::string16* text,
-                        gfx::Range* link_range) {
-  std::vector<base::string16> pieces;
-  base::SplitStringDontTrim(string_with_separator,
-                            '|',  // separator
-                            &pieces);
-  DCHECK_EQ(3u, pieces.size());
-  *link_range = gfx::Range(pieces[0].size(),
-                           pieces[0].size() + pieces[1].size());
-  *text = JoinString(pieces, base::string16());
+void RecordExperimentStatistics(content::WebContents* web_contents,
+                                metrics_util::UIDismissalReason reason) {
+  if (!web_contents)
+    return;
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  password_bubble_experiment::RecordBubbleClosed(profile->GetPrefs(), reason);
 }
 
 }  // namespace
@@ -59,13 +54,13 @@ ManagePasswordsBubbleModel::ManagePasswordsBubbleModel(
   ManagePasswordsUIController* controller =
       ManagePasswordsUIController::FromWebContents(web_contents);
 
-  // TODO(mkwst): Reverse this logic. The controller should populate the model
-  // directly rather than the model pulling from the controller. Perhaps like
-  // `controller->PopulateModel(this)`.
   state_ = controller->state();
   if (password_manager::ui::IsPendingState(state_))
-    pending_credentials_ = controller->PendingCredentials();
-  best_matches_ = controller->best_matches();
+    pending_password_ = controller->PendingPassword();
+  if (password_manager::ui::IsCredentialsState(state_))
+    pending_credentials_.swap(controller->new_password_forms());
+  else
+    best_matches_ = controller->best_matches();
 
   if (password_manager::ui::IsPendingState(state_)) {
     title_ = l10n_util::GetStringUTF16(IDS_SAVE_PASSWORD);
@@ -74,14 +69,20 @@ ManagePasswordsBubbleModel::ManagePasswordsBubbleModel(
   } else if (state_ == password_manager::ui::CONFIRMATION_STATE) {
     title_ =
         l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_CONFIRM_GENERATED_TITLE);
+  } else if (password_manager::ui::IsCredentialsState(state_)) {
+    title_ = l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_CHOOSE_TITLE);
   } else {
     title_ = l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_TITLE);
   }
 
-  SetupLinkifiedText(
-      l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_CONFIRM_GENERATED_TEXT),
-      &save_confirmation_text_,
-      &save_confirmation_link_range_);
+  base::string16 save_confirmation_link =
+      l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_CONFIRM_GENERATED_LINK);
+  size_t offset;
+  save_confirmation_text_ =
+      l10n_util::GetStringFUTF16(IDS_MANAGE_PASSWORDS_CONFIRM_GENERATED_TEXT,
+                                 save_confirmation_link, &offset);
+  save_confirmation_link_range_ =
+      gfx::Range(offset, offset + save_confirmation_link.length());
 
   manage_link_ =
       l10n_util::GetStringUTF16(IDS_OPTIONS_PASSWORDS_MANAGE_PASSWORDS_LINK);
@@ -103,6 +104,8 @@ void ManagePasswordsBubbleModel::OnBubbleShown(
     if (state_ == password_manager::ui::CONFIRMATION_STATE) {
       display_disposition_ =
           metrics_util::AUTOMATIC_GENERATED_PASSWORD_CONFIRMATION;
+    } else if (password_manager::ui::IsCredentialsState(state_)) {
+      display_disposition_ = metrics_util::AUTOMATIC_CREDENTIAL_REQUEST;
     } else {
       display_disposition_ = metrics_util::AUTOMATIC_WITH_PASSWORD_PENDING;
     }
@@ -113,22 +116,41 @@ void ManagePasswordsBubbleModel::OnBubbleShown(
   // with the button in such a way that it closes, we'll reset this value
   // accordingly.
   dismissal_reason_ = metrics_util::NO_DIRECT_INTERACTION;
+
+  ManagePasswordsUIController* controller =
+      ManagePasswordsUIController::FromWebContents(web_contents());
+  controller->OnBubbleShown();
 }
 
 void ManagePasswordsBubbleModel::OnBubbleHidden() {
+  if (password_manager::ui::IsCredentialsState(state_)) {
+    // It's time to run the pending callback if it wasn't called in
+    // OnChooseCredentials().
+    ManagePasswordsUIController* manage_passwords_ui_controller =
+        ManagePasswordsUIController::FromWebContents(web_contents());
+    manage_passwords_ui_controller->ChooseCredential(false,
+                                                     autofill::PasswordForm());
+    state_ = password_manager::ui::INACTIVE_STATE;
+  }
   if (dismissal_reason_ == metrics_util::NOT_DISPLAYED)
     return;
 
   metrics_util::LogUIDismissalReason(dismissal_reason_);
+  // Other use cases have been reported in the callbacks like OnSaveClicked().
+  if (dismissal_reason_ == metrics_util::NO_DIRECT_INTERACTION)
+    RecordExperimentStatistics(web_contents(), dismissal_reason_);
 }
 
 void ManagePasswordsBubbleModel::OnNopeClicked() {
   dismissal_reason_ = metrics_util::CLICKED_NOPE;
-  state_ = password_manager::ui::PENDING_PASSWORD_STATE;
+  RecordExperimentStatistics(web_contents(), dismissal_reason_);
+  if (!password_manager::ui::IsCredentialsState(state_))
+    state_ = password_manager::ui::PENDING_PASSWORD_STATE;
 }
 
 void ManagePasswordsBubbleModel::OnNeverForThisSiteClicked() {
   dismissal_reason_ = metrics_util::CLICKED_NEVER;
+  RecordExperimentStatistics(web_contents(), dismissal_reason_);
   ManagePasswordsUIController* manage_passwords_ui_controller =
       ManagePasswordsUIController::FromWebContents(web_contents());
   manage_passwords_ui_controller->NeverSavePassword();
@@ -145,6 +167,7 @@ void ManagePasswordsBubbleModel::OnUnblacklistClicked() {
 
 void ManagePasswordsBubbleModel::OnSaveClicked() {
   dismissal_reason_ = metrics_util::CLICKED_SAVE;
+  RecordExperimentStatistics(web_contents(), dismissal_reason_);
   ManagePasswordsUIController* manage_passwords_ui_controller =
       ManagePasswordsUIController::FromWebContents(web_contents());
   manage_passwords_ui_controller->SavePassword();
@@ -182,6 +205,16 @@ void ManagePasswordsBubbleModel::OnPasswordAction(
     password_store->RemoveLogin(password_form);
   else
     password_store->AddLogin(password_form);
+}
+
+void ManagePasswordsBubbleModel::OnChooseCredentials(
+    const autofill::PasswordForm& password_form) {
+  dismissal_reason_ = metrics_util::CLICKED_CREDENTIAL;
+  RecordExperimentStatistics(web_contents(), dismissal_reason_);
+  ManagePasswordsUIController* manage_passwords_ui_controller =
+      ManagePasswordsUIController::FromWebContents(web_contents());
+  manage_passwords_ui_controller->ChooseCredential(true, password_form);
+  state_ = password_manager::ui::INACTIVE_STATE;
 }
 
 // static

@@ -26,6 +26,8 @@ class CastBrowserContext : public content::BrowserContext {
   virtual ~CastBrowserContext();
 
   // BrowserContext implementation:
+  virtual scoped_ptr<content::ZoomLevelDelegate> CreateZoomLevelDelegate(
+      const base::FilePath& partition_path) override;
   virtual base::FilePath GetPath() const override;
   virtual bool IsOffTheRecord() const override;
   virtual net::URLRequestContextGetter* GetRequestContext() override;
@@ -45,6 +47,8 @@ class CastBrowserContext : public content::BrowserContext {
   virtual storage::SpecialStoragePolicy* GetSpecialStoragePolicy() override;
   virtual content::PushMessagingService* GetPushMessagingService() override;
   virtual content::SSLHostStateDelegate* GetSSLHostStateDelegate() override;
+
+  net::URLRequestContextGetter* GetSystemRequestContext();
 
  private:
   class CastResourceContext;

@@ -67,7 +67,7 @@ struct SyntheticTrialGroup {
 
  private:
   // Synthetic field trial users:
-  friend class ::MetricsServiceAccessor;
+  friend class MetricsServiceAccessor;
   friend class MetricsService;
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, RegisterSyntheticTrial);
 
@@ -238,6 +238,9 @@ class MetricsService : public base::HistogramFlattener {
   // should not be called more than once.
   void CheckForClonedInstall(
       scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+
+  // Clears the stability metrics that are saved in local state.
+  void ClearSavedStabilityMetrics();
 
  protected:
   // Exposed for testing.

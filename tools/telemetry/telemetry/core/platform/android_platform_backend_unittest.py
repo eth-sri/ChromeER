@@ -7,14 +7,15 @@ import unittest
 from telemetry import benchmark
 from telemetry.core.platform import android_device
 from telemetry.core.platform import android_platform_backend
-from telemetry.unittest import system_stub
+from telemetry.unittest_util import system_stub
 
 
 class AndroidPlatformBackendTest(unittest.TestCase):
   def setUp(self):
     self._stubs = system_stub.Override(
         android_platform_backend,
-        ['perf_control', 'thermal_throttle', 'adb_commands'])
+        ['perf_control', 'thermal_throttle', 'adb_commands', 'certutils',
+         'adb_install_cert'])
 
   def tearDown(self):
     self._stubs.Restore()
@@ -65,3 +66,15 @@ class AndroidPlatformBackendTest(unittest.TestCase):
     for cpu in result:
       for state in result[cpu]:
         self.assertAlmostEqual(result[cpu][state], expected_cstate[cpu][state])
+
+  def testInstallTestCaFailure(self):
+    backend = android_platform_backend.AndroidPlatformBackend(
+        android_device.AndroidDevice('failure'))
+    backend.InstallTestCa()
+    self.assertFalse(backend.is_test_ca_installed)
+
+  def testInstallTestCaSuccess(self):
+    backend = android_platform_backend.AndroidPlatformBackend(
+        android_device.AndroidDevice('success'))
+    backend.InstallTestCa()
+    self.assertTrue(backend.is_test_ca_installed)

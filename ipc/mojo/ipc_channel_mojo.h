@@ -15,22 +15,10 @@
 #include "ipc/ipc_export.h"
 #include "ipc/mojo/ipc_message_pipe_reader.h"
 #include "ipc/mojo/ipc_mojo_bootstrap.h"
+#include "mojo/edk/embedder/channel_info_forward.h"
 #include "mojo/public/cpp/system/core.h"
 
-namespace mojo {
-namespace embedder {
-struct ChannelInfo;
-}
-}
-
 namespace IPC {
-
-namespace internal {
-class ControlReader;
-class ServerControlReader;
-class ClientControlReader;
-class MessageReader;
-}
 
 // Mojo-based IPC::Channel implementation over a platform handle.
 //
@@ -56,8 +44,10 @@ class MessageReader;
 // TODO(morrita): Add APIs to create extra MessagePipes to let
 //                Mojo-based objects talk over this Channel.
 //
-class IPC_MOJO_EXPORT ChannelMojo : public Channel,
-                                    public MojoBootstrap::Delegate {
+class IPC_MOJO_EXPORT ChannelMojo
+    : public Channel,
+      public MojoBootstrap::Delegate,
+      public NON_EXPORTED_BASE(internal::MessagePipeReader::Delegate) {
  public:
   class Delegate {
    public:
@@ -116,10 +106,10 @@ class IPC_MOJO_EXPORT ChannelMojo : public Channel,
   // MojoBootstrapDelegate implementation
   void OnBootstrapError() override;
 
-  // Called from MessagePipeReader implementations
-  void OnMessageReceived(Message& message);
-  void OnPipeClosed(internal::MessagePipeReader* reader);
-  void OnPipeError(internal::MessagePipeReader* reader);
+  // MessagePipeReader::Delegate
+  void OnMessageReceived(Message& message) override;
+  void OnPipeClosed(internal::MessagePipeReader* reader) override;
+  void OnPipeError(internal::MessagePipeReader* reader) override;
 
  protected:
   ChannelMojo(Delegate* delegate,
@@ -154,7 +144,7 @@ class IPC_MOJO_EXPORT ChannelMojo : public Channel,
   scoped_ptr<mojo::embedder::ChannelInfo,
              ChannelInfoDeleter> channel_info_;
 
-  scoped_ptr<internal::MessageReader, ReaderDeleter> message_reader_;
+  scoped_ptr<internal::MessagePipeReader, ReaderDeleter> message_reader_;
   ScopedVector<Message> pending_messages_;
 
   base::WeakPtrFactory<ChannelMojo> weak_factory_;

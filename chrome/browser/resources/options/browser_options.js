@@ -116,7 +116,7 @@ cr.define('options', function() {
       window.addEventListener('message', this.handleWindowMessage_.bind(this));
 
       if (loadTimeData.getBoolean('allowAdvancedSettings')) {
-        $('advanced-settings-expander').onclick = function() {
+        $('advanced-settings-expander').onclick = function(e) {
           var showAdvanced =
               BrowserOptions.shouldShowSection_($('advanced-settings'));
           if (showAdvanced) {
@@ -127,11 +127,10 @@ cr.define('options', function() {
               $('advanced-settings'),
               $('advanced-settings-container'));
 
-          // If the link was focused (i.e., it was activated using the keyboard)
-          // and it was used to show the section (rather than hiding it), focus
-          // the first element in the container.
-          if (document.activeElement === $('advanced-settings-expander') &&
-              showAdvanced) {
+          // If the click was triggered using the keyboard and it showed the
+          // section (rather than hiding it), focus the first element in the
+          // container.
+          if (e.detail == 0 && showAdvanced) {
             var focusElement = $('advanced-settings-container').querySelector(
                 'button, input, list, select, a[href]');
             if (focusElement)
@@ -224,8 +223,14 @@ cr.define('options', function() {
                     ['Options_Homepage_ShowSettings']);
       };
 
-      var hotwordIndicator = $('hotword-search-setting-indicator');
+      HotwordSearchSettingIndicator.decorate(
+          $('hotword-search-setting-indicator'));
+      HotwordSearchSettingIndicator.decorate(
+          $('hotword-no-dsp-search-setting-indicator'));
+      var hotwordIndicator = $('hotword-always-on-search-setting-indicator');
       HotwordSearchSettingIndicator.decorate(hotwordIndicator);
+      hotwordIndicator.disabledOnErrorSection =
+          $('hotword-always-on-search-checkbox');
       chrome.send('requestHotwordAvailable');
 
       if ($('set-wallpaper')) {
@@ -247,6 +252,14 @@ cr.define('options', function() {
         chrome.send('launchHotwordAudioVerificationApp', [false]);
         return true;
       };
+
+      // Open the Hotword Audio Verification app to retrain a voice model.
+      $('hotword-retrain-link').onclick = function(event) {
+        chrome.send('launchHotwordAudioVerificationApp', [true]);
+      };
+      Preferences.getInstance().addEventListener(
+          'hotword.always_on_search_enabled',
+          this.onHotwordAlwaysOnChanged_.bind(this));
 
       $('themes-gallery').onclick = function(event) {
         window.open(loadTimeData.getString('themesGalleryURL'));
@@ -463,6 +476,8 @@ cr.define('options', function() {
         };
 
         $('bluetooth-reconnect-device').onclick = function(event) {
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_BluetoothConnectPairedDevice']);
           var device = $('bluetooth-paired-devices-list').selectedItem;
           var address = device.address;
           chrome.send('updateBluetoothDevice', [address, 'connect']);
@@ -537,6 +552,8 @@ cr.define('options', function() {
           PageManager.showPageByName('easyUnlockTurnOffOverlay');
         };
       }
+      $('easy-unlock-enable-proximity-detection').hidden =
+          !loadTimeData.getBoolean('easyUnlockProximityDetectionAllowed');
 
       // Website Settings section.
       if (loadTimeData.getBoolean('websiteSettingsManagerEnabled')) {
@@ -1127,34 +1144,84 @@ cr.define('options', function() {
 
     /**
      * Activates the Hotword section from the System settings page.
-     * @param {boolean} opt_enabled Current preference state for hotwording.
-     * @param {string} opt_error The error message to display.
+     * @param {string} sectionId The id of the section to display.
+     * @param {string} indicatorId The id of the indicator to display.
+     * @param {string=} opt_error The error message to display.
      * @private
      */
-    showHotwordSection_: function(opt_enabled, opt_error) {
-      $('hotword-search').hidden = false;
-      $('hotword-search-setting-indicator').setError(opt_error);
-      if (opt_enabled && opt_error)
-        $('hotword-search-setting-indicator').updateBasedOnError();
+    showHotwordCheckboxAndIndicator_: function(sectionId, indicatorId,
+                                               opt_error) {
+      $(sectionId).hidden = false;
+      $(indicatorId).setError(opt_error);
+      if (opt_error)
+        $(indicatorId).updateBasedOnError();
+    },
+
+    /**
+     * Activates the Hotword section from the System settings page.
+     * @param {string=} opt_error The error message to display.
+     * @private
+     */
+    showHotwordSection_: function(opt_error) {
+      this.showHotwordCheckboxAndIndicator_(
+          'hotword-search',
+          'hotword-search-setting-indicator',
+          opt_error);
     },
 
     /**
      * Activates the Audio History and Always-On Hotword sections from the
      * System settings page.
+     * @param {string=} opt_error The error message to display.
      * @private
      */
-    showHotwordAlwaysOnSection_: function() {
-      $('hotword-always-on-search').hidden = false;
-      $('audio-logging').hidden = false;
+    showHotwordAlwaysOnSection_: function(opt_error) {
+      this.showHotwordCheckboxAndIndicator_(
+          'hotword-always-on-search',
+          'hotword-always-on-search-setting-indicator',
+          opt_error);
     },
 
     /**
      * Activates the Hotword section on devices with no DSP
      * from the System settings page.
+     * @param {string=} opt_error The error message to display.
      * @private
      */
-    showHotwordNoDSPSection_: function() {
-      $('hotword-no-dsp-search').hidden = false;
+    showHotwordNoDspSection_: function(opt_error) {
+      this.showHotwordCheckboxAndIndicator_(
+          'hotword-no-dsp-search',
+          'hotword-no-dsp-search-setting-indicator',
+          opt_error);
+    },
+
+    /**
+     * Shows or hides the hotword retrain link
+     * @param {boolean} visible Whether to show the link.
+     * @private
+     */
+    setHotwordRetrainLinkVisible_: function(visible) {
+      $('hotword-retrain-link').hidden = !visible;
+    },
+
+    /**
+     * Event listener for the 'hotword always on search enabled' preference.
+     * Updates the visibility of the 'retrain' link.
+     * @param {Event} event The preference change event.
+     * @private
+     */
+    onHotwordAlwaysOnChanged_: function(event) {
+      this.setHotwordRetrainLinkVisible_(event.value.value);
+    },
+
+    /**
+     * Activates the Audio History section of the Settings page.
+     * @param {boolean} alwaysOn Whether always-on hotwording is available.
+     * @private
+     */
+    showAudioHistorySection_: function(alwaysOn) {
+      $('audio-history').hidden = false;
+      $('audio-history-always-on-description').hidden = !alwaysOn;
     },
 
     /**
@@ -1385,7 +1452,7 @@ cr.define('options', function() {
       // date. If showing the "delete" overlay, close it.
       if (ManageProfileOverlay.getInstance().visible &&
           !$('manage-profile-overlay-manage').hidden) {
-        ManageProfileOverlay.showManageDialog();
+        ManageProfileOverlay.showManageDialog(false);
       } else {
         ManageProfileOverlay.getInstance().visible = false;
       }
@@ -1538,6 +1605,8 @@ cr.define('options', function() {
      * @private
      */
     handleAddBluetoothDevice_: function() {
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_BluetoothShowAddDevice']);
       chrome.send('findBluetoothDevices');
       PageManager.showPageByName('bluetooth', false);
     },
@@ -1576,10 +1645,12 @@ cr.define('options', function() {
       $('metricsReportingEnabled').disabled = disabled;
 
       // If checkbox gets disabled then add an attribute for displaying the
-      // special icon. The opposite shouldn't be possible to do.
+      // special icon. Otherwise remove the indicator attribute.
       if (disabled) {
         $('metrics-reporting-disabled-icon').setAttribute('controlled-by',
                                                           'policy');
+      } else {
+        $('metrics-reporting-disabled-icon').removeAttribute('controlled-by');
       }
     },
 
@@ -2038,6 +2109,7 @@ cr.define('options', function() {
     'setBluetoothState',
     'setCanSetTime',
     'setFontSize',
+    'setHotwordRetrainLinkVisible',
     'setNativeThemeButtonEnabled',
     'setNetworkPredictionValue',
     'setHighContrastCheckboxState',
@@ -2049,12 +2121,13 @@ cr.define('options', function() {
     'setVirtualKeyboardCheckboxState',
     'setupPageZoomSelector',
     'setupProxySettingsButton',
+    'showAudioHistorySection',
     'showBluetoothSettings',
     'showCreateProfileError',
     'showCreateProfileSuccess',
     'showCreateProfileWarning',
     'showHotwordAlwaysOnSection',
-    'showHotwordNoDSPSection',
+    'showHotwordNoDspSection',
     'showHotwordSection',
     'showMouseControls',
     'showSupervisedUserImportError',

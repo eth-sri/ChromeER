@@ -23,6 +23,7 @@ namespace ui {
 class DriSurfaceFactory;
 class DriWindowDelegate;
 class DriWindowDelegateManager;
+class DriWrapper;
 class NativeDisplayDelegateDri;
 class ScreenManager;
 
@@ -31,19 +32,20 @@ struct DisplaySnapshot_Params;
 
 class DriGpuPlatformSupport : public GpuPlatformSupport {
  public:
-  DriGpuPlatformSupport(DriSurfaceFactory* dri,
+  DriGpuPlatformSupport(DriWrapper* drm,
                         DriWindowDelegateManager* window_manager,
                         ScreenManager* screen_manager,
                         scoped_ptr<NativeDisplayDelegateDri> ndd);
-  virtual ~DriGpuPlatformSupport();
+  ~DriGpuPlatformSupport() override;
 
   void AddHandler(scoped_ptr<GpuPlatformSupport> handler);
 
   // GpuPlatformSupport:
-  virtual void OnChannelEstablished(IPC::Sender* sender) override;
+  void OnChannelEstablished(IPC::Sender* sender) override;
+  void RelinquishGpuResources(const base::Closure& callback) override;
 
   // IPC::Listener:
-  virtual bool OnMessageReceived(const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
   void OnCreateWindowDelegate(gfx::AcceleratedWidget widget);
@@ -64,9 +66,11 @@ class DriGpuPlatformSupport : public GpuPlatformSupport {
                                 const DisplayMode_Params& mode,
                                 const gfx::Point& origin);
   void OnDisableNativeDisplay(int64_t id);
+  void OnTakeDisplayControl();
+  void OnRelinquishDisplayControl();
 
   IPC::Sender* sender_;                       // Not owned.
-  DriSurfaceFactory* dri_;                    // Not owned.
+  DriWrapper* drm_;                           // Not owned.
   DriWindowDelegateManager* window_manager_;  // Not owned.
   ScreenManager* screen_manager_;             // Not owned.
 

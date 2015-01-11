@@ -52,3 +52,38 @@ EntriesChangedEvent.prototype.kind;
 
 /** @type {Array.<!Entry>} */
 EntriesChangedEvent.prototype.entries;
+
+/**
+ * @constructor
+ * @extends {Event}
+ * @struct
+ * @suppress {checkStructDictInheritance}
+ */
+var DirectoryChangeEvent = function() {};
+
+/** @type {DirectoryEntry} */
+DirectoryChangeEvent.prototype.previousDirEntry;
+
+/** @type {DirectoryEntry|Object} */
+DirectoryChangeEvent.prototype.newDirEntry;
+
+/** @type {boolean} */
+DirectoryChangeEvent.prototype.volumeChanged;
+
+/**
+ * @param {string} url
+ * @param {function(!Entry)} successCallback
+ * @param {function(!FileError)=} opt_errorCallback
+ */
+Window.prototype.webkitResolveLocalFileSystemURL =
+    function(url, successCallback, opt_errorCallback) {};
+
+/**
+ * @type {string}
+ */
+Window.prototype.appID;
+
+/**
+ * @type {boolean}
+ */
+Window.prototype.closing;

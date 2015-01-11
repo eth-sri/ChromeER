@@ -13,7 +13,6 @@
 #include "content/shell/renderer/test_runner/mock_credential_manager_client.h"
 #include "content/shell/renderer/test_runner/mock_web_push_client.h"
 #include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
-#include "content/shell/renderer/test_runner/notification_presenter.h"
 #include "content/shell/renderer/test_runner/test_interfaces.h"
 #include "content/shell/renderer/test_runner/web_permissions.h"
 #include "content/shell/renderer/test_runner/web_test_delegate.h"
@@ -297,6 +296,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetMockPushClientSuccess(const std::string& endpoint,
                                 const std::string& registration_id);
   void SetMockPushClientError(const std::string& message);
+  void SetBluetoothMockDataSet(const std::string& dataset_name);
 
   std::string PlatformName();
   std::string TooltipText();
@@ -306,6 +306,8 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetInterceptPostMessage(bool value);
 
   void NotImplemented(const gin::Arguments& args);
+
+  void ForceNextWebGLContextCreationToFail();
 
   base::WeakPtr<TestRunner> runner_;
 
@@ -541,6 +543,10 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::SetMockPushClientSuccess)
       .SetMethod("setMockPushClientError",
                  &TestRunnerBindings::SetMockPushClientError)
+      .SetMethod("setBluetoothMockDataSet",
+                 &TestRunnerBindings::SetBluetoothMockDataSet)
+      .SetMethod("forceNextWebGLContextCreationToFail",
+                 &TestRunnerBindings::ForceNextWebGLContextCreationToFail)
 
       // Properties.
       .SetProperty("platformName", &TestRunnerBindings::PlatformName)
@@ -1276,6 +1282,11 @@ void TestRunnerBindings::SetColorProfile(
     runner_->SetColorProfile(name, callback);
 }
 
+void TestRunnerBindings::SetBluetoothMockDataSet(const std::string& name) {
+  if (runner_)
+    runner_->SetBluetoothMockDataSet(name);
+}
+
 void TestRunnerBindings::SetPOSIXLocale(const std::string& locale) {
   if (runner_)
     runner_->SetPOSIXLocale(locale);
@@ -1440,6 +1451,11 @@ void TestRunnerBindings::SetInterceptPostMessage(bool value) {
     runner_->intercept_post_message_ = value;
 }
 
+void TestRunnerBindings::ForceNextWebGLContextCreationToFail() {
+  if (runner_)
+    runner_->ForceNextWebGLContextCreationToFail();
+}
+
 void TestRunnerBindings::NotImplemented(const gin::Arguments& args) {
 }
 
@@ -1530,7 +1546,6 @@ TestRunner::TestRunner(TestInterfaces* interfaces)
       web_view_(nullptr),
       page_overlay_(nullptr),
       web_permissions_(new WebPermissions()),
-      notification_presenter_(new NotificationPresenter()),
       weak_factory_(this) {}
 
 TestRunner::~TestRunner() {}
@@ -1542,7 +1557,6 @@ void TestRunner::Install(WebFrame* frame) {
 void TestRunner::SetDelegate(WebTestDelegate* delegate) {
   delegate_ = delegate;
   web_permissions_->SetDelegate(delegate);
-  notification_presenter_->set_delegate(delegate);
 }
 
 void TestRunner::SetWebView(WebView* webView, WebTestProxyBase* proxy) {
@@ -1595,6 +1609,7 @@ void TestRunner::Reset() {
     delegate_->DisableAutoResizeMode(WebSize());
     delegate_->DeleteAllCookies();
     delegate_->ResetScreenOrientation();
+    delegate_->SetBluetoothMockDataSet("");
     ResetBatteryStatus();
     ResetDeviceLight();
   }
@@ -1641,7 +1656,6 @@ void TestRunner::Reset() {
 
   web_permissions_->Reset();
 
-  notification_presenter_->Reset();
   use_mock_theme_ = true;
   pointer_locked_ = false;
   pointer_lock_planned_result_ = PointerLockWillSucceed;
@@ -1859,10 +1873,6 @@ bool TestRunner::shouldInterceptPostMessage() const {
 
 bool TestRunner::shouldDumpResourcePriorities() const {
   return should_dump_resource_priorities_;
-}
-
-WebNotificationPresenter* TestRunner::notification_presenter() const {
-  return notification_presenter_.get();
 }
 
 bool TestRunner::RequestPointerLock() {
@@ -2150,7 +2160,7 @@ void TestRunner::SetIsolatedWorldSecurityOrigin(int world_id,
   WebSecurityOrigin web_origin;
   if (origin->IsString()) {
     web_origin = WebSecurityOrigin::createFromString(
-        V8StringToWebString(origin->ToString()));
+        V8StringToWebString(origin.As<v8::String>()));
   }
   web_view_->focusedFrame()->setIsolatedWorldSecurityOrigin(world_id,
                                                             web_origin);
@@ -2469,7 +2479,9 @@ void TestRunner::OverridePreference(const std::string key,
   } else if (key == "WebKitMinimumFontSize") {
     prefs->minimum_font_size = value->Int32Value();
   } else if (key == "WebKitDefaultTextEncodingName") {
-    prefs->default_text_encoding_name = V8StringToWebString(value->ToString());
+    v8::Isolate* isolate = blink::mainThreadIsolate();
+    prefs->default_text_encoding_name =
+        V8StringToWebString(value->ToString(isolate));
   } else if (key == "WebKitJavaScriptEnabled") {
     prefs->java_script_enabled = value->BooleanValue();
   } else if (key == "WebKitSupportsMultipleWindows") {
@@ -2730,6 +2742,10 @@ void TestRunner::SetColorProfile(const std::string& name,
   delegate_->PostTask(new InvokeCallbackTask(this, callback));
 }
 
+void TestRunner::SetBluetoothMockDataSet(const std::string& name) {
+  delegate_->SetBluetoothMockDataSet(name);
+}
+
 void TestRunner::SetPOSIXLocale(const std::string& locale) {
   delegate_->SetLocale(locale);
 }
@@ -2754,10 +2770,6 @@ void TestRunner::ClearWebNotificationPermissions() {
 
 void TestRunner::SimulateWebNotificationClick(const std::string& title) {
   delegate_->SimulateWebNotificationClick(title);
-
-  // TODO(peter): Remove this call once Web Notifications switch away from the
-  // WebFrame-based code path.
-  notification_presenter_->SimulateClick(title);
 }
 
 void TestRunner::AddMockSpeechRecognitionResult(const std::string& transcript,
@@ -2830,6 +2842,11 @@ void TestRunner::CapturePixelsAsyncThen(v8::Handle<v8::Function> callback) {
   proxy_->CapturePixelsAsync(base::Bind(&TestRunner::CapturePixelsCallback,
                                         weak_factory_.GetWeakPtr(),
                                         base::Passed(&task)));
+}
+
+void TestRunner::ForceNextWebGLContextCreationToFail() {
+  if (web_view_)
+    web_view_->forceNextWebGLContextCreationToFail();
 }
 
 void TestRunner::CopyImageAtAndCapturePixelsAsyncThen(

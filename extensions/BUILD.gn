@@ -5,6 +5,8 @@
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
 
+assert(enable_extensions)
+
 # GYP version: extensions/extensions_resources.gyp:extensions_resources
 group("extensions_resources") {
   deps = [
@@ -48,14 +50,10 @@ grit("extensions_renderer_resources") {
   ]
   grit_flags = [ "-E", "mojom_root=" + rebase_path(root_gen_dir) ]
 
-  # TODO(GYP,cjhopman): GYP has this dependency guarded by enable_extensions==1,
-  # but I don't know how that possibly works.
   deps = [
     "//device/serial:serial_mojo",
   ]
 }
-
-if (enable_extensions) {
 
 source_set("test_support") {
   testonly = true
@@ -124,15 +122,11 @@ source_set("test_support") {
 # GYP version: //extensions/extensions.gyp:extensions_shell_and_test_pak
 repack("shell_and_test_pak") {
   sources = [
-    "$root_gen_dir/chrome/common_resources.pak",
-    "$root_gen_dir/chrome/extensions_api_resources.pak",
-    # TODO(jamescook): Extract the extension/app related resources
-    # from generated_resources_en-US.pak. http://crbug.com/397250
-    "$root_gen_dir/chrome/generated_resources_en-US.pak",
-    "$root_gen_dir/chrome/renderer_resources_100_percent.pak",
+    "$root_gen_dir/blink/public/resources/blink_resources.pak",
     "$root_gen_dir/content/app/strings/content_strings_en-US.pak",
     "$root_gen_dir/content/content_resources.pak",
     "$root_gen_dir/content/shell/shell_resources.pak",
+    "$root_gen_dir/extensions/extensions_browser_resources_100_percent.pak",
     "$root_gen_dir/extensions/extensions_renderer_resources.pak",
     "$root_gen_dir/extensions/extensions_resources.pak",
     "$root_gen_dir/extensions/shell/app_shell_resources.pak",
@@ -147,16 +141,12 @@ repack("shell_and_test_pak") {
 
   deps = [
     ":extensions_resources",
-    # Need extension related resources in common_resources.pak and
-    # renderer_resources_100_percent.pak
-    "//chrome:resources",
-    # Need dev-tools related resources in shell_resources.pak and
-    # devtools_resources.pak.
-    "//content/browser/devtools:resources",
-    "//content/shell:resources",
     "//content:resources",
+    "//content/browser/devtools:devtools_resources",
+    "//content/shell:resources",
     "//extensions/shell:resources",
     "//extensions/strings",
+    "//third_party/WebKit/public:resources",
     "//ui/resources",
     "//ui/strings",
   ]
@@ -183,6 +173,13 @@ test("extensions_unittests") {
     "browser/api/web_request/form_data_parser_unittest.cc",
     "browser/api/web_request/upload_data_presenter_unittest.cc",
     "browser/api/web_request/web_request_time_tracker_unittest.cc",
+    "browser/api/cast_channel/cast_auth_ica_unittest.cc",
+    "browser/api/cast_channel/cast_auth_util_unittest.cc",
+    "browser/api/cast_channel/cast_channel_api_unittest.cc",
+    "browser/api/cast_channel/cast_framer_unittest.cc",
+    "browser/api/cast_channel/cast_socket_unittest.cc",
+    "browser/api/cast_channel/cast_transport_unittest.cc",
+    "browser/api/cast_channel/logger_unittest.cc",
     "browser/computed_hashes_unittest.cc",
     "browser/content_hash_tree_unittest.cc",
     "browser/event_listener_map_unittest.cc",
@@ -261,7 +258,7 @@ test("extensions_unittests") {
     "//extensions/common",
     "//extensions/renderer",
     "//extensions/strings",
-    "//mojo/bindings/js",
+    "//mojo/edk/js",
     "//mojo/edk/system",
     "//mojo/environment:chromium",
     "//mojo/public/cpp/bindings",
@@ -276,6 +273,4 @@ test("extensions_unittests") {
     ]
   }
 }
-}
-
 }

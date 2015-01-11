@@ -99,7 +99,10 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
   void ZoomPageOut();
   void SetPageZoomFactor(double zoom_factor);
 
+  // TODO: Move these into Internals once PageScaleConstraints are moved out of
+  // Source/web. crbug.com/434450.
   void SetPageScaleFactor(float scale_factor, int x, int y);
+  void SetPageScaleFactorLimits(float min_scale, float max_scale);
 
   void ClearTouchPoints();
   void ReleaseTouchPoint(unsigned index);
@@ -162,7 +165,9 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
 
   void SendCurrentTouchEvent(blink::WebInputEvent::Type);
 
-  void GestureEvent(blink::WebInputEvent::Type, gin::Arguments*);
+  void GestureEvent(blink::WebInputEvent::Type,
+                    gin::Arguments*,
+                    bool preventPropagation = false);
 
   void UpdateClickCountForButton(blink::WebMouseEvent::Button);
 
@@ -175,6 +180,7 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
   void DoMouseUp(const blink::WebMouseEvent&);
   void DoMouseMove(const blink::WebMouseEvent&);
   void ReplaySavedEvents();
+  bool HandleInputEventOnViewOrPopup(const blink::WebInputEvent&);
 
   bool force_layout_on_events() const { return force_layout_on_events_; }
   void set_force_layout_on_events(bool force) {

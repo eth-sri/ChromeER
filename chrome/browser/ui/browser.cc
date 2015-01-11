@@ -17,7 +17,6 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/process/process_info.h"
 #include "base/strings/string_number_conversions.h"
@@ -73,7 +72,6 @@
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
-#include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -85,7 +83,6 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
-#include "chrome/browser/ui/app_modal_dialogs/javascript_dialog_manager.h"
 #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
@@ -152,11 +149,13 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
+#include "components/app_modal/javascript_dialog_manager.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/google/core/browser/google_url_tracker.h"
 #include "components/search/search.h"
+#include "components/sessions/session_types.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/web_modal/popup_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -1357,7 +1356,7 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
   return nav_params.target_contents;
 }
 
-void Browser::NavigationStateChanged(const WebContents* source,
+void Browser::NavigationStateChanged(WebContents* source,
                                      content::InvalidateTypes changed_flags) {
   // Only update the UI when something visible has changed.
   if (changed_flags)
@@ -1623,8 +1622,9 @@ void Browser::DidNavigateToPendingEntry(WebContents* web_contents) {
     UpdateBookmarkBarState(BOOKMARK_BAR_STATE_CHANGE_TAB_STATE);
 }
 
-content::JavaScriptDialogManager* Browser::GetJavaScriptDialogManager() {
-  return GetJavaScriptDialogManagerInstance();
+content::JavaScriptDialogManager* Browser::GetJavaScriptDialogManager(
+    WebContents* source) {
+  return app_modal::JavaScriptDialogManager::GetInstance();
 }
 
 content::ColorChooser* Browser::OpenColorChooser(
@@ -2065,19 +2065,25 @@ void Browser::UpdateToolbar(bool should_restore_state) {
       tab_strip_model_->GetActiveWebContents() : NULL);
 }
 
-void Browser::ScheduleUIUpdate(const WebContents* source,
+void Browser::ScheduleUIUpdate(WebContents* source,
                                unsigned changed_flags) {
   DCHECK(source);
   int index = tab_strip_model_->GetIndexOfWebContents(source);
   DCHECK_NE(TabStripModel::kNoTab, index);
 
   // Do some synchronous updates.
-  if (changed_flags & content::INVALIDATE_TYPE_URL &&
-      source == tab_strip_model_->GetActiveWebContents()) {
-    // Only update the URL for the current tab. Note that we do not update
-    // the navigation commands since those would have already been updated
-    // synchronously by NavigationStateChanged.
-    UpdateToolbar(false);
+  if (changed_flags & content::INVALIDATE_TYPE_URL) {
+    if (source == tab_strip_model_->GetActiveWebContents()) {
+      // Only update the URL for the current tab. Note that we do not update
+      // the navigation commands since those would have already been updated
+      // synchronously by NavigationStateChanged.
+      UpdateToolbar(false);
+    } else {
+      // Clear the saved tab state for the tab that navigated, so that we don't
+      // restore any user text after the old URL has been invalidated (e.g.,
+      // after a new navigation commits in that tab while unfocused).
+      window_->ResetToolbarTabState(source);
+    }
     changed_flags &= ~content::INVALIDATE_TYPE_URL;
   }
   if (changed_flags & content::INVALIDATE_TYPE_LOAD) {
@@ -2441,8 +2447,9 @@ bool Browser::MaybeCreateBackgroundContents(
   // can create BackgroundContents. We don't have to check for background
   // permission as that is checked in RenderMessageFilter when the CreateWindow
   // message is processed.
-  const Extension* extension =
-      extensions_service->extensions()->GetHostedAppByURL(opener_url);
+  const Extension* extension = extensions::ExtensionRegistry::Get(profile_)
+                                   ->enabled_extensions()
+                                   .GetHostedAppByURL(opener_url);
   if (!extension)
     return false;
 

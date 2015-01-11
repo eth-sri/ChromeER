@@ -8,17 +8,20 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/point_f.h"
-#include "ui/ozone/platform/dri/dri_surface_factory.h"
+#include "ui/ozone/platform/dri/dri_gpu_platform_support_host.h"
 #include "ui/ozone/platform/dri/dri_window.h"
 #include "ui/ozone/platform/dri/dri_window_manager.h"
-#include "ui/ozone/platform/dri/hardware_cursor_delegate.h"
+
+#if defined(OS_CHROMEOS)
+#include "ui/events/ozone/chromeos/cursor_controller.h"
+#endif
 
 namespace ui {
 
-DriCursor::DriCursor(HardwareCursorDelegate* hardware,
-                     DriWindowManager* window_manager)
-    : hardware_(hardware),
-      window_manager_(window_manager),
+DriCursor::DriCursor(DriWindowManager* window_manager,
+                     DriGpuPlatformSupportHost* sender)
+    : window_manager_(window_manager),
+      sender_(sender),
       cursor_window_(gfx::kNullAcceleratedWidget) {
 }
 
@@ -34,24 +37,23 @@ void DriCursor::SetCursor(gfx::AcceleratedWidget widget,
     return;
 
   cursor_ = cursor;
+
   ShowCursor();
 }
 
 void DriCursor::ShowCursor() {
   DCHECK_NE(cursor_window_, gfx::kNullAcceleratedWidget);
   if (cursor_.get())
-    hardware_->SetHardwareCursor(cursor_window_,
-                                 cursor_->bitmaps(),
-                                 bitmap_location(),
-                                 cursor_->frame_delay_ms());
+    sender_->SetHardwareCursor(cursor_window_, cursor_->bitmaps(),
+                               bitmap_location(), cursor_->frame_delay_ms());
   else
     HideCursor();
 }
 
 void DriCursor::HideCursor() {
   DCHECK_NE(cursor_window_, gfx::kNullAcceleratedWidget);
-  hardware_->SetHardwareCursor(
-      cursor_window_, std::vector<SkBitmap>(), gfx::Point(), 0);
+  sender_->SetHardwareCursor(cursor_window_, std::vector<SkBitmap>(),
+                             gfx::Point(), 0);
 }
 
 void DriCursor::MoveCursorTo(gfx::AcceleratedWidget widget,
@@ -59,24 +61,47 @@ void DriCursor::MoveCursorTo(gfx::AcceleratedWidget widget,
   if (widget != cursor_window_ && cursor_window_ != gfx::kNullAcceleratedWidget)
     HideCursor();
 
+  DriWindow* window = window_manager_->GetWindow(widget);
+
   cursor_window_ = widget;
   cursor_location_ = location;
+  cursor_display_bounds_ = window->GetBounds();
 
-  if (cursor_window_ == gfx::kNullAcceleratedWidget)
-    return;
-
-  DriWindow* window = window_manager_->GetWindow(cursor_window_);
-  const gfx::Size& size = window->GetBounds().size();
+  const gfx::Size& size = cursor_display_bounds_.size();
   cursor_location_.SetToMax(gfx::PointF(0, 0));
   // Right and bottom edges are exclusive.
   cursor_location_.SetToMin(gfx::PointF(size.width() - 1, size.height() - 1));
 
   if (cursor_.get())
-    hardware_->MoveHardwareCursor(cursor_window_, bitmap_location());
+    sender_->MoveHardwareCursor(cursor_window_, bitmap_location());
+}
+
+void DriCursor::MoveCursorTo(const gfx::PointF& location) {
+  DriWindow* window =
+      window_manager_->GetWindowAt(gfx::ToFlooredPoint(location));
+  if (!window)
+    return;
+
+  MoveCursorTo(window->GetAcceleratedWidget(),
+               location - window->GetBounds().OffsetFromOrigin());
 }
 
 void DriCursor::MoveCursor(const gfx::Vector2dF& delta) {
+  if (cursor_window_ == gfx::kNullAcceleratedWidget)
+    return;
+
+#if defined(OS_CHROMEOS)
+  gfx::Vector2dF transformed_delta = delta;
+  ui::CursorController::GetInstance()->ApplyCursorConfigForWindow(
+      cursor_window_, &transformed_delta);
+  MoveCursorTo(cursor_window_, cursor_location_ + transformed_delta);
+#else
   MoveCursorTo(cursor_window_, cursor_location_ + delta);
+#endif
+}
+
+gfx::Rect DriCursor::GetCursorDisplayBounds() {
+  return cursor_display_bounds_;
 }
 
 gfx::AcceleratedWidget DriCursor::GetCursorWindow() {
@@ -87,8 +112,8 @@ bool DriCursor::IsCursorVisible() {
   return cursor_.get();
 }
 
-gfx::PointF DriCursor::location() {
-  return cursor_location_;
+gfx::PointF DriCursor::GetLocation() {
+  return cursor_location_ + cursor_display_bounds_.OffsetFromOrigin();
 }
 
 gfx::Point DriCursor::bitmap_location() {

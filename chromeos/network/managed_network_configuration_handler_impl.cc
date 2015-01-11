@@ -28,6 +28,7 @@
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_ui_data.h"
+#include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_merger.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_translator.h"
@@ -41,7 +42,7 @@ namespace chromeos {
 
 namespace {
 
-typedef std::map<std::string, const base::DictionaryValue*> GuidToPolicyMap;
+using GuidToPolicyMap = ManagedNetworkConfigurationHandler::GuidToPolicyMap;
 
 // These are error strings used for error callbacks. None of these error
 // messages are user-facing: they should only appear in logs.
@@ -265,6 +266,15 @@ void ManagedNetworkConfigurationHandlerImpl::SetProperties(
     return;
   }
 
+  // We need to ensure that required configuration properties (e.g. Type) are
+  // included for ONC validation and translation to Shill properties.
+  scoped_ptr<base::DictionaryValue> user_settings_copy(
+      user_settings.DeepCopy());
+  user_settings_copy->SetStringWithoutPathExpansion(
+      ::onc::network_config::kType,
+      network_util::TranslateShillTypeToONC(state->type()));
+  user_settings_copy->MergeDictionary(&user_settings);
+
   // Validate the ONC dictionary. We are liberal and ignore unknown field
   // names. User settings are only partial ONC, thus we ignore missing fields.
   onc::Validator validator(false,  // Ignore unknown fields.
@@ -276,7 +286,7 @@ void ManagedNetworkConfigurationHandlerImpl::SetProperties(
   scoped_ptr<base::DictionaryValue> validated_user_settings =
       validator.ValidateAndRepairObject(
           &onc::kNetworkConfigurationSignature,
-          user_settings,
+          *user_settings_copy,
           &validation_result);
 
   if (validation_result == onc::Validator::INVALID) {
@@ -299,7 +309,9 @@ void ManagedNetworkConfigurationHandlerImpl::SetProperties(
                                             validated_user_settings.get()));
 
   network_configuration_handler_->SetProperties(
-      service_path, *shill_dictionary, callback, error_callback);
+      service_path, *shill_dictionary,
+      NetworkConfigurationObserver::SOURCE_USER_ACTION, callback,
+      error_callback);
 }
 
 void ManagedNetworkConfigurationHandlerImpl::CreateConfiguration(
@@ -341,7 +353,8 @@ void ManagedNetworkConfigurationHandlerImpl::CreateConfiguration(
                                             &properties));
 
   network_configuration_handler_->CreateConfiguration(
-      *shill_dictionary, callback, error_callback);
+      *shill_dictionary, NetworkConfigurationObserver::SOURCE_USER_ACTION,
+      callback, error_callback);
 }
 
 void ManagedNetworkConfigurationHandlerImpl::RemoveConfiguration(
@@ -349,7 +362,8 @@ void ManagedNetworkConfigurationHandlerImpl::RemoveConfiguration(
     const base::Closure& callback,
     const network_handler::ErrorCallback& error_callback) const {
   network_configuration_handler_->RemoveConfiguration(
-      service_path, callback, error_callback);
+      service_path, NetworkConfigurationObserver::SOURCE_USER_ACTION, callback,
+      error_callback);
 }
 
 void ManagedNetworkConfigurationHandlerImpl::SetPolicy(
@@ -404,7 +418,8 @@ void ManagedNetworkConfigurationHandlerImpl::SetPolicy(
 
   STLDeleteValues(&old_per_network_config);
   ApplyOrQueuePolicies(userhash, &modified_policies);
-  FOR_EACH_OBSERVER(NetworkPolicyObserver, observers_, PolicyChanged(userhash));
+  FOR_EACH_OBSERVER(NetworkPolicyObserver, observers_,
+                    PoliciesChanged(userhash));
 }
 
 bool ManagedNetworkConfigurationHandlerImpl::IsAnyPolicyApplicationRunning()
@@ -484,7 +499,7 @@ void ManagedNetworkConfigurationHandlerImpl::OnProfileRemoved(
 void ManagedNetworkConfigurationHandlerImpl::CreateConfigurationFromPolicy(
     const base::DictionaryValue& shill_properties) {
   network_configuration_handler_->CreateConfiguration(
-      shill_properties,
+      shill_properties, NetworkConfigurationObserver::SOURCE_POLICY,
       base::Bind(
           &ManagedNetworkConfigurationHandlerImpl::OnPolicyAppliedToNetwork,
           weak_ptr_factory_.GetWeakPtr()),
@@ -521,7 +536,7 @@ void ManagedNetworkConfigurationHandlerImpl::
   shill_properties.MergeDictionary(&new_properties);
 
   network_configuration_handler_->CreateConfiguration(
-      shill_properties,
+      shill_properties, NetworkConfigurationObserver::SOURCE_POLICY,
       base::Bind(
           &ManagedNetworkConfigurationHandlerImpl::OnPolicyAppliedToNetwork,
           weak_ptr_factory_.GetWeakPtr()),
@@ -581,15 +596,26 @@ ManagedNetworkConfigurationHandlerImpl::FindPolicyByGUID(
   return NULL;
 }
 
+const GuidToPolicyMap*
+ManagedNetworkConfigurationHandlerImpl::GetNetworkConfigsFromPolicy(
+    const std::string& userhash) const {
+  const Policies* policies = GetPoliciesForUser(userhash);
+  if (!policies)
+    return NULL;
+
+  return &policies->per_network_config;
+}
+
 const base::DictionaryValue*
 ManagedNetworkConfigurationHandlerImpl::GetGlobalConfigFromPolicy(
-    const std::string userhash) const {
+    const std::string& userhash) const {
   const Policies* policies = GetPoliciesForUser(userhash);
   if (!policies)
     return NULL;
 
   return &policies->global_network_config;
 }
+
 const base::DictionaryValue*
 ManagedNetworkConfigurationHandlerImpl::FindPolicyByGuidAndProfile(
     const std::string& guid,
@@ -636,7 +662,8 @@ ManagedNetworkConfigurationHandlerImpl::ManagedNetworkConfigurationHandlerImpl()
 
 ManagedNetworkConfigurationHandlerImpl::
     ~ManagedNetworkConfigurationHandlerImpl() {
-  network_profile_handler_->RemoveObserver(this);
+  if (network_profile_handler_)
+    network_profile_handler_->RemoveObserver(this);
 }
 
 void ManagedNetworkConfigurationHandlerImpl::Init(
@@ -705,14 +732,17 @@ void ManagedNetworkConfigurationHandlerImpl::GetPropertiesCallback(
   scoped_ptr<base::DictionaryValue> shill_properties_copy(
       shill_properties.DeepCopy());
 
-  // Add associated Device properties before the ONC translation.
-  GetDeviceStateProperties(service_path, shill_properties_copy.get());
+  std::string type;
+  shill_properties_copy->GetStringWithoutPathExpansion(shill::kTypeProperty,
+                                                       &type);
+  // Add associated DeviceState properties for non-VPN networks.
+  if (type != shill::kTypeVPN)
+    GetDeviceStateProperties(service_path, shill_properties_copy.get());
 
-  // Only request Device properties for Cellular networks with a valid device.
-  std::string type, device_path;
+  // Only request additional Device properties for Cellular networks with a
+  // valid device.
+  std::string device_path;
   if (!network_device_handler_ ||
-      !shill_properties_copy->GetStringWithoutPathExpansion(
-          shill::kTypeProperty, &type) ||
       type != shill::kTypeCellular ||
       !shill_properties_copy->GetStringWithoutPathExpansion(
           shill::kDeviceProperty, &device_path) ||

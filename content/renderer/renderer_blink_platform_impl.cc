@@ -44,12 +44,12 @@
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/media/audio_decoder.h"
-#include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/media/renderer_webmidiaccessor_impl.h"
-#include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 #include "content/renderer/render_thread_impl.h"
-#include "content/renderer/renderer_clipboard_client.h"
+#include "content/renderer/renderer_clipboard_delegate.h"
+#include "content/renderer/scheduler/renderer_scheduler.h"
+#include "content/renderer/scheduler/web_scheduler_impl.h"
 #include "content/renderer/screen_orientation/screen_orientation_observer.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/webgraphicscontext3d_provider_impl.h"
@@ -58,6 +58,8 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "media/audio/audio_output_device.h"
 #include "media/base/audio_hardware_config.h"
+#include "media/base/key_systems.h"
+#include "media/blink/webcontentdecryptionmodule_impl.h"
 #include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
@@ -224,13 +226,16 @@ class RendererBlinkPlatformImpl::SandboxSupport
 
 //------------------------------------------------------------------------------
 
-RendererBlinkPlatformImpl::RendererBlinkPlatformImpl()
-    : clipboard_client_(new RendererClipboardClient),
-      clipboard_(new WebClipboardImpl(clipboard_client_.get())),
+RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
+    RendererScheduler* renderer_scheduler)
+    : BlinkPlatformImpl(renderer_scheduler->DefaultTaskRunner()),
+      web_scheduler_(new WebSchedulerImpl(renderer_scheduler)),
+      clipboard_delegate_(new RendererClipboardDelegate),
+      clipboard_(new WebClipboardImpl(clipboard_delegate_.get())),
       mime_registry_(new RendererBlinkPlatformImpl::MimeRegistry),
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
-      child_thread_loop_(base::MessageLoopProxy::current()),
+      default_task_runner_(renderer_scheduler->DefaultTaskRunner()),
       web_scrollbar_behavior_(new WebScrollbarBehaviorImpl) {
   if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(new RendererBlinkPlatformImpl::SandboxSupport);
@@ -255,6 +260,10 @@ RendererBlinkPlatformImpl::~RendererBlinkPlatformImpl() {
 }
 
 //------------------------------------------------------------------------------
+
+blink::WebScheduler* RendererBlinkPlatformImpl::scheduler() {
+  return web_scheduler_.get();
+}
 
 blink::WebClipboard* RendererBlinkPlatformImpl::clipboard() {
   blink::WebClipboard* clipboard =
@@ -323,7 +332,7 @@ void RendererBlinkPlatformImpl::createMessageChannel(
     blink::WebMessagePortChannel** channel1,
     blink::WebMessagePortChannel** channel2) {
   WebMessagePortChannelImpl::CreatePair(
-      child_thread_loop_.get(), channel1, channel2);
+      default_task_runner_, channel1, channel2);
 }
 
 blink::WebPrescientNetworking*
@@ -381,7 +390,7 @@ WebIDBFactory* RendererBlinkPlatformImpl::idbFactory() {
 //------------------------------------------------------------------------------
 
 WebFileSystem* RendererBlinkPlatformImpl::fileSystem() {
-  return WebFileSystemImpl::ThreadSpecificInstance(child_thread_loop_.get());
+  return WebFileSystemImpl::ThreadSpecificInstance(default_task_runner_);
 }
 
 //------------------------------------------------------------------------------
@@ -404,11 +413,11 @@ RendererBlinkPlatformImpl::MimeRegistry::supportsMediaMIMEType(
       return IsNotSupported;
 
     std::string key_system_ascii =
-        GetUnprefixedKeySystemName(base::UTF16ToASCII(key_system));
+        media::GetUnprefixedKeySystemName(base::UTF16ToASCII(key_system));
     std::vector<std::string> strict_codecs;
     net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, true);
 
-    if (!IsSupportedKeySystemWithMediaMimeType(
+    if (!media::IsSupportedKeySystemWithMediaMimeType(
             mime_type_ascii, strict_codecs, key_system_ascii)) {
       return IsNotSupported;
     }
@@ -467,7 +476,7 @@ bool RendererBlinkPlatformImpl::MimeRegistry::supportsEncryptedMediaMIMEType(
   net::ParseCodecString(base::UTF16ToASCII(codecs), &codec_vector,
                         strip_suffix);
 
-  return IsSupportedKeySystemWithMediaMimeType(
+  return media::IsSupportedKeySystemWithMediaMimeType(
       mime_type_ascii, codec_vector, base::UTF16ToASCII(key_system));
 }
 
@@ -939,6 +948,14 @@ blink::WebGraphicsContext3D*
 RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes,
     blink::WebGraphicsContext3D* share_context) {
+  return createOffscreenGraphicsContext3D(attributes, share_context, NULL);
+}
+
+blink::WebGraphicsContext3D*
+RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
+    const blink::WebGraphicsContext3D::Attributes& attributes,
+    blink::WebGraphicsContext3D* share_context,
+    blink::WebGLInfo* gl_info) {
   if (!RenderThreadImpl::current())
     return NULL;
 
@@ -958,6 +975,15 @@ RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       RenderThreadImpl::current()->EstablishGpuChannelSync(
           CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
+
+  if (gpu_channel_host.get() && gl_info) {
+    const gpu::GPUInfo& gpu_info = gpu_channel_host->gpu_info();
+    gl_info->vendorInfo.assign(blink::WebString::fromUTF8(gpu_info.gl_vendor));
+    gl_info->rendererInfo.assign(
+        blink::WebString::fromUTF8(gpu_info.gl_renderer));
+    gl_info->driverVersion.assign(
+        blink::WebString::fromUTF8(gpu_info.gl_version));
+  }
 
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
   bool lose_context_when_out_of_memory = false;
@@ -1064,8 +1090,8 @@ RendererBlinkPlatformImpl::CreatePlatformEventObserverFromType(
     default:
       // A default statement is required to prevent compilation errors when
       // Blink adds a new type.
-      VLOG(1) << "RendererBlinkPlatformImpl::startListening() with "
-                 "unknown type.";
+      DVLOG(1) << "RendererBlinkPlatformImpl::startListening() with "
+                  "unknown type.";
   }
 
   return NULL;

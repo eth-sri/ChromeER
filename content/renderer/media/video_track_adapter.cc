@@ -9,9 +9,12 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
+#include "content/public/common/content_switches.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/video_util.h"
 
@@ -27,7 +30,8 @@ const float kNormalFrameTimeoutInFrameIntervals = 25.0f;
 
 // Min delta time between two frames allowed without being dropped if a max
 // frame rate is specified.
-const int kMinTimeInMsBetweenFrames = 5;
+const base::TimeDelta kMinTimeBetweenFrames =
+    base::TimeDelta::FromMilliseconds(5);
 
 // Empty method used for keeping a reference to the original media::VideoFrame
 // in VideoFrameResolutionAdapter::DeliverFrame if cropping is needed.
@@ -50,6 +54,8 @@ void ResetCallbackOnMainRenderThread(
 class VideoTrackAdapter::VideoFrameResolutionAdapter
     : public base::RefCountedThreadSafe<VideoFrameResolutionAdapter> {
  public:
+  // Setting |max_frame_rate| to 0.0, means that no frame rate limitation
+  // will be done.
   VideoFrameResolutionAdapter(
       scoped_refptr<base::SingleThreadTaskRunner> render_message_loop,
       const gfx::Size& max_size,
@@ -128,12 +134,28 @@ VideoFrameResolutionAdapter::VideoFrameResolutionAdapter(
       min_aspect_ratio_(min_aspect_ratio),
       max_aspect_ratio_(max_aspect_ratio),
       frame_rate_(MediaStreamVideoSource::kDefaultFrameRate),
+      last_time_stamp_(base::TimeDelta::Max()),
       max_frame_rate_(max_frame_rate),
       keep_frame_counter_(0.0f) {
   DCHECK(renderer_task_runner_.get());
   DCHECK(io_thread_checker_.CalledOnValidThread());
   DCHECK_GE(max_aspect_ratio_, min_aspect_ratio_);
   CHECK_NE(0, max_aspect_ratio_);
+
+  const std::string max_fps_str =
+      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kWebRtcMaxCaptureFramerate);
+  if (!max_fps_str.empty()) {
+    double value;
+    if (base::StringToDouble(max_fps_str, &value) && value >= 0.0) {
+      DVLOG(1) << "Overriding max frame rate.  Was=" << max_frame_rate
+              << ", Now=" << value;
+      max_frame_rate_ = value;
+    } else {
+      DLOG(ERROR) << "Unable to set max fps to " << max_fps_str;
+    }
+  }
+
   DVLOG(3) << "VideoFrameResolutionAdapter("
           << "{ max_width =" << max_frame_size_.width() << "}, "
           << "{ max_height =" << max_frame_size_.height() << "}, "
@@ -238,8 +260,13 @@ bool VideoTrackAdapter::VideoFrameResolutionAdapter::MaybeDropFrame(
     return false;
   }
 
+  if (last_time_stamp_.is_max()) {  // First received frame.
+    last_time_stamp_ = frame->timestamp();
+    return false;
+  }
+
   base::TimeDelta delta = frame->timestamp() - last_time_stamp_;
-  if (delta.InMilliseconds() < kMinTimeInMsBetweenFrames) {
+  if (delta < kMinTimeBetweenFrames) {
     // We have seen video frames being delivered from camera devices back to
     // back. The simple AR filter for frame rate calculation is too short to
     // handle that. http://crbug/394315
@@ -253,8 +280,6 @@ bool VideoTrackAdapter::VideoFrameResolutionAdapter::MaybeDropFrame(
     return true;
   }
   last_time_stamp_ = frame->timestamp();
-  if (delta == last_time_stamp_)  // First received frame.
-    return false;
   // Calculate the frame rate using a simple AR filter.
   // Use a simple filter with 0.1 weight of the current sample.
   frame_rate_ = 100 / delta.InMillisecondsF() + 0.9 * frame_rate_;

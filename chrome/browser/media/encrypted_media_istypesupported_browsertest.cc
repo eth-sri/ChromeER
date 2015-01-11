@@ -49,33 +49,16 @@
 // in these tests. See http://crbug.com/311724.
 #if defined(WIDEVINE_CDM_AVAILABLE) && !defined(WIDEVINE_CDM_IS_COMPONENT)
 #define EXPECT_WV EXPECT_TRUE
-
-#if defined(WIDEVINE_CDM_AVC1_SUPPORT_AVAILABLE)
 #define EXPECT_WVMP4 EXPECT_TRUE
-#define EXPECT_WVAVC1 EXPECT_TRUE
-#if defined(WIDEVINE_CDM_AAC_SUPPORT_AVAILABLE)
-#define EXPECT_WVAVC1AAC EXPECT_TRUE
-#else
-#define EXPECT_WVAVC1AAC EXPECT_FALSE
-#endif  // defined(WIDEVINE_CDM_AAC_SUPPORT_AVAILABLE)
-#else  // !defined(WIDEVINE_CDM_AVC1_SUPPORT_AVAILABLE)
-#define EXPECT_WVMP4 EXPECT_FALSE
-#define EXPECT_WVAVC1 EXPECT_FALSE
-#define EXPECT_WVAVC1AAC EXPECT_FALSE
-#endif  // defined(WIDEVINE_CDM_AVC1_SUPPORT_AVAILABLE)
-
-#if defined(WIDEVINE_CDM_AAC_SUPPORT_AVAILABLE)
 #define EXPECT_WVAAC EXPECT_TRUE
-#else
-#define EXPECT_WVAAC EXPECT_FALSE
-#endif
-
+#define EXPECT_WVAVC1 EXPECT_TRUE
+#define EXPECT_WVAVC1AAC EXPECT_TRUE
 #else  // defined(WIDEVINE_CDM_AVAILABLE) && !defined(WIDEVINE_CDM_IS_COMPONENT)
 #define EXPECT_WV EXPECT_FALSE
 #define EXPECT_WVMP4 EXPECT_FALSE
+#define EXPECT_WVAAC EXPECT_FALSE
 #define EXPECT_WVAVC1 EXPECT_FALSE
 #define EXPECT_WVAVC1AAC EXPECT_FALSE
-#define EXPECT_WVAAC EXPECT_FALSE
 #endif  // defined(WIDEVINE_CDM_AVAILABLE) &&
         // !defined(WIDEVINE_CDM_IS_COMPONENT)
 
@@ -106,7 +89,15 @@ class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
 
     vp90_codec_.push_back("vp9.0");
 
+    opus_codec_.push_back("opus");
+
     vorbis_codec_.push_back("vorbis");
+
+    vp8_and_opus_codecs_.push_back("vp8");
+    vp8_and_opus_codecs_.push_back("opus");
+
+    vp9_and_opus_codecs_.push_back("vp9");
+    vp9_and_opus_codecs_.push_back("opus");
 
     vp8_and_vorbis_codecs_.push_back("vp8");
     vp8_and_vorbis_codecs_.push_back("vorbis");
@@ -157,7 +148,14 @@ class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
   const CodecVector& vp80_codec() const { return vp80_codec_; }
   const CodecVector& vp9_codec() const { return vp9_codec_; }
   const CodecVector& vp90_codec() const { return vp90_codec_; }
+  const CodecVector& opus_codec() const { return opus_codec_; }
   const CodecVector& vorbis_codec() const { return vorbis_codec_; }
+  const CodecVector& vp8_and_opus_codecs() const {
+    return vp8_and_opus_codecs_;
+  }
+  const CodecVector& vp9_and_opus_codecs() const {
+    return vp9_and_opus_codecs_;
+  }
   const CodecVector& vp8_and_vorbis_codecs() const {
     return vp8_and_vorbis_codecs_;
   }
@@ -214,7 +212,7 @@ class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
     base::FilePath::StringType pepper_plugin = plugin_lib.value();
     pepper_plugin.append(FILE_PATH_LITERAL("#CDM#0.1.0.0;"));
 #if defined(OS_WIN)
-    pepper_plugin.append(base::ASCIIToWide(pepper_type_for_key_system));
+    pepper_plugin.append(base::ASCIIToUTF16(pepper_type_for_key_system));
 #else
     pepper_plugin.append(pepper_type_for_key_system);
 #endif
@@ -298,7 +296,10 @@ class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
   CodecVector vp80_codec_;
   CodecVector vp9_codec_;
   CodecVector vp90_codec_;
+  CodecVector opus_codec_;
   CodecVector vorbis_codec_;
+  CodecVector vp8_and_opus_codecs_;
+  CodecVector vp9_and_opus_codecs_;
   CodecVector vp8_and_vorbis_codecs_;
   CodecVector vp9_and_vorbis_codecs_;
   CodecVector avc1_codec_;
@@ -481,11 +482,17 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp80_codec(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp8_and_opus_codecs(), kPrefixedClearKey));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp8_and_vorbis_codecs(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_codec(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp90_codec(), kPrefixedClearKey));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp9_and_opus_codecs(), kPrefixedClearKey));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", opus_codec(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_and_vorbis_codecs(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
@@ -507,15 +514,21 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", no_codecs(), kPrefixedClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", opus_codec(), kPrefixedClearKey));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vorbis_codec(), kPrefixedClearKey));
 
   // Non-audio codecs.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp8_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", vp8_and_opus_codecs(), kPrefixedClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp8_and_vorbis_codecs(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp9_codec(), kPrefixedClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", vp9_and_opus_codecs(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp9_and_vorbis_codecs(), kPrefixedClearKey));
 
@@ -596,6 +609,8 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedTest,
       "audio/mp4", avc3_extended_and_aac_codecs(), kPrefixedClearKey));
 
   // Invalid or Non-MP4 codec.
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/mp4", opus_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", vorbis_codec(), kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
@@ -692,11 +707,17 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp80_codec(), kExternalClearKey));
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp8_and_opus_codecs(), kExternalClearKey));
+  EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp8_and_vorbis_codecs(), kExternalClearKey));
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_codec(), kExternalClearKey));
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp90_codec(), kExternalClearKey));
+  EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp9_and_opus_codecs(), kExternalClearKey));
+  EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", opus_codec(), kExternalClearKey));
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_and_vorbis_codecs(), kExternalClearKey));
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
@@ -718,15 +739,21 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", no_codecs(), kExternalClearKey));
   EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", opus_codec(), kExternalClearKey));
+  EXPECT_ECK(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vorbis_codec(), kExternalClearKey));
 
   // Non-audio codecs.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp8_codec(), kExternalClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", vp8_and_opus_codecs(), kExternalClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp8_and_vorbis_codecs(), kExternalClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp9_codec(), kExternalClearKey));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", vp9_and_opus_codecs(), kExternalClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp9_and_vorbis_codecs(), kExternalClearKey));
 
@@ -808,6 +835,8 @@ IN_PROC_BROWSER_TEST_F(
       "audio/mp4", avc3_extended_and_aac_codecs(), kExternalClearKey));
 
   // Invalid or Non-MP4 codec.
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/mp4", opus_codec(), kExternalClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", vorbis_codec(), kExternalClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
@@ -899,11 +928,17 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp80_codec(), kWidevineAlpha));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp8_and_opus_codecs(), kWidevineAlpha));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp8_and_vorbis_codecs(), kWidevineAlpha));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_codec(), kWidevineAlpha));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp90_codec(), kWidevineAlpha));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp9_and_opus_codecs(), kWidevineAlpha));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", opus_codec(), kWidevineAlpha));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_and_vorbis_codecs(), kWidevineAlpha));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
@@ -917,11 +952,17 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp80_codec(), kWidevine));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp8_and_opus_codecs(), kWidevine));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp8_and_vorbis_codecs(), kWidevine));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_codec(), kWidevine));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp90_codec(), kWidevine));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", vp9_and_opus_codecs(), kWidevine));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "video/webm", opus_codec(), kWidevine));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", vp9_and_vorbis_codecs(), kWidevine));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
@@ -943,11 +984,15 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", no_codecs(), kWidevineAlpha));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", opus_codec(), kWidevineAlpha));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vorbis_codec(), kWidevineAlpha));
 
   // Valid audio types - parent key system.
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", no_codecs(), kWidevine));
+  EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", opus_codec(), kWidevine));
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vorbis_codec(), kWidevine));
 
@@ -955,9 +1000,13 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp8_codec(), kWidevineAlpha));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", vp8_and_opus_codecs(), kWidevineAlpha));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp8_and_vorbis_codecs(), kWidevineAlpha));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp9_codec(), kWidevineAlpha));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/webm", vp9_and_opus_codecs(), kWidevineAlpha));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/webm", vp9_and_vorbis_codecs(), kWidevineAlpha));
 
@@ -1055,6 +1104,8 @@ IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
       "audio/mp4", avc3_extended_and_aac_codecs(), kWidevineAlpha));
 
   // Invalid or Non-MP4 codec.
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      "audio/mp4", opus_codec(), kWidevineAlpha));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       "audio/mp4", vorbis_codec(), kWidevineAlpha));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(

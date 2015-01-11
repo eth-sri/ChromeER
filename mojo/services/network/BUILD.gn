@@ -2,9 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//mojo/public/mojo_application.gni")
+
 # GYP version: mojo/mojo_services.gypi:mojo_network_service
-shared_library("network") {
-  output_name = "mojo_network_service"
+mojo_native_application("network") {
+  output_name = "network_service"
 
   deps = [
     ":lib",
@@ -12,11 +14,10 @@ shared_library("network") {
     "//mojo/application",
     "//mojo/public/c/system:for_shared_library",
     "//mojo/public/cpp/bindings:bindings",
-    "//mojo/services/public/cpp/network",
     "//mojo/services/public/interfaces/network",
   ]
 
-  sources = [ "main.cc" ]
+  sources = [ "network_service.cc" ]
 }
 
 # GYP version: mojo/mojo_services.gypi:mojo_network_service_lib

@@ -81,6 +81,9 @@ ContentSettingsType kPermissionType[] = {
   CONTENT_SETTINGS_TYPE_MEDIASTREAM,
   CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS,
   CONTENT_SETTINGS_TYPE_MIDI_SYSEX,
+#if defined(OS_ANDROID)
+  CONTENT_SETTINGS_TYPE_PUSH_MESSAGING,
+#endif
 };
 
 bool CertificateTransparencyStatusMatch(
@@ -202,17 +205,38 @@ WebsiteSettings::WebsiteSettings(
 
   // Every time the Website Settings UI is opened a |WebsiteSettings| object is
   // created. So this counts how ofter the Website Settings UI is opened.
-  content::RecordAction(base::UserMetricsAction("WebsiteSettings_Opened"));
+  RecordWebsiteSettingsAction(WEBSITE_SETTINGS_OPENED);
 }
 
 WebsiteSettings::~WebsiteSettings() {
 }
+
+void WebsiteSettings::RecordWebsiteSettingsAction(
+    WebsiteSettingsAction action) {
+  UMA_HISTOGRAM_ENUMERATION("WebsiteSettings.Action",
+                            action,
+                            WEBSITE_SETTINGS_COUNT);
+
+  // Use a separate histogram to record actions if they are done on a page with
+  // an HTTPS URL. Note that this *disregards* security status.
+  if (site_url_.SchemeIs(url::kHttpsScheme)) {
+    UMA_HISTOGRAM_ENUMERATION("WebsiteSettings.Action.HttpsUrl",
+                              action,
+                              WEBSITE_SETTINGS_COUNT);
+  }
+}
+
 
 void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
                                               ContentSetting setting) {
   // Count how often a permission for a specific content type is changed using
   // the Website Settings UI.
   UMA_HISTOGRAM_COUNTS("WebsiteSettings.PermissionChanged", type);
+
+  // This is technically redundant given the histogram above, but putting the
+  // total count of permission changes in another histogram makes it easier to
+  // compare it against other kinds of actions in WebsiteSettings[PopupView].
+  RecordWebsiteSettingsAction(WEBSITE_SETTINGS_CHANGED_PERMISSION);
 
   ContentSettingsPattern primary_pattern;
   ContentSettingsPattern secondary_pattern;
@@ -235,6 +259,7 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
     case CONTENT_SETTINGS_TYPE_FULLSCREEN:
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
     case CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS:
+    case CONTENT_SETTINGS_TYPE_PUSH_MESSAGING:
       primary_pattern = ContentSettingsPattern::FromURL(site_url_);
       secondary_pattern = ContentSettingsPattern::Wildcard();
       break;
@@ -526,17 +551,22 @@ void WebsiteSettings::Init(Profile* profile,
     site_connection_details_.assign(l10n_util::GetStringFUTF16(
         IDS_PAGE_INFO_SECURITY_TAB_NOT_ENCRYPTED_CONNECTION_TEXT,
         subject_name));
-  } else if (ssl.security_bits < 80) {
-    site_connection_status_ = SITE_CONNECTION_STATUS_ENCRYPTED_ERROR;
-    site_connection_details_.assign(l10n_util::GetStringFUTF16(
-        IDS_PAGE_INFO_SECURITY_TAB_WEAK_ENCRYPTION_CONNECTION_TEXT,
-        subject_name));
   } else {
     site_connection_status_ = SITE_CONNECTION_STATUS_ENCRYPTED;
-    site_connection_details_.assign(l10n_util::GetStringFUTF16(
-        IDS_PAGE_INFO_SECURITY_TAB_ENCRYPTED_CONNECTION_TEXT,
-        subject_name,
-        base::IntToString16(ssl.security_bits)));
+
+    if (net::SSLConnectionStatusToVersion(ssl.connection_status) >=
+            net::SSL_CONNECTION_VERSION_TLS1_2 &&
+        net::IsSecureTLSCipherSuite(
+            net::SSLConnectionStatusToCipherSuite(ssl.connection_status))) {
+      site_connection_details_.assign(l10n_util::GetStringFUTF16(
+          IDS_PAGE_INFO_SECURITY_TAB_ENCRYPTED_CONNECTION_TEXT,
+          subject_name));
+    } else {
+      site_connection_details_.assign(l10n_util::GetStringFUTF16(
+          IDS_PAGE_INFO_SECURITY_TAB_WEAK_ENCRYPTION_CONNECTION_TEXT,
+          subject_name));
+    }
+
     if (ssl.content_status) {
       bool ran_insecure_content =
           !!(ssl.content_status & content::SSLStatus::RAN_INSECURE_CONTENT);
@@ -627,8 +657,11 @@ void WebsiteSettings::Init(Profile* profile,
       site_identity_status_ == SITE_IDENTITY_STATUS_CERT_REVOCATION_UNKNOWN ||
       site_identity_status_ == SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT ||
       site_identity_status_ ==
-          SITE_IDENTITY_STATUS_DEPRECATED_SIGNATURE_ALGORITHM)
+          SITE_IDENTITY_STATUS_DEPRECATED_SIGNATURE_ALGORITHM) {
     tab_id = WebsiteSettingsUI::TAB_ID_CONNECTION;
+    RecordWebsiteSettingsAction(
+      WEBSITE_SETTINGS_CONNECTION_TAB_SHOWN_IMMEDIATELY);
+  }
   ui_->SetSelectedTab(tab_id);
 }
 

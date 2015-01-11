@@ -10,7 +10,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/user_metrics_action.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -19,7 +18,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/crash_keys.h"
-#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension_metrics.h"
 #include "chrome/common/localized_error.h"
 #include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/render_messages.h"
@@ -38,7 +37,6 @@
 #include "chrome/renderer/media/chrome_key_systems.h"
 #include "chrome/renderer/net/net_error_helper.h"
 #include "chrome/renderer/net/prescient_networking_dispatcher.h"
-#include "chrome/renderer/net/renderer_net_predictor.h"
 #include "chrome/renderer/net_benchmarking_extension.h"
 #include "chrome/renderer/page_load_histograms.h"
 #include "chrome/renderer/pepper/pepper_helper.h"
@@ -64,6 +62,7 @@
 #include "components/autofill/content/renderer/password_autofill_agent.h"
 #include "components/autofill/content/renderer/password_generation_agent.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
+#include "components/dns_prefetch/renderer/renderer_net_predictor.h"
 #include "components/dom_distiller/core/url_constants.h"
 #include "components/nacl/renderer/ppb_nacl_private_impl.h"
 #include "components/password_manager/content/renderer/credential_manager_client.h"
@@ -122,11 +121,12 @@
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/extension_helper.h"
 #include "extensions/renderer/extensions_render_frame_observer.h"
-#include "extensions/renderer/guest_view/guest_view_container.h"
+#include "extensions/renderer/guest_view/extensions_guest_view_container.h"
+#include "extensions/renderer/guest_view/mime_handler_view/mime_handler_view_container.h"
 #include "extensions/renderer/script_context.h"
 #endif
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/renderer/pepper/chrome_pdf_print_client.h"
 #endif
 
@@ -310,7 +310,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
 #endif
 
   prescient_networking_dispatcher_.reset(new PrescientNetworkingDispatcher());
-  net_predictor_.reset(new RendererNetPredictor());
+  net_predictor_.reset(new dns_prefetch::RendererNetPredictor());
 #if defined(ENABLE_SPELLCHECK)
   // ChromeRenderViewTest::SetUp() creates a Spellcheck and injects it using
   // SetSpellcheck(). Don't overwrite it.
@@ -391,7 +391,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   WebSecurityPolicy::registerURLSchemeAsDisplayIsolated(dom_distiller_scheme);
 
 #if defined(OS_CHROMEOS)
-  WebString external_file_scheme(ASCIIToUTF16(chrome::kExternalFileScheme));
+  WebString external_file_scheme(ASCIIToUTF16(content::kExternalFileScheme));
   WebSecurityPolicy::registerURLSchemeAsLocal(external_file_scheme);
 #endif
 
@@ -434,7 +434,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   if (blacklist::IsBlacklistInitialized())
     UMA_HISTOGRAM_BOOLEAN("Blacklist.PatchedInRenderer", true);
 #endif
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   pdf_print_client_.reset(new ChromePDFPrintClient());
   pdf::PPB_PDF_Impl::SetPrintClient(pdf_print_client_.get());
 #endif
@@ -782,26 +782,28 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         }
 #endif  // !defined(DISABLE_NACL) && defined(ENABLE_EXTENSIONS)
 
+        GURL poster_url = ChromePluginPlaceholder::GetPluginInstancePosterImage(
+            params, frame->document().url());
+
         // Delay loading plugins if prerendering.
         // TODO(mmenke):  In the case of prerendering, feed into
         //                ChromeContentRendererClient::CreatePlugin instead, to
         //                reduce the chance of future regressions.
-        if (prerender::PrerenderHelper::IsPrerendering(render_frame)) {
+        if (prerender::PrerenderHelper::IsPrerendering(render_frame) ||
+            poster_url.is_valid()) {
           placeholder = ChromePluginPlaceholder::CreateBlockedPlugin(
-              render_frame,
-              frame,
-              params,
-              plugin,
-              identifier,
-              group_name,
-              IDR_CLICK_TO_PLAY_PLUGIN_HTML,
+              render_frame, frame, params, plugin, identifier, group_name,
+              poster_url.is_valid() ? IDR_PLUGIN_POSTER_HTML
+                                    : IDR_CLICK_TO_PLAY_PLUGIN_HTML,
               l10n_util::GetStringFUTF16(IDS_PLUGIN_LOAD, group_name));
           placeholder->set_blocked_for_prerendering(true);
           placeholder->set_allow_loading(true);
           break;
         }
 
-        return render_frame->CreatePlugin(frame, plugin, params);
+        return render_frame->CreatePlugin(
+            frame, plugin, params,
+            content::RenderFrame::CREATE_PLUGIN_GESTURE_NO_USER_GESTURE);
       }
       case ChromeViewHostMsg_GetPluginInfo_Status::kNPAPINotSupported: {
         RenderThread::Get()->RecordAction(
@@ -1272,12 +1274,8 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
     const Extension* extension =
         extension_dispatcher_->extensions()->GetExtensionOrAppByURL(url);
     if (extension && extension->is_app()) {
-      UMA_HISTOGRAM_ENUMERATION(
-          extension->is_platform_app() ?
-          extension_misc::kPlatformAppLaunchHistogram :
-          extension_misc::kAppLaunchHistogram,
-          extension_misc::APP_LAUNCH_CONTENT_NAVIGATION,
-          extension_misc::APP_LAUNCH_BUCKET_BOUNDARY);
+      extensions::RecordAppLaunchType(
+          extension_misc::APP_LAUNCH_CONTENT_NAVIGATION, extension->GetType());
     }
     return true;
   }
@@ -1596,9 +1594,15 @@ bool ChromeContentRendererClient::IsPluginAllowedToUseVideoDecodeAPI(
 content::BrowserPluginDelegate*
 ChromeContentRendererClient::CreateBrowserPluginDelegate(
     content::RenderFrame* render_frame,
-    const std::string& mime_type) {
+    const std::string& mime_type,
+    const GURL& original_url) {
 #if defined(ENABLE_EXTENSIONS)
-  return new extensions::GuestViewContainer(render_frame, mime_type);
+  if (mime_type == content::kBrowserPluginMimeType) {
+    return new extensions::ExtensionsGuestViewContainer(render_frame);
+  } else {
+    return new extensions::MimeHandlerViewContainer(
+        render_frame, mime_type, original_url);
+  }
 #else
   return NULL;
 #endif

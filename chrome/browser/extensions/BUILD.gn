@@ -46,7 +46,7 @@ static_library("extensions") {
     "//chrome/common/safe_browsing:proto",
     "//chrome/installer/util",
     "//components/copresence",
-    "//components/omaha_query_params",
+    "//components/omaha_client",
     "//components/onc",
     "//components/proximity_auth",
     "//components/strings",
@@ -93,6 +93,7 @@ static_library("extensions") {
       "//third_party/libevent",
       "//third_party/protobuf:protobuf_lite",
       "//chromeos/ime:gencode",
+      "//remoting/host/it2me:common",
     ]
   } else {
     sources += [
@@ -224,6 +225,11 @@ static_library("extensions") {
         ".", "//chrome")
   }
 
+  if (is_chromeos && use_ozone) {
+    sources -= [
+      "global_shortcut_listener_chromeos.cc",
+    ]
+  }
   if (!use_ozone) {
     sources -= [
       "global_shortcut_listener_ozone.cc",

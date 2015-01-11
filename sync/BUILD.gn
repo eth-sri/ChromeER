@@ -18,6 +18,8 @@ source_set("sync_core") {
     "api/attachments/attachment.h",
     "api/attachments/attachment_id.cc",
     "api/attachments/attachment_id.h",
+    "api/attachments/attachment_metadata.cc",
+    "api/attachments/attachment_metadata.h",
     "api/attachments/attachment_store.cc",
     "api/attachments/attachment_store.h",
     "api/string_ordinal.h",
@@ -123,6 +125,7 @@ source_set("sync_core") {
     "internal_api/attachments/attachment_store_handle.cc",
     "internal_api/attachments/attachment_uploader.cc",
     "internal_api/attachments/attachment_uploader_impl.cc",
+    "internal_api/attachments/attachment_util.cc",
     "internal_api/attachments/fake_attachment_downloader.cc",
     "internal_api/attachments/fake_attachment_uploader.cc",
     "internal_api/attachments/in_memory_attachment_store.cc",
@@ -162,6 +165,7 @@ source_set("sync_core") {
     "internal_api/public/attachments/attachment_store_handle.h",
     "internal_api/public/attachments/attachment_uploader.h",
     "internal_api/public/attachments/attachment_uploader_impl.h",
+    "internal_api/public/attachments/attachment_util.h",
     "internal_api/public/attachments/fake_attachment_downloader.h",
     "internal_api/public/attachments/fake_attachment_uploader.h",
     "internal_api/public/attachments/in_memory_attachment_store.h",
@@ -546,6 +550,7 @@ static_library("test_support_sync_api") {
 test("sync_unit_tests") {
   sources = [
     "api/attachments/attachment_id_unittest.cc",
+    "api/attachments/attachment_metadata_unittest.cc",
     "api/attachments/attachment_unittest.cc",
     "api/sync_change_unittest.cc",
     "api/sync_data_unittest.cc",

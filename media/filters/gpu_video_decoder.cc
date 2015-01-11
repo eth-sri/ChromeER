@@ -27,6 +27,8 @@
 
 namespace media {
 
+const char GpuVideoDecoder::kDecoderName[] = "GpuVideoDecoder";
+
 // Maximum number of concurrent VDA::Decode() operations GVD will maintain.
 // Higher values allow better pipelining in the GPU, but also require more
 // resources.
@@ -136,7 +138,7 @@ static void ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB(
 }
 
 std::string GpuVideoDecoder::GetDisplayName() const {
-  return "GpuVideoDecoder";
+  return kDecoderName;
 }
 
 void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
@@ -397,6 +399,12 @@ static void ReadPixelsSync(
     uint32 texture_id,
     const gfx::Rect& visible_rect,
     const SkBitmap& pixels) {
+#if defined(OS_MACOSX)
+  // For Mac OS X, just return black. http://crbug.com/425708.
+  pixels.eraseARGB(255, 0, 255, 0);
+  return;
+#endif
+
   base::WaitableEvent event(true, false);
   if (!factories->GetTaskRunner()->PostTask(FROM_HERE,
                                             base::Bind(&ReadPixelsSyncInner,
@@ -562,14 +570,12 @@ void GpuVideoDecoder::NotifyEndOfBitstreamBuffer(int32 id) {
 }
 
 GpuVideoDecoder::~GpuVideoDecoder() {
+  DVLOG(3) << __FUNCTION__;
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
+
   if (vda_)
     DestroyVDA();
-  DCHECK(bitstream_buffers_in_decoder_.empty());
   DCHECK(assigned_picture_buffers_.empty());
-
-  if (!pending_reset_cb_.is_null())
-    base::ResetAndReturn(&pending_reset_cb_).Run();
 
   for (size_t i = 0; i < available_shm_segments_.size(); ++i) {
     available_shm_segments_[i]->shm->Close();
@@ -581,8 +587,12 @@ GpuVideoDecoder::~GpuVideoDecoder() {
            bitstream_buffers_in_decoder_.begin();
        it != bitstream_buffers_in_decoder_.end(); ++it) {
     it->second.shm_buffer->shm->Close();
+    it->second.done_cb.Run(kAborted);
   }
   bitstream_buffers_in_decoder_.clear();
+
+  if (!pending_reset_cb_.is_null())
+    base::ResetAndReturn(&pending_reset_cb_).Run();
 }
 
 void GpuVideoDecoder::NotifyFlushDone() {

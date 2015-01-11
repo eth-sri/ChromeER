@@ -48,6 +48,7 @@
     "noparent": true,
     "component_extensions_auto_granted": false,
     "whitelist": [
+      "B9EF10DDFEA11EF77873CC5009809E5037FC4C7A",  // Google input tools
       "06BE211D5F014BAB34BC22D9DDA09C63A81D828E",  // Official xkb extension
       "F94EE6AB36D6C6588670B2B01EB65212D9C64E33"   // Open source xkb extension
     ]
@@ -137,13 +138,33 @@
       "matches": [
         "chrome://extensions-frame/*",
         "chrome://extensions/*",
-        "chrome://chrome-signin/*"
+        "chrome://chrome-signin/*",
+        "chrome://oobe/*"
       ]
     }
   ],
   "hid": {
     "dependencies": ["permission:hid"],
     "contexts": ["blessed_extension"]
+  },
+  "management": {
+    "dependencies": ["permission:management"],
+    "contexts": ["blessed_extension"]
+  },
+  "management.getPermissionWarningsByManifest": {
+    "dependencies": [],
+    "channel": "stable",
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
+  },
+  "management.getSelf": {
+    "dependencies": [],
+    "channel": "stable",
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
+  },
+  "management.uninstallSelf": {
+    "dependencies": [],
+    "channel": "stable",
+    "extension_types": ["extension", "legacy_packaged_app", "platform_app"]
   },
   "power": {
     "dependencies": ["permission:power"],
@@ -195,9 +216,6 @@
       "web_page"
     ],
     "matches": ["<all_urls>"]
-  },
-  "runtime.setUninstallURL": {
-    "channel": "dev"
   },
   "serial": {
     "dependencies": ["permission:serial"],
@@ -283,9 +301,8 @@
     "dependencies": ["permission:usb"],
     "contexts": ["blessed_extension"]
   },
-  "usb.getUserSelectedDevices": {
-    "channel": "dev",
-    "dependencies": ["permission:usb"],
+  "vpnProvider": {
+    "dependencies": ["permission:vpnProvider"],
     "contexts": ["blessed_extension"]
   },
   "webRequest": {
@@ -301,7 +318,7 @@
     "channel": "stable",
     "internal": true,
     "contexts": ["webui"],
-    "matches": ["chrome://chrome-signin/*"]
+    "matches": ["chrome://chrome-signin/*", "chrome://oobe/*"]
   }],
   "webViewExperimentalInternal": [{
     "internal": true,
@@ -329,7 +346,7 @@
     "internal": true,
     "channel": "dev",
     "contexts": ["webui"],
-    "matches": ["chrome://chrome-signin/*"]
+    "matches": ["chrome://chrome-signin/*", "chrome://oobe/*"]
   }],
   "webViewRequest": [{
     "dependencies": ["permission:webview"],
@@ -337,6 +354,6 @@
   }, {
     "channel": "stable",
     "contexts": ["webui"],
-    "matches": ["chrome://chrome-signin/*"]
+    "matches": ["chrome://chrome-signin/*", "chrome://oobe/*"]
   }]
 }

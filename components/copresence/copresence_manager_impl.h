@@ -6,15 +6,15 @@
 #define COMPONENTS_COPRESENCE_COPRESENCE_MANAGER_IMPL_H_
 
 #include <string>
-#include <vector>
 
-#include "base/callback.h"
 #include "base/cancelable_callback.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
-#include "components/copresence/proto/rpcs.pb.h"
 #include "components/copresence/public/copresence_manager.h"
+
+namespace base {
+class Timer;
+}
 
 namespace net {
 class URLContextGetter;
@@ -22,52 +22,56 @@ class URLContextGetter;
 
 namespace copresence {
 
+class DirectiveHandler;
+class GCMHandler;
+class ReportRequest;
 class RpcHandler;
-
-struct PendingRequest {
-  PendingRequest(const ReportRequest& report,
-                 const std::string& app_id,
-                 const std::string& auth_token,
-                 const StatusCallback& callback);
-  ~PendingRequest();
-
-  scoped_ptr<ReportRequest> report;
-  std::string app_id;
-  std::string auth_token;
-  StatusCallback callback;
-};
+class WhispernetClient;
 
 // The implementation for CopresenceManager. Responsible primarily for
 // client-side initialization. The RpcHandler handles all the details
 // of interacting with the server.
+// TODO(rkc): Add tests for this class.
 class CopresenceManagerImpl : public CopresenceManager {
  public:
+  // The delegate is owned by the caller, and must outlive the manager.
+  explicit CopresenceManagerImpl(CopresenceDelegate* delegate);
+
   ~CopresenceManagerImpl() override;
+
   void ExecuteReportRequest(const ReportRequest& request,
                             const std::string& app_id,
+                            const std::string& auth_token,
                             const StatusCallback& callback) override;
 
  private:
-  // Create managers with the CopresenceManager::Create() method.
-  friend class CopresenceManager;
-  CopresenceManagerImpl(CopresenceDelegate* delegate);
+  void WhispernetInitComplete(bool success);
 
-  void CompleteInitialization();
-  void InitStepComplete(const std::string& step, bool success);
+  // This function will be called every kPollTimerIntervalMs milliseconds to
+  // poll the server for new messages.
+  void PollForMessages();
 
-  bool init_failed_;
-  ScopedVector<PendingRequest> pending_requests_queue_;
+  // This function will verify that we can hear the audio we're playing every
+  // kAudioCheckIntervalMs milliseconds.
+  void AudioCheck();
 
+  // Belongs to the caller.
+  CopresenceDelegate* const delegate_;
+
+  // We use a CancelableCallback here because Whispernet
+  // does not provide a way to unregister its init callback.
   base::CancelableCallback<void(bool)> whispernet_init_callback_;
 
-  // TODO(rkc): This code is almost identical to what we use in feedback to
-  // perform multiple blocking tasks and then run a post process method. Look
-  // into refactoring it all out to a common construct, like maybe a
-  // PostMultipleTasksAndReply?
-  int pending_init_operations_;
+  bool init_failed_;
 
-  CopresenceDelegate* const delegate_;
+  // The GCMHandler must destruct before the DirectiveHandler,
+  // which must destruct before the RpcHandler. Do not change this order.
   scoped_ptr<RpcHandler> rpc_handler_;
+  scoped_ptr<DirectiveHandler> directive_handler_;
+  scoped_ptr<GCMHandler> gcm_handler_;
+
+  scoped_ptr<base::Timer> poll_timer_;
+  scoped_ptr<base::Timer> audio_check_timer_;
 
   DISALLOW_COPY_AND_ASSIGN(CopresenceManagerImpl);
 };

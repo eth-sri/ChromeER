@@ -49,6 +49,7 @@
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebThread.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -88,6 +89,7 @@ using blink::WebURLError;
 using blink::WebURLRequest;
 using blink::WebScreenOrientationType;
 using blink::WebTestingSupport;
+using blink::WebThread;
 using blink::WebVector;
 using blink::WebView;
 
@@ -95,11 +97,16 @@ namespace content {
 
 namespace {
 
-void InvokeTaskHelper(void* context) {
-  WebTask* task = reinterpret_cast<WebTask*>(context);
-  task->run();
-  delete task;
-}
+class InvokeTaskHelper : public WebThread::Task {
+ public:
+  InvokeTaskHelper(scoped_ptr<WebTask> task) : task_(task.Pass()) {}
+
+  // WebThread::Task implementation:
+  void run() override { task_->run(); }
+
+ private:
+  scoped_ptr<WebTask> task_;
+};
 
 class SyncNavigationStateVisitor : public RenderViewVisitor {
  public:
@@ -246,14 +253,13 @@ void WebKitTestRunner::PrintMessage(const std::string& message) {
 }
 
 void WebKitTestRunner::PostTask(WebTask* task) {
-  Platform::current()->callOnMainThread(InvokeTaskHelper, task);
+  Platform::current()->currentThread()->postTask(
+      new InvokeTaskHelper(make_scoped_ptr(task)));
 }
 
 void WebKitTestRunner::PostDelayedTask(WebTask* task, long long ms) {
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&WebTask::run, base::Owned(task)),
-      base::TimeDelta::FromMilliseconds(ms));
+  Platform::current()->currentThread()->postDelayedTask(
+      new InvokeTaskHelper(make_scoped_ptr(task)), ms);
 }
 
 WebString WebKitTestRunner::RegisterIsolatedFileSystem(
@@ -412,16 +418,6 @@ void WebKitTestRunner::SetDatabaseQuota(int quota) {
   Send(new LayoutTestHostMsg_SetDatabaseQuota(routing_id(), quota));
 }
 
-blink::WebNotificationPresenter::Permission
-WebKitTestRunner::CheckWebNotificationPermission(const GURL& origin) {
-  int permission = blink::WebNotificationPresenter::PermissionNotAllowed;
-  Send(new LayoutTestHostMsg_CheckWebNotificationPermission(
-          routing_id(),
-          origin,
-          &permission));
-  return static_cast<blink::WebNotificationPresenter::Permission>(permission);
-}
-
 void WebKitTestRunner::GrantWebNotificationPermission(const GURL& origin,
                                                       bool permission_granted) {
   Send(new LayoutTestHostMsg_GrantWebNotificationPermission(
@@ -442,6 +438,10 @@ void WebKitTestRunner::SetDeviceScaleFactor(float factor) {
 
 void WebKitTestRunner::SetDeviceColorProfile(const std::string& name) {
   content::SetDeviceColorProfile(render_view(), name);
+}
+
+void WebKitTestRunner::SetBluetoothMockDataSet(const std::string& name) {
+  content::SetBluetoothMockDataSetForTesting(name);
 }
 
 void WebKitTestRunner::SetFocus(WebTestProxyBase* proxy, bool focus) {

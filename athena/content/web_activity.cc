@@ -6,6 +6,7 @@
 
 #include "athena/activity/public/activity_factory.h"
 #include "athena/activity/public/activity_manager.h"
+#include "athena/activity/public/activity_view.h"
 #include "athena/content/content_proxy.h"
 #include "athena/content/media_utils.h"
 #include "athena/content/public/dialogs.h"
@@ -15,8 +16,8 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/app_modal/javascript_dialog_manager.h"
 #include "components/favicon_base/select_favicon_frames.h"
-#include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -26,6 +27,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/closure_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/content_accelerators/accelerator_util.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
@@ -82,11 +84,8 @@ class WebActivityController : public AcceleratorHandler {
   bool PreHandleKeyboardEvent(content::WebContents* source,
                               const content::NativeWebKeyboardEvent& event,
                               bool* is_keyboard_shortcut) {
-    ui::Accelerator accelerator(
-        static_cast<ui::KeyboardCode>(event.windowsKeyCode),
-        content::GetModifiersFromNativeWebKeyboardEvent(event));
-    if (event.type == blink::WebInputEvent::KeyUp)
-      accelerator.set_type(ui::ET_KEY_RELEASED);
+    ui::Accelerator accelerator =
+        ui::GetAcceleratorFromNativeWebKeyboardEvent(event);
 
     if (reserved_accelerator_enabled_ &&
         accelerator_manager_->IsRegistered(accelerator, AF_RESERVED)) {
@@ -363,9 +362,9 @@ class AthenaWebView : public views::WebView {
     layer->SetOpacity(0.f);
   }
 
-  content::JavaScriptDialogManager* GetJavaScriptDialogManager() override {
-    NOTIMPLEMENTED();
-    return nullptr;
+  content::JavaScriptDialogManager* GetJavaScriptDialogManager(
+      content::WebContents* contents) override {
+    return app_modal::JavaScriptDialogManager::GetInstance();
   }
 
   content::ColorChooser* OpenColorChooser(
@@ -441,6 +440,7 @@ WebActivity::WebActivity(content::BrowserContext* browser_context,
       title_(title),
       title_color_(kDefaultTitleColor),
       current_state_(ACTIVITY_UNLOADED),
+      activity_view_(nullptr),
       weak_ptr_factory_(this) {
   // Order is important. The web activity helpers must be attached prior to the
   // RenderView being created.
@@ -453,6 +453,7 @@ WebActivity::WebActivity(content::WebContents* contents)
       web_view_(new AthenaWebView(contents, this)),
       title_color_(kDefaultTitleColor),
       current_state_(ACTIVITY_UNLOADED),
+      activity_view_(nullptr),
       weak_ptr_factory_(this) {
   // If the activity was created as a result of
   // WebContentsDelegate::AddNewContents(), web activity helpers may not be
@@ -528,7 +529,8 @@ Activity::ActivityMediaState WebActivity::GetMediaState() {
 }
 
 aura::Window* WebActivity::GetWindow() {
-  return web_view_->GetWidget()->GetNativeWindow();
+  return web_view_->GetWidget() ? web_view_->GetWidget()->GetNativeWindow()
+                                : nullptr;
 }
 
 content::WebContents* WebActivity::GetWebContents() {
@@ -556,16 +558,17 @@ gfx::ImageSkia WebActivity::GetIcon() const {
   return icon_;
 }
 
+void WebActivity::SetActivityView(ActivityView* view) {
+  DCHECK(!activity_view_);
+  activity_view_ = view;
+}
+
 bool WebActivity::UsesFrame() const {
   return true;
 }
 
 views::View* WebActivity::GetContentsView() {
   return web_view_;
-}
-
-views::Widget* WebActivity::CreateWidget() {
-  return nullptr;  // Use default widget.
 }
 
 gfx::ImageSkia WebActivity::GetOverviewModeImage() {
@@ -592,7 +595,8 @@ void WebActivity::ResetContentsView() {
 
 void WebActivity::TitleWasSet(content::NavigationEntry* entry,
                               bool explicit_set) {
-  ActivityManager::Get()->UpdateActivity(this);
+  if (activity_view_)
+    activity_view_->UpdateTitle();
 }
 
 void WebActivity::DidNavigateMainFrame(
@@ -602,7 +606,8 @@ void WebActivity::DidNavigateMainFrame(
   weak_ptr_factory_.InvalidateWeakPtrs();
 
   icon_ = gfx::ImageSkia();
-  ActivityManager::Get()->UpdateActivity(this);
+  if (activity_view_)
+    activity_view_->UpdateIcon();
 }
 
 void WebActivity::DidUpdateFaviconURL(
@@ -632,12 +637,14 @@ void WebActivity::OnDidDownloadFavicon(
     const std::vector<gfx::Size>& original_bitmap_sizes) {
   icon_ = CreateFaviconImageSkia(
       bitmaps, original_bitmap_sizes, kIconSize, nullptr);
-  ActivityManager::Get()->UpdateActivity(this);
+  if (activity_view_)
+    activity_view_->UpdateIcon();
 }
 
 void WebActivity::DidChangeThemeColor(SkColor theme_color) {
   title_color_ = theme_color;
-  ActivityManager::Get()->UpdateActivity(this);
+  if (activity_view_)
+    activity_view_->UpdateRepresentativeColor();
 }
 
 void WebActivity::HideContentProxy() {

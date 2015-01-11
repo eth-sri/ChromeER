@@ -19,6 +19,8 @@
       'utility/printing_handler.h',
       'utility/shell_handler_win.cc',
       'utility/shell_handler_win.h',
+      'utility/font_cache_handler_win.cc',
+      'utility/font_cache_handler_win.h',
       'utility/utility_message_handler.h',
       'utility/web_resource_unpacker.cc',
       'utility/web_resource_unpacker.h',
@@ -142,6 +144,7 @@
         }],
         ['enable_extensions==1', {
           'dependencies': [
+            '../extensions/extensions.gyp:extensions_utility',
             '../third_party/libexif/libexif.gyp:libexif',
             'common/extensions/api/api.gyp:chrome_api',
           ],
@@ -172,7 +175,7 @@
             }],
           ],
         }],
-        ['enable_printing!=1 and OS!="win"', {
+        ['enable_print_preview==0 and OS!="win"', {
           'sources!': [
             'utility/printing_handler.cc',
             'utility/printing_handler.h',

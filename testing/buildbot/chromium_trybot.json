@@ -4,6 +4,10 @@
   ],
   "gtest_tests": [
     "accessibility_unittests",
+    {
+      "test": "app_installer_unittests",
+      "platforms": ["win"]
+    },
     "app_list_unittests",
     {
       "test": "ash_unittests",
@@ -33,7 +37,7 @@
       "test": "browser_tests",
       "swarming": {
         "can_use_on_swarming_builders": true,
-        "shards": 5
+        "shards": 8
       }
     },
     "cacheinvalidation_unittests",
@@ -118,10 +122,6 @@
     "mojo_public_environment_unittests",
     "mojo_public_system_unittests",
     "mojo_public_utility_unittests",
-    {
-      "test": "mojo_application_manager_unittests",
-      "platforms": ["linux"]
-    },
     "mojo_system_unittests",
     {
       "test": "nacl_loader_unittests",
@@ -157,13 +157,22 @@
       }
     },
     "sync_unit_tests",
-    "ui_unittests",
+    "ui_base_unittests",
     {
       "test": "unit_tests",
       "swarming": {
         "can_use_on_swarming_builders": true,
         "shards": 2
       }
+    },
+    {
+      "test": "ui_chromeos_unittests",
+      "platforms": ["linux"],
+      "chromium_configs": [
+        "chromium_chromeos",
+        "chromium_chromeos_clang",
+        "chromium_chromeos_ozone"
+      ]
     },
     "url_unittests",
     {

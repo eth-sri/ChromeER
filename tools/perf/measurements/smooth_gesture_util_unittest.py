@@ -11,7 +11,7 @@ from telemetry.page import page as page_module
 from telemetry.page import page_test
 from telemetry.timeline import async_slice
 from telemetry.timeline import model as model_module
-from telemetry.unittest import page_test_test_case
+from telemetry.unittest_util import page_test_test_case
 from telemetry.web_perf import timeline_interaction_record as tir_module
 
 
@@ -120,6 +120,7 @@ class SmoothGestureTest(page_test_test_case.PageTestTestCase):
     tab_ids = []
     class ScrollingGestureTestMeasurement(page_test.PageTest):
       def __init__(self):
+        # pylint: disable=bad-super-call
         super(ScrollingGestureTestMeasurement, self).__init__(
           'RunSmoothness', False)
 

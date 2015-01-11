@@ -10,6 +10,7 @@
 #include "apps/app_load_service.h"
 #include "apps/saved_files_service.h"
 #include "base/files/file_path.h"
+#include "base/strings/string_split.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/grit/generated_resources.h"
 #include "extensions/browser/api/device_permissions_manager.h"
@@ -40,10 +41,12 @@ const int kSpacingBetweenTextAndRevokeButton = 15;
 const int kIndentationBeforeNestedBullet = 13;
 
 // Creates a close button that calls |callback| on click and can be placed to
-// the right of a bullet in the permissions list.
+// the right of a bullet in the permissions list. The alt-text is set to a
+// revoke message containing the given |permission_message|.
 class RevokeButton : public views::ImageButton, public views::ButtonListener {
  public:
-  explicit RevokeButton(const base::Closure& callback)
+  explicit RevokeButton(const base::Closure& callback,
+                        base::string16 permission_message)
       : views::ImageButton(this), callback_(callback) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     SetImage(views::CustomButton::STATE_NORMAL,
@@ -54,6 +57,12 @@ class RevokeButton : public views::ImageButton, public views::ButtonListener {
              rb.GetImageNamed(IDR_DISABLE_P).ToImageSkia());
     SetBorder(scoped_ptr<views::Border>());
     SetSize(GetPreferredSize());
+
+    // Make the button focusable & give it alt-text so permissions can be
+    // revoked using only the keyboard.
+    SetFocusable(true);
+    SetTooltipText(l10n_util::GetStringFUTF16(
+        IDS_APPLICATION_INFO_REVOKE_PERMISSION_ALT_TEXT, permission_message));
   }
   ~RevokeButton() override {}
 
@@ -139,7 +148,7 @@ class BulletedPermissionsList : public views::View {
                             const base::Closure& revoke_callback) {
     RevokeButton* revoke_button = NULL;
     if (!revoke_callback.is_null())
-      revoke_button = new RevokeButton(revoke_callback);
+      revoke_button = new RevokeButton(revoke_callback, message);
 
     views::Label* permission_label = new views::Label(message);
     permission_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -217,13 +226,11 @@ void AppInfoPermissionsPanel::CreatePermissionsList() {
 
   BulletedPermissionsList* permissions_list = new BulletedPermissionsList();
 
-  // Add regular permission messages.
+  // Add regular and host permission messages.
   for (const auto& message : GetActivePermissionMessages()) {
     permissions_list->AddPermissionBullets(
-        message, std::vector<base::string16>(), gfx::NO_ELIDE, base::Closure());
+        message.first, message.second, gfx::ELIDE_MIDDLE, base::Closure());
   }
-
-  // TODO(sashab): Add host permission messages, if the app has any.
 
   // Add USB devices, if the app has any.
   if (GetRetainedDeviceCount() > 0) {
@@ -252,9 +259,26 @@ bool AppInfoPermissionsPanel::HasActivePermissionMessages() const {
   return !GetActivePermissionMessages().empty();
 }
 
-const std::vector<base::string16>
+const std::vector<PermissionStringAndDetailsPair>
 AppInfoPermissionsPanel::GetActivePermissionMessages() const {
-  return app_->permissions_data()->GetPermissionMessageStrings();
+  std::vector<PermissionStringAndDetailsPair> messages_with_details;
+  std::vector<base::string16> permission_messages =
+      app_->permissions_data()->GetPermissionMessageStrings();
+  std::vector<base::string16> permission_message_details =
+      app_->permissions_data()->GetPermissionMessageDetailsStrings();
+  DCHECK_EQ(permission_messages.size(), permission_message_details.size());
+
+  for (size_t i = 0; i < permission_messages.size(); i++) {
+    std::vector<base::string16> details;
+    if (!permission_message_details[i].empty()) {
+      // Make each new line in the details a separate sub-bullet.
+      base::SplitString(
+          permission_message_details[i], base::char16('\n'), &details);
+    }
+    messages_with_details.push_back(
+        PermissionStringAndDetailsPair(permission_messages[i], details));
+  }
+  return messages_with_details;
 }
 
 int AppInfoPermissionsPanel::GetRetainedFileCount() const {

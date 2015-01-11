@@ -855,6 +855,53 @@ TEST_F(WidgetObserverTest, WidgetBoundsChanged) {
   EXPECT_EQ(child2, widget_bounds_changed());
 }
 
+// An extension to WidgetBoundsChanged to ensure notifications are forwarded
+// by the NativeWidget implementation.
+TEST_F(WidgetObserverTest, WidgetBoundsChangedNative) {
+  // Don't use NewWidget(), so that the Init() flow can be observed to ensure
+  // consistency across platforms.
+  Widget* widget = new Widget();  // Note: owned by NativeWidget.
+  widget->AddObserver(this);
+
+  EXPECT_FALSE(widget_bounds_changed());
+
+  // Init causes a bounds change, even while not showing.
+  widget->Init(CreateParams(Widget::InitParams::TYPE_WINDOW));
+  EXPECT_TRUE(widget_bounds_changed());
+  reset();
+
+  // Resizing while hidden, triggers a change.
+  widget->SetSize(gfx::Size(160, 100));
+  EXPECT_FALSE(widget->IsVisible());
+  EXPECT_TRUE(widget_bounds_changed());
+  reset();
+
+  // Setting the same size does nothing.
+  widget->SetSize(gfx::Size(160, 100));
+  EXPECT_FALSE(widget_bounds_changed());
+  reset();
+
+  // Showing does nothing to the bounds.
+  widget->Show();
+  EXPECT_TRUE(widget->IsVisible());
+  EXPECT_FALSE(widget_bounds_changed());
+  reset();
+
+  // Resizing while shown.
+  widget->SetSize(gfx::Size(170, 100));
+  EXPECT_TRUE(widget_bounds_changed());
+  reset();
+
+  // Resize to the same thing while shown does nothing.
+  widget->SetSize(gfx::Size(170, 100));
+  EXPECT_FALSE(widget_bounds_changed());
+  reset();
+
+  // No bounds change when closing.
+  widget->CloseNow();
+  EXPECT_FALSE(widget_bounds_changed());
+}
+
 // Tests that SetBounds() and GetWindowBoundsInScreen() is symmetric when the
 // widget is visible and not maximized or fullscreen.
 TEST_F(WidgetTest, GetWindowBoundsInScreen) {
@@ -3236,84 +3283,6 @@ TEST_F(WidgetTest, MouseEventTypesViaGenerator) {
   EXPECT_EQ(3, view->GetEventCount(ui::ET_MOUSE_RELEASED));
   EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_DRAGGED));
   EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON, view->last_flags());
-
-  widget->CloseNow();
-}
-
-// Tests that a view does not receive entered, dragged, or moved events if
-// a mouse cursor is moved into it while the left mouse button is pressed.
-TEST_F(WidgetTest, DragIntoView) {
-  EventCountView* container = new EventCountView;
-  container->SetBounds(0, 0, 100, 80);
-
-  EventCountView* consume_view = new EventCountView;
-  consume_view->set_handle_mode(EventCountView::CONSUME_EVENTS);
-  consume_view->SetBounds(10, 10, 50, 40);
-
-  Widget* widget = CreateTopLevelFramelessPlatformWidget();
-  widget->SetBounds(gfx::Rect(0, 0, 100, 80));
-  widget->SetContentsView(container);
-  container->AddChildView(consume_view);
-
-  widget->Show();
-
-  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
-  generator.set_current_location(gfx::Point(75, 15));
-
-  generator.PressLeftButton();
-  generator.MoveMouseTo(gfx::Point(20, 20));
-  EXPECT_EQ(0, consume_view->GetEventCount(ui::ET_MOUSE_ENTERED));
-  EXPECT_EQ(0, consume_view->GetEventCount(ui::ET_MOUSE_DRAGGED));
-  EXPECT_EQ(0, consume_view->GetEventCount(ui::ET_MOUSE_MOVED));
-
-  widget->CloseNow();
-}
-
-// Tests that a view receives the correct mouse events if a mouse cursor
-// is moved out of its bounds while the left mouse button is pressed.
-TEST_F(WidgetTest, DragOutOfView) {
-  EventCountView* container = new EventCountView;
-  container->SetBounds(0, 0, 100, 80);
-
-  EventCountView* consume_view = new EventCountView;
-  consume_view->set_handle_mode(EventCountView::CONSUME_EVENTS);
-  consume_view->SetBounds(10, 10, 50, 40);
-
-  Widget* widget = CreateTopLevelFramelessPlatformWidget();
-  widget->SetBounds(gfx::Rect(0, 0, 100, 80));
-  widget->SetContentsView(container);
-  container->AddChildView(consume_view);
-
-  widget->Show();
-
-  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
-  generator.set_current_location(gfx::Point(20, 20));
-
-  generator.PressLeftButton();
-  EXPECT_EQ(1, consume_view->GetEventCount(ui::ET_MOUSE_PRESSED));
-  EXPECT_EQ(0, container->GetEventCount(ui::ET_MOUSE_PRESSED));
-  consume_view->ResetCounts();
-
-  generator.MoveMouseTo(gfx::Point(70, 70));
-  EXPECT_EQ(0, consume_view->GetEventCount(ui::ET_MOUSE_EXITED));
-  EXPECT_EQ(1, consume_view->GetEventCount(ui::ET_MOUSE_DRAGGED));
-  EXPECT_EQ(0, consume_view->GetEventCount(ui::ET_MOUSE_MOVED));
-  EXPECT_EQ(0, container->GetEventCount(ui::ET_MOUSE_ENTERED));
-  EXPECT_EQ(0, container->GetEventCount(ui::ET_MOUSE_DRAGGED));
-  EXPECT_EQ(0, container->GetEventCount(ui::ET_MOUSE_MOVED));
-  consume_view->ResetCounts();
-
-  generator.MoveMouseTo(gfx::Point(71, 71));
-  EXPECT_EQ(1, consume_view->GetEventCount(ui::ET_MOUSE_DRAGGED));
-  EXPECT_EQ(0, consume_view->GetEventCount(ui::ET_MOUSE_MOVED));
-  EXPECT_EQ(0, container->GetEventCount(ui::ET_MOUSE_DRAGGED));
-  EXPECT_EQ(0, container->GetEventCount(ui::ET_MOUSE_MOVED));
-  consume_view->ResetCounts();
-
-  generator.ReleaseLeftButton();
-  EXPECT_EQ(1, consume_view->GetEventCount(ui::ET_MOUSE_RELEASED));
-  EXPECT_EQ(0, container->GetEventCount(ui::ET_MOUSE_RELEASED));
-  consume_view->ResetCounts();
 
   widget->CloseNow();
 }

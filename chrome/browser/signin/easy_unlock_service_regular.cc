@@ -18,9 +18,16 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/proximity_auth/switches.h"
+#include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 
 #if defined(OS_CHROMEOS)
+#include "apps/app_lifetime_monitor_factory.h"
+#include "base/thread_task_runner_handle.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_key_manager.h"
+#include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_reauth.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "components/user_manager/user_manager.h"
 #endif
@@ -36,11 +43,33 @@ const char kKeyDevices[] = "devices";
 // Key name of the phone public key in a device dictionary.
 const char kKeyPhoneId[] = "permitRecord.id";
 
+#if defined(OS_CHROMEOS)
+// Returns true iff the proximity authentication feature is enabled.
+bool IsEnabled() {
+  // Note: It's important to query the field trial state first, to ensure that
+  // UMA reports the correct group.
+  const std::string group = base::FieldTrialList::FindFullName("EasyUnlock");
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          proximity_auth::switches::kDisableEasyUnlock)) {
+    return false;
+  }
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          proximity_auth::switches::kEnableEasyUnlock)) {
+    return true;
+  }
+
+  return group == "Enable";
+}
+#endif  // defined(OS_CHROMEOS)
+
 }  // namespace
 
 EasyUnlockServiceRegular::EasyUnlockServiceRegular(Profile* profile)
     : EasyUnlockService(profile),
-      turn_off_flow_status_(EasyUnlockService::IDLE) {
+      turn_off_flow_status_(EasyUnlockService::IDLE),
+      weak_ptr_factory_(this) {
 }
 
 EasyUnlockServiceRegular::~EasyUnlockServiceRegular() {
@@ -55,6 +84,52 @@ std::string EasyUnlockServiceRegular::GetUserEmail() const {
 }
 
 void EasyUnlockServiceRegular::LaunchSetup() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+#if defined(OS_CHROMEOS)
+  // Force the user to reauthenticate by showing a modal overlay (similar to the
+  // lock screen). The password obtained from the reauth is cached for a short
+  // period of time and used to create the cryptohome keys for sign-in.
+  if (short_lived_user_context_ && short_lived_user_context_->user_context()) {
+    OpenSetupApp();
+  } else {
+    bool reauth_success = chromeos::EasyUnlockReauth::ReauthForUserContext(
+        base::Bind(&EasyUnlockServiceRegular::OnUserContextFromReauth,
+                   weak_ptr_factory_.GetWeakPtr()));
+    if (!reauth_success)
+      OpenSetupApp();
+  }
+#else
+  OpenSetupApp();
+#endif
+}
+
+#if defined(OS_CHROMEOS)
+void EasyUnlockServiceRegular::OnUserContextFromReauth(
+    const chromeos::UserContext& user_context) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  short_lived_user_context_.reset(new chromeos::ShortLivedUserContext(
+      user_context, apps::AppLifetimeMonitorFactory::GetForProfile(profile()),
+      base::ThreadTaskRunnerHandle::Get().get()));
+
+  OpenSetupApp();
+}
+
+void EasyUnlockServiceRegular::OnKeysRefreshedForSetDevices(bool success) {
+  // If the keys were refreshed successfully, the hardlock state should be
+  // cleared, so Smart Lock can be used normally. Otherwise, we fall back to
+  // a hardlock state to force the user to type in their credentials again.
+  if (success) {
+    SetHardlockStateForUser(GetUserEmail(),
+                            EasyUnlockScreenlockStateHandler::NO_HARDLOCK);
+  }
+
+  // Even if the keys refresh suceeded, we still fetch the cryptohome keys as a
+  // sanity check.
+  CheckCryptohomeKeysAndMaybeHardlock();
+}
+#endif
+
+void EasyUnlockServiceRegular::OpenSetupApp() {
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile())->extension_service();
   const extensions::Extension* extension =
@@ -103,7 +178,29 @@ void EasyUnlockServiceRegular::SetRemoteDevices(
   DictionaryPrefUpdate pairing_update(profile()->GetPrefs(),
                                       prefs::kEasyUnlockPairing);
   pairing_update->SetWithoutPathExpansion(kKeyDevices, devices.DeepCopy());
+
+#if defined(OS_CHROMEOS)
+  // TODO(tengs): Investigate if we can determine if the remote devices were set
+  // from sync or from the setup app.
+  if (short_lived_user_context_ && short_lived_user_context_->user_context() &&
+      !devices.empty()) {
+    // We may already have the password cached, so proceed to create the
+    // cryptohome keys for sign-in or the system will be hardlocked.
+    chromeos::UserContext* user_context =
+        short_lived_user_context_->user_context();
+    chromeos::EasyUnlockKeyManager* key_manager =
+        chromeos::UserSessionManager::GetInstance()->GetEasyUnlockKeyManager();
+
+    key_manager->RefreshKeys(
+        *user_context, devices,
+        base::Bind(&EasyUnlockServiceRegular::OnKeysRefreshedForSetDevices,
+                   weak_ptr_factory_.GetWeakPtr()));
+  } else {
+    CheckCryptohomeKeysAndMaybeHardlock();
+  }
+#else
   CheckCryptohomeKeysAndMaybeHardlock();
+#endif
 }
 
 void EasyUnlockServiceRegular::ClearRemoteDevices() {
@@ -184,6 +281,10 @@ void EasyUnlockServiceRegular::InitializeInternal() {
 }
 
 void EasyUnlockServiceRegular::ShutdownInternal() {
+#if defined(OS_CHROMEOS)
+  short_lived_user_context_.reset();
+#endif
+
   turn_off_flow_.reset();
   turn_off_flow_status_ = EasyUnlockService::IDLE;
   registrar_.RemoveAll();
@@ -191,7 +292,7 @@ void EasyUnlockServiceRegular::ShutdownInternal() {
 
 bool EasyUnlockServiceRegular::IsAllowedInternal() {
 #if defined(OS_CHROMEOS)
-  if (!user_manager::UserManager::Get()->IsLoggedInAsRegularUser())
+  if (!user_manager::UserManager::Get()->IsLoggedInAsUserWithGaiaAccount())
     return false;
 
   if (!chromeos::ProfileHelper::IsPrimaryProfile(profile()))
@@ -200,11 +301,9 @@ bool EasyUnlockServiceRegular::IsAllowedInternal() {
   if (!profile()->GetPrefs()->GetBoolean(prefs::kEasyUnlockAllowed))
     return false;
 
-  // Respect existing policy and skip finch test.
-  if (!profile()->GetPrefs()->IsManagedPreference(prefs::kEasyUnlockAllowed)) {
-    // It is enabled when the trial exists and is in "Enable" group.
-    return base::FieldTrialList::FindFullName("EasyUnlock") == "Enable";
-  }
+  // If the preference is managed, respect the existing policy.
+  if (!profile()->GetPrefs()->IsManagedPreference(prefs::kEasyUnlockAllowed))
+     return IsEnabled();
 
   return true;
 #else

@@ -20,6 +20,7 @@
 #include "cc/layers/layer.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/context_provider.h"
+#include "cc/scheduler/begin_frame_source.h"
 #include "cc/surfaces/surface_id_allocator.h"
 #include "cc/trees/layer_tree_host.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -63,29 +64,6 @@ void CompositorLock::CancelLock() {
   compositor_ = NULL;
 }
 
-}  // namespace ui
-
-namespace {}  // namespace
-
-namespace ui {
-
-class SatisfySwapPromise : public cc::SwapPromise {
- public:
-  explicit SatisfySwapPromise(uint32_t id) : id_(id) {}
-
- private:
-  void DidSwap(cc::CompositorFrameMetadata* metadata) override {
-    metadata->satisfies_sequences.push_back(id_);
-  }
-
-  void DidNotSwap(DidNotSwapReason reason) override {
-    // TODO(jbauman): Send to the SurfaceManager immediately.
-    DCHECK(false);
-  }
-  int64 TraceId() const override { return 0; }
-  uint32_t id_;
-};
-
 Compositor::Compositor(gfx::AcceleratedWidget widget,
                        ui::ContextFactory* context_factory,
                        scoped_refptr<base::SingleThreadTaskRunner> task_runner)
@@ -93,7 +71,6 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       root_layer_(NULL),
       widget_(widget),
       surface_id_allocator_(context_factory->CreateSurfaceIdAllocator()),
-      surface_sequence_number_(0),
       compositor_thread_loop_(context_factory->GetCompositorMessageLoop()),
       task_runner_(task_runner),
       vsync_manager_(new CompositorVSyncManager()),
@@ -113,15 +90,18 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
   cc::LayerTreeSettings settings;
-  settings.refresh_rate =
-      context_factory_->DoesCreateTestContexts()
-      ? kTestRefreshRate
-      : kDefaultRefreshRate;
+  // When impl-side painting is enabled, this will ensure PictureLayers always
+  // can have LCD text, to match the previous behaviour with ContentLayers,
+  // where LCD-not-allowed notifications were ignored.
+  settings.layers_always_allowed_lcd_text = true;
+  settings.renderer_settings.refresh_rate =
+      context_factory_->DoesCreateTestContexts() ? kTestRefreshRate
+                                                 : kDefaultRefreshRate;
   settings.main_frame_before_activation_enabled = false;
   settings.throttle_frame_production =
       !command_line->HasSwitch(switches::kDisableGpuVsync);
 #if !defined(OS_MACOSX)
-  settings.partial_swap_enabled =
+  settings.renderer_settings.partial_swap_enabled =
       !command_line->HasSwitch(cc::switches::kUIDisablePartialSwap);
 #endif
 #if defined(OS_CHROMEOS)
@@ -168,7 +148,8 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
         context_factory_->GetGpuMemoryBufferManager(),
         settings,
         task_runner_,
-        compositor_thread_loop_);
+        compositor_thread_loop_,
+        nullptr);
   } else {
     host_ = cc::LayerTreeHost::CreateSingleThreaded(
         this,
@@ -176,11 +157,13 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
         context_factory_->GetSharedBitmapManager(),
         context_factory_->GetGpuMemoryBufferManager(),
         settings,
-        task_runner_);
+        task_runner_,
+        nullptr);
   }
   UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
                       base::TimeTicks::Now() - before_create);
   host_->SetRootLayer(root_web_layer_);
+  host_->set_surface_id_namespace(surface_id_allocator_->id_namespace());
   host_->SetLayerTreeHostClientReady();
 }
 
@@ -255,10 +238,9 @@ void Compositor::Draw() {
   if (!IsLocked()) {
     // TODO(nduca): Temporary while compositor calls
     // compositeImmediately() directly.
-    cc::BeginFrameArgs args =
-        cc::BeginFrameArgs::Create(gfx::FrameTime::Now(),
-                                   base::TimeTicks(),
-                                   cc::BeginFrameArgs::DefaultInterval());
+    cc::BeginFrameArgs args = cc::BeginFrameArgs::Create(
+        gfx::FrameTime::Now(), base::TimeTicks(),
+        cc::BeginFrameArgs::DefaultInterval(), cc::BeginFrameArgs::SYNCHRONOUS);
     BeginMainFrame(args);
     host_->Composite(args.frame_time);
   }
@@ -335,7 +317,7 @@ void Compositor::RemoveObserver(CompositorObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
-bool Compositor::HasObserver(CompositorObserver* observer) {
+bool Compositor::HasObserver(const CompositorObserver* observer) const {
   return observer_list_.HasObserver(observer);
 }
 
@@ -349,7 +331,8 @@ void Compositor::RemoveAnimationObserver(
   animation_observer_list_.RemoveObserver(observer);
 }
 
-bool Compositor::HasAnimationObserver(CompositorAnimationObserver* observer) {
+bool Compositor::HasAnimationObserver(
+    const CompositorAnimationObserver* observer) const {
   return animation_observer_list_.HasObserver(observer);
 }
 
@@ -436,14 +419,8 @@ void Compositor::SetLayerTreeDebugState(
   host_->SetDebugState(debug_state);
 }
 
-cc::SurfaceSequence Compositor::InsertSurfaceSequenceForNextFrame() {
-  cc::SurfaceSequence sequence;
-  sequence.id_namespace = surface_id_allocator_->id_namespace();
-  sequence.sequence = ++surface_sequence_number_;
-  scoped_ptr<cc::SwapPromise> promise(
-      new SatisfySwapPromise(surface_sequence_number_));
-  host_->QueueSwapPromise(promise.Pass());
-  return sequence;
+const cc::RendererSettings& Compositor::GetRendererSettings() const {
+  return host_->settings().renderer_settings;
 }
 
 scoped_refptr<CompositorLock> Compositor::GetCompositorLock() {

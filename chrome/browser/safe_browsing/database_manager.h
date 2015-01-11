@@ -188,12 +188,6 @@ class SafeBrowsingDatabaseManager
                             const std::vector<SBFullHashResult>& full_hashes,
                             const base::TimeDelta& cache_lifetime);
 
-  // Log the user perceived delay caused by SafeBrowsing. This delay is the time
-  // delta starting from when we would have started reading data from the
-  // network, and ending when the SafeBrowsing check completes indicating that
-  // the current page is 'safe'.
-  void LogPauseDelay(base::TimeDelta time);
-
   // Called to initialize objects that are used on the io_thread.  This may be
   // called multiple times during the life of the DatabaseManager. Should be
   // called on IO thread.
@@ -216,7 +210,8 @@ class SafeBrowsingDatabaseManager
   friend class SafeBrowsingServiceTest;
   friend class SafeBrowsingServiceTestHelper;
   friend class SafeBrowsingDatabaseManagerTest;
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingDatabaseManagerTest, GetUrlThreatType);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingDatabaseManagerTest,
+                           GetUrlSeverestThreatType);
 
   typedef std::set<SafeBrowsingCheck*> CurrentChecks;
   typedef std::vector<SafeBrowsingCheck*> GetHashRequestors;
@@ -237,16 +232,16 @@ class SafeBrowsingDatabaseManager
     base::TimeTicks start;  // When check was queued.
   };
 
-  // Return the threat type from the first result in |full_hashes| which matches
+  // Return the threat type of the severest entry in |full_hashes| which matches
   // |hash|, or SAFE if none match.
-  static SBThreatType GetHashThreatType(
+  static SBThreatType GetHashSeverestThreatType(
       const SBFullHash& hash,
       const std::vector<SBFullHashResult>& full_hashes);
 
   // Given a URL, compare all the possible host + path full hashes to the set of
-  // provided full hashes.  Returns the threat type of the matching result from
-  // |full_hashes|, or SAFE if none match.
-  static SBThreatType GetUrlThreatType(
+  // provided full hashes.  Returns the threat type of the severest matching
+  // result from |full_hashes|, or SAFE if none match.
+  static SBThreatType GetUrlSeverestThreatType(
       const GURL& url,
       const std::vector<SBFullHashResult>& full_hashes,
       size_t* index);
@@ -388,6 +383,9 @@ class SafeBrowsingDatabaseManager
 
   // Indicate if the csd malware IP blacklist should be enabled.
   bool enable_ip_blacklist_;
+
+  // Indicate if the unwanted software blacklist should be enabled.
+  bool enable_unwanted_software_blacklist_;
 
   // The SafeBrowsing thread that runs database operations.
   //

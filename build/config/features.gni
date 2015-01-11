@@ -47,7 +47,7 @@ declare_args() {
 #   0: Don't specify the version. This option is for the Finch testing.
 #   1: Use only CLD1.
 #   2: Use only CLD2.
-if (is_android || is_ios) {
+if (is_android) {
   cld_version = 1
 } else {
   cld_version = 2
@@ -63,15 +63,12 @@ enable_pepper_cdms = enable_plugins && (is_linux || is_mac || is_win)
 
 enable_browser_cdms = is_android
 
-# Enable printing support and UI. This variable is used to configure which
-# parts of printing will be built. 0 disables printing completely, 1 enables it
-# fully, and 2 enables only the codepath to generate a Metafile (e.g.  usually
-# a PDF or EMF) and disables print preview, cloud print, UI, etc.
-if (is_android) {
-  printing_mode = 2
-} else {
-  printing_mode = 1
-}
+# Enable basic printing support and UI.
+enable_basic_printing = !is_chromeos
+
+# Enable printing with print preview. It does not imply
+# enable_basic_printing. It's possible to build Chrome with preview only.
+enable_print_preview = !is_android
 
 # The seccomp-bpf sandbox is only supported on three architectures
 # currently.
@@ -80,9 +77,8 @@ if (is_android) {
 use_seccomp_bpf = (is_linux || is_android) &&
   (cpu_arch == "x86" || cpu_arch == "x64" || cpu_arch == "arm")
 
-# Enable notifications everywhere except Android/iOS.
-# Android is http://crbug.com/115320
-enable_notifications = !is_android && !is_ios
+# Enable notifications everywhere except iOS.
+enable_notifications = !is_ios
 
 # TODO(brettw) this should be moved to net and only dependents get this define.
 disable_ftp_support = is_ios
@@ -98,26 +94,13 @@ enable_extensions = (!is_android && !is_ios)
 # disables it, 1 enables it fully, and 2 enables only UI and reporting features
 # without enabling phishing and malware detection. This is useful to integrate
 # a third party phishing/malware detection to existing safe browsing logic.
-if (is_android) {
-  safe_browsing_mode = 2
-} else if (is_ios) {
+if (is_ios) {
   safe_browsing_mode = 0
 } else {
   safe_browsing_mode = 1
 }
 
 enable_configuration_policy = true
-
-# The data acquisition mode for CLD2. Possible values are:
-#   static:     CLD2 data is statically linked to the executable.
-#   standalone: CLD2 data is provided in a standalone file that is
-#               bundled with the executable.
-#   component:  CLD2 data is provided as a Chrome "component" and is
-#               downloaded via the component updater.
-#
-# For more information on switching the CLD2 data source, see:
-#   https://sites.google.com/a/chromium.org/dev/developers/how-tos/compact-language-detector-cld-data-source-configuration
-cld2_data_source = "static"
 
 # Enables support for background apps.
 enable_background = !is_ios && !is_android

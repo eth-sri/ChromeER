@@ -42,21 +42,18 @@ template <DemuxerStream::Type StreamType>
 DecoderStream<StreamType>::DecoderStream(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     ScopedVector<Decoder> decoders,
-    const SetDecryptorReadyCB& set_decryptor_ready_cb,
     const scoped_refptr<MediaLog>& media_log)
     : task_runner_(task_runner),
       media_log_(media_log),
       state_(STATE_UNINITIALIZED),
       stream_(NULL),
-      low_delay_(false),
       decoder_selector_(
-          new DecoderSelector<StreamType>(task_runner,
-                                          decoders.Pass(),
-                                          set_decryptor_ready_cb)),
+          new DecoderSelector<StreamType>(task_runner, decoders.Pass())),
       active_splice_(false),
       decoding_eos_(false),
       pending_decode_requests_(0),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+}
 
 template <DemuxerStream::Type StreamType>
 DecoderStream<StreamType>::~DecoderStream() {
@@ -82,10 +79,11 @@ DecoderStream<StreamType>::~DecoderStream() {
 }
 
 template <DemuxerStream::Type StreamType>
-void DecoderStream<StreamType>::Initialize(DemuxerStream* stream,
-                                           bool low_delay,
-                                           const StatisticsCB& statistics_cb,
-                                           const InitCB& init_cb) {
+void DecoderStream<StreamType>::Initialize(
+    DemuxerStream* stream,
+    const InitCB& init_cb,
+    const SetDecryptorReadyCB& set_decryptor_ready_cb,
+    const StatisticsCB& statistics_cb) {
   FUNCTION_DVLOG(2);
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_UNINITIALIZED) << state_;
@@ -95,12 +93,10 @@ void DecoderStream<StreamType>::Initialize(DemuxerStream* stream,
   statistics_cb_ = statistics_cb;
   init_cb_ = init_cb;
   stream_ = stream;
-  low_delay_ = low_delay;
 
   state_ = STATE_INITIALIZING;
-  // TODO(xhwang): DecoderSelector only needs a config to select a decoder.
   decoder_selector_->SelectDecoder(
-      stream, low_delay,
+      stream, set_decryptor_ready_cb,
       base::Bind(&DecoderStream<StreamType>::OnDecoderSelected,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&DecoderStream<StreamType>::OnDecodeOutputReady,
@@ -302,8 +298,10 @@ void DecoderStream<StreamType>::OnDecodeDone(int buffer_size,
 
   TRACE_EVENT_ASYNC_END0("media", GetTraceString<StreamType>(), this);
 
-  if (end_of_stream)
+  if (end_of_stream) {
+    DCHECK(!pending_decode_requests_);
     decoding_eos_ = false;
+  }
 
   if (state_ == STATE_ERROR) {
     DCHECK(read_cb_.is_null());
@@ -325,8 +323,7 @@ void DecoderStream<StreamType>::OnDecodeDone(int buffer_size,
       return;
 
     case Decoder::kAborted:
-      // Decoder can return kAborted only when Reset is pending.
-      NOTREACHED();
+      // Decoder can return kAborted during Reset() or during destruction.
       return;
 
     case Decoder::kOk:
@@ -373,18 +370,16 @@ void DecoderStream<StreamType>::OnDecodeOutputReady(
   if (!reset_cb_.is_null())
     return;
 
-  // TODO(xhwang): VideoDecoder doesn't need to return EOS after it's flushed.
-  // Fix all decoders and remove this block.
+  if (!read_cb_.is_null()) {
+    // If |ready_outputs_| was non-empty, the read would have already been
+    // satisifed by Read().
+    DCHECK(ready_outputs_.empty());
+    SatisfyRead(OK, output);
+    return;
+  }
+
   // Store decoded output.
   ready_outputs_.push_back(output);
-
-  if (read_cb_.is_null())
-    return;
-
-  // Satisfy outstanding read request, if any.
-  scoped_refptr<Output> read_result = ready_outputs_.front();
-  ready_outputs_.pop_front();
-  SatisfyRead(OK, output);
 }
 
 template <DemuxerStream::Type StreamType>
@@ -478,12 +473,9 @@ void DecoderStream<StreamType>::ReinitializeDecoder() {
   DCHECK_EQ(state_, STATE_FLUSHING_DECODER) << state_;
   DCHECK_EQ(pending_decode_requests_, 0);
 
-  DCHECK(StreamTraits::GetDecoderConfig(*stream_).IsValidConfig());
   state_ = STATE_REINITIALIZING_DECODER;
-  DecoderStreamTraits<StreamType>::Initialize(
-      decoder_.get(),
-      StreamTraits::GetDecoderConfig(*stream_),
-      low_delay_,
+  DecoderStreamTraits<StreamType>::InitializeDecoder(
+      decoder_.get(), stream_,
       base::Bind(&DecoderStream<StreamType>::OnDecoderReinitialized,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&DecoderStream<StreamType>::OnDecodeOutputReady,

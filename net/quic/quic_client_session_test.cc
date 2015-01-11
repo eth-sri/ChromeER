@@ -48,9 +48,12 @@ class QuicClientSessionTest : public ::testing::TestWithParam<QuicVersion> {
                  make_scoped_ptr((QuicServerInfo*)nullptr), DefaultQuicConfig(),
                  base::MessageLoop::current()->message_loop_proxy().get(),
                  &net_log_) {
-    session_.InitializeSession(QuicServerId(kServerHostname, kServerPort, false,
+    session_.InitializeSession(QuicServerId(kServerHostname, kServerPort,
+                                            /*is_secure=*/false,
                                             PRIVACY_MODE_DISABLED),
-                                &crypto_config_, nullptr);
+        &crypto_config_, nullptr);
+    // Advance the time, because timers do not like uninitialized times.
+    connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
   }
 
   void TearDown() override { session_.CloseSessionOnError(ERR_ABORTED); }

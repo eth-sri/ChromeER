@@ -17,11 +17,10 @@
 
 class ChromeExtensionsDispatcherDelegate;
 class ChromeRenderProcessObserver;
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 class ChromePDFPrintClient;
 #endif
 class PrescientNetworkingDispatcher;
-class RendererNetPredictor;
 class SearchBouncer;
 #if defined(ENABLE_SPELLCHECK)
 class SpellCheck;
@@ -33,6 +32,10 @@ struct ChromeViewHostMsg_GetPluginInfo_Output;
 namespace content {
 class BrowserPluginDelegate;
 struct WebPluginInfo;
+}
+
+namespace dns_prefetch {
+class RendererNetPredictor;
 }
 
 namespace extensions {
@@ -144,7 +147,8 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   bool IsPluginAllowedToUseVideoDecodeAPI(const GURL& url) override;
   content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
       content::RenderFrame* render_frame,
-      const std::string& mime_type) override;
+      const std::string& mime_type,
+      const GURL& original_url) override;
 
 #if defined(ENABLE_EXTENSIONS)
   // Takes ownership.
@@ -218,7 +222,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
 #endif
 
   scoped_ptr<PrescientNetworkingDispatcher> prescient_networking_dispatcher_;
-  scoped_ptr<RendererNetPredictor> net_predictor_;
+  scoped_ptr<dns_prefetch::RendererNetPredictor> net_predictor_;
   scoped_ptr<password_manager::CredentialManagerClient>
       credential_manager_client_;
 #if defined(ENABLE_SPELLCHECK)
@@ -231,7 +235,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   scoped_refptr<WebRtcLoggingMessageFilter> webrtc_logging_message_filter_;
 #endif
   scoped_ptr<SearchBouncer> search_bouncer_;
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   scoped_ptr<ChromePDFPrintClient> pdf_print_client_;
 #endif
 #if defined(ENABLE_PLUGINS)

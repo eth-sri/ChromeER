@@ -17,7 +17,12 @@ namespace base {
 class SequencedTaskRunner;
 }
 
+namespace data_reduction_proxy {
+class DataReductionProxyEventStore;
+}
+
 namespace net {
+class NetLog;
 class ProxyInfo;
 class ProxyService;
 }
@@ -29,8 +34,10 @@ class DataReductionProxyChromeConfigurator
  public:
   explicit DataReductionProxyChromeConfigurator(
       PrefService* prefs,
-      scoped_refptr<base::SequencedTaskRunner> network_task_runner);
-  ~DataReductionProxyChromeConfigurator() override;
+      scoped_refptr<base::SequencedTaskRunner> network_task_runner,
+      net::NetLog* net_log,
+      data_reduction_proxy::DataReductionProxyEventStore* event_store);
+      ~DataReductionProxyChromeConfigurator() override;
 
   // Removes the data reduction proxy configuration from the proxy preference.
   // This disables use of the data reduction proxy. This method is public to
@@ -57,11 +64,11 @@ class DataReductionProxyChromeConfigurator
   void AddURLPatternToBypass(const std::string& pattern) override;
 
   // Updates the config for use on the IO thread.
-  void UpdateProxyConfigOnIO(const net::ProxyConfig& config);
+  void UpdateProxyConfigOnIOThread(const net::ProxyConfig& config);
 
   // Returns the current data reduction proxy config, even if it is not the
   // effective configuration used by the proxy service.
-  const net::ProxyConfig& GetProxyConfigOnIO() const;
+  const net::ProxyConfig& GetProxyConfigOnIOThread() const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(DataReductionProxyConfigTest, TestBypassList);
@@ -75,6 +82,9 @@ class DataReductionProxyChromeConfigurator
 
   std::vector<std::string> bypass_rules_;
   net::ProxyConfig config_;
+  net::NetLog* net_log_;
+  data_reduction_proxy::DataReductionProxyEventStore*
+      data_reduction_proxy_event_store_;
 
   DISALLOW_COPY_AND_ASSIGN(DataReductionProxyChromeConfigurator);
 };

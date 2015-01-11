@@ -151,6 +151,11 @@ remoting.ClientPlugin.prototype.requestPairing =
 remoting.ClientPlugin.prototype.onPinFetched = function(pin) {};
 
 /**
+ * Allows automatic mouse-lock.
+ */
+remoting.ClientPlugin.prototype.allowMouseLock = function() {};
+
+/**
  * Sets the third party authentication token and shared secret.
  *
  * @param {string} token The token received from the token URL.
@@ -205,6 +210,13 @@ remoting.ClientPlugin.prototype.setConnectionStatusUpdateHandler =
     function(handler) {};
 
 /**
+ * @param {function(string, string):void} handler Callback for route-change
+ *     notifications. The first parameter is the channel name, and the second
+ *     is the connection type.
+ */
+remoting.ClientPlugin.prototype.setRouteChangedHandler = function(handler) {};
+
+/**
  * @param {function(boolean):void} handler Callback for connection readiness
  *     notifications.
  */
@@ -216,6 +228,13 @@ remoting.ClientPlugin.prototype.setConnectionReadyHandler =
  *     notifications.
  */
 remoting.ClientPlugin.prototype.setDesktopSizeUpdateHandler =
+    function(handler) {};
+
+/**
+ * @param {function():void} handler Callback for desktop shape change
+ *     notifications.
+ */
+remoting.ClientPlugin.prototype.setDesktopShapeUpdateHandler =
     function(handler) {};
 
 /**
@@ -282,6 +301,7 @@ remoting.ClientPlugin.Feature = {
   THIRD_PARTY_AUTH: 'thirdPartyAuth',
   TRAP_KEY: 'trapKey',
   PINLESS_AUTH: 'pinlessAuth',
+  ALLOW_MOUSE_LOCK: 'allowMouseLock',
   EXTENSION_MESSAGE: 'extensionMessage',
   MEDIA_SOURCE_RENDERING: 'mediaSourceRendering',
   VIDEO_CONTROL: 'videoControl'

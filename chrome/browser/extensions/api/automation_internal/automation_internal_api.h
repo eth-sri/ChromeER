@@ -58,6 +58,15 @@ class AutomationInternalPerformActionFunction
       AutomationActionAdapter* adapter);
 };
 
+class AutomationInternalEnableFrameFunction : public UIThreadExtensionFunction {
+  DECLARE_EXTENSION_FUNCTION("automationInternal.enableFrame",
+                             AUTOMATIONINTERNAL_PERFORMACTION)
+ protected:
+  ~AutomationInternalEnableFrameFunction() override {}
+
+  ExtensionFunction::ResponseAction Run() override;
+};
+
 class AutomationInternalEnableDesktopFunction
     : public UIThreadExtensionFunction {
   DECLARE_EXTENSION_FUNCTION("automationInternal.enableDesktop",
@@ -66,6 +75,28 @@ class AutomationInternalEnableDesktopFunction
   ~AutomationInternalEnableDesktopFunction() override {}
 
   ResponseAction Run() override;
+};
+
+class AutomationInternalQuerySelectorFunction
+    : public UIThreadExtensionFunction {
+  DECLARE_EXTENSION_FUNCTION("automationInternal.querySelector",
+                             AUTOMATIONINTERNAL_ENABLEDESKTOP)
+
+ public:
+  typedef base::Callback<void(const std::string& error,
+                              int result_acc_obj_id)> Callback;
+
+ protected:
+  ~AutomationInternalQuerySelectorFunction() override {}
+
+  ResponseAction Run() override;
+
+ private:
+  void OnResponse(const std::string& error, int result_acc_obj_id);
+
+  // Used for assigning a unique ID to each request so that the response can be
+  // routed appropriately.
+  static int query_request_id_counter_;
 };
 
 }  // namespace extensions

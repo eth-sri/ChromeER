@@ -191,6 +191,10 @@ cr.define('login', function() {
    */
   UserPodCustomIcon.ICONS = [
     {id: 'locked', class: 'custom-icon-locked'},
+    {id: 'locked-to-be-activated',
+     class: 'custom-icon-locked-to-be-activated'},
+    {id: 'locked-with-proximity-hint',
+     class: 'custom-icon-locked-with-proximity-hint'},
     {id: 'unlocked', class: 'custom-icon-unlocked'},
     {id: 'hardlocked', class: 'custom-icon-hardlocked'},
     {id: 'spinner', class: 'custom-icon-spinner'}
@@ -198,6 +202,13 @@ cr.define('login', function() {
 
   UserPodCustomIcon.prototype = {
     __proto__: HTMLDivElement.prototype,
+
+    /**
+     * The id of the icon being shown.
+     * @type {string}
+     * @private
+     */
+    iconId_: '',
 
     /**
      * Tooltip to be shown when the user hovers over the icon. The icon
@@ -286,6 +297,7 @@ cr.define('login', function() {
      *    one of the ids listed in {@code UserPodCustomIcon.ICONS}.
      */
     setIcon: function(id) {
+      this.iconId_ = id;
       UserPodCustomIcon.ICONS.forEach(function(icon) {
         this.iconElement.classList.toggle(icon.class, id == icon.id);
       }, this);
@@ -477,7 +489,9 @@ cr.define('login', function() {
       bubbleContent.textContent = this.tooltip_;
 
       /** @const */ var BUBBLE_OFFSET = CUSTOM_ICON_CONTAINER_SIZE / 2;
-      /** @const */ var BUBBLE_PADDING = 8;
+      // TODO(tengs): Introduce a special reauth state for the account picker,
+      // instead of showing the tooltip bubble here (crbug.com/409427).
+      /** @const */ var BUBBLE_PADDING = 8 + (this.iconId_ ? 0 : 23);
       $('bubble').showContentForElement(this,
                                         cr.ui.Bubble.Attachment.RIGHT,
                                         bubbleContent,
@@ -1079,6 +1093,7 @@ cr.define('login', function() {
         this.showSigninUI();
       } else if (this.isAuthTypeUserClick) {
         Oobe.disableSigninUI();
+        this.classList.toggle('signing-in', true);
         chrome.send('attemptUnlock', [this.user.username]);
       } else if (this.isAuthTypePassword) {
         if (!this.passwordElement.value)
@@ -1147,6 +1162,7 @@ cr.define('login', function() {
      */
     reset: function(takeFocus) {
       this.passwordElement.value = '';
+      this.classList.toggle('signing-in', false);
       if (takeFocus) {
         if (!this.multiProfilesPolicyApplied)
           this.focusInput();  // This will set a custom tab order.
@@ -2265,10 +2281,11 @@ cr.define('login', function() {
         return;
       }
 
-      if (!icon.id)
+      if (!icon.id && !icon.tooltip)
         return;
 
-      pod.customIconElement.setIcon(icon.id);
+      if (icon.id)
+        pod.customIconElement.setIcon(icon.id);
 
       if (icon.hardlockOnClick) {
         pod.customIconElement.setInteractive(

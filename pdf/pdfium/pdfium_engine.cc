@@ -566,8 +566,6 @@ PDFiumEngine::PDFiumEngine(PDFEngine::Client* client)
       next_page_to_search_(-1),
       last_page_to_search_(-1),
       last_character_index_to_search_(-1),
-      current_find_index_(-1),
-      resume_find_index_(-1),
       permissions_(0),
       fpdf_availability_(NULL),
       next_timer_id_(0),
@@ -614,7 +612,23 @@ PDFiumEngine::PDFiumEngine(PDFEngine::Client* client)
   FPDF_FORMFILLINFO::FFI_SetTextFieldFocus = Form_SetTextFieldFocus;
   FPDF_FORMFILLINFO::FFI_DoURIAction = Form_DoURIAction;
   FPDF_FORMFILLINFO::FFI_DoGoToAction = Form_DoGoToAction;
-
+#ifdef PDF_USE_XFA
+  FPDF_FORMFILLINFO::version = 2;
+  FPDF_FORMFILLINFO::FFI_EmailTo = Form_EmailTo;
+  FPDF_FORMFILLINFO::FFI_DisplayCaret = Form_DisplayCaret;
+  FPDF_FORMFILLINFO::FFI_SetCurrentPage = Form_SetCurrentPage;
+  FPDF_FORMFILLINFO::FFI_GetCurrentPageIndex = Form_GetCurrentPageIndex;
+  FPDF_FORMFILLINFO::FFI_GetPageViewRect = Form_GetPageViewRect;
+  FPDF_FORMFILLINFO::FFI_GetPlatform = Form_GetPlatform;
+  FPDF_FORMFILLINFO::FFI_PopupMenu = Form_PopupMenu;
+  FPDF_FORMFILLINFO::FFI_PostRequestURL = Form_PostRequestURL;
+  FPDF_FORMFILLINFO::FFI_PutRequestURL = Form_PutRequestURL;
+  FPDF_FORMFILLINFO::FFI_UploadTo = Form_UploadTo;
+  FPDF_FORMFILLINFO::FFI_DownloadFromURL = Form_DownloadFromURL;
+  FPDF_FORMFILLINFO::FFI_OpenFile = Form_OpenFile;
+  FPDF_FORMFILLINFO::FFI_GotoURL = Form_GotoURL;
+  FPDF_FORMFILLINFO::FFI_GetLanguage = Form_GetLanguage;
+#endif  // PDF_USE_XFA
   IPDF_JSPLATFORM::version = 1;
   IPDF_JSPLATFORM::app_alert = Form_Alert;
   IPDF_JSPLATFORM::app_beep = Form_Beep;
@@ -638,9 +652,11 @@ PDFiumEngine::~PDFiumEngine() {
   if (doc_) {
     if (form_) {
       FORM_DoDocumentAAction(form_, FPDFDOC_AACTION_WC);
-      FPDFDOC_ExitFormFillEnviroument(form_);
     }
     FPDF_CloseDocument(doc_);
+    if (form_) {
+      FPDFDOC_ExitFormFillEnvironment(form_);
+    }
   }
 
   if (fpdf_availability_)
@@ -648,6 +664,294 @@ PDFiumEngine::~PDFiumEngine() {
 
   STLDeleteElements(&pages_);
 }
+
+#ifdef PDF_USE_XFA
+
+//  This is just for testing, needs to be removed later
+#if defined(WIN32)
+#define XFA_TESTFILE(filename) "E:/"#filename
+#else
+#define XFA_TESTFILE(filename) "/home/"#filename
+#endif
+
+struct FPDF_FILE {
+  FPDF_FILEHANDLER file_handler;
+  FILE* file;
+};
+
+void Sample_Release(FPDF_LPVOID client_data) {
+  if (!client_data)
+    return;
+  FPDF_FILE* file_wrapper = (FPDF_FILE*)client_data;
+  fclose(file_wrapper->file);
+  delete file_wrapper;
+}
+
+FPDF_DWORD Sample_GetSize(FPDF_LPVOID client_data) {
+  if (!client_data)
+    return 0;
+  FPDF_FILE* file_wrapper = (FPDF_FILE*)client_data;
+  long cur_pos = ftell(file_wrapper->file);
+  if (cur_pos == -1)
+    return 0;
+  if (fseek(file_wrapper->file, 0, SEEK_END))
+    return 0;
+  long size = ftell(file_wrapper->file);
+  fseek(file_wrapper->file, cur_pos, SEEK_SET);
+  return (FPDF_DWORD)size;
+}
+
+FPDF_RESULT Sample_ReadBlock(FPDF_LPVOID client_data,
+                             FPDF_DWORD offset,
+                             FPDF_LPVOID buffer,
+                             FPDF_DWORD size) {
+  if (!client_data)
+    return -1;
+  FPDF_FILE* file_wrapper = (FPDF_FILE*)client_data;
+  if (fseek(file_wrapper->file, (long)offset, SEEK_SET))
+    return -1;
+  size_t read_size = fread(buffer, 1, size, file_wrapper->file);
+  return read_size == size ? 0 : -1;
+}
+
+FPDF_RESULT Sample_WriteBlock(FPDF_LPVOID client_data,
+                              FPDF_DWORD offset,
+                              FPDF_LPCVOID buffer,
+                              FPDF_DWORD size) {
+  if (!client_data)
+    return -1;
+  FPDF_FILE* file_wrapper = (FPDF_FILE*)client_data;
+  if (fseek(file_wrapper->file, (long)offset, SEEK_SET))
+    return -1;
+  // Write data
+  size_t write_size = fwrite(buffer, 1, size, file_wrapper->file);
+  return write_size == size ? 0 : -1;
+}
+
+FPDF_RESULT Sample_Flush(FPDF_LPVOID client_data) {
+  if (!client_data)
+    return -1;
+  // Flush file
+  fflush(((FPDF_FILE*)client_data)->file);
+  return 0;
+}
+
+FPDF_RESULT Sample_Truncate(FPDF_LPVOID client_data, FPDF_DWORD size) {
+  return 0;
+}
+
+void PDFiumEngine::Form_EmailTo(FPDF_FORMFILLINFO* param,
+                                FPDF_FILEHANDLER* file_handler,
+                                FPDF_WIDESTRING to,
+                                FPDF_WIDESTRING subject,
+                                FPDF_WIDESTRING cc,
+                                FPDF_WIDESTRING bcc,
+                                FPDF_WIDESTRING message) {
+  std::string to_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(to));
+  std::string subject_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(subject));
+  std::string cc_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(cc));
+  std::string bcc_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(bcc));
+  std::string message_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(message));
+
+  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
+  engine->client_->Email(to_str, cc_str, bcc_str, subject_str, message_str);
+}
+
+void PDFiumEngine::Form_DisplayCaret(FPDF_FORMFILLINFO* param,
+                                     FPDF_PAGE page,
+                                     FPDF_BOOL visible,
+                                     double left,
+                                     double top,
+                                     double right,
+                                     double bottom) {
+  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
+  engine->client_->UpdateCursor(PP_CURSORTYPE_IBEAM);
+  std::vector<pp::Rect> tickmarks;
+  pp::Rect rect(left, top, right, bottom);
+  tickmarks.push_back(rect);
+  engine->client_->UpdateTickMarks(tickmarks);
+}
+
+void PDFiumEngine::Form_SetCurrentPage(FPDF_FORMFILLINFO* param,
+                                       FPDF_DOCUMENT document,
+                                       int page) {
+  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
+  pp::Rect page_view_rect = engine->GetPageContentsRect(page);
+  engine->ScrolledToYPosition(page_view_rect.height());
+  pp::Point pos(1, page_view_rect.height());
+  engine->SetScrollPosition(pos);
+}
+
+int PDFiumEngine::Form_GetCurrentPageIndex(FPDF_FORMFILLINFO* param,
+                                           FPDF_DOCUMENT document) {
+  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
+  return engine->GetMostVisiblePage();
+}
+
+void PDFiumEngine::Form_GetPageViewRect(FPDF_FORMFILLINFO* param,
+                                        FPDF_PAGE page,
+                                        double* left,
+                                        double* top,
+                                        double* right,
+                                        double* bottom) {
+  PDFiumEngine* engine = static_cast<PDFiumEngine*>(param);
+  int page_index = engine->GetMostVisiblePage();
+  pp::Rect page_view_rect = engine->GetPageContentsRect(page_index);
+
+  *left = page_view_rect.x();
+  *right = page_view_rect.right();
+  *top = page_view_rect.y();
+  *bottom = page_view_rect.bottom();
+}
+
+int PDFiumEngine::Form_GetPlatform(FPDF_FORMFILLINFO* param,
+                                   void* platform,
+                                   int length) {
+  int platform_flag = -1;
+
+#if defined(WIN32)
+  platform_flag = 0;
+#elif defined(__linux__)
+  platform_flag = 1;
+#else
+  platform_flag = 2;
+#endif
+
+  std::string javascript = "alert(\"Platform:"
+      + base::DoubleToString(platform_flag)
+      + "\")";
+
+  return platform_flag;
+}
+
+FPDF_BOOL PDFiumEngine::Form_PopupMenu(FPDF_FORMFILLINFO* param,
+                                       FPDF_PAGE page,
+                                       FPDF_WIDGET widget,
+                                       int menu_flag,
+                                       float x,
+                                       float y) {
+  return false;
+}
+
+FPDF_BOOL PDFiumEngine::Form_PostRequestURL(FPDF_FORMFILLINFO* param,
+                                            FPDF_WIDESTRING url,
+                                            FPDF_WIDESTRING data,
+                                            FPDF_WIDESTRING content_type,
+                                            FPDF_WIDESTRING encode,
+                                            FPDF_WIDESTRING header,
+                                            FPDF_BSTR* response) {
+  std::string url_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(url));
+  std::string data_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(data));
+  std::string content_type_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(content_type));
+  std::string encode_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(encode));
+  std::string header_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(header));
+
+  std::string javascript = "alert(\"Post:"
+      + url_str + "," + data_str + "," + content_type_str + ","
+      + encode_str + "," + header_str
+      + "\")";
+  return true;
+}
+
+FPDF_BOOL PDFiumEngine::Form_PutRequestURL(FPDF_FORMFILLINFO* param,
+                                           FPDF_WIDESTRING url,
+                                           FPDF_WIDESTRING data,
+                                           FPDF_WIDESTRING encode) {
+  std::string url_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(url));
+  std::string data_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(data));
+  std::string encode_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(encode));
+
+  std::string javascript = "alert(\"Put:"
+      + url_str + "," + data_str + "," + encode_str
+      + "\")";
+
+  return true;
+}
+
+void PDFiumEngine::Form_UploadTo(FPDF_FORMFILLINFO* param,
+                                 FPDF_FILEHANDLER* file_handle,
+                                 int file_flag,
+                                 FPDF_WIDESTRING to) {
+  std::string to_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(to));
+  // TODO: needs the full implementation of form uploading
+}
+
+FPDF_LPFILEHANDLER PDFiumEngine::Form_DownloadFromURL(FPDF_FORMFILLINFO* param,
+                                                      FPDF_WIDESTRING url) {
+  std::string url_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(url));
+
+  // Now should get data from url.
+  // For testing purpose, use data read from file
+  // TODO: needs the full implementation here
+  FILE* file = fopen(XFA_TESTFILE("downloadtest.tem"), "w");
+
+  FPDF_FILE* file_wrapper = new FPDF_FILE;
+  file_wrapper->file = file;
+  file_wrapper->file_handler.clientData = file_wrapper;
+  file_wrapper->file_handler.Flush = Sample_Flush;
+  file_wrapper->file_handler.GetSize = Sample_GetSize;
+  file_wrapper->file_handler.ReadBlock = Sample_ReadBlock;
+  file_wrapper->file_handler.Release = Sample_Release;
+  file_wrapper->file_handler.Truncate = Sample_Truncate;
+  file_wrapper->file_handler.WriteBlock = Sample_WriteBlock;
+
+  return &file_wrapper->file_handler;
+}
+
+FPDF_FILEHANDLER* PDFiumEngine::Form_OpenFile(FPDF_FORMFILLINFO* param,
+                                              int file_flag,
+                                              FPDF_WIDESTRING url,
+                                              const char* mode) {
+  std::string url_str = "NULL";
+  if (url != NULL) {
+    url_str =
+        base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(url));
+  }
+  //  TODO: need to implement open file from the url
+  //  Use a file path for the ease of testing
+  FILE* file = fopen(XFA_TESTFILE("tem.txt"), mode);
+  FPDF_FILE* file_wrapper = new FPDF_FILE;
+  file_wrapper->file = file;
+  file_wrapper->file_handler.clientData = file_wrapper;
+  file_wrapper->file_handler.Flush = Sample_Flush;
+  file_wrapper->file_handler.GetSize = Sample_GetSize;
+  file_wrapper->file_handler.ReadBlock = Sample_ReadBlock;
+  file_wrapper->file_handler.Release = Sample_Release;
+  file_wrapper->file_handler.Truncate = Sample_Truncate;
+  file_wrapper->file_handler.WriteBlock = Sample_WriteBlock;
+  return &file_wrapper->file_handler;
+}
+
+void PDFiumEngine::Form_GotoURL(FPDF_FORMFILLINFO* param,
+                                FPDF_DOCUMENT document,
+                                FPDF_WIDESTRING url) {
+  std::string url_str =
+      base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(url));
+  // TODO: needs to implement GOTO URL action
+}
+
+int PDFiumEngine::Form_GetLanguage(FPDF_FORMFILLINFO* param,
+                                   void* language,
+                                   int length) {
+  return 0;
+}
+
+#endif  // PDF_USE_XFA
 
 int PDFiumEngine::GetBlock(void* param, unsigned long position,
                            unsigned char* buffer, unsigned long size) {
@@ -920,9 +1224,11 @@ void PDFiumEngine::FinishLoadingDocument() {
 void PDFiumEngine::UnsupportedFeature(int type) {
   std::string feature;
   switch (type) {
+#ifndef PDF_USE_XFA
     case FPDF_UNSP_DOC_XFAFORM:
       feature = "XFA";
       break;
+#endif
     case FPDF_UNSP_DOC_PORTABLECOLLECTION:
       feature = "Portfolios_Packages";
       break;
@@ -1348,8 +1654,13 @@ bool PDFiumEngine::OnMouseDown(const pp::MouseInputEvent& event) {
     int control = FPDPage_HasFormFieldAtPoint(
         form_, pages_[page_index]->GetPage(), page_x, page_y);
     if (control > FPDF_FORMFIELD_UNKNOWN) {  // returns -1 sometimes...
-      client_->FormTextFieldFocusChange(control == FPDF_FORMFIELD_TEXTFIELD ||
-          control == FPDF_FORMFIELD_COMBOBOX);
+#ifdef PDF_USE_XFA
+    client_->FormTextFieldFocusChange(control == FPDF_FORMFIELD_TEXTFIELD ||
+        control == FPDF_FORMFIELD_COMBOBOX || control == FPDF_FORMFIELD_XFA);
+#else
+    client_->FormTextFieldFocusChange(control == FPDF_FORMFIELD_TEXTFIELD ||
+        control == FPDF_FORMFIELD_COMBOBOX);
+#endif
       return true;  // Return now before we get into the selection code.
     }
   }
@@ -1686,10 +1997,17 @@ void PDFiumEngine::StartFind(const char* text, bool case_sensitive) {
     client_->NotifyNumberOfFindResultsChanged(find_results_.size(), true);
 
     // When searching is complete, resume finding at a particular index.
-    if (resume_find_index_ != -1) {
-      current_find_index_ = resume_find_index_;
-      resume_find_index_ = -1;
+    // Assuming the user has not clicked the find button in the meanwhile.
+    if (resume_find_index_.valid() && !current_find_index_.valid()) {
+      size_t resume_index = resume_find_index_.GetIndex();
+      if (resume_index >= find_results_.size()) {
+        // This might happen if the PDF has some dynamically generated text?
+        resume_index = 0;
+      }
+      current_find_index_.SetIndex(resume_index);
+      client_->NotifySelectedFindResultChanged(resume_index);
     }
+    resume_find_index_.Invalidate();
   } else {
     pp::CompletionCallback callback =
         find_factory_.NewCallback(&PDFiumEngine::ContinueFind);
@@ -1772,26 +2090,29 @@ void PDFiumEngine::SearchUsingICU(const base::string16& term,
 void PDFiumEngine::AddFindResult(const PDFiumRange& result) {
   // Figure out where to insert the new location, since we could have
   // started searching midway and now we wrapped.
-  size_t i;
+  size_t result_index;
   int page_index = result.page_index();
   int char_index = result.char_index();
-  for (i = 0; i < find_results_.size(); ++i) {
-    if (find_results_[i].page_index() > page_index ||
-        (find_results_[i].page_index() == page_index &&
-         find_results_[i].char_index() > char_index)) {
+  for (result_index = 0; result_index < find_results_.size(); ++result_index) {
+    if (find_results_[result_index].page_index() > page_index ||
+        (find_results_[result_index].page_index() == page_index &&
+         find_results_[result_index].char_index() > char_index)) {
       break;
     }
   }
-  find_results_.insert(find_results_.begin() + i, result);
+  find_results_.insert(find_results_.begin() + result_index, result);
   UpdateTickMarks();
 
-  if (current_find_index_ == -1 && resume_find_index_ == -1) {
-    // Select the first match.
+  if (current_find_index_.valid()) {
+    if (result_index <= current_find_index_.GetIndex()) {
+      // Update the current match index
+      size_t find_index = current_find_index_.IncrementIndex();
+      DCHECK_LT(find_index, find_results_.size());
+      client_->NotifySelectedFindResultChanged(current_find_index_.GetIndex());
+    }
+  } else if (!resume_find_index_.valid()) {
+    // Both indices are invalid. Select the first match.
     SelectFindResult(true);
-  } else if (static_cast<int>(i) <= current_find_index_) {
-    // Update the current match index
-    current_find_index_++;
-    client_->NotifySelectedFindResultChanged(current_find_index_);
   }
   client_->NotifyNumberOfFindResultsChanged(find_results_.size(), false);
 }
@@ -1805,34 +2126,40 @@ bool PDFiumEngine::SelectFindResult(bool forward) {
   SelectionChangeInvalidator selection_invalidator(this);
 
   // Move back/forward through the search locations we previously found.
-  if (forward) {
-    if (++current_find_index_ == static_cast<int>(find_results_.size()))
-      current_find_index_ = 0;
-  } else {
-    if (--current_find_index_ < 0) {
-      current_find_index_ = find_results_.size() - 1;
+  size_t new_index;
+  const size_t last_index = find_results_.size() - 1;
+  if (current_find_index_.valid()) {
+    size_t current_index = current_find_index_.GetIndex();
+    if (forward) {
+      new_index = (current_index >= last_index) ?  0 : current_index + 1;
+    } else {
+      new_index = (current_find_index_.GetIndex() == 0) ?
+          last_index : current_index - 1;
     }
+  } else {
+    new_index = forward ? 0 : last_index;
   }
+  current_find_index_.SetIndex(new_index);
 
   // Update the selection before telling the client to scroll, since it could
   // paint then.
   selection_.clear();
-  selection_.push_back(find_results_[current_find_index_]);
+  selection_.push_back(find_results_[current_find_index_.GetIndex()]);
 
   // If the result is not in view, scroll to it.
-  size_t i;
   pp::Rect bounding_rect;
   pp::Rect visible_rect = GetVisibleRect();
   // Use zoom of 1.0 since visible_rect is without zoom.
-  std::vector<pp::Rect> rects = find_results_[current_find_index_].
-      GetScreenRects(pp::Point(), 1.0, current_rotation_);
-  for (i = 0; i < rects.size(); ++i)
+  std::vector<pp::Rect> rects;
+  rects = find_results_[current_find_index_.GetIndex()].GetScreenRects(
+      pp::Point(), 1.0, current_rotation_);
+  for (size_t i = 0; i < rects.size(); ++i)
     bounding_rect = bounding_rect.Union(rects[i]);
   if (!visible_rect.Contains(bounding_rect)) {
     pp::Point center = bounding_rect.CenterPoint();
     // Make the page centered.
     int new_y = static_cast<int>(center.y() * current_zoom_) -
-                static_cast<int>(visible_rect.height() * current_zoom_ / 2);
+        static_cast<int>(visible_rect.height() * current_zoom_ / 2);
     if (new_y < 0)
       new_y = 0;
     client_->ScrollToY(new_y);
@@ -1840,15 +2167,14 @@ bool PDFiumEngine::SelectFindResult(bool forward) {
     // Only move horizontally if it's not visible.
     if (center.x() < visible_rect.x() || center.x() > visible_rect.right()) {
       int new_x = static_cast<int>(center.x()  * current_zoom_) -
-                  static_cast<int>(visible_rect.width() * current_zoom_ / 2);
+          static_cast<int>(visible_rect.width() * current_zoom_ / 2);
       if (new_x < 0)
         new_x = 0;
       client_->ScrollToX(new_x);
     }
   }
 
-  client_->NotifySelectedFindResultChanged(current_find_index_);
-
+  client_->NotifySelectedFindResultChanged(current_find_index_.GetIndex());
   return true;
 }
 
@@ -1861,7 +2187,7 @@ void PDFiumEngine::StopFind() {
   next_page_to_search_ = -1;
   last_page_to_search_ = -1;
   last_character_index_to_search_ = -1;
-  current_find_index_ = -1;
+  current_find_index_.Invalidate();
   current_find_text_.clear();
   UpdateTickMarks();
   find_factory_.CancelAll();
@@ -1893,30 +2219,12 @@ void PDFiumEngine::ZoomUpdated(double new_zoom_level) {
 
 void PDFiumEngine::RotateClockwise() {
   current_rotation_ = (current_rotation_ + 1) % 4;
-
-  // Store the current find index so that we can resume finding at that
-  // particular index after we have recomputed the find results.
-  std::string current_find_text = current_find_text_;
-  resume_find_index_ = current_find_index_;
-
-  InvalidateAllPages();
-
-  if (!current_find_text.empty())
-    StartFind(current_find_text.c_str(), false);
+  RotateInternal();
 }
 
 void PDFiumEngine::RotateCounterclockwise() {
   current_rotation_ = (current_rotation_ - 1) % 4;
-
-  // Store the current find index so that we can resume finding at that
-  // particular index after we have recomputed the find results.
-  std::string current_find_text = current_find_text_;
-  resume_find_index_ = current_find_index_;
-
-  InvalidateAllPages();
-
-  if (!current_find_text.empty())
-    StartFind(current_find_text.c_str(), false);
+  RotateInternal();
 }
 
 void PDFiumEngine::InvalidateAllPages() {
@@ -2079,6 +2387,10 @@ bool PDFiumEngine::GetPrintScaling() {
   return !!FPDF_VIEWERREF_GetPrintScaling(doc_);
 }
 
+int PDFiumEngine::GetCopiesToPrint() {
+  return FPDF_VIEWERREF_GetNumCopies(doc_);
+}
+
 void PDFiumEngine::AppendBlankPages(int num_pages) {
   DCHECK(num_pages != 0);
 
@@ -2232,8 +2544,12 @@ void PDFiumEngine::ContinueLoadingDocument(
       return;
     }
 
-    form_ = FPDFDOC_InitFormFillEnviroument(
+    form_ = FPDFDOC_InitFormFillEnvironment(
         doc_, static_cast<FPDF_FORMFILLINFO*>(this));
+#ifdef PDF_USE_XFA
+    FPDF_LoadXFA(doc_);
+#endif
+
     FPDF_SetFormFieldHighlightColor(form_, 0, kFormHighlightColor);
     FPDF_SetFormFieldHighlightAlpha(form_, kFormHighlightAlpha);
   }
@@ -2809,6 +3125,32 @@ bool PDFiumEngine::MouseDownState::Matches(
   return false;
 }
 
+PDFiumEngine::FindTextIndex::FindTextIndex()
+    : valid_(false), index_(0) {
+}
+
+PDFiumEngine::FindTextIndex::~FindTextIndex() {
+}
+
+void PDFiumEngine::FindTextIndex::Invalidate() {
+  valid_ = false;
+}
+
+size_t PDFiumEngine::FindTextIndex::GetIndex() const {
+  DCHECK(valid_);
+  return index_;
+}
+
+void PDFiumEngine::FindTextIndex::SetIndex(size_t index) {
+  valid_ = true;
+  index_ = index;
+}
+
+size_t PDFiumEngine::FindTextIndex::IncrementIndex() {
+  DCHECK(valid_);
+  return ++index_;
+}
+
 void PDFiumEngine::DeviceToPage(int page_index,
                                 float device_x,
                                 float device_y,
@@ -2986,6 +3328,24 @@ void PDFiumEngine::GetRegion(const pp::Point& location,
 void PDFiumEngine::OnSelectionChanged() {
   if (HasPermission(PDFEngine::PERMISSION_COPY))
     pp::PDF::SetSelectedText(GetPluginInstance(), GetSelectedText().c_str());
+}
+
+void PDFiumEngine::RotateInternal() {
+  // Store the current find index so that we can resume finding at that
+  // particular index after we have recomputed the find results.
+  std::string current_find_text = current_find_text_;
+  if (current_find_index_.valid())
+    resume_find_index_.SetIndex(current_find_index_.GetIndex());
+  else
+    resume_find_index_.Invalidate();
+
+  InvalidateAllPages();
+
+  if (!current_find_text.empty()) {
+    // Clear the UI.
+    client_->NotifyNumberOfFindResultsChanged(0, false);
+    StartFind(current_find_text.c_str(), false);
+  }
 }
 
 void PDFiumEngine::Form_Invalidate(FPDF_FORMFILLINFO* param,

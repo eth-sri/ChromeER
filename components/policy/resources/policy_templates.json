@@ -123,7 +123,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 280
+#   For your editing convenience: highest ID currently used: 281
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -1763,6 +1763,21 @@
                   },
                 },
               },
+              '^update_url:': {
+                'type': 'object',
+                'properties': {
+                  'installation_mode': {
+                    'type': 'string',
+                    'enum': ['blocked', 'allowed']
+                  },
+                  'blocked_permissions': {
+                    '$ref': 'ListOfPermissions',
+                  },
+                  'allowed_permissions': {
+                    '$ref': 'ListOfPermissions',
+                  },
+                },
+              },
             },
             'properties': {
               '*': {
@@ -1801,6 +1816,9 @@
               'update_url': 'http://example.com/update_url',
               'allowed_permissions': ['downloads'],
             },
+            'update_url:http://www.example.com/update.xml': {
+              'blocked_permissions': ['wallpaper'],
+            },
             '*': {
               'installation_mode': 'blocked',
               'blocked_permissions': ['downloads', 'bookmarks'],
@@ -1814,7 +1832,9 @@
 
           This policy controls multiple settings, including settings controlled by any existing extension-related policies. This policy will override any legacy policies if both are set.
 
-          This policy maps an extension ID to its configuration. A default configuration can be set for the special ID "*", which will apply to all extensions that don't have a custom configuration set in this policy. The configuration for each extension is another dictionary that can contain the fields documented below.
+          This policy maps an extension ID or an update URL to its configuration. With an extension ID, configuration will be applied to the specified extension only. A default configuration can be set for the special ID "*", which will apply to all extensions that don't have a custom configuration set in this policy. With an update URL, configuration will be applied to all extensions with the exact update URL stated in manifest of this extension, as described at <ph name="LINK_TO_EXTENSION_DOC1">https://developer.chrome.com/extensions/autoupdate</ph>.
+
+          The configuration for each extension (or extensions with same update URL) is another dictionary that can contain the fields documented below.
 
           "installation_mode": maps to a string indicating the installation mode for the extension. The valid strings are:
           * "allowed": allows the extension to be installed by the user. This is the default behavior.
@@ -1822,9 +1842,9 @@
           * "force_installed": the extension is automatically installed and can't be removed by the user.
           * "normal_installed": the extension is automatically installed but can be disabled by the user.
 
-          The default "installation_mode" can be configured for the "*" extension. Only the "allowed" and "blocked" values can be used in this case.
+          The "installation_mode" can also be configured for multiple extensions as well, including the "*" extension (as default settings) and extensions with same update URL. Only the "allowed" and "blocked" values can be used in this case.
 
-          If the mode is set to "force_installed" or "normal_installed" then an "update_url" must be configured too. The update URL should point to an Update Manifest XML document as described at <ph name="LINK_TO_EXTENSION_DOC1">https://developer.chrome.com/extensions/autoupdate</ph>. Note that the update URL set in this policy is only used for the initial installation; subsequent updates of the extension will use the update URL indicated in the extension's manifest.
+          If the mode is set to "force_installed" or "normal_installed" then an "update_url" must be configured too. Note that the update URL set in this policy is only used for the initial installation; subsequent updates of the extension will use the update URL indicated in the extension's manifest. The update URL should point to an Update Manifest XML document as mentioned above.
 
           "blocked_permissions": maps to a list of strings indicating the blocked API permissions for the extension. The permissions names are same as the permission strings declared in manifest of extension as described at <ph name="LINK_TO_EXTENSION_DOC3">https://developer.chrome.com/extensions/declare_permissions</ph>. This setting also can be configured for "*" extension. If the extension requires a permission which is on the blocklist, it will not be allowed to load. If it contains a blocked permission as optional requirement, it will be handled in the normal way, but requesting conflicting permissions will be declined automatically at runtime.
 
@@ -2352,6 +2372,8 @@
           'caption': '''Default cookies setting''',
           'desc': '''Allows you to set whether websites are allowed to set local data. Setting local data can be either allowed for all websites or denied for all websites.
 
+          If this policy is set to 'Keep cookies for the duration of the session' then cookies will be cleared when the session closes. Note that if <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is running in 'background mode', the session may not close when the last window is closed. Please see the 'BackgroundModeEnabled' policy for more information about configuring this behavior.
+
           If this policy is left not set, 'AllowCookies' will be used and the user will be able to change it.''',
         },
         {
@@ -2684,6 +2706,8 @@
           'desc': '''Allows you to set a list of url patterns that specify sites which are allowed to set session only cookies.
 
           If this policy is left not set the global default value will be used for all sites either from the 'DefaultCookiesSetting' policy if it is set, or the user's personal configuration otherwise.
+
+          Note that if <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is running in 'background mode', the session may not be closed when the last browser window is closed, but will instead stay active until the browser exits. Please see the 'BackgroundModeEnabled' policy for more information about configuring this behavior.
 
           If the "RestoreOnStartup" policy is set to restore URLs from previous sessions this policy will not be respected and cookies will be stored permanently for those sites.''',
         },
@@ -4567,7 +4591,7 @@
       'example_value': True,
       'id': 138,
       'caption': '''Continue running background apps when <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> is closed''',
-      'desc': '''Determines whether a <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> process is started on OS login and keeps running when the last browser window is closed, allowing background apps to remain active. The background process displays an icon in the system tray and can always be closed from there.
+      'desc': '''Determines whether a <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> process is started on OS login and keeps running when the last browser window is closed, allowing background apps and the current browsing session to remain active, including any session cookies. The background process displays an icon in the system tray and can always be closed from there.
 
       If this policy is set to True, background mode is enabled and cannot be controlled by the user in the browser settings.
 
@@ -6856,10 +6880,10 @@
         },
       ],
       'supported_on': [
-        'chrome.*:39-',
-        'chrome_os:39-',
-        'android:39-',
-        'ios:39-',
+        'chrome.*:39-43',
+        'chrome_os:39-43',
+        'android:39-43',
+        'ios:39-43',
       ],
       'features': {
         'dynamic_refresh': True,
@@ -6868,7 +6892,9 @@
       'example_value': 'ssl3',
       'id': 279,
       'caption': '''Minimum SSL version enabled''',
-      'desc': '''If this policy is not configured then <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use a default minimum version, which is SSLv3 in Chrome 39 but may be TLS 1.0 in Chrome 40.
+      'desc': '''Warning: SSLv3 support will be entirely removed from Chrome after version 43 (around July 2015) after which the setting "ssl3" will be ignored and the default of "tls1" used instead.
+
+      If this policy is not configured then <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use a default minimum version, which is SSLv3 in Chrome 39 but may be TLS 1.0 in Chrome 40.
 
       Otherwise it may be set to one of the following values: "sslv3", "tls1", "tls1.1" or "tls1.2". When set, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will not use SSL/TLS versions less than the specified version. An unrecognized value will be ignored.
 
@@ -6909,10 +6935,10 @@
         },
       ],
       'supported_on': [
-        'chrome.*:39-',
-        'chrome_os:39-',
-        'android:39-',
-        'ios:39-',
+        'chrome.*:39-43',
+        'chrome_os:39-43',
+        'android:39-43',
+        'ios:39-43',
       ],
       'features': {
         'dynamic_refresh': True,
@@ -6921,7 +6947,9 @@
       'example_value': 'tls1',
       'id': 280,
       'caption': '''Minimum SSL version to fallback to''',
-      'desc': '''When an SSL/TLS handshake fails, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will retry the connection with a lesser version of SSL/TLS in order to work around bugs in HTTPS servers. This setting configures the version at which this fallback process will stop. If a server performs version negotiation correctly (i.e. without breaking the connection) then this setting doesn't apply. Regardless, the resulting connection must still comply with SSLVersionMin.
+      'desc': '''Warning: SSLv3 support will be entirely removed from Chrome after version 43 (around July 2015) after which the setting "ssl3" will be ignored and the default of "tls1" used instead.
+
+      When an SSL/TLS handshake fails, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will retry the connection with a lesser version of SSL/TLS in order to work around bugs in HTTPS servers. This setting configures the version at which this fallback process will stop. If a server performs version negotiation correctly (i.e. without breaking the connection) then this setting doesn't apply. Regardless, the resulting connection must still comply with SSLVersionMin.
 
       If this policy is not configured then <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use a default minimum version, which was SSLv3 in Chrome 38 but is TLS 1.0 in Chrome 39.
 
@@ -6929,7 +6957,29 @@
 
       A setting of "tls1.2" disables all fallback but this may have a significant compatibility impact.
 
-      Note that, despite the number, "sslv3" is an earier version than "tls1".''',
+      Note that, despite the number, "sslv3" is an earlier version than "tls1".''',
+    },
+    {
+      'name': 'ContextualSearchEnabled',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': [
+        'android:40-',
+      ],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': True,
+      'id': 281,
+      'caption': '''Enable Touch to Search''',
+      'desc': '''Enables the availability of Touch to Search in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>'s content view.
+
+      If you enable this setting, Touch to Search will be available to the user and they can choose to turn the feature on or off.
+
+      If you disable this setting, Touch to Search will be disabled completely.
+
+      If this policy is left not set, it is equivalent to being enabled, see description above.''',
     },
   ],
   'messages': {

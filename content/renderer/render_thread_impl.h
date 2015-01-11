@@ -52,7 +52,6 @@ class ContextProvider;
 }
 
 namespace IPC {
-class ForwardingMessageFilter;
 class MessageFilter;
 }
 
@@ -79,6 +78,7 @@ class AecDumpMessageFilter;
 class AudioInputMessageFilter;
 class AudioMessageFilter;
 class AudioRendererMixerManager;
+class CompositorForwardingMessageFilter;
 class ContextProviderCommandBuffer;
 class DBMessageFilter;
 class DevToolsAgentFilter;
@@ -98,6 +98,7 @@ class PeerConnectionTracker;
 class RenderProcessObserver;
 class RendererBlinkPlatformImpl;
 class RendererDemuxerAndroid;
+class RendererScheduler;
 class VideoCaptureImplManager;
 class WebGraphicsContext3DCommandBufferImpl;
 class WebRTCIdentityService;
@@ -120,6 +121,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   RenderThreadImpl();
   // Constructor that's used when running in single process mode.
   explicit RenderThreadImpl(const std::string& channel_name);
+  // Constructor that's used in RendererMain.
+  explicit RenderThreadImpl(scoped_ptr<base::MessageLoop> main_message_loop);
   ~RenderThreadImpl() override;
   void Shutdown() override;
 
@@ -193,6 +196,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     layout_test_mode_ = layout_test_mode;
   }
 
+  RendererScheduler* renderer_scheduler() const {
+    DCHECK(renderer_scheduler_);
+    return renderer_scheduler_.get();
+  }
+
   RendererBlinkPlatformImpl* blink_platform_impl() const {
     DCHECK(blink_platform_impl_);
     return blink_platform_impl_.get();
@@ -203,8 +211,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     return main_thread_compositor_task_runner_;
   }
 
-  IPC::ForwardingMessageFilter* compositor_output_surface_filter() const {
-    return compositor_output_surface_filter_.get();
+  CompositorForwardingMessageFilter* compositor_message_filter() const {
+    return compositor_message_filter_.get();
   }
 
   InputHandlerManager* input_handler_manager() const {
@@ -237,6 +245,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_zero_copy_enabled() const { return is_zero_copy_enabled_; }
 
   bool is_one_copy_enabled() const { return is_one_copy_enabled_; }
+
+  bool use_image_external() const { return use_image_external_; }
 
   AppCacheDispatcher* appcache_dispatcher() const {
     return appcache_dispatcher_.get();
@@ -453,6 +463,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<AppCacheDispatcher> appcache_dispatcher_;
   scoped_ptr<DomStorageDispatcher> dom_storage_dispatcher_;
   scoped_ptr<IndexedDBDispatcher> main_thread_indexed_db_dispatcher_;
+  scoped_ptr<RendererScheduler> renderer_scheduler_;
   scoped_ptr<RendererBlinkPlatformImpl> blink_platform_impl_;
   scoped_ptr<EmbeddedWorkerDispatcher> embedded_worker_dispatcher_;
 
@@ -518,6 +529,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // GpuChannelHostFactory methods.
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
 
+  // The message loop of the renderer main thread.
+  // This message loop should be destructed before the RenderThreadImpl
+  // shuts down Blink.
+  scoped_ptr<base::MessageLoop> main_message_loop_;
+
   // A lazily initiated thread on which file operations are run.
   scoped_ptr<base::Thread> file_thread_;
 
@@ -534,7 +550,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // May be null if unused by the |input_handler_manager_|.
   scoped_refptr<InputEventFilter> input_event_filter_;
   scoped_ptr<InputHandlerManager> input_handler_manager_;
-  scoped_refptr<IPC::ForwardingMessageFilter> compositor_output_surface_filter_;
+  scoped_refptr<CompositorForwardingMessageFilter> compositor_message_filter_;
 
   scoped_refptr<webkit::gpu::ContextProviderWebContext>
       shared_main_thread_contexts_;
@@ -567,6 +583,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_one_copy_enabled_;
+  bool use_image_external_;
 
   std::map<int, mojo::MessagePipeHandle> pending_render_frame_connects_;
 

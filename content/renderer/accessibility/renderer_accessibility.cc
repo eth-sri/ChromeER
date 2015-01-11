@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -42,10 +43,13 @@ RendererAccessibility::RendererAccessibility(RenderFrameImpl* render_frame)
   WebSettings* settings = web_view->settings();
   settings->setAccessibilityEnabled(true);
 
+#if defined(OS_ANDROID)
+  // Password values are only passed through on Android.
+  settings->setAccessibilityPasswordValuesEnabled(true);
+#endif
+
 #if !defined(OS_ANDROID)
-  // Skip inline text boxes on Android - since there are no native Android
-  // APIs that compute the bounds of a range of text, it's a waste to
-  // include these in the AX tree.
+  // Inline text boxes are enabled for all nodes on all except Android.
   settings->setInlineTextBoxAccessibilityEnabled(true);
 #endif
 
@@ -71,7 +75,10 @@ bool RendererAccessibility::OnMessageReceived(const IPC::Message& message) {
                         OnScrollToMakeVisible)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_ScrollToPoint, OnScrollToPoint)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_SetTextSelection, OnSetTextSelection)
+    IPC_MESSAGE_HANDLER(AccessibilityMsg_SetValue, OnSetValue)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_HitTest, OnHitTest)
+    IPC_MESSAGE_HANDLER(AccessibilityMsg_SetAccessibilityFocus,
+                        OnSetAccessibilityFocus)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_Reset, OnReset)
     IPC_MESSAGE_HANDLER(AccessibilityMsg_FatalError, OnFatalError)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -82,6 +89,23 @@ bool RendererAccessibility::OnMessageReceived(const IPC::Message& message) {
 void RendererAccessibility::HandleWebAccessibilityEvent(
     const blink::WebAXObject& obj, blink::WebAXEvent event) {
   HandleAXEvent(obj, AXEventFromBlink(event));
+}
+
+void RendererAccessibility::HandleAccessibilityFindInPageResult(
+    int identifier,
+    int match_index,
+    const blink::WebAXObject& start_object,
+    int start_offset,
+    const blink::WebAXObject& end_object,
+    int end_offset) {
+  AccessibilityHostMsg_FindInPageResultParams params;
+  params.request_id = identifier;
+  params.match_index = match_index;
+  params.start_id = start_object.axID();
+  params.start_offset = start_offset;
+  params.end_id = end_object.axID();
+  params.end_offset = end_offset;
+  Send(new AccessibilityHostMsg_FindInPageResult(routing_id(), params));
 }
 
 void RendererAccessibility::FocusedNodeChanged(const WebNode& node) {
@@ -233,9 +257,9 @@ void RendererAccessibility::SendPendingAccessibilityEvents() {
           event_msg.update.nodes[i].location;
     }
 
-    VLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
-            << " on node id " << event_msg.id
-            << "\n" << event_msg.update.ToString();
+    DVLOG(0) << "Accessibility event: " << ui::ToString(event.event_type)
+             << " on node id " << event_msg.id
+             << "\n" << event_msg.update.ToString();
   }
 
   Send(new AccessibilityHostMsg_Events(routing_id(), event_msgs, reset_token_));
@@ -323,6 +347,26 @@ void RendererAccessibility::OnHitTest(gfx::Point point) {
   WebAXObject obj = root_obj.hitTest(point);
   if (!obj.isDetached())
     HandleAXEvent(obj, ui::AX_EVENT_HOVER);
+}
+
+void RendererAccessibility::OnSetAccessibilityFocus(int acc_obj_id) {
+  if (tree_source_.accessibility_focus_id() == acc_obj_id)
+    return;
+
+  tree_source_.set_accessiblity_focus_id(acc_obj_id);
+
+  const WebDocument& document = GetMainDocument();
+  if (document.isNull())
+    return;
+
+  WebAXObject obj = document.accessibilityObjectFromID(acc_obj_id);
+
+  // This object may not be a leaf node. Force the whole subtree to be
+  // re-serialized.
+  serializer_.DeleteClientSubtree(obj);
+
+  // Explicitly send a tree change update event now.
+  HandleAXEvent(obj, ui::AX_EVENT_TREE_CHANGED);
 }
 
 void RendererAccessibility::OnReset(int reset_token) {
@@ -425,15 +469,26 @@ void RendererAccessibility::OnSetTextSelection(
     return;
   }
 
-  // TODO(dmazzoni): support elements other than <input>.
-  blink::WebNode node = obj.node();
-  if (!node.isNull() && node.isElementNode()) {
-    blink::WebElement element = node.to<blink::WebElement>();
-    blink::WebInputElement* input_element =
-        blink::toWebInputElement(&element);
-    if (input_element && input_element->isTextField())
-      input_element->setSelectionRange(start_offset, end_offset);
+  obj.setSelectedTextRange(start_offset, end_offset);
+}
+
+void RendererAccessibility::OnSetValue(
+    int acc_obj_id,
+    base::string16 value) {
+  const WebDocument& document = GetMainDocument();
+  if (document.isNull())
+    return;
+
+  WebAXObject obj = document.accessibilityObjectFromID(acc_obj_id);
+  if (obj.isDetached()) {
+#ifndef NDEBUG
+    LOG(WARNING) << "SetTextSelection on invalid object id " << acc_obj_id;
+#endif
+    return;
   }
+
+  obj.setValue(value);
+  HandleAXEvent(obj, ui::AX_EVENT_VALUE_CHANGED);
 }
 
 }  // namespace content

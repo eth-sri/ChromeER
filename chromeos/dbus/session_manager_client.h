@@ -63,7 +63,7 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   // Adds and removes the observer.
   virtual void AddObserver(Observer* observer) = 0;
   virtual void RemoveObserver(Observer* observer) = 0;
-  virtual bool HasObserver(Observer* observer) = 0;
+  virtual bool HasObserver(const Observer* observer) const = 0;
 
   // Kicks off an attempt to emit the "login-prompt-visible" upstart signal.
   virtual void EmitLoginPromptVisible() = 0;
@@ -88,6 +88,12 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
 
   // Notifies that the lock screen is dismissed.
   virtual void NotifyLockScreenDismissed() = 0;
+
+  // Notifies that supervised user creation have started.
+  virtual void NotifySupervisedUserCreationStarted() = 0;
+
+  // Notifies that supervised user creation have finished.
+  virtual void NotifySupervisedUserCreationFinished() = 0;
 
   // Map that is used to describe the set of active user sessions where |key|
   // is user_id and |value| is user_id_hash.

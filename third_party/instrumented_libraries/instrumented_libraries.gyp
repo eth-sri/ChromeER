@@ -83,6 +83,7 @@
         # Don't add this target to the dependencies of targets with type=none.
         'link_dependency': 1,
       },
+      # NOTE: Please keep install-build-deps.sh in sync with this list.
       'dependencies': [
         '<(_sanitizer_type)-freetype',
         '<(_sanitizer_type)-libcairo2',
@@ -142,6 +143,7 @@
         }, {
           'dependencies': [
             '<(_sanitizer_type)-libtasn1-6',
+            '<(_sanitizer_type)-harfbuzz',
           ],
         }],
         ['msan==1', {
@@ -155,27 +157,12 @@
           ],
         }],
       ],
-      'actions': [
-        {
-          'action_name': 'fix_rpaths',
-          'inputs': [
-            'fix_rpaths.sh',
-          ],
-          'outputs': [
-            '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)/rpaths.fixed.txt',
-          ],
-          'action': [
-            './fix_rpaths.sh',
-            '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)'
-          ],
-        },
-      ],
       'direct_dependent_settings': {
         'target_conditions': [
           ['_toolset=="target"', {
             'ldflags': [
               # Add RPATH to result binary to make it linking instrumented libraries ($ORIGIN means relative RPATH)
-              '-Wl,-R,\$$ORIGIN/instrumented_libraries/<(_sanitizer_type)/lib/:\$$ORIGIN/instrumented_libraries/<(_sanitizer_type)/usr/lib/x86_64-linux-gnu/',
+              '-Wl,-R,\$$ORIGIN/instrumented_libraries/<(_sanitizer_type)/lib/',
               '-Wl,-z,origin',
             ],
           }],
@@ -421,6 +408,10 @@
       'conditions': [
         ['"<(_ubuntu_release)"=="precise"', {
           'patch': 'patches/pulseaudio.precise.diff',
+          'jobs': 1,
+        }, {
+          # New location of libpulsecommon.
+          'package_ldflags': [ '-Wl,-R,XORIGIN/pulseaudio/.' ],
         }],
       ],
       'extra_configure_flags': [
@@ -432,7 +423,6 @@
           '--disable-neon-opt'
       ],
       'run_before_build': 'scripts/pulseaudio.sh',
-      'jobs': 1,
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -502,8 +492,7 @@
           # TODO(earthdok): find a better fix.
           '--disable-gudev'
       ],
-      # Required on Trusty due to autoconf version mismatch.
-      'run_before_build': 'scripts/autoreconf.sh',
+      'run_before_build': 'scripts/udev.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
@@ -664,6 +653,19 @@
       ],
       'dependencies=': [],
       'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
+    },
+    {
+      'package_name': 'harfbuzz',
+      'package_cflags': ['-Wno-c++11-narrowing'],
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--with-graphite2=yes',
+          '--with-gobject',
+          # See above.
+          '--disable-introspection',
+      ],
+      'dependencies=': [],
       'includes': ['standard_instrumented_package_target.gypi'],
     },
   ],

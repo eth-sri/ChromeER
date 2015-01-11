@@ -60,6 +60,14 @@ Status AlgorithmImplementation::GenerateKey(
   return Status::ErrorUnsupported();
 }
 
+Status AlgorithmImplementation::DeriveBits(
+    const blink::WebCryptoAlgorithm& algorithm,
+    const blink::WebCryptoKey& base_key,
+    unsigned int length_bits,
+    std::vector<uint8_t>* derived_bytes) const {
+  return Status::ErrorUnsupported();
+}
+
 Status AlgorithmImplementation::VerifyKeyUsagesBeforeImportKey(
     blink::WebCryptoKeyFormat format,
     blink::WebCryptoKeyUsageMask usages) const {
@@ -124,6 +132,22 @@ Status AlgorithmImplementation::ExportKeyJwk(
     const blink::WebCryptoKey& key,
     std::vector<uint8_t>* buffer) const {
   return Status::ErrorUnsupportedExportKeyFormat();
+}
+
+Status AlgorithmImplementation::SerializeKeyForClone(
+    const blink::WebCryptoKey& key,
+    blink::WebVector<uint8_t>* key_data) const {
+  return Status::ErrorUnsupported();
+}
+
+Status AlgorithmImplementation::DeserializeKeyForClone(
+    const blink::WebCryptoKeyAlgorithm& algorithm,
+    blink::WebCryptoKeyType type,
+    bool extractable,
+    blink::WebCryptoKeyUsageMask usages,
+    const CryptoData& key_data,
+    blink::WebCryptoKey* key) const {
+  return Status::ErrorUnsupported();
 }
 
 }  // namespace webcrypto

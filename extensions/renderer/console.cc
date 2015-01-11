@@ -39,9 +39,11 @@ class ByContextFinder : public content::RenderViewVisitor {
 
   bool Visit(content::RenderView* render_view) override {
     ExtensionHelper* helper = ExtensionHelper::Get(render_view);
-    if (helper &&
-        helper->dispatcher()->script_context_set().GetByV8Context(context_)) {
-      found_ = render_view;
+    if (helper) {
+      ScriptContext* script_context =
+          helper->dispatcher()->script_context_set().GetByV8Context(context_);
+      if (script_context && script_context->GetRenderView() == render_view)
+        found_ = render_view;
     }
     return !found_;
   }
@@ -173,8 +175,7 @@ void AddMessage(v8::Handle<v8::Context> context,
   AddMessage(render_view, level, message);
 }
 
-v8::Local<v8::Object> AsV8Object() {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+v8::Local<v8::Object> AsV8Object(v8::Isolate* isolate) {
   v8::EscapableHandleScope handle_scope(isolate);
   v8::Local<v8::Object> console_object = v8::Object::New(isolate);
   BindLogMethod(isolate, console_object, "debug", &Debug);

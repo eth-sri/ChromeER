@@ -167,7 +167,7 @@ class RasterWorkerPoolPerfTestBase {
  public:
   typedef std::vector<scoped_refptr<RasterTask>> RasterTaskVector;
 
-  enum NamedTaskSet { REQUIRED_FOR_ACTIVATION = 0, ALL = 1 };
+  enum NamedTaskSet { ALL, REQUIRED_FOR_ACTIVATION, REQUIRED_FOR_DRAW };
 
   RasterWorkerPoolPerfTestBase()
       : context_provider_(make_scoped_refptr(new PerfContextProvider)),
@@ -228,7 +228,7 @@ class RasterWorkerPoolPerfTest
       public RasterizerClient {
  public:
   // Overridden from testing::Test:
-  virtual void SetUp() override {
+  void SetUp() override {
     switch (GetParam()) {
       case RASTER_WORKER_POOL_TYPE_PIXEL_BUFFER:
         Create3dOutputSurfaceAndResourceProvider();
@@ -277,7 +277,7 @@ class RasterWorkerPoolPerfTest
     DCHECK(raster_worker_pool_);
     raster_worker_pool_->AsRasterizer()->SetClient(this);
   }
-  virtual void TearDown() override {
+  void TearDown() override {
     raster_worker_pool_->AsRasterizer()->Shutdown();
     raster_worker_pool_->AsRasterizer()->CheckForCompletedTasks();
   }
@@ -485,7 +485,7 @@ class RasterWorkerPoolCommonPerfTest : public RasterWorkerPoolPerfTestBase,
                                        public testing::Test {
  public:
   // Overridden from testing::Test:
-  virtual void SetUp() override {
+  void SetUp() override {
     output_surface_ = FakeOutputSurface::Create3d(context_provider_).Pass();
     CHECK(output_surface_->BindToClient(&output_surface_client_));
     resource_provider_ =

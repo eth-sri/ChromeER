@@ -6,7 +6,6 @@
 
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/download/save_package.h"
@@ -243,7 +242,7 @@ TEST_F(SavePackageTest, MAYBE_TestLongSafePureFilename) {
   const base::FilePath::StringType ext(FPL_HTML_EXTENSION);
   base::FilePath::StringType filename =
 #if defined(OS_WIN)
-      base::ASCIIToWide(long_file_name);
+      base::ASCIIToUTF16(long_file_name);
 #else
       long_file_name;
 #endif

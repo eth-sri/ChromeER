@@ -24,9 +24,12 @@
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
+        'history/core/browser/history_backend_notifier.h',
         'history/core/browser/history_backend_observer.h',
         'history/core/browser/history_client.cc',
         'history/core/browser/history_client.h',
+        'history/core/browser/history_constants.cc',
+        'history/core/browser/history_constants.h',
         'history/core/browser/history_match.cc',
         'history/core/browser/history_match.h',
         'history/core/browser/history_service_observer.h',

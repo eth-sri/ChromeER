@@ -55,6 +55,7 @@ class WebLayerTreeViewImplForTesting
   virtual void finishAllRendering();
   virtual void setDeferCommits(bool defer_commits);
   virtual void registerViewportLayers(
+      const blink::WebLayer* overscrollElasticityLayer,
       const blink::WebLayer* pageScaleLayerLayer,
       const blink::WebLayer* innerViewportScrollLayer,
       const blink::WebLayer* outerViewportScrollLayer) override;

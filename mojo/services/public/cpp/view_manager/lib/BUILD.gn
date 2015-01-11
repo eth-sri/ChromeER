@@ -4,7 +4,6 @@
 
 import("//build/config/ui.gni")
 
-# GYP version: mojo/mojo_services.gypi:mojo_view_manager_run_unittests
 source_set("run_unittests") {
   testonly = true
   sources = [
@@ -21,9 +20,4 @@ source_set("run_unittests") {
   if (use_x11) {
     deps += ["//ui/gfx/x"]
   }
-
-  if (is_component_build) {
-    deps += ["//ui/gl"]
-  }
-
 }

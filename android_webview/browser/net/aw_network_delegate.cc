@@ -64,14 +64,6 @@ int AwNetworkDelegate::OnHeadersReceived(
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
     GURL* allowed_unsafe_redirect_url) {
-
-  data_reduction_proxy::MaybeBypassProxyAndPrepareToRetry(
-      data_reduction_proxy_params_,
-      request,
-      original_response_headers,
-      override_response_headers,
-      NULL /* returned bypass type */);
-
   return net::OK;
 }
 
@@ -126,12 +118,6 @@ bool AwNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
 bool AwNetworkDelegate::OnCanThrottleRequest(
     const net::URLRequest& request) const {
   return false;
-}
-
-int AwNetworkDelegate::OnBeforeSocketStreamConnect(
-    net::SocketStream* stream,
-    const net::CompletionCallback& callback) {
-  return net::OK;
 }
 
 }  // namespace android_webview

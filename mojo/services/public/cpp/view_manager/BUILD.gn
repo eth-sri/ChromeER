@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# GYP version: mojo/mojo_services.gypi:mojo_view_manager_lib
 source_set("view_manager") {
   sources = [
     "lib/view.cc",
@@ -19,7 +18,9 @@ source_set("view_manager") {
     "view_manager_context.h",
     "view_manager_delegate.h",
     "view_observer.h",
-    "window_manager_delegate.h",
+    "view_property.h",
+    "view_tracker.cc",
+    "view_tracker.h",
   ]
 
   public_deps = [
@@ -28,6 +29,7 @@ source_set("view_manager") {
   deps = [
     "//base",
     "//mojo/public/c/gles2",
+    "//mojo/public/cpp/application",
     "//mojo/public/cpp/bindings:bindings",
     "//mojo/public/interfaces/application",
     "//mojo/services/public/interfaces/geometry",
@@ -35,16 +37,11 @@ source_set("view_manager") {
     "//mojo/services/public/interfaces/surfaces:surface_id",
     "//mojo/services/public/interfaces/view_manager",
     "//mojo/services/public/interfaces/window_manager",
-    "//mojo/services/public/interfaces/window_manager2",
   ]
 }
 
 source_set("common") {
   sources = [
-    "ids.h",
     "types.h",
-  ]
-  public_deps = [
-    "//base",
   ]
 }

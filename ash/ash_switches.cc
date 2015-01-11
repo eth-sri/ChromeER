@@ -38,6 +38,10 @@ const char kAshDefaultWallpaperIsOem[] = "ash-default-wallpaper-is-oem";
 const char kAshDefaultWallpaperLarge[] = "ash-default-wallpaper-large";
 const char kAshDefaultWallpaperSmall[] = "ash-default-wallpaper-small";
 
+// Enables text filtering with the keyboard in Overview Mode.
+const char kAshDisableTextFilteringInOverviewMode[] =
+    "ash-disable-text-filtering-in-overview-mode";
+
 // Disables LockLayoutManager used for LockScreenContainer, return back to
 // WorkspaceLayoutManager.
 const char kAshDisableLockLayoutManager[] = "ash-disable-lock-layout-manager";
@@ -49,14 +53,16 @@ const char kAshDisableTouchExplorationMode[] =
     "ash-disable-touch-exploration-mode";
 
 #if defined(OS_CHROMEOS)
+// Enables fullscreen app list if Ash is in maximize mode.
+const char kAshEnableFullscreenAppList[] = "ash-enable-fullscreen-app-list";
+
 // Enables key bindings to scroll magnified screen.
 const char kAshEnableMagnifierKeyScroller[] =
     "ash-enable-magnifier-key-scroller";
 #endif
 
-// Enables text filtering with the keyboard in Overview Mode.
-const char kAshDisableTextFilteringInOverviewMode[] =
-    "ash-disable-text-filtering-in-overview-mode";
+// Enables mirrored screen.
+const char kAshEnableMirroredScreen[] = "ash-enable-mirrored-screen";
 
 // Enables quick, non-cancellable locking of the screen when in maximize mode.
 const char kAshEnablePowerButtonQuickLock[] =

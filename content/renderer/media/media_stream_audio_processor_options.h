@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/files/file.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreaminterface.h"
@@ -58,10 +59,6 @@ class CONTENT_EXPORT MediaAudioConstraints {
                         int effects);
   virtual ~MediaAudioConstraints();
 
-  // Checks if any audio constraints are set that requires audio processing to
-  // be applied.
-  bool NeedsAudioProcessing();
-
   // Gets the property of the constraint named by |key| in |constraints_|.
   // Returns the constraint's value if the key is found; Otherwise returns the
   // default value of the constraint.
@@ -86,6 +83,29 @@ class CONTENT_EXPORT MediaAudioConstraints {
   const blink::WebMediaConstraints constraints_;
   const int effects_;
   bool default_audio_processing_constraint_value_;
+};
+
+// A helper class to log echo information in general and Echo Cancellation
+// quality in particular.
+class CONTENT_EXPORT EchoInformation {
+ public:
+  EchoInformation();
+  virtual ~EchoInformation();
+
+  // Updates delay statistics with a new |delay|.
+  void UpdateAecDelayStats(int delay);
+
+ private:
+  // Updates UMA histograms with an interval of |kTimeBetweenLogsInSeconds|.
+  void LogAecDelayStats();
+
+  // Counters for determining how often the estimated delay in the AEC is out of
+  // bounds.
+  int echo_poor_delay_counts_;
+  int echo_total_delay_counts_;
+  base::TimeTicks last_log_time_;
+
+  DISALLOW_COPY_AND_ASSIGN(EchoInformation);
 };
 
 // Enables the echo cancellation in |audio_processing|.

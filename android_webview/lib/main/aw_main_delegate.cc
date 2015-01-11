@@ -62,6 +62,9 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // WebView uses the Android system's scrollbars and overscroll glow.
   cl->AppendSwitch(switches::kDisableOverscrollEdgeEffect);
 
+  // Pull-to-refresh should never be a default WebView action.
+  cl->AppendSwitch(switches::kDisablePullToRefreshEffect);
+
   // Not yet supported in single-process mode.
   cl->AppendSwitch(switches::kDisableSharedWorkers);
 
@@ -79,8 +82,8 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // This is needed for sharing textures across the different GL threads.
   cl->AppendSwitch(switches::kEnableThreadedTextureMailboxes);
 
-  // Virtual viewport doesn't behave well with web view. crbug.com/426891
-  cl->AppendSwitch(cc::switches::kDisablePinchVirtualViewport);
+  // We need to support input event handling for the scheduler. crbug.com/431598
+  cl->AppendSwitch(switches::kDisableBlinkScheduler);
 
   return false;
 }

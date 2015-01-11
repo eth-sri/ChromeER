@@ -19,9 +19,6 @@
 #
 #  gpu.gyp:gles2_implementation =>
 #      //gpu/command_buffer/client:gles2_implementation
-
-#  gpu.gyp:gles2_implementation_client_side_arrays =>
-#      //gpu/command_buffer/client:gles2_implementation_client_side_arrays
 #
 #  gpu.gyp:gpu_config => //gpu/config
 #
@@ -73,6 +70,7 @@ test("gl_tests") {
     "command_buffer/tests/gl_bind_uniform_location_unittest.cc",
     "command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc",
     "command_buffer/tests/gl_chromium_path_rendering_unittest.cc",
+    "command_buffer/tests/gl_clear_framebuffer_unittest.cc",
     "command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc",
     "command_buffer/tests/gl_depth_texture_unittest.cc",
     "command_buffer/tests/gl_gpu_memory_buffer_unittest.cc",
@@ -114,7 +112,7 @@ test("gl_tests") {
     "//ui/gl",
     "//gpu/command_buffer/common:gles2_utils",
     "//gpu/command_buffer/client:gles2_c_lib",
-    "//gpu/command_buffer/client:gles2_implementation_client_side_arrays",
+    "//gpu/command_buffer/client:gles2_implementation",
   ]
 
   libs = []
@@ -189,6 +187,7 @@ test("gpu_unittests") {
     "command_buffer/service/gles2_cmd_decoder_unittest_programs.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_textures.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_attribs.cc",
+    "command_buffer/service/gles2_cmd_decoder_unittest_valuebuffer.cc",
     "command_buffer/service/gl_surface_mock.cc",
     "command_buffer/service/gl_surface_mock.h",
     "command_buffer/service/gpu_scheduler_unittest.cc",
@@ -200,11 +199,13 @@ test("gpu_unittests") {
     "command_buffer/service/mocks.cc",
     "command_buffer/service/mocks.h",
     "command_buffer/service/program_manager_unittest.cc",
+    "command_buffer/service/valuebuffer_manager_unittest.cc",
     "command_buffer/service/query_manager_unittest.cc",
     "command_buffer/service/renderbuffer_manager_unittest.cc",
     "command_buffer/service/program_cache_unittest.cc",
     "command_buffer/service/shader_manager_unittest.cc",
     "command_buffer/service/shader_translator_unittest.cc",
+    "command_buffer/service/shader_translator_cache_unittest.cc",
     "command_buffer/service/test_helper.cc",
     "command_buffer/service/test_helper.h",
     "command_buffer/service/texture_manager_unittest.cc",
@@ -241,7 +242,7 @@ test("gpu_unittests") {
     "//ui/gl",
     "//gpu/command_buffer/common:gles2_utils",
     "//gpu/command_buffer/client:gles2_c_lib",
-    "//gpu/command_buffer/client:gles2_implementation_client_side_arrays",
+    "//gpu/command_buffer/client:gles2_implementation",
   ]
 }
 

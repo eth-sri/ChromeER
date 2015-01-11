@@ -230,6 +230,20 @@ user_manager::UserList ChromeUserManagerImpl::GetUsersAllowedForMultiProfile()
   return result;
 }
 
+user_manager::UserList
+ChromeUserManagerImpl::GetUsersAllowedForSupervisedUsersCreation() const {
+  CrosSettings* cros_settings = CrosSettings::Get();
+  bool allow_new_user = true;
+  cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);
+  bool supervised_users_allowed = AreSupervisedUsersAllowed();
+
+  // Restricted either by policy or by owner.
+  if (!allow_new_user || !supervised_users_allowed)
+    return user_manager::UserList();
+
+  return GetUsersAllowedAsSupervisedUserManagers(GetUsers());
+}
+
 user_manager::UserList ChromeUserManagerImpl::GetUnlockUsers() const {
   const user_manager::UserList& logged_in_users = GetLoggedInUsers();
   if (logged_in_users.empty())
@@ -355,7 +369,7 @@ void ChromeUserManagerImpl::Observe(
       if (IsUserLoggedIn() && !IsLoggedInAsGuest() && !IsLoggedInAsKioskApp()) {
         if (IsLoggedInAsSupervisedUser())
           SupervisedUserPasswordServiceFactory::GetForProfile(profile);
-        if (IsLoggedInAsRegularUser())
+        if (IsLoggedInAsUserWithGaiaAccount())
           ManagerPasswordServiceFactory::GetForProfile(profile);
 
         if (!profile->IsOffTheRecord()) {
@@ -583,8 +597,7 @@ void ChromeUserManagerImpl::RetrieveTrustedDevicePolicies() {
     for (user_manager::UserList::iterator it = users_.begin();
          it != users_.end();) {
       const std::string user_email = (*it)->email();
-      if ((*it)->GetType() == user_manager::USER_TYPE_REGULAR &&
-          user_email != GetOwnerEmail()) {
+      if ((*it)->HasGaiaAccount() && user_email != GetOwnerEmail()) {
         RemoveNonCryptohomeData(user_email);
         DeleteUser(*it);
         it = users_.erase(it);

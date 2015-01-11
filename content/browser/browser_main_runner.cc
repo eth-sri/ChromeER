@@ -20,6 +20,8 @@
 #include "ui/base/ime/input_method_initializer.h"
 
 #if defined(OS_WIN)
+#include <dwrite.h>
+#include "base/win/scoped_comptr.h"
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "net/cert/sha256_legacy_support_win.h"
@@ -118,8 +120,8 @@ void InstallSha256LegacyHooks() {
 
 void MaybeEnableDirectWriteFontRendering() {
   if (gfx::win::ShouldUseDirectWrite() &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDirectWriteForUI) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableDirectWriteForUI) &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableHarfBuzzRenderText)) {
     typedef decltype(DWriteCreateFactory)* DWriteCreateFactoryProc;
@@ -133,14 +135,23 @@ void MaybeEnableDirectWriteFontRendering() {
     // Not finding the DWriteCreateFactory function indicates a corrupt dll.
     CHECK(dwrite_create_factory_proc);
 
-    IDWriteFactory* factory = NULL;
+    base::win::ScopedComPtr<IDWriteFactory> factory;
 
     CHECK(SUCCEEDED(
-        dwrite_create_factory_proc(DWRITE_FACTORY_TYPE_SHARED,
-                                   __uuidof(IDWriteFactory),
-                                   reinterpret_cast<IUnknown**>(&factory))));
-    SetDefaultSkiaFactory(SkFontMgr_New_DirectWrite(factory));
-    gfx::PlatformFontWin::set_direct_write_factory(factory);
+        dwrite_create_factory_proc(
+            DWRITE_FACTORY_TYPE_SHARED,
+          __uuidof(IDWriteFactory),
+          reinterpret_cast<IUnknown**>(factory.Receive()))));
+    // The skia call to create a new DirectWrite font manager instance can fail
+    // if we are unable to get the system font collection from the DirectWrite
+    // factory. The GetSystemFontCollection method in the IDWriteFactory
+    // interface fails with E_INVALIDARG on certain Windows 7 gold versions
+    // (6.1.7600.*). We should just use GDI in these cases.
+    SkFontMgr* direct_write_font_mgr = SkFontMgr_New_DirectWrite(factory.get());
+    if (direct_write_font_mgr) {
+      SetDefaultSkiaFactory(direct_write_font_mgr);
+      gfx::PlatformFontWin::SetDirectWriteFactory(factory.get());
+    }
   }
 }
 
@@ -292,7 +303,8 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
       // Forcefully terminates the RunLoop inside MessagePumpForUI, ensuring
       // proper shutdown for content_browsertests. Shutdown() is not used by
       // the actual browser.
-      base::MessageLoop::current()->QuitNow();
+      if (base::MessageLoop::current()->is_running())
+        base::MessageLoop::current()->QuitNow();
   #endif
       main_loop_.reset(NULL);
 

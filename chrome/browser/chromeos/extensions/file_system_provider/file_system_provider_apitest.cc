@@ -8,8 +8,7 @@ namespace extensions {
 
 class FileSystemProviderApiTest : public ExtensionApiTest {
  public:
-  FileSystemProviderApiTest()
-      : current_channel_(chrome::VersionInfo::CHANNEL_DEV) {}
+  FileSystemProviderApiTest() {}
 
   // Loads a helper testing extension.
   virtual void SetUpOnMainThread() override {
@@ -19,9 +18,6 @@ class FileSystemProviderApiTest : public ExtensionApiTest {
         kFlagEnableIncognito);
     ASSERT_TRUE(extension);
   }
-
- private:
-  extensions::ScopedCurrentChannel current_channel_;
 };
 
 IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, Mount) {
@@ -127,6 +123,24 @@ IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, Extension) {
 
 IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, Thumbnail) {
   ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/thumbnail",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, AddWatcher) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/add_watcher",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, RemoveWatcher) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/remove_watcher",
+                                          kFlagLoadAsComponent))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(FileSystemProviderApiTest, Notify) {
+  ASSERT_TRUE(RunPlatformAppTestWithFlags("file_system_provider/notify",
                                           kFlagLoadAsComponent))
       << message_;
 }

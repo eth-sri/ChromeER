@@ -17,6 +17,7 @@
 #include "ui/events/ozone/evdev/keyboard_evdev.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/ozone/public/system_input_injector.h"
 
 namespace gfx {
 class PointF;
@@ -26,6 +27,7 @@ namespace ui {
 
 class CursorDelegateEvdev;
 class DeviceManager;
+class SystemInputInjector;
 
 #if defined(USE_EVDEV_GESTURES)
 class GesturePropertyProvider;
@@ -37,19 +39,21 @@ class EVENTS_OZONE_EVDEV_EXPORT EventFactoryEvdev : public DeviceEventObserver,
  public:
   EventFactoryEvdev(CursorDelegateEvdev* cursor,
                     DeviceManager* device_manager);
-  virtual ~EventFactoryEvdev();
+  ~EventFactoryEvdev() override;
 
   void WarpCursorTo(gfx::AcceleratedWidget widget,
                     const gfx::PointF& location);
+
+  scoped_ptr<SystemInputInjector> CreateSystemInputInjector();
 
  protected:
   // DeviceEventObserver overrides:
   //
   // Callback for device add (on UI thread).
-  virtual void OnDeviceEvent(const DeviceEvent& event) override;
+  void OnDeviceEvent(const DeviceEvent& event) override;
 
   // PlatformEventSource:
-  virtual void OnDispatcherListChanged() override;
+  void OnDispatcherListChanged() override;
 
  private:
   // Post a task to dispatch an event.

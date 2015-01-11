@@ -562,6 +562,8 @@ void UserManagerScreenHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
   localized_strings->SetString("passwordHint",
       l10n_util::GetStringUTF16(IDS_LOGIN_POD_EMPTY_PASSWORD_TEXT));
+  localized_strings->SetString("signingIn",
+      l10n_util::GetStringUTF16(IDS_LOGIN_POD_SIGNING_IN));
   localized_strings->SetString("podMenuButtonAccessibleName",
       l10n_util::GetStringUTF16(IDS_LOGIN_POD_MENU_BUTTON_ACCESSIBLE_NAME));
   localized_strings->SetString("podMenuRemoveItemAccessibleName",
@@ -697,8 +699,6 @@ void UserManagerScreenHandler::ReportAuthenticationResult(
   if (success) {
     ProfileInfoCache& info_cache =
         g_browser_process->profile_manager()->GetProfileInfoCache();
-    info_cache.SetProfileSigninRequiredAtIndex(
-        authenticating_profile_index_, false);
     base::FilePath path = info_cache.GetPathOfProfileAtIndex(
         authenticating_profile_index_);
     profiles::SwitchToProfile(
@@ -724,6 +724,17 @@ void UserManagerScreenHandler::ReportAuthenticationResult(
 void UserManagerScreenHandler::OnBrowserWindowReady(Browser* browser) {
   DCHECK(browser);
   DCHECK(browser->window());
+
+  // Unlock the profile after browser opens so startup can read the lock bit.
+  // Any necessary authentication must have been successful to reach this point.
+  if (!browser->profile()->IsGuestSession()) {
+    ProfileInfoCache& info_cache =
+        g_browser_process->profile_manager()->GetProfileInfoCache();
+    size_t index = info_cache.GetIndexOfProfileWithPath(
+        browser->profile()->GetPath());
+    info_cache.SetProfileSigninRequiredAtIndex(index, false);
+  }
+
   if (url_hash_ == profiles::kUserManagerSelectProfileTaskManager) {
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&chrome::OpenTaskManager, browser));

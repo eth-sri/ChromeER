@@ -5,6 +5,7 @@
 #ifndef CONTENT_CHILD_WEBCRYPTO_OPENSSL_UTIL_OPENSSL_H_
 #define CONTENT_CHILD_WEBCRYPTO_OPENSSL_UTIL_OPENSSL_H_
 
+#include <string>
 #include <vector>
 
 #include <openssl/ossl_typ.h>
@@ -22,7 +23,7 @@ class Status;
 
 // The values of these constants correspond with the "enc" parameter of
 // EVP_CipherInit_ex(), do not change.
-enum EncryptOrDecrypt { DECRYPT=0, ENCRYPT=1 };
+enum EncryptOrDecrypt { DECRYPT = 0, ENCRYPT = 1 };
 
 const EVP_MD* GetDigest(blink::WebCryptoAlgorithmId id);
 
@@ -41,21 +42,19 @@ Status AeadEncryptDecrypt(EncryptOrDecrypt mode,
 
 // Creates a WebCrypto public key given an EVP_PKEY. This step includes
 // exporting the key to SPKI format, for use by serialization later.
-Status CreateWebCryptoPublicKey(
-    crypto::ScopedEVP_PKEY public_key,
-    const blink::WebCryptoKeyAlgorithm& algorithm,
-    bool extractable,
-    blink::WebCryptoKeyUsageMask usages,
-    blink::WebCryptoKey* key);
+Status CreateWebCryptoPublicKey(crypto::ScopedEVP_PKEY public_key,
+                                const blink::WebCryptoKeyAlgorithm& algorithm,
+                                bool extractable,
+                                blink::WebCryptoKeyUsageMask usages,
+                                blink::WebCryptoKey* key);
 
 // Creates a WebCrypto private key given an EVP_PKEY. This step includes
 // exporting the key to PKCS8 format, for use by serialization later.
-Status CreateWebCryptoPrivateKey(
-    crypto::ScopedEVP_PKEY private_key,
-    const blink::WebCryptoKeyAlgorithm& algorithm,
-    bool extractable,
-    blink::WebCryptoKeyUsageMask usages,
-    blink::WebCryptoKey* key);
+Status CreateWebCryptoPrivateKey(crypto::ScopedEVP_PKEY private_key,
+                                 const blink::WebCryptoKeyAlgorithm& algorithm,
+                                 bool extractable,
+                                 blink::WebCryptoKeyUsageMask usages,
+                                 blink::WebCryptoKey* key);
 
 // Imports SPKI bytes to an EVP_PKEY for a public key. The resulting asymmetric
 // key may be invalid, and should be verified using something like
@@ -72,6 +71,12 @@ Status ImportUnverifiedPkeyFromSpki(const CryptoData& key_data,
 Status ImportUnverifiedPkeyFromPkcs8(const CryptoData& key_data,
                                      int expected_pkey_id,
                                      crypto::ScopedEVP_PKEY* pkey);
+
+// Allocates a new BIGNUM given a std::string big-endian representation.
+BIGNUM* CreateBIGNUM(const std::string& n);
+
+// Converts a BIGNUM to a big endian byte array.
+std::vector<uint8_t> BIGNUMToVector(const BIGNUM* n);
 
 }  // namespace webcrypto
 

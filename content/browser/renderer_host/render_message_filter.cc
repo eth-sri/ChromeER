@@ -35,7 +35,6 @@
 #include "content/common/child_process_messages.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/cookie_data.h"
-#include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 #include "content/common/host_discardable_shared_memory_manager.h"
@@ -71,7 +70,6 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
-#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 #include "ui/gfx/color_profile.h"
 
 #if defined(OS_MACOSX)
@@ -108,7 +106,6 @@ const int kPluginsRefreshThresholdInSeconds = 3;
 
 const uint32 kFilteredMessageClasses[] = {
   ChildProcessMsgStart,
-  DesktopNotificationMsgStart,
   FrameMsgStart,
   ViewMsgStart,
 };
@@ -326,7 +323,10 @@ RenderMessageFilter::~RenderMessageFilter() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(plugin_host_clients_.empty());
   HostSharedBitmapManager::current()->ProcessRemoved(PeerHandle());
-  BrowserGpuMemoryBufferManager::current()->ProcessRemoved(PeerHandle());
+  BrowserGpuMemoryBufferManager* gpu_memory_buffer_manager =
+      BrowserGpuMemoryBufferManager::current();
+  if (gpu_memory_buffer_manager)
+    gpu_memory_buffer_manager->ProcessRemoved(PeerHandle(), render_process_id_);
   HostDiscardableSharedMemoryManager::current()->ProcessRemoved(PeerHandle());
 }
 
@@ -397,8 +397,6 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
         RenderWidgetResizeHelper::Get()->PostRendererProcessMsg(
             render_process_id_, message))
 #endif
-    IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_CheckPermission,
-                        OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                         OnAllocateSharedMemory)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(
@@ -895,17 +893,6 @@ void RenderMessageFilter::OnSaveImageFromDataURL(int render_view_id,
   DownloadUrl(render_view_id, data_url, Referrer(), base::string16(), true);
 }
 
-void RenderMessageFilter::OnCheckNotificationPermission(
-    const GURL& source_origin, int* result) {
-#if defined(ENABLE_NOTIFICATIONS)
-  *result = GetContentClient()->browser()->
-      CheckDesktopNotificationPermission(source_origin, resource_context_,
-                                         render_process_id_);
-#else
-  *result = blink::WebNotificationPresenter::PermissionAllowed;
-#endif
-}
-
 void RenderMessageFilter::OnAllocateSharedMemory(
     uint32 buffer_size,
     base::SharedMemoryHandle* handle) {
@@ -1227,14 +1214,15 @@ void RenderMessageFilter::OnWebAudioMediaCodec(
 
 void RenderMessageFilter::OnAddNavigationTransitionData(
     FrameHostMsg_AddNavigationTransitionData_Params params) {
+  if (params.elements.size() > TransitionRequestManager::kMaxNumOfElements)
+    return;
   TransitionRequestManager::GetInstance()->AddPendingTransitionRequestData(
       render_process_id_,
       params.render_frame_id,
       params.allowed_destination_host_pattern,
       params.selector,
       params.markup,
-      params.names,
-      params.rects);
+      params.elements);
 }
 
 void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
@@ -1243,6 +1231,8 @@ void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
     gfx::GpuMemoryBuffer::Format format,
     gfx::GpuMemoryBuffer::Usage usage,
     IPC::Message* reply) {
+  DCHECK(BrowserGpuMemoryBufferManager::current());
+
   base::CheckedNumeric<int> size = width;
   size *= height;
   if (!size.IsValid()) {
@@ -1271,10 +1261,12 @@ void RenderMessageFilter::GpuMemoryBufferAllocated(
 }
 
 void RenderMessageFilter::OnDeletedGpuMemoryBuffer(
-    gfx::GpuMemoryBufferType type,
-    const gfx::GpuMemoryBufferId& id) {
+    gfx::GpuMemoryBufferId id,
+    uint32 sync_point) {
+  DCHECK(BrowserGpuMemoryBufferManager::current());
+
   BrowserGpuMemoryBufferManager::current()->ChildProcessDeletedGpuMemoryBuffer(
-      type, id, PeerHandle());
+      id, PeerHandle(), render_process_id_, sync_point);
 }
 
 }  // namespace content

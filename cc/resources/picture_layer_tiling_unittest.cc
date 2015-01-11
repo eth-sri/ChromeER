@@ -36,16 +36,13 @@ static gfx::Rect ViewportInLayerSpace(
 }
 
 static void UpdateAllTilePriorities(PictureLayerTilingSet* set,
-                                    WhichTree tree,
                                     const gfx::Rect& visible_layer_rect,
                                     float layer_contents_scale,
                                     double current_frame_time_in_seconds) {
   for (size_t i = 0; i < set->num_tilings(); ++i) {
-    set->tiling_at(i)->ComputeTilePriorityRects(tree,
-                                                visible_layer_rect,
-                                                layer_contents_scale,
-                                                current_frame_time_in_seconds,
-                                                Occlusion());
+    set->tiling_at(i)
+        ->ComputeTilePriorityRects(visible_layer_rect, layer_contents_scale,
+                                   current_frame_time_in_seconds, Occlusion());
   }
 }
 
@@ -211,7 +208,8 @@ TEST_F(PictureLayerTilingIteratorTest, ResizeDeletesTiles) {
 
   Region invalidation =
       SubtractRegions(gfx::Rect(tile_size), gfx::Rect(original_layer_size));
-  tiling_->UpdateTilesToCurrentPile(invalidation, gfx::Size(200, 200));
+  tiling_->UpdateTilesToCurrentRasterSource(client_.raster_source(),
+                                            invalidation, gfx::Size(200, 200));
   EXPECT_FALSE(tiling_->TileAt(0, 0));
 }
 
@@ -266,8 +264,8 @@ TEST_F(PictureLayerTilingIteratorTest, ResizeTilingOverTileBorders) {
   // Shrink the tiling so that the last tile row/column is entirely in the
   // border pixels of the interior tiles. That row/column is removed.
   Region invalidation;
-  tiling_->UpdateTilesToCurrentPile(invalidation,
-                                    gfx::Size(right + 1, bottom + 1));
+  tiling_->UpdateTilesToCurrentRasterSource(
+      client_.raster_source(), invalidation, gfx::Size(right + 1, bottom + 1));
   EXPECT_EQ(2, tiling_->TilingDataForTesting().num_tiles_x());
   EXPECT_EQ(3, tiling_->TilingDataForTesting().num_tiles_y());
 
@@ -284,8 +282,8 @@ TEST_F(PictureLayerTilingIteratorTest, ResizeTilingOverTileBorders) {
 
   // Growing outside the current right/bottom tiles border pixels should create
   // the tiles again, even though the live rect has not changed size.
-  tiling_->UpdateTilesToCurrentPile(invalidation,
-                                    gfx::Size(right + 2, bottom + 2));
+  tiling_->UpdateTilesToCurrentRasterSource(
+      client_.raster_source(), invalidation, gfx::Size(right + 2, bottom + 2));
   EXPECT_EQ(3, tiling_->TilingDataForTesting().num_tiles_x());
   EXPECT_EQ(4, tiling_->TilingDataForTesting().num_tiles_y());
 
@@ -421,7 +419,8 @@ TEST_F(PictureLayerTilingIteratorTest, ResizeOverBorderPixelsDeletesTiles) {
 
   Region invalidation =
       SubtractRegions(gfx::Rect(tile_size), gfx::Rect(original_layer_size));
-  tiling_->UpdateTilesToCurrentPile(invalidation, gfx::Size(200, 200));
+  tiling_->UpdateTilesToCurrentRasterSource(client_.raster_source(),
+                                            invalidation, gfx::Size(200, 200));
   EXPECT_FALSE(tiling_->TileAt(0, 0));
 
   // The original tile was the same size after resize, but it would include new
@@ -543,8 +542,7 @@ TEST(PictureLayerTilingTest, SkewportLimits) {
   client.SetTileSize(gfx::Size(100, 100));
   tiling = TestablePictureLayerTiling::Create(1.0f, layer_bounds, &client);
 
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.f, 1.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 1.f, 1.0, Occlusion());
 
   // Move viewport down 50 pixels in 0.5 seconds.
   gfx::Rect down_skewport =
@@ -610,8 +608,7 @@ TEST(PictureLayerTilingTest, ComputeSkewport) {
   client.set_tree(ACTIVE_TREE);
   tiling = TestablePictureLayerTiling::Create(1.0f, layer_bounds, &client);
 
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.f, 1.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 1.f, 1.0, Occlusion());
 
   // Move viewport down 50 pixels in 0.5 seconds.
   gfx::Rect down_skewport =
@@ -678,8 +675,7 @@ TEST(PictureLayerTilingTest, ViewportDistanceWithScale) {
   gfx::Rect viewport_in_content_space =
       gfx::ToEnclosedRect(gfx::ScaleRect(viewport, 0.25f));
 
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.f, 1.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 1.f, 1.0, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   gfx::Rect soon_rect = viewport;
@@ -764,8 +760,7 @@ TEST(PictureLayerTilingTest, ViewportDistanceWithScale) {
   EXPECT_EQ(25, skewport.width());
   EXPECT_EQ(35, skewport.height());
 
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.f, 2.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 1.f, 2.0, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   have_now = false;
@@ -817,8 +812,7 @@ TEST(PictureLayerTilingTest, ViewportDistanceWithScale) {
   EXPECT_FLOAT_EQ(4.f, priority.distance_to_visible);
 
   // Change the underlying layer scale.
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 2.0f, 3.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 2.0f, 3.0, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   priority = tiling->TileAt(5, 1)->priority(ACTIVE_TREE);
@@ -832,8 +826,7 @@ TEST(PictureLayerTilingTest, ViewportDistanceWithScale) {
 
   // Test additional scales.
   tiling = TestablePictureLayerTiling::Create(0.2f, layer_bounds, &client);
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.0f, 4.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 1.0f, 4.0, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   priority = tiling->TileAt(5, 1)->priority(ACTIVE_TREE);
@@ -845,8 +838,7 @@ TEST(PictureLayerTilingTest, ViewportDistanceWithScale) {
   priority = tiling->TileAt(3, 4)->priority(ACTIVE_TREE);
   EXPECT_FLOAT_EQ(60.f, priority.distance_to_visible);
 
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 0.5f, 5.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 0.5f, 5.0, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   priority = tiling->TileAt(5, 1)->priority(ACTIVE_TREE);
@@ -1095,8 +1087,7 @@ TEST(PictureLayerTilingTest, TilingRasterTileIteratorStaticViewport) {
   client.set_tree(ACTIVE_TREE);
 
   tiling = TestablePictureLayerTiling::Create(1.0f, layer_bounds, &client);
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.0f, 1.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 1.0f, 1.0, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   PictureLayerTiling::TilingRasterTileIterator empty_iterator;
@@ -1201,10 +1192,8 @@ TEST(PictureLayerTilingTest, TilingRasterTileIteratorMovingViewport) {
   client.set_tree(ACTIVE_TREE);
 
   tiling = TestablePictureLayerTiling::Create(1.f, layer_bounds, &client);
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.0f, 1.0, Occlusion());
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, moved_viewport, 1.0f, 2.0, Occlusion());
+  tiling->ComputeTilePriorityRects(viewport, 1.0f, 1.0, Occlusion());
+  tiling->ComputeTilePriorityRects(moved_viewport, 1.0f, 2.0, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   gfx::Rect soon_rect = moved_viewport;
@@ -1258,96 +1247,6 @@ static void TileExists(bool exists, Tile* tile,
   EXPECT_EQ(exists, tile != NULL) << geometry_rect.ToString();
 }
 
-TEST(PictureLayerTilingTest, TilingEvictionTileIteratorStaticViewport) {
-  FakeOutputSurfaceClient output_surface_client;
-  scoped_ptr<FakeOutputSurface> output_surface = FakeOutputSurface::Create3d();
-  CHECK(output_surface->BindToClient(&output_surface_client));
-  TestSharedBitmapManager shared_bitmap_manager;
-  scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
-      output_surface.get(), &shared_bitmap_manager, NULL, NULL, 0, false, 1);
-
-  FakePictureLayerTilingClient client(resource_provider.get());
-  scoped_ptr<TestablePictureLayerTiling> tiling;
-
-  gfx::Rect viewport(50, 50, 100, 100);
-  gfx::Size layer_bounds(2000, 2000);
-
-  client.SetTileSize(gfx::Size(30, 30));
-  client.set_tree(ACTIVE_TREE);
-
-  tiling = TestablePictureLayerTiling::Create(1.0f, layer_bounds, &client);
-  tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, viewport, 1.0f, 1.0, Occlusion());
-  tiling->UpdateAllTilePrioritiesForTesting();
-
-  PictureLayerTiling::TilingRasterTileIterator empty_iterator;
-  EXPECT_FALSE(empty_iterator);
-
-  std::vector<Tile*> all_tiles = tiling->AllTilesForTesting();
-
-  PictureLayerTiling::TilingEvictionTileIterator it(
-      tiling.get(), SMOOTHNESS_TAKES_PRIORITY, PictureLayerTiling::NOW);
-
-  // Tiles don't have resources to evict.
-  EXPECT_FALSE(it);
-
-  // Sanity check.
-  EXPECT_EQ(5184u, all_tiles.size());
-
-  client.tile_manager()->InitializeTilesWithResourcesForTesting(all_tiles);
-
-  std::set<Tile*> all_tiles_set(all_tiles.begin(), all_tiles.end());
-
-  std::set<Tile*> eviction_tiles;
-
-  it = PictureLayerTiling::TilingEvictionTileIterator(
-      tiling.get(), SMOOTHNESS_TAKES_PRIORITY, PictureLayerTiling::EVENTUALLY);
-  EXPECT_TRUE(it);
-  for (; it; ++it) {
-    Tile* tile = *it;
-    EXPECT_TRUE(tile);
-    EXPECT_EQ(TilePriority::EVENTUALLY,
-              tile->priority(ACTIVE_TREE).priority_bin);
-    EXPECT_FALSE(tile->required_for_activation());
-    eviction_tiles.insert(tile);
-  }
-
-  it = PictureLayerTiling::TilingEvictionTileIterator(
-      tiling.get(), SMOOTHNESS_TAKES_PRIORITY, PictureLayerTiling::SOON);
-  EXPECT_TRUE(it);
-  for (; it; ++it) {
-    Tile* tile = *it;
-    EXPECT_TRUE(tile);
-    EXPECT_EQ(TilePriority::SOON, tile->priority(ACTIVE_TREE).priority_bin);
-    EXPECT_FALSE(tile->required_for_activation());
-    eviction_tiles.insert(tile);
-  }
-
-  it = PictureLayerTiling::TilingEvictionTileIterator(
-      tiling.get(), SMOOTHNESS_TAKES_PRIORITY, PictureLayerTiling::NOW);
-  EXPECT_TRUE(it);
-  for (; it; ++it) {
-    Tile* tile = *it;
-    EXPECT_TRUE(tile);
-    EXPECT_EQ(TilePriority::NOW, tile->priority(ACTIVE_TREE).priority_bin);
-    EXPECT_FALSE(tile->required_for_activation());
-    eviction_tiles.insert(tile);
-  }
-
-  it = PictureLayerTiling::TilingEvictionTileIterator(
-      tiling.get(),
-      SMOOTHNESS_TAKES_PRIORITY,
-      PictureLayerTiling::NOW_AND_REQUIRED_FOR_ACTIVATION);
-  EXPECT_FALSE(it);
-
-  EXPECT_GT(all_tiles_set.size(), 0u);
-  EXPECT_EQ(all_tiles_set, eviction_tiles);
-
-  EXPECT_TRUE(tiling->eviction_tiles_cache_valid());
-  tiling->RemoveTileAt(0, 0, nullptr);
-  EXPECT_FALSE(tiling->eviction_tiles_cache_valid());
-}
-
 TEST_F(PictureLayerTilingIteratorTest, TilesExist) {
   gfx::Size layer_bounds(1099, 801);
   Initialize(gfx::Size(100, 100), 1.f, layer_bounds);
@@ -1356,7 +1255,6 @@ TEST_F(PictureLayerTilingIteratorTest, TilesExist) {
 
   client_.set_tree(ACTIVE_TREE);
   tiling_->ComputeTilePriorityRects(
-      ACTIVE_TREE,
       gfx::Rect(layer_bounds),  // visible content rect
       1.f,                      // current contents scale
       1.0,                      // current frame time
@@ -1364,8 +1262,7 @@ TEST_F(PictureLayerTilingIteratorTest, TilesExist) {
   VerifyTiles(1.f, gfx::Rect(layer_bounds), base::Bind(&TileExists, true));
 
   // Make the viewport rect empty. All tiles are killed and become zombies.
-  tiling_->ComputeTilePriorityRects(ACTIVE_TREE,
-                                    gfx::Rect(),  // visible content rect
+  tiling_->ComputeTilePriorityRects(gfx::Rect(),  // visible content rect
                                     1.f,          // current contents scale
                                     2.0,          // current frame time
                                     Occlusion());
@@ -1382,7 +1279,6 @@ TEST_F(PictureLayerTilingIteratorTest, TilesExistGiantViewport) {
 
   client_.set_tree(ACTIVE_TREE);
   tiling_->ComputeTilePriorityRects(
-      ACTIVE_TREE,
       gfx::Rect(layer_bounds),  // visible content rect
       1.f,                      // current contents scale
       1.0,                      // current frame time
@@ -1390,8 +1286,7 @@ TEST_F(PictureLayerTilingIteratorTest, TilesExistGiantViewport) {
   VerifyTiles(1.f, gfx::Rect(layer_bounds), base::Bind(&TileExists, true));
 
   // If the visible content rect is empty, it should still have live tiles.
-  tiling_->ComputeTilePriorityRects(ACTIVE_TREE,
-                                    giant_rect,  // visible content rect
+  tiling_->ComputeTilePriorityRects(giant_rect,  // visible content rect
                                     1.f,         // current contents scale
                                     2.0,         // current frame time
                                     Occlusion());
@@ -1410,8 +1305,7 @@ TEST_F(PictureLayerTilingIteratorTest, TilesExistOutsideViewport) {
   EXPECT_FALSE(viewport_rect.Intersects(gfx::Rect(layer_bounds)));
 
   client_.set_tree(ACTIVE_TREE);
-  tiling_->ComputeTilePriorityRects(ACTIVE_TREE,
-                                    viewport_rect,  // visible content rect
+  tiling_->ComputeTilePriorityRects(viewport_rect,  // visible content rect
                                     1.f,            // current contents scale
                                     1.0,            // current frame time
                                     Occlusion());
@@ -1440,8 +1334,7 @@ TEST_F(PictureLayerTilingIteratorTest,
 
   client_.set_tree(ACTIVE_TREE);
   set_max_tiles_for_interest_area(1);
-  tiling_->ComputeTilePriorityRects(ACTIVE_TREE,
-                                    visible_rect,  // visible content rect
+  tiling_->ComputeTilePriorityRects(visible_rect,  // visible content rect
                                     1.f,           // current contents scale
                                     1.0,           // current frame time
                                     Occlusion());
@@ -1457,49 +1350,40 @@ TEST_F(PictureLayerTilingIteratorTest, AddTilingsToMatchScale) {
   client_.SetTileSize(tile_size);
   client_.set_tree(PENDING_TREE);
 
-  PictureLayerTilingSet active_set(&client_);
+  auto active_set = PictureLayerTilingSet::Create(&client_);
 
-  active_set.AddTiling(1.f, layer_bounds);
+  active_set->AddTiling(1.f, layer_bounds);
 
-  VerifyTiles(active_set.tiling_at(0),
-              1.f,
-              gfx::Rect(layer_bounds),
+  VerifyTiles(active_set->tiling_at(0), 1.f, gfx::Rect(layer_bounds),
               base::Bind(&TileExists, false));
 
-  UpdateAllTilePriorities(&active_set,
-                          PENDING_TREE,
+  UpdateAllTilePriorities(active_set.get(),
                           gfx::Rect(layer_bounds),  // visible content rect
                           1.f,                      // current contents scale
                           1.0);                     // current frame time
 
   // The active tiling has tiles now.
-  VerifyTiles(active_set.tiling_at(0),
-              1.f,
-              gfx::Rect(layer_bounds),
+  VerifyTiles(active_set->tiling_at(0), 1.f, gfx::Rect(layer_bounds),
               base::Bind(&TileExists, true));
 
   // Add the same tilings to the pending set.
-  PictureLayerTilingSet pending_set(&client_);
+  auto pending_set = PictureLayerTilingSet::Create(&client_);
   Region invalidation;
-  pending_set.SyncTilings(active_set, layer_bounds, invalidation, 0.f);
+  pending_set->SyncTilings(*active_set, layer_bounds, invalidation, 0.f,
+                           client_.raster_source());
 
   // The pending tiling starts with no tiles.
-  VerifyTiles(pending_set.tiling_at(0),
-              1.f,
-              gfx::Rect(layer_bounds),
+  VerifyTiles(pending_set->tiling_at(0), 1.f, gfx::Rect(layer_bounds),
               base::Bind(&TileExists, false));
 
   // ComputeTilePriorityRects on the pending tiling at the same frame time. The
   // pending tiling should get tiles.
-  UpdateAllTilePriorities(&pending_set,
-                          PENDING_TREE,
+  UpdateAllTilePriorities(pending_set.get(),
                           gfx::Rect(layer_bounds),  // visible content rect
                           1.f,                      // current contents scale
                           1.0);                     // current frame time
 
-  VerifyTiles(pending_set.tiling_at(0),
-              1.f,
-              gfx::Rect(layer_bounds),
+  VerifyTiles(pending_set->tiling_at(0), 1.f, gfx::Rect(layer_bounds),
               base::Bind(&TileExists, true));
 }
 
@@ -1526,11 +1410,9 @@ TEST(ComputeTilePriorityRectsTest, VisibleTiles) {
                                               current_layer_bounds,
                                               &client);
 
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -1582,11 +1464,9 @@ TEST(ComputeTilePriorityRectsTest, OffscreenTiles) {
                                               current_layer_bounds,
                                               &client);
 
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -1648,11 +1528,9 @@ TEST(ComputeTilePriorityRectsTest, PartiallyOffscreenLayer) {
                                               current_layer_bounds,
                                               &client);
 
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -1708,11 +1586,9 @@ TEST(ComputeTilePriorityRectsTest, PartiallyOffscreenRotatedLayer) {
                                               current_layer_bounds,
                                               &client);
 
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -1792,11 +1668,9 @@ TEST(ComputeTilePriorityRectsTest, PerspectiveLayer) {
                                               current_layer_bounds,
                                               &client);
 
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -1886,11 +1760,9 @@ TEST(ComputeTilePriorityRectsTest, PerspectiveLayerClippedByW) {
                                               current_layer_bounds,
                                               &client);
 
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -1951,18 +1823,14 @@ TEST(ComputeTilePriorityRectsTest, BasicMotion) {
                                               &client);
 
   // previous ("last") frame
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    last_layer_contents_scale,
-                                   last_frame_time_in_seconds,
-                                   Occlusion());
+                                   last_frame_time_in_seconds, Occlusion());
 
   // current frame
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -2030,18 +1898,14 @@ TEST(ComputeTilePriorityRectsTest, RotationMotion) {
                                               &client);
 
   // previous ("last") frame
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    last_layer_contents_scale,
-                                   last_frame_time_in_seconds,
-                                   Occlusion());
+                                   last_frame_time_in_seconds, Occlusion());
 
   // current frame
-  tiling->ComputeTilePriorityRects(ACTIVE_TREE,
-                                   viewport_in_layer_space,
+  tiling->ComputeTilePriorityRects(viewport_in_layer_space,
                                    current_layer_contents_scale,
-                                   current_frame_time_in_seconds,
-                                   Occlusion());
+                                   current_frame_time_in_seconds, Occlusion());
   tiling->UpdateAllTilePrioritiesForTesting();
 
   ASSERT_TRUE(tiling->TileAt(0, 0));
@@ -2083,8 +1947,8 @@ TEST(PictureLayerTilingTest, RecycledTilesCleared) {
                                                      gfx::Size(10000, 10000),
                                                      &active_client);
   // Create all tiles on this tiling.
-  active_tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, gfx::Rect(0, 0, 100, 100), 1.0f, 1.0f, Occlusion());
+  active_tiling->ComputeTilePriorityRects(gfx::Rect(0, 0, 100, 100), 1.0f, 1.0f,
+                                          Occlusion());
 
   FakePictureLayerTilingClient recycle_client;
   recycle_client.SetTileSize(gfx::Size(100, 100));
@@ -2098,8 +1962,8 @@ TEST(PictureLayerTilingTest, RecycledTilesCleared) {
                                                       &recycle_client);
 
   // Create all tiles on the second tiling. All tiles should be shared.
-  recycle_tiling->ComputeTilePriorityRects(
-      PENDING_TREE, gfx::Rect(0, 0, 100, 100), 1.0f, 1.0f, Occlusion());
+  recycle_tiling->ComputeTilePriorityRects(gfx::Rect(0, 0, 100, 100), 1.0f,
+                                           1.0f, Occlusion());
 
   // Set the second tiling as recycled.
   active_client.set_twin_tiling(NULL);
@@ -2112,15 +1976,15 @@ TEST(PictureLayerTilingTest, RecycledTilesCleared) {
   EXPECT_EQ(active_tiling->TileAt(0, 0), recycle_tiling->TileAt(0, 0));
 
   // Move the viewport far away from the (0, 0) tile.
-  active_tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, gfx::Rect(9000, 9000, 100, 100), 1.0f, 2.0, Occlusion());
+  active_tiling->ComputeTilePriorityRects(gfx::Rect(9000, 9000, 100, 100), 1.0f,
+                                          2.0, Occlusion());
   // Ensure the tile was deleted on both tilings.
   EXPECT_FALSE(active_tiling->TileAt(0, 0));
   EXPECT_FALSE(recycle_tiling->TileAt(0, 0));
 
   // Move the viewport back to (0, 0) tile.
-  active_tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, gfx::Rect(0, 0, 100, 100), 1.0f, 3.0, Occlusion());
+  active_tiling->ComputeTilePriorityRects(gfx::Rect(0, 0, 100, 100), 1.0f, 3.0,
+                                          Occlusion());
 
   // Ensure that we now have a tile here, but the recycle tiling does not.
   EXPECT_TRUE(active_tiling->TileAt(0, 0));
@@ -2137,8 +2001,8 @@ TEST(PictureLayerTilingTest, RecycledTilesClearedOnReset) {
                                                      gfx::Size(100, 100),
                                                      &active_client);
   // Create all tiles on this tiling.
-  active_tiling->ComputeTilePriorityRects(
-      ACTIVE_TREE, gfx::Rect(0, 0, 100, 100), 1.0f, 1.0f, Occlusion());
+  active_tiling->ComputeTilePriorityRects(gfx::Rect(0, 0, 100, 100), 1.0f, 1.0f,
+                                          Occlusion());
 
   FakePictureLayerTilingClient recycle_client;
   recycle_client.SetTileSize(gfx::Size(100, 100));
@@ -2152,8 +2016,8 @@ TEST(PictureLayerTilingTest, RecycledTilesClearedOnReset) {
                                                       &recycle_client);
 
   // Create all tiles on the recycle tiling. All tiles should be shared.
-  recycle_tiling->ComputeTilePriorityRects(
-      PENDING_TREE, gfx::Rect(0, 0, 100, 100), 1.0f, 1.0f, Occlusion());
+  recycle_tiling->ComputeTilePriorityRects(gfx::Rect(0, 0, 100, 100), 1.0f,
+                                           1.0f, Occlusion());
 
   // Set the second tiling as recycled.
   active_client.set_twin_tiling(NULL);
@@ -2169,6 +2033,31 @@ TEST(PictureLayerTilingTest, RecycledTilesClearedOnReset) {
   active_tiling->Reset();
   EXPECT_FALSE(active_tiling->TileAt(0, 0));
   EXPECT_FALSE(recycle_tiling->TileAt(0, 0));
+}
+
+TEST_F(PictureLayerTilingIteratorTest, ResizeTilesAndUpdateToCurrent) {
+  // The tiling has four rows and three columns.
+  Initialize(gfx::Size(150, 100), 1, gfx::Size(250, 150));
+  tiling_->CreateAllTilesForTesting();
+  EXPECT_EQ(150, tiling_->TilingDataForTesting().max_texture_size().width());
+  EXPECT_EQ(100, tiling_->TilingDataForTesting().max_texture_size().height());
+  EXPECT_EQ(4u, tiling_->AllRefTilesForTesting().size());
+
+  client_.SetTileSize(gfx::Size(250, 200));
+  client_.set_tree(PENDING_TREE);
+
+  // Tile size in the tiling should still be 150x100.
+  EXPECT_EQ(150, tiling_->TilingDataForTesting().max_texture_size().width());
+  EXPECT_EQ(100, tiling_->TilingDataForTesting().max_texture_size().height());
+
+  Region invalidation;
+  tiling_->UpdateTilesToCurrentRasterSource(client_.raster_source(),
+                                            invalidation, gfx::Size(250, 150));
+
+  // Tile size in the tiling should be resized to 250x200.
+  EXPECT_EQ(250, tiling_->TilingDataForTesting().max_texture_size().width());
+  EXPECT_EQ(200, tiling_->TilingDataForTesting().max_texture_size().height());
+  EXPECT_EQ(0u, tiling_->AllRefTilesForTesting().size());
 }
 
 }  // namespace

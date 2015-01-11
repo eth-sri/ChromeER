@@ -65,8 +65,9 @@ class TestQuicConnection : public QuicConnection {
                        address,
                        helper,
                        writer_factory,
-                       true  /* owns_writer */,
+                       true   /* owns_writer */,
                        false  /* is_server */,
+                       false  /* is_secure */,
                        versions) {
   }
 
@@ -215,7 +216,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         WillRepeatedly(Return(QuicTime::Delta::Zero()));
     EXPECT_CALL(*send_algorithm_, BandwidthEstimate()).WillRepeatedly(
         Return(QuicBandwidth::Zero()));
-    EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _)).Times(AnyNumber());
+    EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _, _)).Times(AnyNumber());
     helper_.reset(new QuicConnectionHelper(runner_.get(), &clock_,
                                            &random_generator_));
     TestPacketWriterFactory writer_factory(socket);
@@ -236,7 +237,8 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                                   message_loop_proxy().get(),
                               nullptr));
     session_->InitializeSession(QuicServerId(kServerHostname, kServerPort,
-                                             false, PRIVACY_MODE_DISABLED),
+                                             /*is_secure=*/false,
+                                             PRIVACY_MODE_DISABLED),
                                 &crypto_config_,
                                 &crypto_client_stream_factory_);
     session_->GetCryptoStream()->CryptoConnect();
@@ -285,7 +287,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
       QuicPacketSequenceNumber sequence_number) {
     return maker_.MakeRstPacket(
         sequence_number, true, stream_id_,
-        AdjustErrorForVersion(QUIC_RST_FLOW_CONTROL_ACCOUNTING, GetParam()));
+        AdjustErrorForVersion(QUIC_RST_ACKNOWLEDGEMENT, GetParam()));
   }
 
   scoped_ptr<QuicEncryptedPacket> ConstructAckAndRstStreamPacket(

@@ -10,10 +10,10 @@
 #include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
-#include "ui/events/device_data_manager.h"
-#include "ui/events/input_device.h"
-#include "ui/events/keyboard_device.h"
-#include "ui/events/touchscreen_device.h"
+#include "ui/events/devices/device_data_manager.h"
+#include "ui/events/devices/input_device.h"
+#include "ui/events/devices/keyboard_device.h"
+#include "ui/events/devices/touchscreen_device.h"
 #include "ui/gfx/x/x11_types.h"
 #include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
@@ -72,13 +72,11 @@ void VirtualKeyboardController::UpdateDevices() {
   // Checks for keyboards.
   has_external_keyboard_ = false;
   has_internal_keyboard_ = false;
-  std::vector<ui::KeyboardDevice> keyboards =
-      device_data_manager->keyboard_devices();
-  for (auto iter = keyboards.begin();
-       iter != keyboards.end() ||
-           (has_internal_keyboard_ && has_external_keyboard_);
-       ++iter) {
-    ui::InputDeviceType type = (*iter).type;
+  for (const ui::KeyboardDevice& device :
+       device_data_manager->keyboard_devices()) {
+    if (has_internal_keyboard_ && has_external_keyboard_)
+      break;
+    ui::InputDeviceType type = device.type;
     if (type == ui::InputDeviceType::INPUT_DEVICE_INTERNAL)
       has_internal_keyboard_ = true;
     if (type == ui::InputDeviceType::INPUT_DEVICE_EXTERNAL)

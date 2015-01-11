@@ -96,6 +96,7 @@ GLES2DecoderTestBase::GLES2DecoderTestBase()
       client_fragment_shader_id_(122),
       client_query_id_(123),
       client_vertexarray_id_(124),
+      client_valuebuffer_id_(125),
       service_renderbuffer_id_(0),
       service_renderbuffer_valid_(false),
       ignore_cached_state_for_test_(GetParam()),
@@ -1531,8 +1532,7 @@ void GLES2DecoderTestBase::DoBufferSubData(
 void GLES2DecoderTestBase::SetupVertexBuffer() {
   DoEnableVertexAttribArray(1);
   DoBindBuffer(GL_ARRAY_BUFFER, client_buffer_id_, kServiceBufferId);
-  GLfloat f = 0;
-  DoBufferData(GL_ARRAY_BUFFER, kNumVertices * 2 * sizeof(f));
+  DoBufferData(GL_ARRAY_BUFFER, kNumVertices * 2 * sizeof(GLfloat));
 }
 
 void GLES2DecoderTestBase::SetupAllNeededVertexBuffers() {

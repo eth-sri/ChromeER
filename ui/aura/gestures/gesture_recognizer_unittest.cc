@@ -639,7 +639,23 @@ class GestureRecognizerTest : public AuraTestBase,
     ui::GestureConfiguration::GetInstance()->set_long_press_time_in_ms(3);
   }
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(GestureRecognizerTest);
+};
+
+class GestureRecognizerWithSwitchTest : public GestureRecognizerTest {
+ public:
+  GestureRecognizerWithSwitchTest() {}
+
+  void SetUp() override {
+    GestureRecognizerTest::SetUp();
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kCompensateForUnstablePinchZoom);
+    ui::GestureConfiguration::GetInstance()->set_min_pinch_update_span_delta(5);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(GestureRecognizerWithSwitchTest);
 };
 
 // Check that appropriate touch events generate tap gesture events.
@@ -4080,7 +4096,7 @@ TEST_F(GestureRecognizerTest, LatencyPassedFromTouchEvent) {
       ui::INPUT_EVENT_LATENCY_UI_COMPONENT, 0, 0, time_ui, 1);
 
   press1.latency()->AddLatencyNumberWithTimestamp(
-      ui::INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT, 0, 0, time_acked, 1);
+      ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, 0, time_acked, 1);
 
   DispatchEventUsingWindowDispatcher(&press1);
   EXPECT_TRUE(delegate->tap_down());
@@ -4097,7 +4113,7 @@ TEST_F(GestureRecognizerTest, LatencyPassedFromTouchEvent) {
   EXPECT_EQ(time_ui, component.event_time);
 
   ASSERT_TRUE(delegate->latency_info().FindLatency(
-      ui::INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT, 0, &component));
+      ui::INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT, 0, &component));
   EXPECT_EQ(time_acked, component.event_time);
 
   delegate->WaitUntilReceivedGesture(ui::ET_GESTURE_SHOW_PRESS);
@@ -4151,10 +4167,7 @@ TEST_F(GestureRecognizerTest, GestureEventLongPressDeletingWindow) {
   EXPECT_EQ(NULL, window);
 }
 
-TEST_F(GestureRecognizerTest, GestureEventSmallPinchDisabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kCompensateForUnstablePinchZoom);
-  ui::GestureConfiguration::GetInstance()->set_min_pinch_update_span_delta(5);
+TEST_F(GestureRecognizerWithSwitchTest, GestureEventSmallPinchDisabled) {
   scoped_ptr<GestureEventConsumeDelegate> delegate(
       new GestureEventConsumeDelegate());
   TimedEvents tes;
@@ -4184,8 +4197,8 @@ TEST_F(GestureRecognizerTest, GestureEventSmallPinchDisabled) {
                   ui::ET_GESTURE_SCROLL_UPDATE,
                   ui::ET_GESTURE_PINCH_BEGIN);
 
-  // No pinch update occurs, as kCompensateForUnstablePinchZoom is on, and this
-  // is a very small pinch.
+  // No pinch update occurs, as kCompensateForUnstablePinchZoom is on and
+  // |min_pinch_update_span_delta| was nonzero, and this is a very small pinch.
   delegate->Reset();
   ui::TouchEvent move2(ui::ET_TOUCH_MOVED, gfx::Point(65, 202),
                        kTouchId1, tes.Now());

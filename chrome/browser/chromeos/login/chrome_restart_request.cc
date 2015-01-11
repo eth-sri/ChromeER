@@ -9,7 +9,6 @@
 #include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/prefs/pref_service.h"
 #include "base/process/launch.h"
@@ -75,6 +74,7 @@ std::string DeriveCommandLine(const GURL& start_url,
   static const char* const kForwardSwitches[] = {
     ::switches::kDisableAccelerated2dCanvas,
     ::switches::kDisableAcceleratedVideoDecode,
+    ::switches::kDisableCastStreamingHWEncoding,
     ::switches::kDisableDelegatedRenderer,
     ::switches::kDisableDistanceFieldText,
     ::switches::kDisableGpu,
@@ -85,27 +85,29 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableImplSidePainting,
     ::switches::kDisableLowResTiling,
     ::switches::kDisableMediaSource,
+    ::switches::kDisableOneCopy,
     ::switches::kDisablePreferCompositingToLCDText,
     ::switches::kDisablePrefixedEncryptedMedia,
     ::switches::kDisablePanelFitting,
     ::switches::kDisableSeccompFilterSandbox,
     ::switches::kDisableSetuidSandbox,
+    ::switches::kDisableTextBlobs,
     ::switches::kDisableThreadedScrolling,
     ::switches::kDisableTouchDragDrop,
     ::switches::kDisableTouchEditing,
-    ::switches::kDisableZeroCopy,
     ::switches::kEnableAcceleratedJpegDecoding,
     ::switches::kEnableBeginFrameScheduling,
     ::switches::kEnablePreferCompositingToLCDText,
     ::switches::kEnableDelegatedRenderer,
     ::switches::kDisableDisplayList2dCanvas,
     ::switches::kEnableDisplayList2dCanvas,
+    ::switches::kForceDisplayList2dCanvas,
     ::switches::kEnableEncryptedMedia,
     ::switches::kDisableGpuSandbox,
     ::switches::kEnableContainerCulling,
-    ::switches::kEnableTextBlobs,
     ::switches::kEnableDistanceFieldText,
     ::switches::kEnableGpuRasterization,
+    ::switches::kEnableImageColorProfiles,
     ::switches::kEnableImplSidePainting,
     ::switches::kEnableLogging,
     ::switches::kEnableLowResTiling,
@@ -132,10 +134,11 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kPpapiFlashVersion,
     ::switches::kPpapiInProcess,
     ::switches::kRendererStartupDialog,
+    ::switches::kRootLayerScrolls,
     ::switches::kEnableShareGroupAsyncTextureUpload,
     ::switches::kTabCaptureUpscaleQuality,
     ::switches::kTabCaptureDownscaleQuality,
-#if defined(USE_XI2_MT) || defined(USE_OZONE)
+#if defined(USE_X11) || defined(USE_OZONE)
     ::switches::kTouchCalibration,
 #endif
     ::switches::kTouchDevices,
@@ -153,7 +156,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kEnableWebGLDraftExtensions,
     ::switches::kEnableWebGLImageChromium,
 #if defined(ENABLE_WEBRTC)
-    ::switches::kDisableAudioTrackProcessing,
     ::switches::kDisableWebRtcHWDecoding,
     ::switches::kDisableWebRtcHWEncoding,
     ::switches::kEnableWebRtcHWVp8Encoding,
@@ -161,6 +163,8 @@ std::string DeriveCommandLine(const GURL& start_url,
 #endif
     ::switches::kDisableVaapiAcceleratedVideoEncode,
 #if defined(USE_OZONE)
+    ::switches::kOzoneInitialDisplayBounds,
+    ::switches::kOzoneInitialDisplayPhysicalSizeMm,
     ::switches::kOzonePlatform,
     ::switches::kOzoneUseSurfaceless,
 #endif

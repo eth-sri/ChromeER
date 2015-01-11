@@ -30,6 +30,18 @@ var remoting = remoting || {};
 remoting.enableCast = false;
 
 /**
+ * True to enable mouse lock.
+ * This is currently disabled because the current client plugin does not
+ * properly handle mouse lock and delegated large cursors at the same time.
+ * This should be re-enabled (by removing this flag) once a version of
+ * the plugin that supports both has reached Chrome Stable channel.
+ * (crbug.com/429322).
+ *
+ * @type {boolean}
+ */
+remoting.enableMouseLock = false;
+
+/**
  * @param {remoting.SignalStrategy} signalStrategy Signal strategy.
  * @param {HTMLElement} container Container element for the client view.
  * @param {string} hostDisplayName A human-readable name for the host.
@@ -106,7 +118,7 @@ remoting.ClientSession = function(signalStrategy, container, hostDisplayName,
   this.remapKeys_ = '';
   /** @private */
   this.hasReceivedFrame_ = false;
-  this.logToServer = new remoting.LogToServer(signalStrategy);
+  this.logToServer = new remoting.LogToServer(signalStrategy, mode);
 
   /** @private */
   this.signalStrategy_ = signalStrategy;
@@ -507,6 +519,13 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
     this.applyRemapKeys_(true);
   }
 
+  // TODO(wez): Only allow mouse lock if the app has the pointerLock permission.
+  // Enable automatic mouse-lock.
+  if (remoting.enableMouseLock &&
+      this.plugin_.hasFeature(remoting.ClientPlugin.Feature.ALLOW_MOUSE_LOCK)) {
+    this.plugin_.allowMouseLock();
+  }
+
   // Enable MediaSource-based rendering on Chrome 37 and above.
   var chromeVersionMajor =
       parseInt((remoting.getChromeVersion() || '0').split('.')[0], 10);
@@ -528,15 +547,14 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
   }
 
   this.plugin_.setOnOutgoingIqHandler(this.sendIq_.bind(this));
-  this.plugin_.setOnDebugMessageHandler(
-      /** @param {string} msg */
-      function(msg) {
-        console.log('plugin: ' + msg.trimRight());
-      });
+  this.plugin_.setOnDebugMessageHandler(this.onDebugMessage_.bind(this));
 
   this.plugin_.setConnectionStatusUpdateHandler(
       this.onConnectionStatusUpdate_.bind(this));
+  this.plugin_.setRouteChangedHandler(this.onRouteChanged_.bind(this));
   this.plugin_.setConnectionReadyHandler(this.onConnectionReady_.bind(this));
+  this.plugin_.setDesktopShapeUpdateHandler(
+      this.onDesktopShapeChanged_.bind(this));
   this.plugin_.setDesktopSizeUpdateHandler(
       this.onDesktopSizeChanged_.bind(this));
   this.plugin_.setCapabilitiesHandler(this.onSetCapabilities_.bind(this));
@@ -605,7 +623,7 @@ remoting.ClientSession.prototype.disconnect = function(error) {
 
   // The plugin won't send a state change notification, so we explicitly log
   // the fact that the connection has closed.
-  this.logToServer.logClientSessionStateChange(state, error, this.mode_);
+  this.logToServer.logClientSessionStateChange(state, error);
   this.error_ = error;
   this.setState_(state);
 };
@@ -716,7 +734,7 @@ remoting.ClientSession.prototype.applyRemapKeys_ = function(apply) {
   // By default, under ChromeOS, remap the right Control key to the right
   // Win / Cmd key.
   var remapKeys = this.remapKeys_;
-  if (remapKeys == '' && remoting.runningOnChromeOS()) {
+  if (remapKeys == '' && remoting.platformIsChromeOS()) {
     remapKeys = '0x0700e4>0x0700e7';
   }
 
@@ -834,6 +852,14 @@ remoting.ClientSession.prototype.sendIq_ = function(message) {
   }
 
   this.signalStrategy_.sendMessage(message);
+};
+
+/**
+ * @private
+ * @param {string} msg
+ */
+remoting.ClientSession.prototype.onDebugMessage_ = function(msg) {
+  console.log('plugin: ' + msg.trimRight());
 };
 
 /**
@@ -966,6 +992,21 @@ remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
 };
 
 /**
+ * Callback that the plugin invokes to indicate that the connection type for
+ * a channel has changed.
+ *
+ * @private
+ * @param {string} channel The channel name.
+ * @param {string} connectionType The new connection type.
+ */
+remoting.ClientSession.prototype.onRouteChanged_ =
+    function(channel, connectionType) {
+  console.log('plugin: Channel ' + channel + ' using ' +
+              connectionType + ' connection.');
+  this.logToServer.setConnectionType(connectionType);
+};
+
+/**
  * Callback that the plugin invokes to indicate when the connection is
  * ready.
  *
@@ -973,6 +1014,16 @@ remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
  * @param {boolean} ready True if the connection is ready.
  */
 remoting.ClientSession.prototype.onConnectionReady_ = function(ready) {
+  // TODO(jamiewalch): Currently, the logic for determining whether or not the
+  // connection is available is based solely on whether or not any video frames
+  // have been received recently. which leads to poor UX on slow connections.
+  // Re-enable this once crbug.com/435315 has been fixed.
+  var ignoreVideoChannelState = true;
+  if (ignoreVideoChannelState) {
+    console.log('Video channel ' + (ready ? '' : 'not ') + 'ready.');
+    return;
+  }
+
   if (!ready) {
     this.container_.classList.add('session-client-inactive');
   } else {
@@ -1035,7 +1086,7 @@ remoting.ClientSession.prototype.setState_ = function(newState) {
              this.state_ == remoting.ClientSession.State.FAILED) {
     state = remoting.ClientSession.State.CONNECTION_DROPPED;
   }
-  this.logToServer.logClientSessionStateChange(state, this.error_, this.mode_);
+  this.logToServer.logClientSessionStateChange(state, this.error_);
   if (this.state_ == remoting.ClientSession.State.CONNECTED) {
     this.createGnubbyAuthHandler_();
     this.createCastExtensionHandler_();
@@ -1122,6 +1173,30 @@ remoting.ClientSession.prototype.onDesktopSizeChanged_ = function() {
               this.plugin_.getDesktopYDpi() + ' DPI');
   this.updateDimensions();
   this.updateScrollbarVisibility();
+};
+
+/**
+ * Sets the non-click-through area of the client in response to notifications
+ * from the plugin of desktop shape changes.
+ *
+ * @private
+ * @param {Array.<Array.<number>>} rects List of rectangles comprising the
+ *     desktop shape.
+ * @return {void} Nothing.
+ */
+remoting.ClientSession.prototype.onDesktopShapeChanged_ = function(rects) {
+  // Build the list of rects for the input region.
+  var inputRegion = [];
+  for (var i = 0; i < rects.length; ++i) {
+    var rect = {};
+    rect.left = rects[i][0];
+    rect.top = rects[i][1];
+    rect.width = rects[i][2];
+    rect.height = rects[i][3];
+    inputRegion.push(rect);
+  }
+
+  remoting.windowShape.setDesktopRects(inputRegion);
 };
 
 /**
@@ -1226,7 +1301,7 @@ remoting.ClientSession.prototype.getPerfStats = function() {
  * @param {remoting.ClientSession.PerfStats} stats
  */
 remoting.ClientSession.prototype.logStatistics = function(stats) {
-  this.logToServer.logStatistics(stats, this.mode_);
+  this.logToServer.logStatistics(stats);
 };
 
 /**
@@ -1263,13 +1338,7 @@ remoting.ClientSession.prototype.requestPairing = function(clientName, onDone) {
  * @private
  */
 remoting.ClientSession.prototype.onFullScreenChanged_ = function (fullscreen) {
-  var htmlNode = /** @type {HTMLElement} */ (document.documentElement);
   this.enableBumpScroll_(fullscreen);
-  if (fullscreen) {
-    htmlNode.classList.add('full-screen');
-  } else {
-    htmlNode.classList.remove('full-screen');
-  }
 };
 
 /**

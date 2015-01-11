@@ -9,6 +9,9 @@
     'chromium_code': 1,
     'chromecast_branding%': 'Chromium',
   },
+  'includes': [
+    'chromecast_tests.gypi',
+  ],
   'target_defaults': {
     'include_dirs': [
       '..',  # Root of Chromium checkout
@@ -105,6 +108,7 @@
         '../base/base.gyp:base',
         '../components/components.gyp:cdm_renderer',
         '../components/components.gyp:component_metrics_proto',
+        '../components/components.gyp:crash_component',
         '../components/components.gyp:metrics',
         '../components/components.gyp:metrics_gpu',
         '../components/components.gyp:metrics_net',
@@ -151,7 +155,6 @@
         'browser/service/cast_service.h',
         'browser/url_request_context_factory.cc',
         'browser/url_request_context_factory.h',
-        'browser/webui/webui_cast.h',
         'common/cast_content_client.cc',
         'common/cast_content_client.h',
         'common/cast_paths.cc',
@@ -180,7 +183,6 @@
             'browser/cast_network_delegate_simple.cc',
             'browser/devtools/remote_debugging_server_simple.cc',
             'browser/metrics/platform_metrics_providers_simple.cc',
-            'browser/webui/webui_cast_simple.cc',
             'common/chromecast_config_simple.cc',
             'common/platform_client_auth_simple.cc',
             'renderer/key_systems_cast_simple.cc',
@@ -199,30 +201,20 @@
             }],
           ],
         }],
-      ],
-    },
-    {
-      'target_name': 'cast_shell_unittests',
-      'type': '<(gtest_target_type)',
-      'dependencies': [
-        'cast_shell_common',
-        '../base/base.gyp:base_prefs_test_support',
-        '../base/base.gyp:run_all_unittests',
-        '../base/base.gyp:test_support_base',
-        '../components/components.gyp:component_metrics_proto',
-        '../testing/gtest.gyp:gtest',
-      ],
-      'sources': [
-        'browser/metrics/cast_metrics_service_client_unittest.cc',
-      ],
-      'conditions': [
-        ['use_allocator!="none"', {
+        # ExternalMetrics not necessary on Android and (as of this writing) uses
+        # non-portable filesystem operations. Also webcrypto is not used on
+        # Android either.
+        ['OS=="linux"', {
+          'sources': [
+            'browser/metrics/external_metrics.cc',
+            'browser/metrics/external_metrics.h',
+          ],
           'dependencies': [
-            '../base/allocator/allocator.gyp:allocator',
+            '../components/components.gyp:metrics_serialization',
           ],
         }],
-      ]
-    },  # end of target 'cast_metrics_unittests'
+      ],
+    },
     {
       'target_name': 'cast_version_header',
       'type': 'none',
@@ -256,24 +248,6 @@
             '../build/util/version.gypi',
           ],
         },
-      ],
-    },
-    {
-      'target_name': 'cast_metrics_test_support',
-      'type': '<(component)',
-      'dependencies': [
-        'cast_base',
-      ],
-      'sources': [
-        'base/metrics/cast_metrics_test_helper.cc',
-        'base/metrics/cast_metrics_test_helper.h',
-      ],
-    },  # end of target 'cast_metrics_test_support'
-    {
-      'target_name': 'cast_tests',
-      'type': 'none',
-      'dependencies': [
-        'media/media.gyp:cast_media_unittests',
       ],
     },
   ],  # end of targets
@@ -400,6 +374,29 @@
       ],  # end of targets
     }, {  # OS != "android"
       'targets': [
+        {
+          'target_name': 'cast_crash_client',
+          'type': '<(component)',
+          'dependencies': [
+            '../breakpad/breakpad.gyp:breakpad_client',
+            '../components/components.gyp:crash_component',
+          ],
+          'sources': [
+            'crash/cast_crash_reporter_client.cc',
+            'crash/cast_crash_reporter_client.h',
+          ],
+          'conditions': [
+            ['chromecast_branding=="Chrome"', {
+              'dependencies': [
+                '<(cast_internal_gyp):crash_internal',
+              ],
+            }, {
+              'sources': [
+                'crash/cast_crash_reporter_client_simple.cc',
+              ],
+            }],
+          ]
+        },  # end of target 'cast_crash_client'
         # This target contains all of the primary code of |cast_shell|, except
         # for |main|. This allows end-to-end tests using |cast_shell|.
         # This also includes all targets that cannot be built on Android.
@@ -407,6 +404,7 @@
           'target_name': 'cast_shell_core',
           'type': '<(component)',
           'dependencies': [
+            'cast_crash_client',
             'cast_net',
             'cast_shell_common',
             'media/media.gyp:cast_media',
@@ -432,37 +430,6 @@
           ],
           'sources': [
             'app/cast_main.cc',
-          ],
-        },
-        {
-          'target_name': 'cast_shell_browser_test',
-          'type': '<(gtest_target_type)',
-          'dependencies': [
-            'cast_shell_test_support',
-            '../testing/gtest.gyp:gtest',
-          ],
-          'defines': [
-            'HAS_OUT_OF_PROC_TEST_RUNNER',
-          ],
-          'sources': [
-            'browser/test/chromecast_shell_browser_test.cc',
-          ],
-        },
-        {
-          'target_name': 'cast_shell_test_support',
-          'type': '<(component)',
-          'defines': [
-            'HAS_OUT_OF_PROC_TEST_RUNNER',
-          ],
-          'dependencies': [
-            'cast_shell_core',
-            '../content/content_shell_and_tests.gyp:content_browser_test_support',
-            '../testing/gtest.gyp:gtest',
-          ],
-          'sources': [
-            'browser/test/chromecast_browser_test.cc',
-            'browser/test/chromecast_browser_test.h',
-            'browser/test/chromecast_browser_test_runner.cc',
           ],
         },
       ],  # end of targets

@@ -294,6 +294,11 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
         mTabManager.closeAllTabs();
     }
 
+    @VisibleForTesting
+    public void closeTab() {
+        mTabManager.closeTab();
+    }
+
     /**
      * Override the menu key event to show AppMenu.
      */
@@ -354,8 +359,7 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
             return true;
         } else if (id == R.id.share_menu_id || id == R.id.direct_share_menu_id) {
             ShareHelper.share(item.getItemId() == R.id.direct_share_menu_id, this,
-                    activeTab.getTitle(), activeTab.getUrl(), null,
-                    Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
+                    activeTab.getTitle(), activeTab.getUrl(), null);
             return true;
         } else {
             return super.onOptionsItemSelected(item);
@@ -423,6 +427,11 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
     @Override
     public int getMenuThemeResourceId() {
         return R.style.OverflowMenuTheme;
+    }
+
+    @Override
+    public int getMenuButtonStartPaddingDimenId() {
+        return 0;
     }
 
     @VisibleForTesting

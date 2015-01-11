@@ -102,15 +102,13 @@
 #include "ui/gfx/text_elider.h"
 
 #if defined(ENABLE_PRINTING)
+#include "chrome/browser/printing/print_view_manager_common.h"
 #include "chrome/common/print_messages.h"
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/print_preview_context_menu_observer.h"
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
-#include "chrome/browser/printing/print_view_manager.h"
-#else
-#include "chrome/browser/printing/print_view_manager_basic.h"
-#endif  // defined(ENABLE_FULL_PRINTING)
+#endif  // defined(ENABLE_PRINT_PREVIEW)
 #endif  // defined(ENABLE_PRINTING)
 
 using base::UserMetricsAction;
@@ -616,7 +614,7 @@ void RenderViewContextMenu::HandleAuthorizeAllPlugins() {
 #endif
 
 void RenderViewContextMenu::AppendPrintPreviewItems() {
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   if (!print_preview_menu_observer_.get()) {
     print_preview_menu_observer_.reset(
         new PrintPreviewContextMenuObserver(source_web_contents_));
@@ -1146,7 +1144,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       bool can_save =
           (params_.media_flags & WebContextMenuData::MediaCanSave) &&
           url.is_valid() && ProfileIOData::IsHandledProtocol(url.scheme());
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
           // Do not save the preview PDF on the print preview page.
       can_save = can_save &&
           !(printing::PrintPreviewDialogController::IsPrintPreviewURL(url));
@@ -1155,7 +1153,10 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
     }
 
     case IDC_CONTENT_CONTEXT_OPENAVNEWTAB:
-      return true;
+      // Currently, a media element can be opened in a new tab iff it can
+      // be saved. So rather than duplicating the MediaCanSave flag, we rely
+      // on that here.
+      return !!(params_.media_flags & WebContextMenuData::MediaCanSave);
 
     case IDC_SAVE_PAGE: {
       CoreTabHelper* core_tab_helper =
@@ -1497,28 +1498,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
         break;
       }
 
-#if defined(ENABLE_FULL_PRINTING)
-      printing::PrintViewManager* print_view_manager =
-          printing::PrintViewManager::FromWebContents(source_web_contents_);
-      if (!print_view_manager)
-        break;
-      if (!GetPrefs(browser_context_)
-               ->GetBoolean(prefs::kPrintPreviewDisabled)) {
-        print_view_manager->PrintPreviewNow(!params_.selection_text.empty());
-        break;
-      }
-#else   // ENABLE_FULL_PRINTING
-      printing::PrintViewManagerBasic* print_view_manager =
-          printing::PrintViewManagerBasic::FromWebContents(
-              source_web_contents_);
-      if (!print_view_manager)
-        break;
-#endif  // ENABLE_FULL_PRINTING
-
-#if !defined(DISABLE_BASIC_PRINTING)
-      print_view_manager->PrintNow();
-#endif  // !DISABLE_BASIC_PRINTING
-
+      printing::StartPrint(
+          source_web_contents_,
+          GetPrefs(browser_context_)->GetBoolean(prefs::kPrintPreviewDisabled),
+          !params_.selection_text.empty());
 #endif  // ENABLE_PRINTING
       break;
     }

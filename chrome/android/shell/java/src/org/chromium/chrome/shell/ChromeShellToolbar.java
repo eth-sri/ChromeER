@@ -25,6 +25,7 @@ import org.chromium.base.CommandLine;
 import org.chromium.chrome.browser.EmptyTabObserver;
 import org.chromium.chrome.browser.Tab;
 import org.chromium.chrome.browser.TabObserver;
+import org.chromium.chrome.browser.UrlUtilities;
 import org.chromium.chrome.browser.appmenu.AppMenuButtonHelper;
 import org.chromium.chrome.browser.appmenu.AppMenuHandler;
 import org.chromium.chrome.shell.omnibox.SuggestionPopup;
@@ -49,9 +50,9 @@ public class ChromeShellToolbar extends LinearLayout {
             mProgressDrawable.setLevel(100 * mProgress);
             if (mLoading) {
                 mStopReloadButton.setImageResource(
-                        R.drawable.btn_toolbar_stop_loading_white_normal);
+                        R.drawable.btn_toolbar_stop);
             } else {
-                mStopReloadButton.setImageResource(R.drawable.btn_toolbar_reload_white_normal);
+                mStopReloadButton.setImageResource(R.drawable.btn_toolbar_reload);
                 ApiCompatibilityUtils.postOnAnimationDelayed(ChromeShellToolbar.this,
                         mClearProgressRunnable, COMPLETED_PROGRESS_TIMEOUT_MS);
             }
@@ -72,6 +73,7 @@ public class ChromeShellToolbar extends LinearLayout {
     private SuggestionPopup mSuggestionPopup;
 
     private ImageButton mStopReloadButton;
+    private ImageButton mAddButton;
     private int mProgress = 0;
     private boolean mLoading = true;
 
@@ -143,12 +145,12 @@ public class ChromeShellToolbar extends LinearLayout {
         initializeTabSwitcherButton();
         initializeMenuButton();
         initializeStopReloadButton();
+        initializeAddButton();
     }
 
     void setMenuHandler(AppMenuHandler menuHandler) {
         mMenuHandler = menuHandler;
-        ImageButton menuButton = (ImageButton) findViewById(R.id.menu_button);
-        mAppMenuButtonHelper = new AppMenuButtonHelper(menuButton, mMenuHandler);
+        mAppMenuButtonHelper = new AppMenuButtonHelper(mMenuHandler);
     }
 
     private void initializeUrlField() {
@@ -161,10 +163,14 @@ public class ChromeShellToolbar extends LinearLayout {
                         || event.getAction() != KeyEvent.ACTION_DOWN)) {
                     return false;
                 }
+                if (mTabManager.isTabSwitcherVisible()) {
+                    mTabManager.hideTabSwitcher();
+                }
 
                 // This will set |mTab| by calling showTab().
                 // TODO(aurimas): Factor out initial tab creation to the activity level.
-                Tab tab = mTabManager.openUrl(mUrlTextView.getText().toString());
+                Tab tab = mTabManager.openUrl(
+                        UrlUtilities.fixupUrl(mUrlTextView.getText().toString()));
                 mUrlTextView.clearFocus();
                 setKeyboardVisibilityForUrl(false);
                 tab.getView().requestFocus();
@@ -240,6 +246,25 @@ public class ChromeShellToolbar extends LinearLayout {
                 }
             }
         });
+    }
+
+    private void initializeAddButton() {
+        mAddButton = (ImageButton) findViewById(R.id.add_button);
+        mAddButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mTabManager.createNewTab();
+            }
+        });
+    }
+
+    /**
+     * Shows or hides the add and the stop/reload button .
+     * @param visibility The visibility status of the add button.
+     */
+    public void showAddButton(boolean visibility) {
+        mAddButton.setVisibility(visibility ? VISIBLE : GONE);
+        mStopReloadButton.setVisibility(visibility ? GONE : VISIBLE);
     }
 
     /**

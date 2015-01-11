@@ -11,7 +11,7 @@
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
-#include "extensions/renderer/guest_view/guest_view_container.h"
+#include "extensions/renderer/guest_view/extensions_guest_view_container.h"
 #include "extensions/renderer/script_context.h"
 #include "v8/include/v8.h"
 
@@ -41,11 +41,10 @@ void GuestViewInternalCustomBindings::AttachGuest(
   CHECK(args.Length() < 4 || args[3]->IsFunction());
 
   int element_instance_id = args[0]->Int32Value();
-  // An element instance ID uniquely identifies a GuestViewContainer within
-  // a RenderView.
-  GuestViewContainer* guest_view_container =
-      GuestViewContainer::FromID(context()->GetRenderView()->GetRoutingID(),
-                                 element_instance_id);
+  // An element instance ID uniquely identifies a ExtensionsGuestViewContainer
+  // within a RenderView.
+  ExtensionsGuestViewContainer* guest_view_container =
+      ExtensionsGuestViewContainer::FromID(element_instance_id);
 
   // TODO(fsamuel): Should we be reporting an error if the element instance ID
   // is invalid?
@@ -64,15 +63,15 @@ void GuestViewInternalCustomBindings::AttachGuest(
         static_cast<base::DictionaryValue*>(params_as_value.release()));
   }
 
-  linked_ptr<GuestViewContainer::AttachRequest> request(
-      new GuestViewContainer::AttachRequest(
-          element_instance_id,
+  linked_ptr<ExtensionsGuestViewContainer::Request> request(
+      new ExtensionsGuestViewContainer::AttachRequest(
+          guest_view_container,
           guest_instance_id,
           params.Pass(),
           args.Length() == 4 ? args[3].As<v8::Function>() :
               v8::Handle<v8::Function>(),
           args.GetIsolate()));
-  guest_view_container->AttachGuest(request);
+  guest_view_container->IssueRequest(request);
 
   args.GetReturnValue().Set(v8::Boolean::New(context()->isolate(), true));
 }

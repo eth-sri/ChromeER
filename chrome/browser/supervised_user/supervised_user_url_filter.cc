@@ -419,10 +419,8 @@ void SupervisedUserURLFilter::SetManualURLs(
 
 void SupervisedUserURLFilter::InitAsyncURLChecker(
     net::URLRequestContextGetter* context,
-    const std::string& cx,
-    const std::string& api_key) {
-  async_url_checker_.reset(new SupervisedUserAsyncURLChecker(
-      context, cx, api_key));
+    const std::string& cx) {
+  async_url_checker_.reset(new SupervisedUserAsyncURLChecker(context, cx));
 }
 
 bool SupervisedUserURLFilter::HasAsyncURLChecker() const {
@@ -450,8 +448,10 @@ void SupervisedUserURLFilter::CheckCallback(
     bool uncertain) const {
   // If we passed the async checker, but the default is to block, fall back to
   // the default behavior.
-  if (behavior != BLOCK && default_behavior_ == BLOCK)
+  if (behavior != BLOCK && default_behavior_ == BLOCK) {
     callback.Run(default_behavior_, DEFAULT, uncertain);
+    return;
+  }
 
   callback.Run(behavior, ASYNC_CHECKER, uncertain);
 }

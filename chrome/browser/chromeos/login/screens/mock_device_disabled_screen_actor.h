@@ -17,8 +17,9 @@ class MockDeviceDisabledScreenActor : public DeviceDisabledScreenActor {
 
   void SetDelegate(Delegate* delegate) override;
 
-  MOCK_METHOD1(Show, void(const std::string&));
+  MOCK_METHOD0(Show, void());
   MOCK_METHOD0(Hide, void());
+  MOCK_METHOD1(UpdateMessage, void(const std::string& message));
 
  private:
   MOCK_METHOD1(MockSetDelegate, void(Delegate* delegate));

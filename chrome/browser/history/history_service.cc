@@ -25,7 +25,6 @@
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
@@ -180,6 +179,14 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
                                               row,
                                               redirects,
                                               visit_time));
+  }
+
+  void NotifyURLsModified(const history::URLRows& changed_urls) override {
+    service_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&HistoryService::NotifyURLsModified,
+                   history_service_,
+                   changed_urls));
   }
 
   void BroadcastNotifications(
@@ -881,6 +888,8 @@ void HistoryService::Cleanup() {
     return;
   }
 
+  NotifyHistoryServiceBeingDeleted();
+
   weak_ptr_factory_.InvalidateWeakPtrs();
 
   // Unload the backend.
@@ -1227,10 +1236,7 @@ void HistoryService::BroadcastNotificationsHelper(
 void HistoryService::OnDBLoaded() {
   DCHECK(thread_checker_.CalledOnValidThread());
   backend_loaded_ = true;
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_HISTORY_LOADED,
-      content::Source<Profile>(profile_),
-      content::Details<HistoryService>(this));
+  NotifyHistoryServiceLoaded();
 }
 
 bool HistoryService::GetRowForURL(const GURL& url, history::URLRow* url_row) {
@@ -1253,6 +1259,25 @@ void HistoryService::NotifyURLVisited(ui::PageTransition transition,
   FOR_EACH_OBSERVER(history::HistoryServiceObserver,
                     observers_,
                     OnURLVisited(this, transition, row, redirects, visit_time));
+}
+
+void HistoryService::NotifyURLsModified(const history::URLRows& changed_urls) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  FOR_EACH_OBSERVER(history::HistoryServiceObserver,
+                    observers_,
+                    OnURLsModified(this, changed_urls));
+}
+
+void HistoryService::NotifyHistoryServiceLoaded() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  FOR_EACH_OBSERVER(history::HistoryServiceObserver, observers_,
+                    OnHistoryServiceLoaded(this));
+}
+
+void HistoryService::NotifyHistoryServiceBeingDeleted() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  FOR_EACH_OBSERVER(history::HistoryServiceObserver, observers_,
+                    HistoryServiceBeingDeleted(this));
 }
 
 scoped_ptr<base::CallbackList<void(const std::set<GURL>&)>::Subscription>

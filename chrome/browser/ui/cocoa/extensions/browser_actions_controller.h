@@ -13,14 +13,12 @@
 class Browser;
 @class BrowserActionButton;
 @class BrowserActionsContainerView;
-@class ExtensionPopupController;
-class ExtensionServiceObserverBridge;
 @class MenuButton;
-class Profile;
+class ToolbarActionsBar;
+class ToolbarActionsBarDelegate;
 
-namespace extensions {
-class Extension;
-class ExtensionToolbarModel;
+namespace content {
+class WebContents;
 }
 
 // Sent when the visibility of the Browser Actions changes.
@@ -36,22 +34,19 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
   // The view from Toolbar.xib we'll be rendering our browser actions in. Weak.
   BrowserActionsContainerView* containerView_;
 
-  // The current profile. Weak.
-  Profile* profile_;
+  // Array of toolbar action buttons in the correct order for them to be
+  // displayed (includes both hidden and visible buttons).
+  base::scoped_nsobject<NSMutableArray> buttons_;
 
-  // The model that tracks the order of the toolbar icons. Weak.
-  extensions::ExtensionToolbarModel* toolbarModel_;
+  // The delegate for the ToolbarActionsBar.
+  scoped_ptr<ToolbarActionsBarDelegate> toolbarActionsBarBridge_;
 
-  // The observer for the ExtensionService we're getting events from.
-  scoped_ptr<ExtensionServiceObserverBridge> observer_;
+  // The controlling ToolbarActionsBar.
+  scoped_ptr<ToolbarActionsBar> toolbarActionsBar_;
 
-  // A dictionary of Extension ID -> BrowserActionButton pairs representing the
-  // buttons present in the container view. The ID is a string unique to each
-  // extension.
-  base::scoped_nsobject<NSMutableDictionary> buttons_;
-
-  // Array of hidden buttons in the correct order in which the user specified.
-  base::scoped_nsobject<NSMutableArray> hiddenButtons_;
+  // True if we should supppress the chevron (we do this during drag
+  // animations).
+  BOOL suppressChevron_;
 
   // The currently running chevron animation (fade in/out).
   base::scoped_nsobject<NSViewAnimation> chevronAnimation_;
@@ -81,31 +76,22 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
 // container.
 - (NSUInteger)visibleButtonCount;
 
-// Resizes the container given the number of visible buttons, taking into
-// account the size of the grippy. Also updates the persistent width preference.
-- (void)resizeContainerAndAnimate:(BOOL)animate;
-
-// Returns the NSView for the action button associated with an extension.
-- (NSView*)browserActionViewForExtension:(
-    const extensions::Extension*)extension;
-
 // Returns the saved width determined by the number of shown Browser Actions
 // preference property. If no preference is found, then the width for the
 // container is returned as if all buttons are shown.
 - (CGFloat)savedWidth;
 
-// Returns where the popup arrow should point to for a given Browser Action. If
-// it is passed an extension that is not a Browser Action, then it will return
-// NSZeroPoint.
-- (NSPoint)popupPointForBrowserAction:(const extensions::Extension*)extension;
+// Returns where the popup arrow should point to for the action with the given
+// |id|. If passed an id with no corresponding button, returns NSZeroPoint.
+- (NSPoint)popupPointForId:(const std::string&)id;
 
 // Returns whether the chevron button is currently hidden or in the process of
 // being hidden (fading out). Will return NO if it is not hidden or is in the
 // process of fading in.
 - (BOOL)chevronIsHidden;
 
-// Activates the browser action for the extension that has the given id.
-- (void)activateBrowserAction:(const std::string&)extension_id;
+// Returns the currently-active web contents.
+- (content::WebContents*)currentWebContents;
 
 @end  // @interface BrowserActionsController
 

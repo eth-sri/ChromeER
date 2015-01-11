@@ -214,7 +214,7 @@ class QuicNetworkTransactionTest
 
     if (use_next_protos) {
       params_.use_alternate_protocols = true;
-      params_.next_protos = NextProtosSpdy3();
+      params_.next_protos = NextProtosWithSpdyAndQuic(true, true);
     }
 
     session_ = new HttpNetworkSession(params_);
@@ -286,7 +286,7 @@ class QuicNetworkTransactionTest
     const AlternateProtocolInfo alternate =
         session_->http_server_properties()->GetAlternateProtocol(
             HostPortPair::FromURL(request_.url));
-    EXPECT_EQ(ALTERNATE_PROTOCOL_BROKEN, alternate.protocol);
+    EXPECT_TRUE(alternate.is_broken);
   }
 
   void ExpectQuicAlternateProtocolMapping() {

@@ -28,6 +28,7 @@
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/history/core/browser/history_constants.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -41,7 +42,7 @@ KeyedService* BuildHistoryService(content::BrowserContext* context) {
 
   // Delete the file before creating the service.
   base::FilePath history_path(
-      profile->GetPath().Append(chrome::kHistoryFilename));
+      profile->GetPath().Append(history::kHistoryFilename));
   if (!base::DeleteFile(history_path, false) ||
       base::PathExists(history_path)) {
     ADD_FAILURE() << "failed to delete history db file "
@@ -61,10 +62,11 @@ KeyedService* BuildHistoryService(content::BrowserContext* context) {
 
 }  // namespace
 
+namespace safe_browsing {
+
 class LastDownloadFinderTest : public testing::Test {
  public:
-  void NeverCalled(scoped_ptr<
-      safe_browsing::ClientIncidentReport_DownloadDetails> download) {
+  void NeverCalled(scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     FAIL();
   }
 
@@ -80,13 +82,12 @@ class LastDownloadFinderTest : public testing::Test {
                    base::Unretained(this)));
   }
 
-  // safe_browsing::LastDownloadFinder::LastDownloadCallback implementation that
+  // LastDownloadFinder::LastDownloadCallback implementation that
   // passes the found download to |result| and then runs a closure.
   void OnLastDownload(
-      scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>* result,
+      scoped_ptr<ClientIncidentReport_DownloadDetails>* result,
       const base::Closure& quit_closure,
-      scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>
-          download) {
+      scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     *result = download.Pass();
     quit_closure.Run();
   }
@@ -153,6 +154,11 @@ class LastDownloadFinderTest : public testing::Test {
     return profile;
   }
 
+  LastDownloadFinder::DownloadDetailsGetter GetDownloadDetailsGetter() {
+    return base::Bind(&LastDownloadFinderTest::GetDownloadDetails,
+                      base::Unretained(this));
+  }
+
   void AddDownload(Profile* profile, const history::DownloadRow& download) {
     base::RunLoop run_loop;
 
@@ -186,19 +192,17 @@ class LastDownloadFinderTest : public testing::Test {
 
   // Runs the last download finder on all loaded profiles, returning the found
   // download or an empty pointer if none was found.
-  scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>
-  RunLastDownloadFinder() {
+  scoped_ptr<ClientIncidentReport_DownloadDetails> RunLastDownloadFinder() {
     base::RunLoop run_loop;
 
-    scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails>
-        last_download;
+    scoped_ptr<ClientIncidentReport_DownloadDetails> last_download;
 
-    scoped_ptr<safe_browsing::LastDownloadFinder> finder(
-        safe_browsing::LastDownloadFinder::Create(
-            base::Bind(&LastDownloadFinderTest::OnLastDownload,
-                       base::Unretained(this),
-                       &last_download,
-                       run_loop.QuitClosure())));
+    scoped_ptr<LastDownloadFinder> finder(LastDownloadFinder::Create(
+        GetDownloadDetailsGetter(),
+        base::Bind(&LastDownloadFinderTest::OnLastDownload,
+                   base::Unretained(this),
+                   &last_download,
+                   run_loop.QuitClosure())));
 
     if (finder)
       run_loop.Run();
@@ -230,13 +234,13 @@ class LastDownloadFinderTest : public testing::Test {
         std::string());                               // ext_name
   }
 
-  void ExpectNoDownloadFound(scoped_ptr<
-      safe_browsing::ClientIncidentReport_DownloadDetails> download) {
+  void ExpectNoDownloadFound(
+      scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     EXPECT_FALSE(download);
   }
 
-  void ExpectFoundTestDownload(scoped_ptr<
-      safe_browsing::ClientIncidentReport_DownloadDetails> download) {
+  void ExpectFoundTestDownload(
+      scoped_ptr<ClientIncidentReport_DownloadDetails> download) {
     ASSERT_TRUE(download);
   }
 
@@ -254,6 +258,12 @@ class LastDownloadFinderTest : public testing::Test {
   // A HistoryService::DownloadCreateCallback that asserts that the download was
   // created.
   void OnDownloadCreated(bool created) { ASSERT_TRUE(created); }
+
+  void GetDownloadDetails(
+      content::BrowserContext* context,
+      const DownloadMetadataManager::GetDownloadDetailsCallback& callback) {
+    callback.Run(scoped_ptr<ClientIncidentReport_DownloadDetails>());
+  }
 
   int profile_number_;
 };
@@ -295,9 +305,9 @@ TEST_F(LastDownloadFinderTest, DeleteBeforeResults) {
   AddDownload(profile, CreateTestDownloadRow());
 
   // Start a finder and kill it before the search completes.
-  safe_browsing::LastDownloadFinder::Create(
-      base::Bind(&LastDownloadFinderTest::NeverCalled, base::Unretained(this)))
-      .reset();
+  LastDownloadFinder::Create(GetDownloadDetailsGetter(),
+                             base::Bind(&LastDownloadFinderTest::NeverCalled,
+                                        base::Unretained(this))).reset();
 
   // Flush tasks on the history backend thread.
   FlushHistoryBackend(profile);
@@ -308,7 +318,7 @@ TEST_F(LastDownloadFinderTest, AddProfileAfterStarting) {
   // Create a profile with a history service that is opted-in.
   CreateProfile(SAFE_BROWSING_OPT_IN);
 
-  scoped_ptr<safe_browsing::ClientIncidentReport_DownloadDetails> last_download;
+  scoped_ptr<ClientIncidentReport_DownloadDetails> last_download;
   base::RunLoop run_loop;
 
   // Post a task that will create a second profile once the main loop is run.
@@ -318,14 +328,16 @@ TEST_F(LastDownloadFinderTest, AddProfileAfterStarting) {
                  base::Unretained(this)));
 
   // Create a finder that we expect will find a download in the second profile.
-  scoped_ptr<safe_browsing::LastDownloadFinder> finder(
-      safe_browsing::LastDownloadFinder::Create(
-          base::Bind(&LastDownloadFinderTest::OnLastDownload,
-                     base::Unretained(this),
-                     &last_download,
-                     run_loop.QuitClosure())));
+  scoped_ptr<LastDownloadFinder> finder(LastDownloadFinder::Create(
+      GetDownloadDetailsGetter(),
+      base::Bind(&LastDownloadFinderTest::OnLastDownload,
+                 base::Unretained(this),
+                 &last_download,
+                 run_loop.QuitClosure())));
 
   run_loop.Run();
 
   ExpectFoundTestDownload(last_download.Pass());
 }
+
+}  // namespace safe_browsing

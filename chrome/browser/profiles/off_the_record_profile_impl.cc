@@ -9,7 +9,6 @@
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/prefs/json_pref_store.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -143,7 +142,7 @@ void OffTheRecordProfileImpl::Init() {
   GetRequestContext();
 #endif  // defined(OS_CHROMEOS)
 
-  InitHostZoomMap();
+  TrackZoomLevelsFromParent();
 
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
@@ -199,15 +198,20 @@ void OffTheRecordProfileImpl::InitIoData() {
   io_data_.reset(new OffTheRecordProfileIOData::Handle(this));
 }
 
-void OffTheRecordProfileImpl::InitHostZoomMap() {
+void OffTheRecordProfileImpl::TrackZoomLevelsFromParent() {
+  DCHECK_NE(INCOGNITO_PROFILE, profile_->GetProfileType());
+
+  // Here we only want to use zoom levels stored in the main-context's default
+  // storage partition. We're not interested in zoom levels in special
+  // partitions, e.g. those used by WebViewGuests.
   HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
   HostZoomMap* parent_host_zoom_map =
       HostZoomMap::GetDefaultForBrowserContext(profile_);
   host_zoom_map->CopyFrom(parent_host_zoom_map);
-  // Observe parent's HZM change for propagating change of parent's
-  // change to this HZM.
-  zoom_subscription_ = parent_host_zoom_map->AddZoomLevelChangedCallback(
-      base::Bind(&OffTheRecordProfileImpl::OnZoomLevelChanged,
+  // Observe parent profile's HostZoomMap changes so they can also be applied
+  // to this profile's HostZoomMap.
+  track_zoom_subscription_ = parent_host_zoom_map->AddZoomLevelChangedCallback(
+      base::Bind(&OffTheRecordProfileImpl::OnParentZoomLevelChanged,
                  base::Unretained(this)));
 }
 
@@ -217,11 +221,21 @@ std::string OffTheRecordProfileImpl::GetProfileName() {
 }
 
 Profile::ProfileType OffTheRecordProfileImpl::GetProfileType() const {
+#if !defined(OS_CHROMEOS)
+  return profile_->IsGuestSession() ? GUEST_PROFILE : INCOGNITO_PROFILE;
+#else
   return INCOGNITO_PROFILE;
+#endif
 }
 
 base::FilePath OffTheRecordProfileImpl::GetPath() const {
   return profile_->GetPath();
+}
+
+scoped_ptr<content::ZoomLevelDelegate>
+OffTheRecordProfileImpl::CreateZoomLevelDelegate(
+    const base::FilePath& partition_path) {
+  return nullptr;
 }
 
 scoped_refptr<base::SequencedTaskRunner>
@@ -510,7 +524,7 @@ Profile* Profile::CreateOffTheRecordProfile() {
   return profile;
 }
 
-void OffTheRecordProfileImpl::OnZoomLevelChanged(
+void OffTheRecordProfileImpl::OnParentZoomLevelChanged(
     const HostZoomMap::ZoomLevelChange& change) {
   HostZoomMap* host_zoom_map = HostZoomMap::GetDefaultForBrowserContext(this);
   switch (change.mode) {

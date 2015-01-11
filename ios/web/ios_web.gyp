@@ -20,8 +20,10 @@
         '../../ui/gfx/gfx.gyp:gfx',
       ],
       'sources': [
+        'browser_state.cc',
         'navigation/navigation_item_impl.h',
         'navigation/navigation_item_impl.mm',
+        'public/browser_state.h',
         'public/favicon_status.cc',
         'public/favicon_status.h',
         'public/navigation_item.h',
@@ -31,6 +33,20 @@
         'public/ssl_status.h',
         'public/user_agent.h',
         'public/user_agent.mm',
+      ],
+    },
+    {
+      'target_name': 'test_support_ios_web',
+      'type': 'static_library',
+      'dependencies': [
+        'ios_web',
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+      'sources': [
+        'public/test/test_browser_state.cc',
+        'public/test/test_browser_state.h',
       ],
     },
   ],

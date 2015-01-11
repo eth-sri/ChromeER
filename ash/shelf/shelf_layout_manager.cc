@@ -251,9 +251,15 @@ bool ShelfLayoutManager::SetAlignment(ShelfAlignment alignment) {
   if (alignment_ == alignment)
     return false;
 
-  // This should not be called during the lock screen transitions.
-  DCHECK(!Shell::GetInstance()->session_state_delegate()->IsScreenLocked());
   alignment_ = alignment;
+  if (Shell::GetInstance()->session_state_delegate()->IsScreenLocked()) {
+    // The shelf will itself move to the bottom while locked. If a request is
+    // sent to move while being locked, we postpone the move untill the lock
+    // screen goes away.
+    return false;
+  }
+
+  // This should not be called during the lock screen transitions.
   shelf_->SetAlignment(alignment);
   LayoutShelf();
   return true;
@@ -996,8 +1002,16 @@ ShelfAutoHideState ShelfLayoutManager::CalculateAutoHideState(
     return SHELF_AUTO_HIDE_HIDDEN;
 
   Shell* shell = Shell::GetInstance();
-  if (shell->GetAppListTargetVisibility())
-    return SHELF_AUTO_HIDE_SHOWN;
+  // Unhide the shelf only on the active screen when the AppList is shown
+  // (crbug.com/312445).
+  if (shell->GetAppListTargetVisibility()) {
+    aura::Window* active_window = wm::GetActiveWindow();
+    aura::Window* shelf_window = shelf_->GetNativeWindow();
+    if (active_window && shelf_window &&
+        active_window->GetRootWindow() == shelf_window->GetRootWindow()) {
+      return SHELF_AUTO_HIDE_SHOWN;
+    }
+  }
 
   if (shelf_->status_area_widget() &&
       shelf_->status_area_widget()->ShouldShowShelf())

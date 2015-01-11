@@ -57,11 +57,11 @@ enum AlternateProtocol {
   NPN_SPDY_MINIMUM_VERSION = DEPRECATED_NPN_SPDY_2,
   NPN_SPDY_3,
   NPN_SPDY_3_1,
-  NPN_SPDY_4,  // SPDY4 is HTTP/2.
-  NPN_SPDY_MAXIMUM_VERSION = NPN_SPDY_4,
+  NPN_SPDY_4_14,  // HTTP/2 draft-14
+  NPN_SPDY_4_15,  // HTTP/2 draft-15
+  NPN_SPDY_MAXIMUM_VERSION = NPN_SPDY_4_15,
   QUIC,
   ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION = QUIC,
-  ALTERNATE_PROTOCOL_BROKEN,  // The alternate protocol is known to be broken.
   UNINITIALIZED_ALTERNATE_PROTOCOL,
 };
 
@@ -88,7 +88,17 @@ struct NET_EXPORT AlternateProtocolInfo {
                         double probability)
       : port(port),
         protocol(protocol),
-        probability(probability) {}
+        probability(probability),
+        is_broken(false) {}
+
+  AlternateProtocolInfo(uint16 port,
+                        AlternateProtocol protocol,
+                        double probability,
+                        bool is_broken)
+      : port(port),
+        protocol(protocol),
+        probability(probability),
+        is_broken(is_broken) {}
 
   bool Equals(const AlternateProtocolInfo& other) const {
     return port == other.port &&
@@ -101,6 +111,7 @@ struct NET_EXPORT AlternateProtocolInfo {
   uint16 port;
   AlternateProtocol protocol;
   double probability;
+  bool is_broken;
 };
 
 struct NET_EXPORT SupportsQuic {

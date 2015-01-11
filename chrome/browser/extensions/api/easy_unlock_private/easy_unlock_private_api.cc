@@ -15,6 +15,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/easy_unlock_screenlock_state_handler.h"
 #include "chrome/browser/signin/easy_unlock_service.h"
+#include "chrome/browser/signin/screenlock_bridge.h"
 #include "chrome/common/extensions/api/easy_unlock_private.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/proximity_auth/bluetooth_util.h"
@@ -24,6 +25,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/chromeos_utils.h"
+#include "chrome/browser/ui/webui/options/chromeos/user_image_source.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #endif
@@ -58,10 +60,12 @@ EasyUnlockScreenlockStateHandler::State ToScreenlockStateHandlerState(
       return EasyUnlockScreenlockStateHandler::STATE_PHONE_LOCKED;
     case easy_unlock_private::STATE_PHONE_UNLOCKABLE:
       return EasyUnlockScreenlockStateHandler::STATE_PHONE_UNLOCKABLE;
-    case easy_unlock_private::STATE_PHONE_NOT_NEARBY:
-      return EasyUnlockScreenlockStateHandler::STATE_PHONE_NOT_NEARBY;
     case easy_unlock_private::STATE_PHONE_UNSUPPORTED:
       return EasyUnlockScreenlockStateHandler::STATE_PHONE_UNSUPPORTED;
+    case easy_unlock_private::STATE_RSSI_TOO_LOW:
+      return EasyUnlockScreenlockStateHandler::STATE_RSSI_TOO_LOW;
+    case easy_unlock_private::STATE_TX_POWER_TOO_HIGH:
+      return EasyUnlockScreenlockStateHandler::STATE_TX_POWER_TOO_HIGH;
     case easy_unlock_private::STATE_AUTHENTICATED:
       return EasyUnlockScreenlockStateHandler::STATE_AUTHENTICATED;
     default:
@@ -114,6 +118,7 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
   strings->SetString(
       "learnMoreLinkTitle",
       l10n_util::GetStringUTF16(IDS_EASY_UNLOCK_LEARN_MORE_LINK_TITLE));
+  strings->SetString("deviceType", device_type);
 
   // Setup notification strings.
   strings->SetString(
@@ -135,10 +140,46 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
       l10n_util::GetStringUTF16(
           IDS_EASY_UNLOCK_CHROMEBOOK_ADDED_NOTIFICATION_TITLE));
   strings->SetString(
-     "chromebookAddedNotificationMessage",
-     l10n_util::GetStringFUTF16(
+      "chromebookAddedNotificationMessage",
+      l10n_util::GetStringFUTF16(
           IDS_EASY_UNLOCK_CHROMEBOOK_ADDED_NOTIFICATION_MESSAGE,
           device_type));
+  strings->SetString(
+      "chromebookAddedNotificationAboutButton",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_CHROMEBOOK_ADDED_NOTIFICATION_ABOUT_BUTTON));
+
+  // Shared "Learn more" button for the pairing changed and pairing change
+  // applied notification.
+  strings->SetString(
+      "phoneChangedNotificationLearnMoreButton",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_NOTIFICATION_LEARN_MORE_BUTTON));
+
+  // Pairing changed notification strings.
+  strings->SetString(
+      "phoneChangedNotificationTitle",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_PAIRING_CHANGED_NOTIFICATION_TITLE));
+  strings->SetString(
+      "phoneChangedNotificationMessage",
+      l10n_util::GetStringFUTF16(
+          IDS_EASY_UNLOCK_PAIRING_CHANGED_NOTIFICATION_MESSAGE,
+          device_type));
+  strings->SetString(
+      "phoneChangedNotificationUpdateButton",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_PAIRING_CHANGED_NOTIFICATION_UPDATE_BUTTON));
+
+  // Phone change applied notification strings.
+  strings->SetString(
+      "phoneChangeAppliedNotificationTitle",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_PAIRING_CHANGE_APPLIED_NOTIFICATION_TITLE));
+  strings->SetString(
+      "phoneChangeAppliedNotificationMessage",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_PAIRING_CHANGE_APPLIED_NOTIFICATION_MESSAGE));
 
   // Setup dialog strings.
   // Step 1: Intro.
@@ -166,6 +207,14 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
       "setupIntroHowIsThisSecureLinkText",
       l10n_util::GetStringUTF16(
           IDS_EASY_UNLOCK_SETUP_INTRO_HOW_IS_THIS_SECURE_LINK_TEXT));
+  // Step 1.5: Phone found but is not secured with lock screen
+  strings->SetString("setupSecurePhoneHeaderTitle",
+                     l10n_util::GetStringUTF16(
+                         IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_HEADER_TITLE));
+  strings->SetString(
+      "setupSecurePhoneHeaderText",
+      l10n_util::GetStringFUTF16(IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_HEADER_TEXT,
+                                 device_type));
   // Step 2: Found a viable phone.
   strings->SetString(
       "setupFoundPhoneHeaderTitle",
@@ -179,10 +228,33 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
       "setupFoundPhoneUseThisPhoneButtonLabel",
       l10n_util::GetStringUTF16(
           IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_USE_THIS_PHONE_BUTTON_LABEL));
+  strings->SetString("setupFoundPhoneDeviceFormattedButtonLabel",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_DEVICE_FORMATTED_BUTTON_LABEL));
+  strings->SetString(
+      "setupFoundPhoneSwitchPhoneLinkLabel",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_SWITCH_PHONE_LINK_LABEL));
   strings->SetString(
       "setupPairingPhoneFailedButtonLabel",
       l10n_util::GetStringUTF16(
           IDS_EASY_UNLOCK_SETUP_PAIRING_PHONE_FAILED_BUTTON_LABEL));
+  // Step 2.5: Recommend user to set up Android Smart Lock
+  strings->SetString(
+      "setupAndroidSmartLockHeaderTitle",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SETUP_ANDROID_SMART_LOCK_HEADER_TITLE));
+  strings->SetString("setupAndroidSmartLockHeaderText",
+                     l10n_util::GetStringUTF16(
+                         IDS_EASY_UNLOCK_SETUP_ANDROID_SMART_LOCK_HEADER_TEXT));
+  strings->SetString(
+      "setupAndroidSmartLockDoneButtonText",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SETUP_ANDROID_SMART_LOCK_DONE_BUTTON_LABEL));
+  strings->SetString(
+      "setupAndroidSmartLockAboutLinkText",
+      l10n_util::GetStringUTF16(
+          IDS_EASY_UNLOCK_SETUP_ANDROID_SMART_LOCK_ABOUT_LINK_TEXT));
   // Step 3: Setup completed successfully.
   strings->SetString(
       "setupCompleteHeaderTitle",
@@ -200,6 +272,10 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
       "setupCompleteSettingsLinkText",
       l10n_util::GetStringUTF16(
           IDS_EASY_UNLOCK_SETUP_COMPLETE_SETTINGS_LINK_TEXT));
+  // Step 4: Post lockscreen confirmation.
+  strings->SetString("setupPostLockDismissButtonLabel",
+                     l10n_util::GetStringUTF16(
+                         IDS_EASY_UNLOCK_SETUP_POST_LOCK_DISMISS_BUTTON_LABEL));
 
   // Error strings.
   strings->SetString(
@@ -524,15 +600,25 @@ EasyUnlockPrivateGetSignInChallengeFunction::
     ~EasyUnlockPrivateGetSignInChallengeFunction() {
 }
 
-bool EasyUnlockPrivateGetSignInChallengeFunction::RunSync() {
+bool EasyUnlockPrivateGetSignInChallengeFunction::RunAsync() {
+  scoped_ptr<easy_unlock_private::GetSignInChallenge::Params> params(
+      easy_unlock_private::GetSignInChallenge::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
   Profile* profile = Profile::FromBrowserContext(browser_context());
   const std::string challenge =
       EasyUnlockService::Get(profile)->GetChallenge();
-  if (!challenge.empty()) {
-    results_ =
-        easy_unlock_private::GetSignInChallenge::Results::Create(challenge);
-  }
+  // TODO(tbarzic): Implement nonce signing.
+  OnDone(challenge, std::string() /* signed_nonce */);
   return true;
+}
+
+void EasyUnlockPrivateGetSignInChallengeFunction::OnDone(
+    const std::string& challenge,
+    const std::string& signed_nonce) {
+  results_ = easy_unlock_private::GetSignInChallenge::Results::Create(
+      challenge, signed_nonce);
+  SendResponse(true);
 }
 
 EasyUnlockPrivateTrySignInSecretFunction::
@@ -574,6 +660,35 @@ bool EasyUnlockPrivateGetUserInfoFunction::RunSync() {
                            service->GetRemoteDevices() != NULL;
   }
   results_ = easy_unlock_private::GetUserInfo::Results::Create(users);
+  return true;
+}
+
+EasyUnlockPrivateGetUserImageFunction::EasyUnlockPrivateGetUserImageFunction() {
+}
+
+EasyUnlockPrivateGetUserImageFunction::
+    ~EasyUnlockPrivateGetUserImageFunction() {
+}
+
+bool EasyUnlockPrivateGetUserImageFunction::RunSync() {
+#if defined(OS_CHROMEOS)
+  EasyUnlockService* service =
+      EasyUnlockService::Get(Profile::FromBrowserContext(browser_context()));
+  const std::vector<ui::ScaleFactor>& supported_scale_factors =
+      ui::GetSupportedScaleFactors();
+
+  base::RefCountedMemory* user_image =
+      chromeos::options::UserImageSource::GetUserImage(
+          service->GetUserEmail(), supported_scale_factors.back());
+
+  results_ = easy_unlock_private::GetUserImage::Results::Create(std::string(
+      reinterpret_cast<const char*>(user_image->front()), user_image->size()));
+#else
+  // TODO(tengs): Find a way to get the profile picture for non-ChromeOS
+  // devices.
+  results_ = easy_unlock_private::GetUserImage::Results::Create("");
+  SetError("Not supported on non-ChromeOS platforms.");
+#endif
   return true;
 }
 

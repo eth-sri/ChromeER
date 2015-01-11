@@ -35,20 +35,19 @@ TileItemView::TileItemView()
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   title_->SetAutoColorReadabilityEnabled(false);
   title_->SetEnabledColor(kGridTitleColor);
-  title_->set_background(views::Background::CreateSolidBackground(
-      kLabelBackgroundColor));
   title_->SetFontList(rb.GetFontList(kItemTextFontStyle));
   title_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-
-  // When |item_| is NULL, the tile is invisible. Calling SetSearchResult with a
-  // non-NULL item makes the tile visible.
-  SetVisible(false);
 
   AddChildView(icon_);
   AddChildView(title_);
 }
 
 TileItemView::~TileItemView() {
+}
+
+void TileItemView::SetTitleBackgroundColor(SkColor color) {
+  title_->SetBackgroundColor(color);
+  title_->set_background(views::Background::CreateSolidBackground(color));
 }
 
 void TileItemView::SetIcon(const gfx::ImageSkia& icon) {

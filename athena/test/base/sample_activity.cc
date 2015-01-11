@@ -72,6 +72,9 @@ gfx::ImageSkia SampleActivity::GetIcon() const {
   return gfx::ImageSkia();
 }
 
+void SampleActivity::SetActivityView(ActivityView* view) {
+}
+
 bool SampleActivity::UsesFrame() const {
   return true;
 }
@@ -83,10 +86,6 @@ views::View* SampleActivity::GetContentsView() {
         views::Background::CreateSolidBackground(contents_color_));
   }
   return contents_view_;
-}
-
-views::Widget* SampleActivity::CreateWidget() {
-  return nullptr;
 }
 
 gfx::ImageSkia SampleActivity::GetOverviewModeImage() {

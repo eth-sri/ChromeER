@@ -55,6 +55,7 @@
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/visibility_controller.h"
+#include "ui/wm/core/window_animations.h"
 #include "ui/wm/core/window_modality_controller.h"
 #include "ui/wm/public/activation_client.h"
 #include "ui/wm/public/drag_drop_client.h"
@@ -418,9 +419,6 @@ void DesktopNativeWidgetAura::InitNativeWidget(
       DesktopWindowTreeHost::Create(native_widget_delegate_, this);
   host_.reset(desktop_window_tree_host_->AsWindowTreeHost());
   desktop_window_tree_host_->Init(content_window_, params);
-
-  // Mark this window as Desktop root window.
-  host_->window()->SetProperty(views::kDesktopRootWindow, true);
 
   host_->InitHost();
   host_->window()->AddChild(content_window_container_);
@@ -912,6 +910,31 @@ void DesktopNativeWidgetAura::SetVisibilityChangedAnimationsEnabled(
     bool value) {
   if (content_window_)
     desktop_window_tree_host_->SetVisibilityChangedAnimationsEnabled(value);
+}
+
+void DesktopNativeWidgetAura::SetVisibilityAnimationDuration(
+    const base::TimeDelta& duration) {
+  wm::SetWindowVisibilityAnimationDuration(content_window_, duration);
+}
+
+void DesktopNativeWidgetAura::SetVisibilityAnimationTransition(
+    Widget::VisibilityTransition transition) {
+  wm::WindowVisibilityAnimationTransition wm_transition = wm::ANIMATE_NONE;
+  switch (transition) {
+    case Widget::ANIMATE_SHOW:
+      wm_transition = wm::ANIMATE_SHOW;
+      break;
+    case Widget::ANIMATE_HIDE:
+      wm_transition = wm::ANIMATE_HIDE;
+      break;
+    case Widget::ANIMATE_BOTH:
+      wm_transition = wm::ANIMATE_BOTH;
+      break;
+    case Widget::ANIMATE_NONE:
+      wm_transition = wm::ANIMATE_NONE;
+      break;
+  }
+  wm::SetWindowVisibilityAnimationTransition(content_window_, wm_transition);
 }
 
 ui::NativeTheme* DesktopNativeWidgetAura::GetNativeTheme() const {

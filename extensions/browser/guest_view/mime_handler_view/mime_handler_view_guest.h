@@ -32,8 +32,7 @@ class MimeHandlerViewGuest : public GuestView<MimeHandlerViewGuest>,
   // GuestViewBase implementation.
   const char* GetAPINamespace() const override;
   int GetTaskPrefix() const override;
-  void CreateWebContents(const std::string& embedder_extension_id,
-                         int embedder_render_process_id,
+  void CreateWebContents(int owner_render_process_id,
                          const GURL& embedder_site_url,
                          const base::DictionaryValue& create_params,
                          const WebContentsCreatedCallback& callback) override;
@@ -43,8 +42,7 @@ class MimeHandlerViewGuest : public GuestView<MimeHandlerViewGuest>,
   // content::BrowserPluginGuestDelegate implementation
   bool Find(int request_id,
             const base::string16& search_text,
-            const blink::WebFindOptions& options,
-            bool is_full_page_plugin) override;
+            const blink::WebFindOptions& options) override;
 
   // WebContentsDelegate implementation.
   void ContentsZoomChange(bool zoom_in) override;
@@ -58,6 +56,7 @@ class MimeHandlerViewGuest : public GuestView<MimeHandlerViewGuest>,
                  const gfx::Rect& selection_rect,
                  int active_match_ordinal,
                  bool final_update) override;
+  bool SaveFrame(const GURL& url, const content::Referrer& referrer) override;
 
   // content::WebContentsObserver implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -71,6 +70,7 @@ class MimeHandlerViewGuest : public GuestView<MimeHandlerViewGuest>,
 
   scoped_ptr<MimeHandlerViewGuestDelegate> delegate_;
   scoped_ptr<ExtensionFunctionDispatcher> extension_function_dispatcher_;
+  GURL content_url_;
 
   DISALLOW_COPY_AND_ASSIGN(MimeHandlerViewGuest);
 };

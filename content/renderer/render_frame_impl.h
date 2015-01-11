@@ -29,6 +29,7 @@
 #include "third_party/WebKit/public/web/WebEventRacer.h"
 #include "third_party/WebKit/public/web/WebFrameClient.h"
 #include "third_party/WebKit/public/web/WebHistoryCommitType.h"
+#include "third_party/WebKit/public/web/WebTransitionElementData.h"
 #include "ui/gfx/range/range.h"
 
 #if defined(OS_ANDROID)
@@ -46,12 +47,12 @@ class WebGeolocationClient;
 class WebMouseEvent;
 class WebContentDecryptionModule;
 class WebMediaPlayer;
-class WebNotificationPresenter;
 class WebPushClient;
 class WebSecurityOrigin;
 struct WebCompositionUnderline;
 struct WebContextMenuData;
 struct WebCursorInfo;
+struct WebTransitionElementData;
 }
 
 namespace gfx {
@@ -70,9 +71,9 @@ class MediaStreamDispatcher;
 class MediaStreamRendererFactory;
 class MidiDispatcher;
 class NotificationPermissionDispatcher;
-class NotificationProvider;
 class PageState;
 class PepperPluginInstanceImpl;
+class PluginPowerSaverHelper;
 class PushMessagingDispatcher;
 class RendererAccessibility;
 class RendererCdmManager;
@@ -243,6 +244,8 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnImeConfirmComposition(const base::string16& text,
                                const gfx::Range& replacement_range,
                                bool keep_selection);
+
+  PluginPowerSaverHelper* plugin_power_saver_helper();
 #endif  // defined(ENABLE_PLUGINS)
 
   // May return NULL in some cases, especially if userMediaClient() returns
@@ -270,7 +273,8 @@ class CONTENT_EXPORT RenderFrameImpl
   blink::WebNode GetContextMenuNode() const override;
   blink::WebPlugin* CreatePlugin(blink::WebFrame* frame,
                                  const WebPluginInfo& info,
-                                 const blink::WebPluginParams& params) override;
+                                 const blink::WebPluginParams& params,
+                                 CreatePluginGesture gesture) override;
   void LoadURLExternally(blink::WebLocalFrame* frame,
                          const blink::WebURLRequest& request,
                          blink::WebNavigationPolicy policy) override;
@@ -361,6 +365,7 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebLocalFrame* frame,
       const blink::WebHistoryItem& item,
       blink::WebHistoryCommitType commit_type);
+  virtual void didCreateNewDocument(blink::WebLocalFrame* frame);
   virtual void didClearWindowObject(blink::WebLocalFrame* frame);
   virtual void didCreateDocumentElement(blink::WebLocalFrame* frame);
   virtual void didReceiveTitle(blink::WebLocalFrame* frame,
@@ -378,20 +383,11 @@ class CONTENT_EXPORT RenderFrameImpl
                                      blink::WebHistoryCommitType commit_type);
   virtual void didUpdateCurrentHistoryItem(blink::WebLocalFrame* frame);
   virtual void addNavigationTransitionData(
-        const blink::WebString& allowedDestinationOrigin,
-        const blink::WebString& selector,
-        const blink::WebString& markup);
-  virtual void addNavigationTransitionData(
-      const blink::WebString& allowedDestinationOrigin,
-      const blink::WebString& selector,
-      const blink::WebString& markup,
-      const blink::WebVector<blink::WebString>& web_names,
-      const blink::WebVector<blink::WebRect>& web_rects);
+      const blink::WebTransitionElementData& data);
   virtual void didChangeThemeColor();
   virtual void requestNotificationPermission(
       const blink::WebSecurityOrigin& origin,
       blink::WebNotificationPermissionCallback* callback);
-  virtual blink::WebNotificationPresenter* notificationPresenter();
   virtual void didChangeSelection(bool is_empty_selection);
   virtual blink::WebColorChooser* createColorChooser(
       blink::WebColorChooserClient* client,
@@ -468,6 +464,13 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual int64_t serviceWorkerID(blink::WebDataSource& data_source);
   virtual void postAccessibilityEvent(const blink::WebAXObject& obj,
                                       blink::WebAXEvent event);
+  virtual void handleAccessibilityFindInPageResult(
+        int identifier,
+        int match_index,
+        const blink::WebAXObject& start_object,
+        int start_offset,
+        const blink::WebAXObject& end_object,
+        int end_offset);
   virtual void didChangeManifest(blink::WebLocalFrame*);
 
   // WebMediaPlayerDelegate implementation:
@@ -481,6 +484,10 @@ class CONTENT_EXPORT RenderFrameImpl
   // TODO(nasko): Make all tests in RenderViewImplTest friends and then move
   // this back to private member.
   void OnNavigate(const FrameMsg_Navigate_Params& params);
+
+  // Make this frame show an empty, unscriptable page.
+  // TODO(nasko): Remove this method once swapped out state is no longer used.
+  void NavigateToSwappedOutURL();
 
   // Binds this render frame's service registry to a handle to the remote
   // service registry.
@@ -542,8 +549,9 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnPasteAndMatchStyle();
   void OnDelete();
   void OnSelectAll();
-  void OnSelectRange(const gfx::Point& start, const gfx::Point& end);
+  void OnSelectRange(const gfx::Point& base, const gfx::Point& extent);
   void OnUnselect();
+  void OnMoveRangeSelectionExtent(const gfx::Point& point);
   void OnReplace(const base::string16& text);
   void OnReplaceMisspelling(const base::string16& text);
   void OnCSSInsertRequest(const std::string& css);
@@ -562,7 +570,10 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnTextSurroundingSelectionRequest(size_t max_length);
   void OnAddStyleSheetByURL(const std::string& url);
   void OnSetupTransitionView(const std::string& markup);
-  void OnBeginExitTransition(const std::string& css_selector);
+  void OnBeginExitTransition(const std::string& css_selector,
+                             bool exit_to_native_app);
+  void OnHideTransitionElements(const std::string& css_selector);
+  void OnShowTransitionElements(const std::string& css_selector);
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
   void OnDisownOpener();
 #if defined(OS_ANDROID)
@@ -653,6 +664,11 @@ class CONTENT_EXPORT RenderFrameImpl
       bool* is_reload,
       blink::WebURLRequest::CachePolicy* cache_policy);
 
+  // PlzNavigate
+  // Sends a FrameHostMsg_BeginNavigation to the browser based on the contents
+  // of the WebURLRequest.
+  void BeginNavigation(blink::WebURLRequest* request);
+
   // Returns the URL being loaded by the |frame_|'s request.
   GURL GetLoadingUrl() const;
 
@@ -691,6 +707,8 @@ class CONTENT_EXPORT RenderFrameImpl
   // Current text input composition text. Empty if no composition is in
   // progress.
   base::string16 pepper_composition_text_;
+
+  PluginPowerSaverHelper* plugin_power_saver_helper_;
 #endif
 
   RendererWebCookieJarImpl cookie_jar_;
@@ -737,10 +755,6 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // Dispatches permission requests for Web Notifications.
   NotificationPermissionDispatcher* notification_permission_dispatcher_;
-
-  // Holds a reference to the service which provides desktop notifications.
-  // TODO(peter) Remove this once Web Notifications are routed through Platform.
-  NotificationProvider* notification_provider_;
 
   // Destroyed via the RenderFrameObserver::OnDestruct() mechanism.
   UserMediaClientImpl* web_user_media_client_;

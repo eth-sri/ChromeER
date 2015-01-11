@@ -11,11 +11,14 @@
     'type': '<(component)',
     'dependencies': [
       '../../../base/base.gyp:base',
+      '../../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
     ],
     'defines': [
       'EVENTS_OZONE_IMPLEMENTATION',
     ],
     'sources': [
+      'chromeos/cursor_controller.cc',
+      'chromeos/cursor_controller.h',
       'device/device_event.cc',
       'device/device_event.h',
       'device/device_event_observer.h',
@@ -46,6 +49,7 @@
       '../../../base/base.gyp:base',
       '../../gfx/gfx.gyp:gfx',
       '../../ozone/ozone.gyp:ozone_base',
+      '../devices/events_devices.gyp:events_devices',
       '../events.gyp:dom4_keycode_converter',
       '../platform/events_platform.gyp:events_platform',
       'events_ozone',
@@ -75,8 +79,12 @@
       'evdev/event_modifiers_evdev.cc',
       'evdev/event_modifiers_evdev.h',
       'evdev/events_ozone_evdev_export.h',
+      'evdev/input_injector_evdev.cc',
+      'evdev/input_injector_evdev.h',
       'evdev/keyboard_evdev.cc',
       'evdev/keyboard_evdev.h',
+      'evdev/tablet_event_converter_evdev.cc',
+      'evdev/tablet_event_converter_evdev.h',
       'evdev/touch_event_converter_evdev.cc',
       'evdev/touch_event_converter_evdev.h',
     ],
@@ -89,6 +97,11 @@
         'defines': [
           'USE_EVDEV_GESTURES',
         ],
+        'direct_dependent_settings': {
+          'defines': [
+            'USE_EVDEV_GESTURES',
+          ],
+        },
       }, {
         'sources/': [
           ['exclude', '^evdev/libgestures_glue/'],

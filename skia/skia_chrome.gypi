@@ -71,7 +71,6 @@
     'ext/SkDiscardableMemory_chrome.h',
     'ext/SkDiscardableMemory_chrome.cc',
     'ext/SkMemory_new_handler.cpp',
-    'ext/skia_trace_shim.h',
     'ext/skia_utils_base.cc',
     'ext/skia_utils_base.h',
     'ext/skia_utils_ios.mm',
@@ -83,24 +82,15 @@
     'ext/vector_canvas.h',
     'ext/vector_platform_device_emf_win.cc',
     'ext/vector_platform_device_emf_win.h',
-    'ext/vector_platform_device_skia.cc',
-    'ext/vector_platform_device_skia.h',
   ],
   'conditions': [
-    [ 'OS == "android" and enable_printing == 0', {
+    [ 'OS == "android" and '
+      'enable_basic_printing==0 and enable_print_preview==0', {
       'sources!': [
         'ext/skia_utils_base.cc',
       ],
     }],
-    [ 'enable_printing == 0', {
-      'sources!': [
-        'ext/vector_platform_device_skia.cc',
-      ],
-    }],
     ['OS == "ios"', {
-      'sources/': [
-        ['exclude', '^ext/vector_platform_device_skia\\.'],
-      ],
       'dependencies!': [
         'skia_chrome_opts',
       ],

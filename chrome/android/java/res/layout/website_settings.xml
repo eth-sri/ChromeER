@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-   Copyright (c) 2013 The Chromium Authors. All rights reserved.
+   Copyright 2013 The Chromium Authors. All rights reserved.
 
    Use of this source code is governed by a BSD-style license that can be
    found in the LICENSE file.
@@ -24,8 +24,8 @@
             android:layout_height="wrap_content"
             android:lineSpacingExtra="4dp"
             android:paddingTop="16dp"
-            android:textColor="@color/website_settings_popup_url"
-            android:textSize="16dp"/>
+            android:textColor="@color/url_emphasis_default_text"
+            android:textSize="16sp"/>
 
         <TextView
             android:id="@+id/website_settings_connection_message"
@@ -34,11 +34,11 @@
             android:lineSpacingExtra="3dp"
             android:paddingTop="12dp"
             android:textColor="#444444"
-            android:textSize="14dp" />
+            android:textSize="14sp" />
 
         <Button
             android:id="@+id/website_settings_copy_url_button"
-            style="?android:attr/borderlessButtonStyle"
+            android:background="?attr/selectableItemBackground"
             android:layout_gravity="end"
             android:layout_width="wrap_content"
             android:layout_height="@dimen/website_settings_popup_button_height"
@@ -57,11 +57,13 @@
 
     <!-- Horizontal separator -->
     <View
+        android:id="@+id/website_settings_horizontal_separator"
         android:layout_width="match_parent"
         android:layout_height="1dip"
         android:background="#e7e7e7" />
 
     <LinearLayout
+        android:id="@+id/website_settings_lower_dialog_area"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
@@ -75,17 +77,16 @@
             android:orientation="vertical" >
         </LinearLayout>
 
-        <LinearLayout
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="end"
-            android:orientation="horizontal"
             android:paddingTop="16dp"
             android:paddingBottom="16dp" >
 
             <Button
                 android:id="@+id/website_settings_site_settings_button"
-                style="?android:attr/borderlessButtonStyle"
+                android:background="?attr/selectableItemBackground"
                 android:layout_width="wrap_content"
                 android:layout_height="@dimen/website_settings_popup_button_height"
                 android:layout_marginEnd="@dimen/website_settings_popup_button_margin_sides"
@@ -97,22 +98,7 @@
                 android:textColor="@color/website_settings_popup_button_text"
                 android:textSize="@dimen/website_settings_popup_button_text_size"
                 android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/website_settings_done_button"
-                style="?android:attr/borderlessButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="@dimen/website_settings_popup_button_height"
-                android:layout_marginEnd="@dimen/website_settings_popup_button_margin_sides"
-                android:layout_marginStart="@dimen/website_settings_popup_button_margin_sides"
-                android:paddingEnd="@dimen/website_settings_popup_button_padding_sides"
-                android:paddingStart="@dimen/website_settings_popup_button_padding_sides"
-                android:text="@string/page_info_done_button"
-                android:textAllCaps="true"
-                android:textColor="@color/website_settings_popup_button_text"
-                android:textSize="@dimen/website_settings_popup_button_text_size"
-                android:textStyle="bold" />
-        </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 
 </LinearLayout>

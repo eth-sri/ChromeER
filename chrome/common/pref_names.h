@@ -175,7 +175,6 @@ extern const char kAudioDevicesMute[];
 extern const char kAudioDevicesVolumePercent[];
 extern const char kAudioMute[];
 extern const char kAudioVolumePercent[];
-extern const char kSpringChargerCheck[];
 extern const char kTapToClickEnabled[];
 extern const char kTapDraggingEnabled[];
 extern const char kEnableTouchpadThreeFingerClick[];
@@ -268,6 +267,7 @@ extern const char kTimeOnOobe[];
 extern const char kCurrentWallpaperAppName[];
 extern const char kFileSystemProviderMounted[];
 extern const char kTouchVirtualKeyboardEnabled[];
+extern const char kWakeOnWiFiEnabled[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -399,10 +399,11 @@ extern const char kPreferenceResetTime[];
 extern const char kGCMChannelEnabled[];
 extern const char kPushMessagingRegistrationCount[];
 
-extern const char kEasyUnlockEnabled[];
-extern const char kEasyUnlockShowTutorial[];
-extern const char kEasyUnlockPairing[];
 extern const char kEasyUnlockAllowed[];
+extern const char kEasyUnlockEnabled[];
+extern const char kEasyUnlockPairing[];
+extern const char kEasyUnlockProximityRequired[];
+extern const char kEasyUnlockShowTutorial[];
 
 extern const char kZeroSuggestCachedResults[];
 
@@ -420,8 +421,6 @@ extern const char kSSLBlockingBypassed[];
 extern const char kGLVendorString[];
 extern const char kGLRendererString[];
 extern const char kGLVersionString[];
-
-extern const char kEulaAccepted[];
 
 extern const char kMetricsReportingEnabled[];
 
@@ -485,8 +484,9 @@ extern const char kMemoryCacheSize[];
 extern const char kDownloadDefaultDirectory[];
 extern const char kDownloadExtensionsToOpen[];
 extern const char kDownloadDirUpgraded[];
-#if defined(OS_WIN)
-extern const char kOpenPdfDownloadInAdobeReader[];
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
+extern const char kOpenPdfDownloadInSystemReader[];
 #endif
 
 extern const char kSaveFileDefaultDirectory[];
@@ -719,6 +719,7 @@ extern const char kHardwareAccelerationModePrevious[];
 extern const char kDevicePolicyRefreshRate[];
 
 extern const char kFactoryResetRequested[];
+extern const char kDebuggingFeaturesRequested[];
 
 extern const char kMessageCenterShowedFirstRunBalloon[];
 extern const char kMessageCenterShowIcon[];
@@ -802,6 +803,10 @@ extern const char kBrowserGuestModeEnabled[];
 extern const char kBrowserAddPersonEnabled[];
 
 extern const char kEasyUnlockHardlockState[];
+
+extern const char kPasswordBubbleTimeStamp[];
+extern const char kPasswordBubbleNopesCount[];
+extern const char kPasswordBubbleLastInteractions[];
 
 }  // namespace prefs
 

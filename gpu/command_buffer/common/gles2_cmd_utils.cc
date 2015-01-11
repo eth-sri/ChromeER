@@ -9,7 +9,9 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
+#include <GLES3/gl3.h>
 
+#include "base/numerics/safe_math.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 
@@ -360,6 +362,7 @@ int ElementsPerGroup(int format, int type) {
     case GL_SRGB_EXT:
        return 3;
     case GL_LUMINANCE_ALPHA:
+    case GL_RG_EXT:
        return 2;
     case GL_RGBA:
     case GL_BGRA_EXT:
@@ -373,6 +376,7 @@ int ElementsPerGroup(int format, int type) {
     case GL_DEPTH_COMPONENT16:
     case GL_DEPTH24_STENCIL8_OES:
     case GL_DEPTH_STENCIL_OES:
+    case GL_RED_EXT:
        return 1;
     default:
        return 0;
@@ -704,6 +708,10 @@ uint32 GLES2Util::GetChannelsForFormat(int format) {
     case GL_DEPTH_STENCIL_OES:
     case GL_DEPTH24_STENCIL8_OES:
       return kDepth | kStencil;
+    case GL_RED_EXT:
+      return kRed;
+    case GL_RG_EXT:
+      return kRed | kGreen;
     default:
       return 0x0000;
   }
@@ -770,7 +778,7 @@ bool GLES2Util::ParseUniformName(
     bool* getting_array) {
   bool getting_array_location = false;
   size_t open_pos = std::string::npos;
-  int index = 0;
+  base::CheckedNumeric<int> index = 0;
   if (name[name.size() - 1] == ']') {
     if (name.size() < 3) {
       return false;
@@ -788,10 +796,13 @@ bool GLES2Util::ParseUniformName(
       }
       index = index * 10 + digit;
     }
+    if (!index.IsValid()) {
+      return false;
+    }
     getting_array_location = true;
   }
   *getting_array = getting_array_location;
-  *element_index = index;
+  *element_index = index.ValueOrDie();
   *array_pos = open_pos;
   return true;
 }

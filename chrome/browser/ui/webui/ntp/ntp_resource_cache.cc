@@ -32,7 +32,6 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_page_handler.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/ntp/ntp_login_handler.h"
-#include "chrome/browser/ui/webui/sync_setup_handler.h"
 #include "chrome/browser/web_resource/notification_promo.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -84,7 +83,7 @@ const char kLearnMoreGuestSessionUrl[] =
 #if defined(OS_CHROMEOS)
     "https://www.google.com/support/chromeos/bin/answer.py?answer=1057090";
 #else
-    "https://support.google.com/chrome/answer/95464#guest";
+    "https://support.google.com/chrome/?p=ui_guest";
 #endif
 
 std::string SkColorToRGBAString(SkColor color) {
@@ -622,7 +621,7 @@ void NTPResourceCache::CreateNewTabGuestCSS() {
   // Get our template.
   static const base::StringPiece new_tab_theme_css(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_NEW_GUEST_TAB_THEME_CSS));
+          IDR_NEW_INCOGNITO_TAB_THEME_CSS));
 
   // Create the string from our template and the replacements.
   std::string full_css = ReplaceStringPlaceholders(

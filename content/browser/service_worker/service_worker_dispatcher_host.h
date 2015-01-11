@@ -40,6 +40,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
 
   // BrowserMessageFilter implementation
   void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
   void OnDestruct() const override;
   bool OnMessageReceived(const IPC::Message& message) override;
 
@@ -93,6 +94,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnWorkerReadyForInspection(int embedded_worker_id);
   void OnWorkerScriptLoaded(int embedded_worker_id, int thread_id);
   void OnWorkerScriptLoadFailed(int embedded_worker_id);
+  void OnWorkerScriptEvaluated(int embedded_worker_id, bool success);
   void OnWorkerStarted(int embedded_worker_id);
   void OnWorkerStopped(int embedded_worker_id);
   void OnPausedAfterDownload(int embedded_worker_id);
@@ -115,6 +117,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                              const base::string16& message,
                              const std::vector<int>& sent_message_port_ids);
   void OnServiceWorkerObjectDestroyed(int handle_id);
+  void OnTerminateWorker(int handle_id);
 
   ServiceWorkerRegistrationHandle* FindRegistrationHandle(
       int provider_id,

@@ -154,10 +154,15 @@ class SpdyFramerTestUtil {
       LOG(FATAL);
     }
 
-    void OnHeaders(SpdyStreamId stream_id, bool fin, bool end) override {
+    void OnHeaders(SpdyStreamId stream_id, bool has_priority,
+                   SpdyPriority priority, bool fin, bool end) override {
       SpdyFramer framer(version_);
       framer.set_enable_compression(false);
       SpdyHeadersIR headers(stream_id);
+      headers.set_has_priority(has_priority);
+      if (headers.has_priority()) {
+        headers.set_priority(priority);
+      }
       headers.set_fin(fin);
       scoped_ptr<SpdyFrame> frame(framer.SerializeHeaders(headers));
       ResetBuffer();
@@ -389,7 +394,8 @@ class TestSpdyVisitor : public SpdyFramerVisitorInterface,
     ++goaway_count_;
   }
 
-  void OnHeaders(SpdyStreamId stream_id, bool fin, bool end) override {
+  void OnHeaders(SpdyStreamId stream_id, bool has_priority,
+                 SpdyPriority priority, bool fin, bool end) override {
     ++headers_frame_count_;
     InitHeaderStreaming(HEADERS, stream_id);
     if (fin) {
@@ -1225,18 +1231,19 @@ TEST_P(SpdyFramerTest, Basic) {
     visitor.SimulateInFramer(kV4Input, sizeof(kV4Input));
   }
 
-  EXPECT_EQ(2, visitor.syn_frame_count_);
   EXPECT_EQ(0, visitor.syn_reply_frame_count_);
-  EXPECT_EQ(1, visitor.headers_frame_count_);
   EXPECT_EQ(24, visitor.data_bytes_);
-
   EXPECT_EQ(0, visitor.error_count_);
   EXPECT_EQ(2, visitor.fin_frame_count_);
 
   if (IsSpdy4()) {
+    EXPECT_EQ(3, visitor.headers_frame_count_);
+    EXPECT_EQ(0, visitor.syn_frame_count_);
     base::StringPiece reset_stream = "RESETSTREAM";
     EXPECT_EQ(reset_stream, visitor.fin_opaque_data_);
   } else {
+    EXPECT_EQ(1, visitor.headers_frame_count_);
+    EXPECT_EQ(2, visitor.syn_frame_count_);
     EXPECT_TRUE(visitor.fin_opaque_data_.empty());
   }
 
@@ -1339,11 +1346,12 @@ TEST_P(SpdyFramerTest, FinOnDataFrame) {
   }
 
   EXPECT_EQ(0, visitor.error_count_);
-  EXPECT_EQ(1, visitor.syn_frame_count_);
   if (IsSpdy4()) {
+    EXPECT_EQ(0, visitor.syn_frame_count_);
     EXPECT_EQ(0, visitor.syn_reply_frame_count_);
-    EXPECT_EQ(1, visitor.headers_frame_count_);
+    EXPECT_EQ(2, visitor.headers_frame_count_);
   } else {
+    EXPECT_EQ(1, visitor.syn_frame_count_);
     EXPECT_EQ(1, visitor.syn_reply_frame_count_);
     EXPECT_EQ(0, visitor.headers_frame_count_);
   }
@@ -1418,11 +1426,12 @@ TEST_P(SpdyFramerTest, FinOnSynReplyFrame) {
   }
 
   EXPECT_EQ(0, visitor.error_count_);
-  EXPECT_EQ(1, visitor.syn_frame_count_);
   if (IsSpdy4()) {
+    EXPECT_EQ(0, visitor.syn_frame_count_);
     EXPECT_EQ(0, visitor.syn_reply_frame_count_);
-    EXPECT_EQ(1, visitor.headers_frame_count_);
+    EXPECT_EQ(2, visitor.headers_frame_count_);
   } else {
+    EXPECT_EQ(1, visitor.syn_frame_count_);
     EXPECT_EQ(1, visitor.syn_reply_frame_count_);
     EXPECT_EQ(0, visitor.headers_frame_count_);
   }
@@ -2045,8 +2054,8 @@ TEST_P(SpdyFramerTest, CreateSynStreamCompressed) {
   {
     const char kDescription[] =
         "SYN_STREAM frame, low pri, no FIN";
-
     const SpdyPriority priority = IsSpdy2() ? 2 : 4;
+
     const unsigned char kV2FrameData[] = {
       0x80, spdy_version_ch_, 0x00, 0x01,
       0x00, 0x00, 0x00, 0x36,
@@ -2083,15 +2092,70 @@ TEST_P(SpdyFramerTest, CreateSynStreamCompressed) {
       0x80, 0x00, 0x00, 0x00,
       0x00, 0xFF, 0xFF,
     };
+    const unsigned char kV2SIMDFrameData[] = {
+      0x80, spdy_version_ch_, 0x00, 0x01,
+      0x00, 0x00, 0x00, 0x33,
+      0x00, 0x00, 0x00, 0x01,
+      0x00, 0x00, 0x00, 0x00,
+      0x80, 0x00, 0x38, 0xea,
+      0xdf, 0xa2, 0x51, 0xb2,
+      0x62, 0x60, 0x62, 0x60,
+      0x4e, 0x4a, 0x2c, 0x62,
+      0x60, 0x06, 0x08, 0xa0,
+      0xb4, 0xfc, 0x7c, 0x80,
+      0x00, 0x62, 0x60, 0x06,
+      0x13, 0x00, 0x01, 0x94,
+      0x94, 0x58, 0x04, 0x10,
+      0x40, 0x00, 0x00, 0x00,
+      0x00, 0xff, 0xff,
+    };
+    const unsigned char kV3SIMDFrameData[] = {
+      0x80, spdy_version_ch_, 0x00, 0x01,
+      0x00, 0x00, 0x00, 0x32,
+      0x00, 0x00, 0x00, 0x01,
+      0x00, 0x00, 0x00, 0x00,
+      0x80, 0x00, 0x38, 0xea,
+      0xe3, 0xc6, 0xa7, 0xc2,
+      0x02, 0xe5, 0x0e, 0x50,
+      0xc2, 0x4b, 0x4a, 0x04,
+      0xe5, 0x0b, 0x66, 0x80,
+      0x00, 0x4a, 0xcb, 0xcf,
+      0x07, 0x08, 0x20, 0x24,
+      0x0a, 0x20, 0x80, 0x92,
+      0x12, 0x8b, 0x00, 0x02,
+      0x08, 0x00, 0x00, 0x00,
+      0xff, 0xff,
+    };
+
     SpdySynStreamIR syn_stream(1);
     syn_stream.set_priority(priority);
     syn_stream.SetHeader("bar", "foo");
     syn_stream.SetHeader("foo", "bar");
     scoped_ptr<SpdyFrame> frame(framer.SerializeSynStream(syn_stream));
+    const unsigned char* frame_data =
+        reinterpret_cast<const unsigned char*>(frame->data());
     if (IsSpdy2()) {
-      CompareFrame(kDescription, *frame, kV2FrameData, arraysize(kV2FrameData));
+      // Try comparing with SIMD version, if that fails, do a failing check
+      // with pretty printing against non-SIMD version
+      if (memcmp(frame_data,
+                 kV2SIMDFrameData,
+                 std::min(arraysize(kV2SIMDFrameData), frame->size())) != 0) {
+        CompareCharArraysWithHexError(kDescription,
+                                      frame_data,
+                                      frame->size(),
+                                      kV2FrameData,
+                                      arraysize(kV2FrameData));
+      }
     } else if (IsSpdy3()) {
-      CompareFrame(kDescription, *frame, kV3FrameData, arraysize(kV3FrameData));
+      if (memcmp(frame_data,
+                 kV3SIMDFrameData,
+                 std::min(arraysize(kV3SIMDFrameData), frame->size())) != 0) {
+        CompareCharArraysWithHexError(kDescription,
+                                      frame_data,
+                                      frame->size(),
+                                      kV3FrameData,
+                                      arraysize(kV3FrameData));
+      }
     } else {
       LOG(FATAL) << "Unsupported version in test.";
     }
@@ -2280,14 +2344,66 @@ TEST_P(SpdyFramerTest, CreateSynReplyCompressed) {
       0x00, 0x00, 0x00, 0xff,
       0xff,
     };
+    const unsigned char kV2SIMDFrameData[] = {
+      0x80, spdy_version_ch_, 0x00, 0x02,
+      0x00, 0x00, 0x00, 0x2f,
+      0x00, 0x00, 0x00, 0x01,
+      0x00, 0x00, 0x38, 0xea,
+      0xdf, 0xa2, 0x51, 0xb2,
+      0x62, 0x60, 0x62, 0x60,
+      0x4e, 0x4a, 0x2c, 0x62,
+      0x60, 0x06, 0x08, 0xa0,
+      0xb4, 0xfc, 0x7c, 0x80,
+      0x00, 0x62, 0x60, 0x06,
+      0x13, 0x00, 0x01, 0x94,
+      0x94, 0x58, 0x04, 0x10,
+      0x40, 0x00, 0x00, 0x00,
+      0x00, 0xff, 0xff,
+    };
+    const unsigned char kV3SIMDFrameData[] = {
+      0x80, spdy_version_ch_, 0x00, 0x02,
+      0x00, 0x00, 0x00, 0x2c,
+      0x00, 0x00, 0x00, 0x01,
+      0x38, 0xea, 0xe3, 0xc6,
+      0xa7, 0xc2, 0x02, 0xe5,
+      0x0e, 0x50, 0xc2, 0x4b,
+      0x4a, 0x04, 0xe5, 0x0b,
+      0x66, 0x80, 0x00, 0x4a,
+      0xcb, 0xcf, 0x07, 0x08,
+      0x20, 0x24, 0x0a, 0x20,
+      0x80, 0x92, 0x12, 0x8b,
+      0x00, 0x02, 0x08, 0x00,
+      0x00, 0x00, 0xff, 0xff,
+    };
+
     SpdySynReplyIR syn_reply(1);
     syn_reply.SetHeader("bar", "foo");
     syn_reply.SetHeader("foo", "bar");
     scoped_ptr<SpdyFrame> frame(framer.SerializeSynReply(syn_reply));
+    const unsigned char* frame_data =
+        reinterpret_cast<const unsigned char*>(frame->data());
     if (IsSpdy2()) {
-      CompareFrame(kDescription, *frame, kV2FrameData, arraysize(kV2FrameData));
+      // Try comparing with SIMD version, if that fails, do a failing check
+      // with pretty printing against non-SIMD version
+      if (memcmp(frame_data,
+                 kV2SIMDFrameData,
+                 std::min(arraysize(kV2SIMDFrameData), frame->size())) != 0) {
+        CompareCharArraysWithHexError(kDescription,
+                                      frame_data,
+                                      frame->size(),
+                                      kV2FrameData,
+                                      arraysize(kV2FrameData));
+      }
     } else if (IsSpdy3()) {
-      CompareFrame(kDescription, *frame, kV3FrameData, arraysize(kV3FrameData));
+      if (memcmp(frame_data,
+                 kV3SIMDFrameData,
+                 std::min(arraysize(kV3SIMDFrameData), frame->size())) != 0) {
+        CompareCharArraysWithHexError(kDescription,
+                                      frame_data,
+                                      frame->size(),
+                                      kV3FrameData,
+                                      arraysize(kV3FrameData));
+      }
     } else {
       LOG(FATAL) << "Unsupported version in test.";
     }
@@ -2358,7 +2474,7 @@ TEST_P(SpdyFramerTest, CreateRstStream) {
       0x00, 0x00, 0x04, 0x03,
       0x00, 0x7f, 0xff, 0xff,
       0xff, 0x00, 0x00, 0x00,
-      0x06,
+      0x02,
     };
     SpdyRstStreamIR rst_stream(0x7FFFFFFF,
                                RST_STREAM_INTERNAL_ERROR,
@@ -2886,14 +3002,66 @@ TEST_P(SpdyFramerTest, CreateHeadersCompressed) {
       0x00, 0x00, 0x00, 0xff,
       0xff,
     };
+    const unsigned char kV2SIMDFrameData[] = {
+      0x80, spdy_version_ch_, 0x00, 0x08,
+      0x00, 0x00, 0x00, 0x2f,
+      0x00, 0x00, 0x00, 0x01,
+      0x00, 0x00, 0x38, 0xea,
+      0xdf, 0xa2, 0x51, 0xb2,
+      0x62, 0x60, 0x62, 0x60,
+      0x4e, 0x4a, 0x2c, 0x62,
+      0x60, 0x06, 0x08, 0xa0,
+      0xb4, 0xfc, 0x7c, 0x80,
+      0x00, 0x62, 0x60, 0x06,
+      0x13, 0x00, 0x01, 0x94,
+      0x94, 0x58, 0x04, 0x10,
+      0x40, 0x00, 0x00, 0x00,
+      0x00, 0xff, 0xff,
+    };
+    const unsigned char kV3SIMDFrameData[] = {
+      0x80, spdy_version_ch_, 0x00, 0x08,
+      0x00, 0x00, 0x00, 0x2c,
+      0x00, 0x00, 0x00, 0x01,
+      0x38, 0xea, 0xe3, 0xc6,
+      0xa7, 0xc2, 0x02, 0xe5,
+      0x0e, 0x50, 0xc2, 0x4b,
+      0x4a, 0x04, 0xe5, 0x0b,
+      0x66, 0x80, 0x00, 0x4a,
+      0xcb, 0xcf, 0x07, 0x08,
+      0x20, 0x24, 0x0a, 0x20,
+      0x80, 0x92, 0x12, 0x8b,
+      0x00, 0x02, 0x08, 0x00,
+      0x00, 0x00, 0xff, 0xff,
+    };
+
     SpdyHeadersIR headers_ir(1);
     headers_ir.SetHeader("bar", "foo");
     headers_ir.SetHeader("foo", "bar");
     scoped_ptr<SpdyFrame> frame(framer.SerializeHeaders(headers_ir));
+    const unsigned char* frame_data =
+        reinterpret_cast<const unsigned char*>(frame->data());
     if (IsSpdy2()) {
-      CompareFrame(kDescription, *frame, kV2FrameData, arraysize(kV2FrameData));
+      // Try comparing with SIMD version, if that fails, do a failing check
+      // with pretty printing against non-SIMD version
+      if (memcmp(frame_data,
+                 kV2SIMDFrameData,
+                 std::min(arraysize(kV2SIMDFrameData), frame->size())) != 0) {
+        CompareCharArraysWithHexError(kDescription,
+                                      frame_data,
+                                      frame->size(),
+                                      kV2FrameData,
+                                      arraysize(kV2FrameData));
+      }
     } else if (IsSpdy3()) {
-      CompareFrame(kDescription, *frame, kV3FrameData, arraysize(kV3FrameData));
+      if (memcmp(frame_data,
+                 kV3SIMDFrameData,
+                 std::min(arraysize(kV3SIMDFrameData), frame->size())) != 0) {
+        CompareCharArraysWithHexError(kDescription,
+                                      frame_data,
+                                      frame->size(),
+                                      kV3FrameData,
+                                      arraysize(kV3FrameData));
+      }
     } else {
       // Deflate compression doesn't apply to HPACK.
     }
@@ -5051,13 +5219,14 @@ TEST_P(SpdyFramerTest, HeadersFrameFlags) {
       EXPECT_CALL(visitor, OnError(_));
     } else {
       if (spdy_version_ > SPDY3 && flags & HEADERS_FLAG_PRIORITY) {
-        EXPECT_CALL(visitor, OnSynStream(57,        // stream id
-                                         0,         // associated stream id
-                                         3,         // priority
-                                         flags & CONTROL_FLAG_FIN,
-                                         false));  // unidirectional
+        EXPECT_CALL(visitor, OnHeaders(57,    // stream id
+                                       true,  // has priority?
+                                       3,     // priority
+                                       flags & CONTROL_FLAG_FIN,  // fin?
+                                       (flags & HEADERS_FLAG_END_HEADERS) ||
+                                           !IsSpdy4()));  // end headers?
       } else {
-        EXPECT_CALL(visitor, OnHeaders(57,
+        EXPECT_CALL(visitor, OnHeaders(57, false, 0,
                                        flags & CONTROL_FLAG_FIN,
                                        (flags & HEADERS_FLAG_END_HEADERS) ||
                                         !IsSpdy4()));
@@ -5232,7 +5401,7 @@ TEST_P(SpdyFramerTest, ContinuationFrameFlags) {
 
     EXPECT_CALL(debug_visitor, OnSendCompressedFrame(42, HEADERS, _, _));
     EXPECT_CALL(debug_visitor, OnReceiveCompressedFrame(42, HEADERS, _));
-    EXPECT_CALL(visitor, OnHeaders(42, 0, false));
+    EXPECT_CALL(visitor, OnHeaders(42, false, 0, 0, false));
     EXPECT_CALL(visitor, OnControlFrameHeaderData(42, _, _))
           .WillRepeatedly(testing::Return(true));
 

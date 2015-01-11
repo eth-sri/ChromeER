@@ -58,6 +58,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "base/win/scoped_handle.h"
 #include "content/public/common/sandbox_init.h"
 #endif
 
@@ -897,10 +898,12 @@ void WebPluginDelegateProxy::WillDestroyWindow() {
 
 #if defined(OS_WIN)
 void WebPluginDelegateProxy::OnSetWindowlessData(
-      HANDLE modal_loop_pump_messages_event,
+      HANDLE modal_loop_pump_messages_event_handle,
       gfx::NativeViewId dummy_activation_window) {
-  DCHECK(modal_loop_pump_messages_event_ == NULL);
-  DCHECK(dummy_activation_window_ == NULL);
+  DCHECK(!modal_loop_pump_messages_event_.get());
+  DCHECK(!dummy_activation_window_);
+  base::win::ScopedHandle modal_loop_pump_messages_event(
+      modal_loop_pump_messages_event_handle);
 
   dummy_activation_window_ = dummy_activation_window;
   render_view_->Send(new ViewHostMsg_WindowlessPluginDummyWindowCreated(
@@ -908,11 +911,11 @@ void WebPluginDelegateProxy::OnSetWindowlessData(
 
   // Bug 25583: this can be null because some "virus scanners" block the
   // DuplicateHandle call in the plugin process.
-  if (!modal_loop_pump_messages_event)
+  if (!modal_loop_pump_messages_event.IsValid())
     return;
 
   modal_loop_pump_messages_event_.reset(
-      new base::WaitableEvent(modal_loop_pump_messages_event));
+      new base::WaitableEvent(modal_loop_pump_messages_event.Pass()));
 }
 
 void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
@@ -1121,7 +1124,7 @@ void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
                                       const std::string& method,
                                       const char* buf,
                                       unsigned int len,
-                                      const GURL& referrer,
+                                      const Referrer& referrer,
                                       bool notify_redirects,
                                       bool is_plugin_src_load,
                                       int origin_pid,
@@ -1137,7 +1140,8 @@ void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
     params.post_data.resize(len);
     memcpy(&params.post_data.front(), buf, len);
   }
-  params.referrer = referrer;
+  params.referrer = referrer.url;
+  params.referrer_policy = referrer.policy;
   params.notify_redirect = notify_redirects;
   params.is_plugin_src_load = is_plugin_src_load;
   params.render_frame_id = render_frame_id;

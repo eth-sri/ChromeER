@@ -5,6 +5,7 @@
 #ifndef CONTENT_COMMON_ANDROID_SURFACE_TEXTURE_MANAGER_H_
 #define CONTENT_COMMON_ANDROID_SURFACE_TEXTURE_MANAGER_H_
 
+#include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -13,7 +14,7 @@ class SurfaceTexture;
 
 namespace content {
 
-class SurfaceTextureManager {
+class CONTENT_EXPORT SurfaceTextureManager {
  public:
   static SurfaceTextureManager* GetInstance();
   static void InitInstance(SurfaceTextureManager* instance);
@@ -28,9 +29,9 @@ class SurfaceTextureManager {
   virtual void UnregisterSurfaceTexture(int surface_texture_id,
                                         int client_id) = 0;
 
-  // Acquire native widget for surface texture.
-  virtual gfx::AcceleratedWidget AcquireNativeWidget(int surface_texture_id,
-                                                     int client_id) = 0;
+  // Acquire native widget for a registered surface texture.
+  virtual gfx::AcceleratedWidget AcquireNativeWidgetForSurfaceTexture(
+      int surface_texture_id) = 0;
 
  protected:
   virtual ~SurfaceTextureManager() {}

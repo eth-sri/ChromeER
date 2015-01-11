@@ -30,6 +30,7 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/stream_handle.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -718,10 +719,26 @@ void NavigatorImpl::OnBeginNavigation(
       switches::kEnableBrowserSideNavigation));
   DCHECK(frame_tree_node);
 
-  // TODO(clamy): In case of a renderer initiated navigation create a new
-  // NavigationRequest.
   NavigationRequest* navigation_request =
       navigation_request_map_.get(frame_tree_node->frame_tree_node_id());
+
+  if (!navigation_request) {
+    // This is a renderer initiated navigation, so generate a new
+    // NavigationRequest and store it in the map.
+    // TODO(clamy): Check if some PageState should be provided here.
+    // TODO(clamy): See how we should handle override of the user agent when the
+    // navigation may start in a renderer and commit in another one.
+    // TODO(clamy): See if the navigation start time should be measured in the
+    // renderer and sent to the browser instead of being measured here.
+    scoped_ptr<NavigationRequest> scoped_request(new NavigationRequest(
+        frame_tree_node,
+        common_params,
+        CommitNavigationParams(
+            PageState(), false, base::TimeTicks::Now())));
+    navigation_request = scoped_request.get();
+    navigation_request_map_.set(
+        frame_tree_node->frame_tree_node_id(), scoped_request.Pass());
+  }
   DCHECK(navigation_request);
 
   // Update the referrer with the one received from the renderer.
@@ -781,6 +798,12 @@ void NavigatorImpl::CancelNavigation(FrameTreeNode* frame_tree_node) {
   CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
   navigation_request_map_.erase(frame_tree_node->frame_tree_node_id());
+}
+
+// PlzNavigate
+NavigationRequest* NavigatorImpl::GetNavigationRequestForNodeForTesting(
+    FrameTreeNode* frame_tree_node) {
+  return navigation_request_map_.get(frame_tree_node->frame_tree_node_id());
 }
 
 void NavigatorImpl::LogResourceRequestTime(
@@ -873,6 +896,10 @@ void NavigatorImpl::RecordNavigationMetrics(
     const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
     SiteInstance* site_instance) {
   DCHECK(site_instance->HasProcess());
+
+  if (!details.is_in_page)
+    RecordAction(base::UserMetricsAction("FrameLoad"));
+
   if (!details.is_main_frame || !navigation_data_ ||
       navigation_data_->url_ != params.original_request_url) {
     return;

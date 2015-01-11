@@ -14,6 +14,8 @@ namespace wm {
 
 namespace {
 
+UserActivityDetector* g_instance = nullptr;
+
 // Returns a string describing |event|.
 std::string GetEventDebugString(const ui::Event* event) {
   std::string details = base::StringPrintf(
@@ -44,12 +46,21 @@ const int UserActivityDetector::kNotifyIntervalMs = 200;
 const int UserActivityDetector::kDisplayPowerChangeIgnoreMouseMs = 1000;
 
 UserActivityDetector::UserActivityDetector() {
+  CHECK(!g_instance);
+  g_instance = this;
 }
 
 UserActivityDetector::~UserActivityDetector() {
+  g_instance = nullptr;
 }
 
-bool UserActivityDetector::HasObserver(UserActivityObserver* observer) const {
+// static
+UserActivityDetector* UserActivityDetector::Get() {
+  return g_instance;
+}
+
+bool UserActivityDetector::HasObserver(
+    const UserActivityObserver* observer) const {
   return observers_.HasObserver(observer);
 }
 

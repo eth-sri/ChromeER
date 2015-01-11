@@ -139,13 +139,14 @@ ExtensionPage::ExtensionPage(const GURL& url,
       generated_background_page(generated_background_page) {
 }
 
-// On Mac, the install prompt is not modal. This means that the user can
-// navigate while the dialog is up, causing the dialog handler to outlive the
-// ExtensionSettingsHandler. That's a problem because the dialog framework will
-// try to contact us back once the dialog is closed, which causes a crash.
-// This class is designed to broker the message between the two objects, while
-// managing its own lifetime so that it can outlive the ExtensionSettingsHandler
-// and (when doing so) gracefully ignore the message from the dialog.
+// The install prompt is not necessarily modal (e.g. Mac, Linux Unity). This
+// means that the user can navigate while the dialog is up, causing the dialog
+// handler to outlive the ExtensionSettingsHandler. That's a problem because the
+// dialog framework will try to contact us back once the dialog is closed, which
+// causes a crash. This class is designed to broker the message between the two
+// objects, while managing its own lifetime so that it can outlive the
+// ExtensionSettingsHandler and (when doing so) gracefully ignore the message
+// from the dialog.
 class BrokerDelegate : public ExtensionInstallPrompt::Delegate {
  public:
   explicit BrokerDelegate(
@@ -164,6 +165,12 @@ class BrokerDelegate : public ExtensionInstallPrompt::Delegate {
       delegate_->InstallUIAbort(user_initiated);
     delete this;
   };
+
+  void AppInfoDialogClosed() {
+    if (delegate_)
+      delegate_->AppInfoDialogClosed();
+    delete this;
+  }
 
  private:
   base::WeakPtr<ExtensionSettingsHandler> delegate_;
@@ -857,12 +864,13 @@ void ExtensionSettingsHandler::AppInfoDialogClosed() {
 }
 
 void ExtensionSettingsHandler::ReloadUnpackedExtensions() {
-  const ExtensionSet* extensions = extension_service_->extensions();
+  ExtensionRegistry* registry =
+      ExtensionRegistry::Get(extension_service_->profile());
   std::vector<const Extension*> unpacked_extensions;
-  for (ExtensionSet::const_iterator extension = extensions->begin();
-       extension != extensions->end(); ++extension) {
-    if (Manifest::IsUnpackedLocation((*extension)->location()))
-      unpacked_extensions.push_back(extension->get());
+  for (const scoped_refptr<const extensions::Extension>& extension :
+       registry->enabled_extensions()) {
+    if (Manifest::IsUnpackedLocation(extension->location()))
+      unpacked_extensions.push_back(extension.get());
   }
 
   for (std::vector<const Extension*>::iterator iter =
@@ -884,7 +892,7 @@ void ExtensionSettingsHandler::HandleRequestExtensionsData(
   // Add the extensions to the results structure.
   base::ListValue* extensions_list = new base::ListValue();
 
-  WarningService* warnings = ExtensionSystem::Get(profile)->warning_service();
+  WarningService* warnings = WarningService::Get(profile);
 
   ExtensionRegistry* registry = ExtensionRegistry::Get(profile);
   const ExtensionSet& enabled_set = registry->enabled_extensions();
@@ -991,10 +999,11 @@ void ExtensionSettingsHandler::HandleInspectMessage(
 
   if (render_process_id == -1) {
     // This message is for a lazy background page. Start the page if necessary.
-    const Extension* extension =
-        extension_service_->extensions()->GetByID(extension_id);
-    DCHECK(extension);
     Profile* profile = Profile::FromWebUI(web_ui());
+    const Extension* extension =
+        ExtensionRegistry::Get(profile)->enabled_extensions().GetByID(
+            extension_id);
+    DCHECK(extension);
     if (incognito)
       profile = profile->GetOffTheRecordProfile();
     devtools_util::InspectBackgroundPage(extension, profile);
@@ -1208,8 +1217,10 @@ void ExtensionSettingsHandler::HandlePermissionsMessage(
 
   if (!extension_id_prompting_.empty())
     return;  // Only one prompt at a time.
-
   extension_id_prompting_ = extension->id();
+
+  // The BrokerDelegate manages its own lifetime.
+  BrokerDelegate* broker_delegate = new BrokerDelegate(AsWeakPtr());
 
   // Show the new-style extensions dialog when the flag is set. The flag cannot
   // be set on Mac platforms.
@@ -1221,13 +1232,13 @@ void ExtensionSettingsHandler::HandlePermissionsMessage(
     // Display the dialog at a size similar to the app list.
     const int kAppInfoDialogWidth = 380;
     const int kAppInfoDialogHeight = 490;
+
     ShowAppInfoInNativeDialog(
         web_contents()->GetTopLevelNativeWindow(),
         gfx::Size(kAppInfoDialogWidth, kAppInfoDialogHeight),
-        Profile::FromWebUI(web_ui()),
-        extension,
-        base::Bind(&ExtensionSettingsHandler::AppInfoDialogClosed,
-                   base::Unretained(this)));
+        Profile::FromWebUI(web_ui()), extension,
+        base::Bind(&BrokerDelegate::AppInfoDialogClosed,
+                   base::Unretained(broker_delegate)));
   } else {
     prompt_.reset(new ExtensionInstallPrompt(web_contents()));
     std::vector<base::FilePath> retained_file_paths;
@@ -1248,10 +1259,7 @@ void ExtensionSettingsHandler::HandlePermissionsMessage(
               ->GetPermissionMessageStrings(extension_id_prompting_);
     }
 
-    // The BrokerDelegate manages its own lifetime.
-    prompt_->ReviewPermissions(new BrokerDelegate(AsWeakPtr()),
-                               extension,
-                               retained_file_paths,
+    prompt_->ReviewPermissions(broker_delegate, extension, retained_file_paths,
                                retained_device_messages);
   }
 }
@@ -1355,8 +1363,7 @@ void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
 
   content::WebContentsObserver::Observe(web_ui()->GetWebContents());
 
-  warning_service_observer_.Add(
-      ExtensionSystem::Get(profile)->warning_service());
+  warning_service_observer_.Add(WarningService::Get(profile));
 
   error_console_observer_.Add(ErrorConsole::Get(profile));
 

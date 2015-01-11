@@ -8,7 +8,6 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
@@ -116,7 +115,7 @@ void HttpListenSocket::DetachFromThread() {
 }
 
 EmbeddedTestServer::EmbeddedTestServer()
-    : port_(-1),
+    : port_(0),
       weak_factory_(this) {
   DCHECK(thread_checker_.CalledOnValidThread());
 }

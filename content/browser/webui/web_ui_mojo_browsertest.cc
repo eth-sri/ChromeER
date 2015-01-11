@@ -7,7 +7,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
@@ -29,7 +28,7 @@
 #include "mojo/edk/test/test_utils.h"
 #include "mojo/public/cpp/bindings/interface_impl.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
-#include "mojo/public/js/bindings/constants.h"
+#include "mojo/public/js/constants.h"
 
 namespace content {
 namespace {
@@ -83,9 +82,6 @@ class PingBrowserTargetImpl : public BrowserTargetImpl {
 
   ~PingBrowserTargetImpl() override {}
 
-  // mojo::InterfaceImpl<BrowserTarget> overrides:
-  void OnConnectionEstablished() override { client()->Ping(); }
-
   // Quit the RunLoop when called.
   void PingResponse() override {
     got_message = true;
@@ -135,6 +131,7 @@ class PingTestWebUIController : public TestWebUIController {
   void CreateHandler(mojo::InterfaceRequest<BrowserTarget> request) {
     browser_target_.reset(mojo::WeakBindToRequest(
         new PingBrowserTargetImpl(run_loop_), &request));
+    browser_target_->client()->Ping();
   }
 
  private:

@@ -4,29 +4,35 @@
 
 #include "media/mojo/services/media_type_converters.h"
 
-#include "base/macros.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/buffering_state.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/decrypt_config.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/video_decoder_config.h"
 #include "media/mojo/interfaces/demuxer_stream.mojom.h"
+#include "mojo/converters/geometry/geometry_type_converters.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 
 namespace mojo {
 
-#define ASSERT_ENUM_EQ(media_enum, media_prefix, mojo_prefix, value)     \
-  COMPILE_ASSERT(media::media_prefix##value ==                           \
-                     static_cast<media::media_enum>(mojo_prefix##value), \
-                 value##_enum_value_differs)
+#define ASSERT_ENUM_EQ(media_enum, media_prefix, mojo_prefix, value)    \
+  static_assert(media::media_prefix##value ==                           \
+                    static_cast<media::media_enum>(mojo_prefix##value), \
+                "Mismatched enum: " #media_prefix #value                \
+                " != " #mojo_prefix #value)
+
+#define ASSERT_ENUM_EQ_RAW(media_enum, media_enum_value, mojo_enum_value) \
+  static_assert(media::media_enum_value ==                                \
+                    static_cast<media::media_enum>(mojo_enum_value),      \
+                "Mismatched enum: " #media_enum_value " != " #mojo_enum_value)
 
 // BufferingState.
 ASSERT_ENUM_EQ(BufferingState, BUFFERING_, BUFFERING_STATE_, HAVE_NOTHING);
 ASSERT_ENUM_EQ(BufferingState, BUFFERING_, BUFFERING_STATE_, HAVE_ENOUGH);
 
 // AudioCodec.
-COMPILE_ASSERT(media::kUnknownAudioCodec ==
-                   static_cast<media::AudioCodec>(AUDIO_CODEC_UNKNOWN),
-               kUnknownAudioCodec_enum_value_differs);
+ASSERT_ENUM_EQ_RAW(AudioCodec, kUnknownAudioCodec, AUDIO_CODEC_UNKNOWN);
 ASSERT_ENUM_EQ(AudioCodec, kCodec, AUDIO_CODEC_, AAC);
 ASSERT_ENUM_EQ(AudioCodec, kCodec, AUDIO_CODEC_, MP3);
 ASSERT_ENUM_EQ(AudioCodec, kCodec, AUDIO_CODEC_, PCM);
@@ -39,9 +45,7 @@ ASSERT_ENUM_EQ(AudioCodec, kCodec, AUDIO_CODEC_, PCM_S16BE);
 ASSERT_ENUM_EQ(AudioCodec, kCodec, AUDIO_CODEC_, PCM_S24BE);
 ASSERT_ENUM_EQ(AudioCodec, kCodec, AUDIO_CODEC_, Opus);
 ASSERT_ENUM_EQ(AudioCodec, kCodec, AUDIO_CODEC_, PCM_ALAW);
-COMPILE_ASSERT(media::kAudioCodecMax ==
-                   static_cast<media::AudioCodec>(AUDIO_CODEC_MAX),
-               kAudioCodecMax_enum_value_differs);
+ASSERT_ENUM_EQ_RAW(AudioCodec, kAudioCodecMax, AUDIO_CODEC_MAX);
 
 // ChannelLayout.
 ASSERT_ENUM_EQ(ChannelLayout, CHANNEL_LAYOUT, CHANNEL_LAYOUT_k, _NONE);
@@ -81,12 +85,11 @@ ASSERT_ENUM_EQ(ChannelLayout,
                CHANNEL_LAYOUT,
                CHANNEL_LAYOUT_k,
                _STEREO_AND_KEYBOARD_MIC);
+ASSERT_ENUM_EQ(ChannelLayout, CHANNEL_LAYOUT, CHANNEL_LAYOUT_k, _4_1_QUAD_SIDE);
 ASSERT_ENUM_EQ(ChannelLayout, CHANNEL_LAYOUT, CHANNEL_LAYOUT_k, _MAX);
 
 // SampleFormat.
-COMPILE_ASSERT(media::kUnknownSampleFormat ==
-                   static_cast<media::SampleFormat>(SAMPLE_FORMAT_UNKNOWN),
-               kUnknownSampleFormat_enum_value_differs);
+ASSERT_ENUM_EQ_RAW(SampleFormat, kUnknownSampleFormat, SAMPLE_FORMAT_UNKNOWN);
 ASSERT_ENUM_EQ(SampleFormat, kSampleFormat, SAMPLE_FORMAT_, U8);
 ASSERT_ENUM_EQ(SampleFormat, kSampleFormat, SAMPLE_FORMAT_, S16);
 ASSERT_ENUM_EQ(SampleFormat, kSampleFormat, SAMPLE_FORMAT_, S32);
@@ -95,34 +98,153 @@ ASSERT_ENUM_EQ(SampleFormat, kSampleFormat, SAMPLE_FORMAT_, PlanarS16);
 ASSERT_ENUM_EQ(SampleFormat, kSampleFormat, SAMPLE_FORMAT_, PlanarF32);
 ASSERT_ENUM_EQ(SampleFormat, kSampleFormat, SAMPLE_FORMAT_, Max);
 
-// DemuxerStream Type.
-COMPILE_ASSERT(media::DemuxerStream::UNKNOWN ==
-                   static_cast<media::DemuxerStream::Type>(
-                       mojo::DemuxerStream::TYPE_UNKNOWN),
-               DemuxerStream_Type_enum_value_differs);
-COMPILE_ASSERT(media::DemuxerStream::AUDIO ==
-                   static_cast<media::DemuxerStream::Type>(
-                       mojo::DemuxerStream::TYPE_AUDIO),
-               DemuxerStream_Type_enum_value_differs);
-// Update this if new media::DemuxerStream::Type values are introduced.
-COMPILE_ASSERT(media::DemuxerStream::NUM_TYPES ==
-                   static_cast<media::DemuxerStream::Type>(
-                       mojo::DemuxerStream::TYPE_LAST_TYPE + 3),
-               DemuxerStream_Type_enum_value_differs);
+// DemuxerStream Type.  Note: Mojo DemuxerStream's don't have the TEXT type.
+ASSERT_ENUM_EQ_RAW(DemuxerStream::Type,
+                   DemuxerStream::UNKNOWN,
+                   DemuxerStream::TYPE_UNKNOWN);
+ASSERT_ENUM_EQ_RAW(DemuxerStream::Type,
+                   DemuxerStream::AUDIO,
+                   DemuxerStream::TYPE_AUDIO);
+ASSERT_ENUM_EQ_RAW(DemuxerStream::Type,
+                   DemuxerStream::VIDEO,
+                   DemuxerStream::TYPE_VIDEO);
+ASSERT_ENUM_EQ_RAW(DemuxerStream::Type,
+                   DemuxerStream::NUM_TYPES,
+                   DemuxerStream::TYPE_LAST_TYPE + 2);
 
 // DemuxerStream Status.
-COMPILE_ASSERT(media::DemuxerStream::kOk ==
-                   static_cast<media::DemuxerStream::Status>(
-                       mojo::DemuxerStream::STATUS_OK),
-               DemuxerStream_Status_enum_value_differs);
-COMPILE_ASSERT(media::DemuxerStream::kAborted ==
-                   static_cast<media::DemuxerStream::Status>(
-                       mojo::DemuxerStream::STATUS_ABORTED),
-               DemuxerStream_Status_enum_value_differs);
-COMPILE_ASSERT(media::DemuxerStream::kConfigChanged ==
-                   static_cast<media::DemuxerStream::Status>(
-                       mojo::DemuxerStream::STATUS_CONFIG_CHANGED),
-               DemuxerStream_Status_enum_value_differs);
+ASSERT_ENUM_EQ_RAW(DemuxerStream::Status,
+                   DemuxerStream::kOk,
+                   DemuxerStream::STATUS_OK);
+ASSERT_ENUM_EQ_RAW(DemuxerStream::Status,
+                   DemuxerStream::kAborted,
+                   DemuxerStream::STATUS_ABORTED);
+ASSERT_ENUM_EQ_RAW(DemuxerStream::Status,
+                   DemuxerStream::kConfigChanged,
+                   DemuxerStream::STATUS_CONFIG_CHANGED);
+
+// VideoFormat.
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
+                   VideoFrame::UNKNOWN,
+                   VIDEO_FORMAT_UNKNOWN);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12, VIDEO_FORMAT_YV12);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV16, VIDEO_FORMAT_YV16);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::I420, VIDEO_FORMAT_I420);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12A, VIDEO_FORMAT_YV12A);
+#if defined(VIDEO_HOLE)
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::HOLE, VIDEO_FORMAT_HOLE);
+#endif
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
+                   VideoFrame::NATIVE_TEXTURE,
+                   VIDEO_FORMAT_NATIVE_TEXTURE);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12J, VIDEO_FORMAT_YV12J);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::NV12, VIDEO_FORMAT_NV12);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV24, VIDEO_FORMAT_YV24);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
+                   VideoFrame::FORMAT_MAX,
+                   VIDEO_FORMAT_FORMAT_MAX);
+
+// VideoCodec
+ASSERT_ENUM_EQ_RAW(VideoCodec, kUnknownVideoCodec, VIDEO_CODEC_UNKNOWN);
+ASSERT_ENUM_EQ(VideoCodec, kCodec, VIDEO_CODEC_, H264);
+ASSERT_ENUM_EQ(VideoCodec, kCodec, VIDEO_CODEC_, VC1);
+ASSERT_ENUM_EQ(VideoCodec, kCodec, VIDEO_CODEC_, MPEG2);
+ASSERT_ENUM_EQ(VideoCodec, kCodec, VIDEO_CODEC_, MPEG4);
+ASSERT_ENUM_EQ(VideoCodec, kCodec, VIDEO_CODEC_, Theora);
+ASSERT_ENUM_EQ(VideoCodec, kCodec, VIDEO_CODEC_, VP8);
+ASSERT_ENUM_EQ(VideoCodec, kCodec, VIDEO_CODEC_, VP9);
+ASSERT_ENUM_EQ_RAW(VideoCodec, kVideoCodecMax, VIDEO_CODEC_Max);
+
+// VideoCodecProfile
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               VIDEO_CODEC_PROFILE_UNKNOWN);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               VIDEO_CODEC_PROFILE_MIN);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, H264PROFILE_MIN);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, H264PROFILE_BASELINE);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, H264PROFILE_MAIN);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, H264PROFILE_EXTENDED);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, H264PROFILE_HIGH);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               H264PROFILE_HIGH10PROFILE);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               H264PROFILE_HIGH422PROFILE);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               H264PROFILE_HIGH444PREDICTIVEPROFILE);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               H264PROFILE_SCALABLEBASELINE);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               H264PROFILE_SCALABLEHIGH);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               H264PROFILE_STEREOHIGH);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               H264PROFILE_MULTIVIEWHIGH);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, H264PROFILE_MAX);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, VP8PROFILE_MIN);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, VP8PROFILE_ANY);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, VP8PROFILE_MAX);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, VP9PROFILE_MIN);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, VP9PROFILE_ANY);
+ASSERT_ENUM_EQ(VideoCodecProfile, , VIDEO_CODEC_PROFILE_, VP9PROFILE_MAX);
+ASSERT_ENUM_EQ(VideoCodecProfile,
+               ,
+               VIDEO_CODEC_PROFILE_,
+               VIDEO_CODEC_PROFILE_MAX);
+
+// static
+SubsampleEntryPtr
+TypeConverter<SubsampleEntryPtr, media::SubsampleEntry>::Convert(
+    const media::SubsampleEntry& input) {
+  SubsampleEntryPtr mojo_subsample_entry(SubsampleEntry::New());
+  mojo_subsample_entry->clear_bytes = input.clear_bytes;
+  mojo_subsample_entry->cypher_bytes = input.cypher_bytes;
+  return mojo_subsample_entry.Pass();
+}
+
+// static
+media::SubsampleEntry
+TypeConverter<media::SubsampleEntry, SubsampleEntryPtr>::Convert(
+    const SubsampleEntryPtr& input) {
+  return media::SubsampleEntry(input->clear_bytes, input->cypher_bytes);
+}
+
+// static
+DecryptConfigPtr TypeConverter<DecryptConfigPtr, media::DecryptConfig>::Convert(
+    const media::DecryptConfig& input) {
+  DecryptConfigPtr mojo_decrypt_config(DecryptConfig::New());
+  mojo_decrypt_config->key_id = input.key_id();
+  mojo_decrypt_config->iv = input.iv();
+  mojo_decrypt_config->subsamples =
+      Array<SubsampleEntryPtr>::From(input.subsamples());
+  return mojo_decrypt_config.Pass();
+}
+
+// static
+scoped_ptr<media::DecryptConfig>
+TypeConverter<scoped_ptr<media::DecryptConfig>, DecryptConfigPtr>::Convert(
+    const DecryptConfigPtr& input) {
+  return make_scoped_ptr(new media::DecryptConfig(
+      input->key_id, input->iv,
+      input->subsamples.To<std::vector<media::SubsampleEntry>>()));
+}
 
 // static
 MediaDecoderBufferPtr TypeConverter<MediaDecoderBufferPtr,
@@ -136,6 +258,7 @@ MediaDecoderBufferPtr TypeConverter<MediaDecoderBufferPtr,
 
   mojo_buffer->timestamp_usec = input->timestamp().InMicroseconds();
   mojo_buffer->duration_usec = input->duration().InMicroseconds();
+  mojo_buffer->is_key_frame = input->is_key_frame();
   mojo_buffer->data_size = input->data_size();
   mojo_buffer->side_data_size = input->side_data_size();
   mojo_buffer->front_discard_usec =
@@ -149,6 +272,9 @@ MediaDecoderBufferPtr TypeConverter<MediaDecoderBufferPtr,
   std::vector<uint8> side_data(input->side_data(),
                                input->side_data() + input->side_data_size());
   mojo_buffer->side_data.Swap(&side_data);
+
+  if (input->decrypt_config())
+    mojo_buffer->decrypt_config = DecryptConfig::From(*input->decrypt_config());
 
   MojoCreateDataPipeOptions options;
   options.struct_size = sizeof(MojoCreateDataPipeOptions);
@@ -206,6 +332,15 @@ scoped_refptr<media::DecoderBuffer>  TypeConverter<
       base::TimeDelta::FromMicroseconds(input->timestamp_usec));
   buffer->set_duration(
       base::TimeDelta::FromMicroseconds(input->duration_usec));
+
+  if (input->is_key_frame)
+    buffer->set_is_key_frame(true);
+
+  if (input->decrypt_config) {
+    buffer->set_decrypt_config(
+        input->decrypt_config.To<scoped_ptr<media::DecryptConfig>>());
+  }
+
   media::DecoderBuffer::DiscardPadding discard_padding(
       base::TimeDelta::FromMicroseconds(input->front_discard_usec),
       base::TimeDelta::FromMicroseconds(input->back_discard_usec));
@@ -219,12 +354,12 @@ scoped_refptr<media::DecoderBuffer>  TypeConverter<
 AudioDecoderConfigPtr
 TypeConverter<AudioDecoderConfigPtr, media::AudioDecoderConfig>::Convert(
     const media::AudioDecoderConfig& input) {
-  mojo::AudioDecoderConfigPtr config(mojo::AudioDecoderConfig::New());
-  config->codec = static_cast<mojo::AudioCodec>(input.codec());
+  AudioDecoderConfigPtr config(AudioDecoderConfig::New());
+  config->codec = static_cast<AudioCodec>(input.codec());
   config->sample_format =
-      static_cast<mojo::SampleFormat>(input.sample_format());
+      static_cast<SampleFormat>(input.sample_format());
   config->channel_layout =
-      static_cast<mojo::ChannelLayout>(input.channel_layout());
+      static_cast<ChannelLayout>(input.channel_layout());
   config->samples_per_second = input.samples_per_second();
   if (input.extra_data()) {
     std::vector<uint8> data(input.extra_data(),
@@ -252,6 +387,45 @@ TypeConverter<media::AudioDecoderConfig, AudioDecoderConfigPtr>::Convert(
       false,
       base::TimeDelta::FromMicroseconds(input->seek_preroll_usec),
       input->codec_delay);
+  return config;
+}
+
+// static
+VideoDecoderConfigPtr
+TypeConverter<VideoDecoderConfigPtr, media::VideoDecoderConfig>::Convert(
+    const media::VideoDecoderConfig& input) {
+  VideoDecoderConfigPtr config(VideoDecoderConfig::New());
+  config->codec = static_cast<VideoCodec>(input.codec());
+  config->profile = static_cast<VideoCodecProfile>(input.profile());
+  config->format = static_cast<VideoFormat>(input.format());
+  config->coded_size = Size::From(input.coded_size());
+  config->visible_rect = Rect::From(input.visible_rect());
+  config->natural_size = Size::From(input.natural_size());
+  if (input.extra_data()) {
+    std::vector<uint8> data(input.extra_data(),
+                            input.extra_data() + input.extra_data_size());
+    config->extra_data.Swap(&data);
+  }
+  config->is_encrypted = input.is_encrypted();
+  return config.Pass();
+}
+
+// static
+media::VideoDecoderConfig
+TypeConverter<media::VideoDecoderConfig, VideoDecoderConfigPtr>::Convert(
+    const VideoDecoderConfigPtr& input) {
+  media::VideoDecoderConfig config;
+  config.Initialize(
+      static_cast<media::VideoCodec>(input->codec),
+      static_cast<media::VideoCodecProfile>(input->profile),
+      static_cast<media::VideoFrame::Format>(input->format),
+      input->coded_size.To<gfx::Size>(),
+      input->visible_rect.To<gfx::Rect>(),
+      input->natural_size.To<gfx::Size>(),
+      input->extra_data.size() ? &input->extra_data.front() : NULL,
+      input->extra_data.size(),
+      input->is_encrypted,
+      false);
   return config;
 }
 

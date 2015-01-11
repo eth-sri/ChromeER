@@ -14,6 +14,7 @@
 goog.provide('i18n.input.chrome.inputview.Controller');
 
 goog.require('goog.Disposable');
+goog.require('goog.Timer');
 goog.require('goog.array');
 goog.require('goog.async.Delay');
 goog.require('goog.dom');
@@ -23,6 +24,7 @@ goog.require('goog.events.EventType');
 goog.require('goog.i18n.bidi');
 goog.require('goog.object');
 goog.require('i18n.input.chrome.DataSource');
+goog.require('i18n.input.chrome.Statistics');
 goog.require('i18n.input.chrome.inputview.Adapter');
 goog.require('i18n.input.chrome.inputview.CandidatesInfo');
 goog.require('i18n.input.chrome.inputview.ConditionName');
@@ -37,7 +39,6 @@ goog.require('i18n.input.chrome.inputview.SizeSpec');
 goog.require('i18n.input.chrome.inputview.SoundController');
 goog.require('i18n.input.chrome.inputview.SpecNodeName');
 goog.require('i18n.input.chrome.inputview.StateType');
-goog.require('i18n.input.chrome.inputview.Statistics');
 goog.require('i18n.input.chrome.inputview.SwipeDirection');
 goog.require('i18n.input.chrome.inputview.elements.ElementType');
 goog.require('i18n.input.chrome.inputview.elements.content.Candidate');
@@ -77,6 +78,7 @@ var StateType = i18n.input.chrome.inputview.StateType;
 var content = i18n.input.chrome.inputview.elements.content;
 var SoundController = i18n.input.chrome.inputview.SoundController;
 var Sounds = i18n.input.chrome.inputview.Sounds;
+var Type = i18n.input.chrome.message.Type;
 var util = i18n.input.chrome.inputview.util;
 
 
@@ -102,7 +104,8 @@ i18n.input.chrome.inputview.Controller = function(keyset, languageCode,
   this.model_ = new i18n.input.chrome.inputview.Model();
 
   /** @private {!i18n.input.chrome.inputview.PerfTracker} */
-  this.perfTracker_ = new i18n.input.chrome.inputview.PerfTracker();
+  this.perfTracker_ = new i18n.input.chrome.inputview.PerfTracker(
+      PerfTracker.TickName.HTML_LOADED);
 
   /**
    * The layout map.
@@ -148,10 +151,10 @@ i18n.input.chrome.inputview.Controller = function(keyset, languageCode,
   /**
    * The statistics object for recording metrics values.
    *
-   * @type {!i18n.input.chrome.inputview.Statistics}
+   * @type {!i18n.input.chrome.Statistics}
    * @private
    */
-  this.statistics_ = i18n.input.chrome.inputview.Statistics.getInstance();
+  this.statistics_ = i18n.input.chrome.Statistics.getInstance();
 
   /** @private {!i18n.input.chrome.inputview.ReadyState} */
   this.readyState_ = new i18n.input.chrome.inputview.ReadyState();
@@ -177,6 +180,39 @@ i18n.input.chrome.inputview.Controller = function(keyset, languageCode,
    * @private {!Object.<string, !Object.<string, string>>}
    */
   this.contextTypeToKeysetMap_ = {};
+
+
+  /**
+   * The previous raw keyset code before switched to hwt or emoji layout.
+   *  key: context type string.
+   *  value: keyset string.
+   *
+   * @private {!Object.<string, string>}
+   */
+  this.contextTypeToLastKeysetMap_ = {};
+
+  /**
+   * The stats map for input view closing.
+   *
+   * @type {!Object.<string, !Array.<number>>}
+   * @private
+   */
+  this.statsForClosing_ = {};
+
+  /**
+   * The last height sent to window.resizeTo to avoid multiple equivalent calls.
+   *
+   * @private {number}
+   */
+  this.lastResizeHeight_ = -1;
+
+  /**
+   * The activate (show) time stamp for statistics.
+   *
+   * @type {Date}
+   * @private
+   */
+  this.showTimeStamp_ = new Date();
 
   this.initialize(keyset, languageCode, passwordLayout, name);
   /**
@@ -285,7 +321,16 @@ Controller.prototype.backspaceAutoRepeat_;
 
 
 /**
- * The active keyboard code.
+ * The initial keyset determined by inputview url and/or settings.
+ *
+ * @type {string}
+ * @private
+ */
+Controller.prototype.initialKeyset_ = '';
+
+
+/**
+ * The current raw keyset code.
  *
  * @type {string}
  * @private
@@ -413,9 +458,9 @@ Controller.prototype.registerEventHandler_ = function() {
       listen(this.adapter_,
           i18n.input.chrome.inputview.events.EventType.SETTINGS_READY,
           this.onSettingsReady_).
-      listen(this.adapter_,
-          i18n.input.chrome.message.Type.UPDATE_SETTINGS,
-          this.onUpdateSettings_);
+      listen(this.adapter_, Type.UPDATE_SETTINGS, this.onUpdateSettings_).
+      listen(this.adapter_, Type.FRONT_TOGGLE_LANGUAGE_STATE,
+             this.onUpdateToggleLanguateState_);
 };
 
 
@@ -436,12 +481,9 @@ Controller.prototype.onUpdateSettings_ = function(e) {
   if (goog.isDef(e.msg['candidatesNavigation'])) {
     settings.candidatesNavigation = e.msg['candidatesNavigation'];
   }
-  if (goog.isDef(e.msg['supportCompact'])) {
-    settings.supportCompact = e.msg['supportCompact'];
-  }
   if (goog.isDef(e.msg[Name.KEYSET])) {
     this.contextTypeToKeysetMap_[this.currentInputMethod_][
-        ContextType.DEFAULT] = e.msg[Name.KEYSET];
+        ContextType.DEFAULT] = this.initialKeyset_ = e.msg[Name.KEYSET];
   }
   if (goog.isDef(e.msg['enableLongPress'])) {
     settings.enableLongPress = e.msg['enableLongPress'];
@@ -454,8 +496,8 @@ Controller.prototype.onUpdateSettings_ = function(e) {
     this.soundController_.setEnabled(settings.soundOnKeypress);
   }
   this.perfTracker_.tick(PerfTracker.TickName.BACKGROUND_SETTINGS_FETCHED);
-  var isPassword = this.adapter_.isPasswordBox();
-  this.switchToKeySet(this.getActiveKeyset_());
+  this.model_.stateManager.contextType = this.adapter_.contextType;
+  this.switchToKeyset(this.getActiveKeyset_());
 };
 
 
@@ -476,15 +518,18 @@ Controller.prototype.onSettingsReady_ = function() {
         util.getConfigName(keysetMap[ContextType.DEFAULT]);
   } else {
     var preferredKeyset = /** @type {string} */ (this.model_.settings.
-        getPreference(util.getConfigName(
-            keysetMap[ContextType.DEFAULT])));
+        getPreference(util.getConfigName(keysetMap[ContextType.DEFAULT])));
     if (preferredKeyset) {
       keysetMap[ContextType.PASSWORD] = keysetMap[ContextType.DEFAULT] =
           preferredKeyset;
     }
   }
+  if (!this.adapter_.isExperimental && keysetMap[ContextType.DEFAULT] ==
+      'zhuyin.compact.qwerty') {
+    keysetMap[ContextType.DEFAULT] = 'zhuyin';
+  }
+  this.initialKeyset_ = keysetMap[ContextType.DEFAULT];
   this.maybeCreateViews_();
-  this.switchToKeySet(this.getActiveKeyset_());
 };
 
 
@@ -553,20 +598,50 @@ Controller.prototype.getKeyContent_ = function(key) {
  * @private
  */
 Controller.prototype.onPointerEvent_ = function(e) {
-  if ((this.adapter_.isChromeVoxOn || !this.model_.settings.enableLongPress) &&
-      e.type == EventType.LONG_PRESS) {
+  if (e.type == EventType.LONG_PRESS) {
+    if (this.adapter_.isChromeVoxOn || !this.model_.settings.enableLongPress) {
+      return;
+    }
+    var keyset = this.keysetDataMap_[this.currentKeyset_];
+    var layout = keyset && keyset[SpecNodeName.LAYOUT];
+    var data = layout && this.layoutDataMap_[layout];
+    if (data && data[SpecNodeName.DISABLE_LONGPRESS]) {
+      return;
+    }
+  }
+
+  // POINTER_UP event may be dispatched without a view. This is the case when
+  // user selected an accent character which is displayed outside of the
+  // keyboard window bounds. For other cases, we expect a view associated with a
+  // pointer up event.
+  if (e.type == EventType.POINTER_UP && !e.view) {
+    if (this.container_.altDataView.isVisible()) {
+      var altDataView = this.container_.altDataView;
+      var ch = altDataView.getHighlightedCharacter();
+      if (ch) {
+        this.adapter_.sendKeyDownAndUpEvent(ch, altDataView.triggeredBy.id,
+            altDataView.triggeredBy.keyCode,
+            {'sources': [ch.toLowerCase()], 'possibilities': [1]});
+      }
+      altDataView.hide();
+      this.clearUnstickyState_();
+    }
     return;
+  }
+
+  if (e.type == EventType.POINTER_UP) {
+    this.stopBackspaceAutoRepeat_();
   }
 
   if (e.view) {
     this.handlePointerAction_(e.view, e);
-  } else {
+  } else if (e.type == EventType.POINTER_DOWN) {
     var tabbableKeysets = [
       Controller.HANDWRITING_VIEW_CODE_,
       Controller.EMOJI_VIEW_CODE_];
     if (goog.array.contains(tabbableKeysets, this.currentKeyset_)) {
       this.resetAll_();
-      this.switchToKeySet(this.container_.currentKeysetView.fromKeyset);
+      this.switchToKeyset(this.container_.currentKeysetView.fromKeyset);
     }
   }
 };
@@ -630,17 +705,22 @@ Controller.prototype.executeCommand_ = function(command, opt_arg) {
     case CommandEnum.SWITCH_KEYSET:
       var keyset = opt_arg;
       if (keyset) {
-        this.statistics_.recordSwitch(keyset);
-        this.switchToKeySet(keyset);
+        this.recordStatsForClosing_(
+            'InputMethod.VirtualKeyboard.LayoutSwitch', 1, 25, 25);
+        this.switchToKeyset(keyset);
       }
       break;
     case CommandEnum.OPEN_EMOJI:
-      this.switchToKeySet(Controller.EMOJI_VIEW_CODE_);
+      this.contextTypeToLastKeysetMap_[this.adapter_.contextType] =
+          this.currentKeyset_;
+      this.switchToKeyset(Controller.EMOJI_VIEW_CODE_);
       break;
 
     case CommandEnum.OPEN_HANDWRITING:
+      this.contextTypeToLastKeysetMap_[this.adapter_.contextType] =
+          this.currentKeyset_;
       // TODO: remember handwriting keyset.
-      this.switchToKeySet(Controller.HANDWRITING_VIEW_CODE_);
+      this.switchToKeyset(Controller.HANDWRITING_VIEW_CODE_);
       break;
 
     case CommandEnum.OPEN_SETTING:
@@ -666,8 +746,16 @@ Controller.prototype.handlePointerAction_ = function(view, e) {
   }
   switch (view.type) {
     case ElementType.BACK_BUTTON:
+      if (e.type == EventType.POINTER_OUT || e.type == EventType.POINTER_UP) {
+        view.setHighlighted(false);
+      } else if (e.type == EventType.POINTER_DOWN ||
+          e.type == EventType.POINTER_OVER) {
+        view.setHighlighted(true);
+      }
       if (e.type == EventType.POINTER_UP) {
-        this.switchToKeySet(this.container_.currentKeysetView.fromKeyset);
+        this.switchToKeyset(this.container_.currentKeysetView.fromKeyset);
+        this.clearCandidates_();
+        this.soundController_.onKeyUp(view.type);
       }
       return;
     case ElementType.EXPAND_CANDIDATES:
@@ -675,6 +763,7 @@ Controller.prototype.handlePointerAction_ = function(view, e) {
         this.showCandidates_(this.candidatesInfo_.source,
             this.candidatesInfo_.candidates,
             Controller.CandidatesOperation.EXPAND);
+        this.soundController_.onKeyUp(view.type);
       }
       return;
     case ElementType.SHRINK_CANDIDATES:
@@ -682,6 +771,7 @@ Controller.prototype.handlePointerAction_ = function(view, e) {
         this.showCandidates_(this.candidatesInfo_.source,
             this.candidatesInfo_.candidates,
             Controller.CandidatesOperation.SHRINK);
+        this.soundController_.onKeyUp(view.type);
       }
       return;
     case ElementType.CANDIDATE:
@@ -693,6 +783,7 @@ Controller.prototype.handlePointerAction_ = function(view, e) {
           this.adapter_.commitText(view.candidate[Name.CANDIDATE]);
         }
         this.container_.cleanStroke();
+        this.soundController_.onKeyUp(ElementType.CANDIDATE);
       }
       if (e.type == EventType.POINTER_OUT || e.type == EventType.POINTER_UP) {
         view.setHighlighted(false);
@@ -709,11 +800,14 @@ Controller.prototype.handlePointerAction_ = function(view, e) {
         view.hide();
       } else if (e.type == EventType.POINTER_UP) {
         var ch = view.getHighlightedCharacter();
-        this.adapter_.sendKeyDownAndUpEvent(ch, view.triggeredBy.id,
-            view.triggeredBy.keyCode,
-            {'sources': [ch.toLowerCase()], 'possibilities': [1]});
+        if (ch) {
+          this.adapter_.sendKeyDownAndUpEvent(ch, view.triggeredBy.id,
+              view.triggeredBy.keyCode,
+              {'sources': [ch.toLowerCase()], 'possibilities': [1]});
+        }
         view.hide();
         this.clearUnstickyState_();
+        this.soundController_.onKeyUp(view.type);
       }
       return;
 
@@ -723,6 +817,7 @@ Controller.prototype.handlePointerAction_ = function(view, e) {
         this.resetAll_();
         this.executeCommand_.apply(this, view.getCommand());
         this.container_.menuView.hide();
+        this.soundController_.onKeyUp(view.type);
       }
       view.setHighlighted(e.type == EventType.POINTER_DOWN ||
           e.type == EventType.POINTER_OVER);
@@ -742,6 +837,7 @@ Controller.prototype.handlePointerAction_ = function(view, e) {
       if (e.type == EventType.POINTER_UP) {
         if (!this.container_.currentKeysetView.isDragging && view.text != '') {
           this.adapter_.commitText(view.text);
+          this.soundController_.onKeyUp(view.type);
         }
       }
       return;
@@ -804,7 +900,8 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
       key = /** @type {!content.CharacterKey} */ (softKey);
       if (e.type == EventType.LONG_PRESS) {
         this.container_.altDataView.show(
-            key, goog.i18n.bidi.isRtlLanguage(this.languageCode_));
+            key, goog.i18n.bidi.isRtlLanguage(this.languageCode_),
+            this.adapter_.isExperimental);
       } else if (e.type == EventType.POINTER_UP) {
         this.model_.stateManager.triggerChording();
         var ch = key.getActiveCharacter();
@@ -820,22 +917,23 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
       var isStateEnabled = this.model_.stateManager.hasState(key.toState);
       var isChording = this.model_.stateManager.isChording(key.toState);
       if (e.type == EventType.POINTER_DOWN) {
-        this.changeState_(key.toState, !isStateEnabled, true);
+        this.changeState_(key.toState, !isStateEnabled, true, false);
         this.model_.stateManager.setKeyDown(key.toState, true);
       } else if (e.type == EventType.POINTER_UP || e.type == EventType.
           POINTER_OUT) {
         if (isChording) {
           this.changeState_(key.toState, false, false);
-        } else if (key.toState != StateType.CAPSLOCK &&
-            this.model_.stateManager.isKeyDown(key.toState)) {
+        } else if (key.toState == StateType.CAPSLOCK) {
+          this.changeState_(key.toState, isStateEnabled, true, true);
+        } else if (this.model_.stateManager.isKeyDown(key.toState)) {
           this.changeState_(key.toState, isStateEnabled, false);
         }
         this.model_.stateManager.setKeyDown(key.toState, false);
       } else if (e.type == EventType.DOUBLE_CLICK) {
-        this.changeState_(key.toState, isStateEnabled, true);
+        this.changeState_(key.toState, isStateEnabled, true, true);
       } else if (e.type == EventType.LONG_PRESS) {
         if (!isChording) {
-          this.changeState_(key.toState, true, true);
+          this.changeState_(key.toState, true, true, true);
           this.model_.stateManager.setKeyDown(key.toState, false);
         }
       }
@@ -863,10 +961,8 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
 
     case ElementType.ENTER_KEY:
       key = /** @type {!content.FunctionalKey} */ (softKey);
-      if (e.type == EventType.POINTER_DOWN) {
-        this.adapter_.sendKeyDownEvent('\u000D', KeyCodes.ENTER);
-      } else if (e.type == EventType.POINTER_UP) {
-        this.adapter_.sendKeyUpEvent('\u000D', KeyCodes.ENTER);
+      if (e.type == EventType.POINTER_UP) {
+        this.adapter_.sendKeyDownAndUpEvent('\u000D', KeyCodes.ENTER);
       }
       break;
 
@@ -911,7 +1007,8 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
       break;
     case ElementType.SPACE_KEY:
       key = /** @type {!content.SpaceKey} */ (softKey);
-      var doubleSpacePeriod = this.model_.settings.doubleSpacePeriod;
+      var doubleSpacePeriod = this.model_.settings.doubleSpacePeriod &&
+          this.currentKeyset_ != Controller.HANDWRITING_VIEW_CODE_;
       if (e.type == EventType.POINTER_UP || (!doubleSpacePeriod && e.type ==
           EventType.DOUBLE_CLICK_END)) {
         this.adapter_.sendKeyDownAndUpEvent(key.getCharacter(),
@@ -925,7 +1022,8 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
     case ElementType.SWITCHER_KEY:
       key = /** @type {!content.SwitcherKey} */ (softKey);
       if (e.type == EventType.POINTER_UP) {
-        this.statistics_.recordSwitch(key.toKeyset);
+        this.recordStatsForClosing_(
+            'InputMethod.VirtualKeyboard.LayoutSwitch', 1, 25, 25);
         if (this.isSubKeyset_(key.toKeyset, this.currentKeyset_)) {
           this.model_.stateManager.reset();
           this.container_.update();
@@ -935,7 +1033,7 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
           this.resetAll_();
         }
         // Switch to the specific keyboard.
-        this.switchToKeySet(key.toKeyset);
+        this.switchToKeyset(key.toKeyset);
         if (key.record) {
           this.model_.settings.savePreference(
               util.getConfigName(key.toKeyset),
@@ -948,19 +1046,32 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
       key = /** @type {!content.CompactKey} */ (softKey);
       if (e.type == EventType.LONG_PRESS) {
         this.container_.altDataView.show(
-            key, goog.i18n.bidi.isRtlLanguage(this.languageCode_));
+            key, goog.i18n.bidi.isRtlLanguage(this.languageCode_),
+            this.adapter_.isExperimental);
       } else if (e.type == EventType.POINTER_UP) {
         this.model_.stateManager.triggerChording();
-        this.adapter_.sendKeyDownAndUpEvent(key.getActiveCharacter(), '', 0,
-            this.getSpatialData_(key, e.x, e.y));
+        var ch = key.getActiveCharacter();
+        if (ch.length == 1) {
+          this.adapter_.sendKeyDownAndUpEvent(key.getActiveCharacter(), '', 0,
+              this.getSpatialData_(key, e.x, e.y));
+        } else if (ch.length > 1) {
+          // Some compact keys contains more than 1 characters, such as '.com',
+          // 'http://', etc. Those keys should trigger a direct commit text
+          // instead of key events.
+          this.adapter_.commitText(ch);
+        }
         this.clearUnstickyState_();
         key.flickerredCharacter = '';
       }
       break;
 
     case ElementType.HIDE_KEYBOARD_KEY:
+      var defaultKeyset = this.getActiveKeyset_();
       if (e.type == EventType.POINTER_UP) {
         this.adapter_.hideKeyboard();
+      }
+      if (this.currentKeyset_ != defaultKeyset) {
+        this.switchToKeyset(defaultKeyset);
       }
       break;
 
@@ -968,22 +1079,29 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
       key = /** @type {!content.MenuKey} */ (softKey);
       if (e.type == EventType.POINTER_DOWN) {
         var isCompact = this.currentKeyset_.indexOf('compact') != -1;
-        var remappedKeyset = this.getRemappedKeyset_(this.currentKeyset_);
-        var keysetData = this.keysetDataMap_[remappedKeyset];
-        var enableCompact = !this.adapter_.isA11yMode &&
-            !!keysetData[SpecNodeName.HAS_COMPACT_KEYBOARD] &&
-            this.model_.settings.supportCompact;
+        // Gets the default full keyboard instead of default keyset because
+        // the default keyset can be a compact keyset which would cause problem
+        // in MenuView.show().
+        var defaultFullKeyset = this.initialKeyset_.split(/\./)[0];
+        var enableCompact = !this.adapter_.isA11yMode && goog.array.contains(
+            util.KEYSETS_HAVE_COMPACT, defaultFullKeyset);
+        if (defaultFullKeyset == 'zhuyin' && !this.adapter_.isExperimental ||
+            this.languageCode_ == 'ko') {
+          // Hides 'switch to compact' for zhuyin when not in experimental env.
+          enableCompact = false;
+        }
         var self = this;
-        var currentKeyset = this.currentKeyset_;
         var hasHwt = !this.adapter_.isPasswordBox() &&
             !Controller.DISABLE_HWT && goog.object.contains(
-            InputToolCode, this.getHwtInputToolCode_());
+            InputToolCode, this.getHwtInputToolCode_()) &&
+            this.languageCode_ != 'ko';
+        var hasEmoji = !this.adapter_.isPasswordBox();
         var enableSettings = this.shouldEnableSettings() &&
-            window.inputview && inputview.openSettings;
+            !!window.inputview && !!inputview.openSettings;
         this.adapter_.getInputMethods(function(inputMethods) {
-          this.container_.menuView.show(key, currentKeyset, isCompact,
+          this.container_.menuView.show(key, defaultFullKeyset, isCompact,
               enableCompact, this.currentInputMethod_, inputMethods, hasHwt,
-              enableSettings, this.adapter_.isExperimental);
+              enableSettings, hasEmoji);
         }.bind(this));
       }
       break;
@@ -1003,8 +1121,8 @@ Controller.prototype.handlePointerEventForSoftKey_ = function(softKey, e) {
       this.adapter_.sendKeyDownAndUpEvent('', key.id);
       break;
   }
-  // Play key sound on pointer up.
-  if (e.type == EventType.POINTER_UP)
+  // Play key sound on pointer up or double click.
+  if (e.type == EventType.POINTER_UP || e.type == EventType.DOUBLE_CLICK)
     this.soundController_.onKeyUp(softKey.type);
 };
 
@@ -1034,10 +1152,12 @@ Controller.prototype.clearUnstickyState_ = function() {
  * @private
  */
 Controller.prototype.stopBackspaceAutoRepeat_ = function() {
-  goog.dispose(this.backspaceAutoRepeat_);
-  this.backspaceAutoRepeat_ = null;
-  this.adapter_.sendKeyUpEvent('\u0008', KeyCodes.BACKSPACE);
-  this.backspaceRepeated_ = 0;
+  if (this.backspaceAutoRepeat_) {
+    goog.dispose(this.backspaceAutoRepeat_);
+    this.backspaceAutoRepeat_ = null;
+    this.adapter_.sendKeyUpEvent('\u0008', KeyCodes.BACKSPACE);
+    this.backspaceRepeated_ = 0;
+  }
 };
 
 
@@ -1072,6 +1192,14 @@ Controller.prototype.backspaceTick_ = function() {
  */
 Controller.prototype.onVisibilityChange_ = function() {
   if (!this.adapter_.isVisible) {
+    for (var name in this.statsForClosing_) {
+      var stat = this.statsForClosing_[name];
+      this.statistics_.recordValue(name, stat[0], stat[1], stat[2]);
+    }
+    this.statistics_.recordValue('InputMethod.VirtualKeyboard.Duration',
+        Math.floor((new Date() - this.showTimeStamp_) / 1000), 4096, 50);
+    this.statsForClosing_ = {};
+    this.showTimeStamp_ = new Date();
     this.resetAll_();
   }
 };
@@ -1085,7 +1213,7 @@ Controller.prototype.onVisibilityChange_ = function() {
  */
 Controller.prototype.resetAll_ = function() {
   this.clearCandidates_();
-  this.container_.candidateView.hideNumberRow();
+  this.container_.cleanStroke();
   this.model_.stateManager.reset();
   this.container_.update();
   this.updateContextModifierState_();
@@ -1103,7 +1231,8 @@ Controller.prototype.resetAll_ = function() {
  */
 Controller.prototype.onContextFocus_ = function() {
   this.resetAll_();
-  this.switchToKeySet(this.getActiveKeyset_());
+  this.model_.stateManager.contextType = this.adapter_.contextType;
+  this.switchToKeyset(this.getActiveKeyset_());
 };
 
 
@@ -1137,6 +1266,7 @@ Controller.prototype.onSurroundingTextChanged_ = function(e) {
  */
 Controller.prototype.onContextBlur_ = function() {
   this.clearCandidates_();
+  this.container_.cleanStroke();
   this.deadKey_ = '';
   this.container_.menuView.hide();
 };
@@ -1154,6 +1284,12 @@ Controller.prototype.backspaceDown_ = function() {
   } else {
     this.adapter_.sendKeyDownEvent('\u0008', KeyCodes.BACKSPACE);
   }
+  this.recordStatsForClosing_(
+      'InputMethod.VirtualKeyboard.BackspaceCount', 1, 4095, 4096);
+  this.statistics_.recordEnum('InputMethod.VirtualKeyboard.BackspaceOnLayout',
+      this.statistics_.getLayoutType(this.currentKeyset_,
+          this.adapter_.isA11yMode),
+      i18n.input.chrome.Statistics.LayoutTypes.MAX);
 };
 
 
@@ -1163,9 +1299,11 @@ Controller.prototype.backspaceDown_ = function() {
  * @param {StateType} stateType The state type.
  * @param {boolean} enable True to enable the state.
  * @param {boolean} isSticky True to make the state sticky.
+ * @param {boolean=} opt_isFinalSticky .
  * @private
  */
-Controller.prototype.changeState_ = function(stateType, enable, isSticky) {
+Controller.prototype.changeState_ = function(stateType, enable, isSticky,
+    opt_isFinalSticky) {
   if (stateType == StateType.ALTGR) {
     var code = KeyCodes.ALT_RIGHT;
     if (enable) {
@@ -1181,7 +1319,12 @@ Controller.prototype.changeState_ = function(stateType, enable, isSticky) {
   var isStickyBefore = this.model_.stateManager.isSticky(stateType);
   this.model_.stateManager.setState(stateType, enable);
   this.model_.stateManager.setSticky(stateType, isSticky);
-  if (isEnabledBefore != enable || isStickyBefore != isSticky) {
+  var isFinalSticky = goog.isDef(opt_isFinalSticky) ? opt_isFinalSticky :
+      false;
+  var isFinalStikcyBefore = this.model_.stateManager.isFinalSticky(stateType);
+  this.model_.stateManager.setFinalSticky(stateType, isFinalSticky);
+  if (isEnabledBefore != enable || isStickyBefore != isSticky ||
+      isFinalStikcyBefore != isFinalSticky) {
     this.container_.update();
   }
 };
@@ -1313,6 +1456,43 @@ Controller.prototype.onLayoutLoaded_ = function(e) {
 
 
 /**
+ * Creates a keyset view.
+ *
+ * @param {string} keyset The non-raw keyset.
+ * @private
+ */
+Controller.prototype.createView_ = function(keyset) {
+  if (this.isDisposed()) {
+    return;
+  }
+  var keysetData = this.keysetDataMap_[keyset];
+  var layoutId = keysetData[SpecNodeName.LAYOUT];
+  var layoutData = this.layoutDataMap_[layoutId];
+  if (this.container_.keysetViewMap[keyset] || !layoutData) {
+    return;
+  }
+  var conditions = {};
+  conditions[ConditionName.SHOW_ALTGR] =
+      keysetData[SpecNodeName.HAS_ALTGR_KEY];
+
+  conditions[ConditionName.SHOW_MENU] =
+      keysetData[SpecNodeName.SHOW_MENU_KEY];
+  // In symbol and more keysets, we want to show a symbol key in the globe
+  // SoftKeyView. So this view should alway visible in the two keysets.
+  // Currently, SHOW_MENU_KEY is false for the two keysets, so we use
+  // !keysetData[SpecNodeName.SHOW_MENU_KEY] here.
+  conditions[ConditionName.SHOW_GLOBE_OR_SYMBOL] =
+      !keysetData[SpecNodeName.SHOW_MENU_KEY] ||
+      this.adapter_.showGlobeKey;
+  conditions[ConditionName.SHOW_EN_SWITCHER_KEY] = false;
+
+  this.container_.addKeysetView(keysetData, layoutData, keyset,
+      this.languageCode_, this.model_, this.title_, conditions);
+  this.perfTracker_.tick(PerfTracker.TickName.KEYBOARD_CREATED);
+};
+
+
+/**
  * Creates the whole view.
  *
  * @private
@@ -1322,34 +1502,21 @@ Controller.prototype.maybeCreateViews_ = function() {
     return;
   }
 
-  for (var keyset in this.keysetDataMap_) {
-    var keysetData = this.keysetDataMap_[keyset];
-    var layoutId = keysetData[SpecNodeName.LAYOUT];
-    var layoutData = this.layoutDataMap_[layoutId];
-    if (!this.container_.keysetViewMap[keyset] && layoutData) {
-      var conditions = {};
-      conditions[ConditionName.SHOW_ALTGR] =
-          keysetData[SpecNodeName.HAS_ALTGR_KEY];
-
-      conditions[ConditionName.SHOW_MENU] =
-          keysetData[SpecNodeName.SHOW_MENU_KEY];
-      // In symbol and more keysets, we want to show a symbol key in the globe
-      // SoftKeyView. So this view should alway visible in the two keysets.
-      // Currently, SHOW_MENU_KEY is false for the two keysets, so we use
-      // !keysetData[SpecNodeName.SHOW_MENU_KEY] here.
-      conditions[ConditionName.SHOW_GLOBE_OR_SYMBOL] =
-          !keysetData[SpecNodeName.SHOW_MENU_KEY] ||
-          this.adapter_.showGlobeKey;
-      conditions[ConditionName.SHOW_EN_SWITCHER_KEY] = false;
-
-      // If the view for the keyboard code doesn't exist, and the layout
-      // data is ready, then creates the view.
-      this.container_.addKeysetView(keysetData, layoutData, keyset,
-          this.languageCode_, this.model_, this.title_, conditions);
-      this.perfTracker_.tick(PerfTracker.TickName.KEYBOARD_CREATED);
-    }
+  var activeKeyset = this.getActiveKeyset_();
+  var remappedActiveKeyset = this.getRemappedKeyset_(activeKeyset);
+  if (this.keysetDataMap_[remappedActiveKeyset]) {
+    this.createView_(remappedActiveKeyset);
+    this.switchToKeyset(activeKeyset);
   }
-  this.switchToKeySet(this.getActiveKeyset_());
+  // Async creating the non-active keysets to reduce the latency of showing the
+  // active keyset.
+  goog.Timer.callOnce((function() {
+    for (var keyset in this.keysetDataMap_) {
+      if (keyset != remappedActiveKeyset) {
+        this.createView_(keyset);
+      }
+    }
+  }).bind(this));
 };
 
 
@@ -1358,35 +1525,36 @@ Controller.prototype.maybeCreateViews_ = function() {
  *
  * @param {string} keyset The keyset name.
  */
-Controller.prototype.switchToKeySet = function(keyset) {
-  if (!this.isSettingReady) {
+Controller.prototype.switchToKeyset = function(keyset) {
+  if (!this.isSettingReady || this.adapter_.isSwitching()) {
     return;
   }
 
+  var contextType = this.adapter_.contextType;
   var lastKeysetView = this.container_.currentKeysetView;
   var ret = this.container_.switchToKeyset(this.getRemappedKeyset_(keyset),
       this.title_, this.adapter_.isPasswordBox(), this.adapter_.isA11yMode,
-      keyset, this.currentKeyset_, this.languageCode_);
-
-  // Update the keyset of current context type.
-  this.contextTypeToKeysetMap_[this.currentInputMethod_][
-      this.adapter_.getContextType()] = keyset;
+      keyset, this.contextTypeToLastKeysetMap_[contextType] ||
+      this.getActiveKeyset_(), this.languageCode_);
 
   if (ret) {
-    this.updateLanguageState_(this.currentKeyset_, keyset);
-    // Deactivate the last keyset view instance.
-    if (lastKeysetView) {
-      lastKeysetView.deactivate(this.currentKeyset_);
+    if (!this.isSubKeyset_(this.currentKeyset_, keyset) &&
+        keyset != Controller.EMOJI_VIEW_CODE_) {
+      // If it is the sub keyset switching, or emoji, don't record it.
+      // Update the keyset of current context type.
+      this.contextTypeToKeysetMap_[this.currentInputMethod_][contextType] =
+          keyset;
     }
-    this.currentKeyset_ = keyset;
-
+    this.updateLanguageState_(this.currentKeyset_, keyset);
     this.resize(Controller.DEV);
-    this.statistics_.setCurrentLayout(keyset);
-    // Activate the current key set view instance.
-    this.container_.currentKeysetView.activate(keyset);
+    this.statistics_.recordLayout(keyset, this.adapter_.isA11yMode);
+    this.currentKeyset_ = keyset;
     this.perfTracker_.tick(PerfTracker.TickName.KEYBOARD_SHOWN);
     this.perfTracker_.stop();
   } else {
+    // Sets the current keyset for delay switching.
+    this.contextTypeToKeysetMap_[this.currentInputMethod_][contextType] =
+        this.currentKeyset_ = keyset;
     this.loadResource_(keyset);
   }
 };
@@ -1399,6 +1567,9 @@ Controller.prototype.switchToKeySet = function(keyset) {
  * @private
  */
 Controller.prototype.onConfigLoaded_ = function(e) {
+  if (this.isDisposed()) {
+    return;
+  }
   var data = e.data;
   var keyboardCode = data[i18n.input.chrome.inputview.SpecNodeName.ID];
   this.keysetDataMap_[keyboardCode] = data;
@@ -1440,7 +1611,7 @@ Controller.prototype.resize = function(opt_ignoreWindowResize) {
   if (this.adapter_.isA11yMode) {
     height = SizeSpec.A11Y_HEIGHT;
     widthPercent = screen.width > screen.height ? SizeSpec.A11Y_WIDTH_PERCENT.
-        HORIZONTAL : SizeSpec.A11Y_WIDTH_PERCENT.VERTICAL;
+        LANDSCAPE : SizeSpec.A11Y_WIDTH_PERCENT.PORTRAIT;
     candidateViewHeight = SizeSpec.A11Y_CANDIDATE_VIEW_HEIGHT;
   } else {
     var keyset = this.keysetDataMap_[this.currentKeyset_];
@@ -1451,19 +1622,22 @@ Controller.prototype.resize = function(opt_ignoreWindowResize) {
     height = SizeSpec.NON_A11Y_HEIGHT;
     if (isHorizontal) {
       if (isWideScreen) {
-        widthPercent = spec.HORIZONTAL_WIDE_SCREEN;
+        widthPercent = spec.LANDSCAPE_WIDE_SCREEN;
       } else {
-        widthPercent = spec.HORIZONTAL;
+        widthPercent = spec.LANDSCAPE;
       }
     } else {
-      widthPercent = spec.VERTICAL;
+      widthPercent = spec.PORTRAIT;
     }
     candidateViewHeight = SizeSpec.NON_A11Y_CANDIDATE_VIEW_HEIGHT;
   }
 
   var viewportSize = goog.dom.getViewportSize();
   if (viewportSize.height != height && !opt_ignoreWindowResize) {
-    window.resizeTo(screen.width, height);
+    if (this.lastResizeHeight_ != height) {
+      this.lastResizeHeight_ = height;
+      window.resizeTo(screen.width, height);
+    }
     return;
   }
 
@@ -1484,8 +1658,6 @@ Controller.prototype.resize = function(opt_ignoreWindowResize) {
 Controller.prototype.loadAllResources_ = function() {
   var keysetMap = this.contextTypeToKeysetMap_[this.currentInputMethod_];
   goog.array.forEach([keysetMap[ContextType.DEFAULT],
-    Controller.HANDWRITING_VIEW_CODE_,
-    Controller.EMOJI_VIEW_CODE_,
     keysetMap[ContextType.PASSWORD]], function(keyset) {
     this.loadResource_(keyset);
   }, this);
@@ -1502,6 +1674,10 @@ Controller.prototype.loadAllResources_ = function() {
 Controller.prototype.getRemappedKeyset_ = function(keyset) {
   if (goog.array.contains(util.KEYSETS_USE_US, keyset)) {
     return 'us';
+  }
+  var match = keyset.match(/^(.*)-rtl$/);
+  if (match && goog.array.contains(util.KEYSETS_USE_US, match[1])) {
+    return 'us-rtl';
   }
   return keyset;
 };
@@ -1545,6 +1721,12 @@ Controller.prototype.initialize = function(keyset, languageCode, passwordLayout,
     title) {
   this.perfTracker_.restart();
   this.adapter_.getCurrentInputMethod(function(currentInputMethod) {
+    // TODO: remove this hack as soon as the manifest is fixed in chromium.
+    if (languageCode == 'ko') {
+      if (currentInputMethod.indexOf('hangul_2set') > 0) {
+        keyset = 'm17n:ko_2set';
+      }
+    }
     this.languageCode_ = languageCode;
     this.currentInputMethod_ = currentInputMethod;
     var keySetMap = this.contextTypeToKeysetMap_[this.currentInputMethod_];
@@ -1554,12 +1736,14 @@ Controller.prototype.initialize = function(keyset, languageCode, passwordLayout,
     keySetMap[ContextType.PASSWORD] = passwordLayout;
     keySetMap[ContextType.DEFAULT] = keyset;
 
+    this.initialKeyset_ = keyset;
     this.title_ = title;
     this.isSettingReady = false;
     this.model_.settings = new i18n.input.chrome.inputview.Settings();
+    this.model_.stateManager.isEnMode = false;
     this.adapter_.initialize(languageCode ? languageCode.split('-')[0] : '');
     this.loadAllResources_();
-    this.switchToKeySet(this.getActiveKeyset_());
+    this.switchToKeyset(this.getActiveKeyset_());
 
     // Set language attribute and font of body.
     document.body.setAttribute('lang', this.languageCode_);
@@ -1611,8 +1795,7 @@ Controller.prototype.shouldEnableSettings = function() {
  */
 Controller.prototype.getActiveKeyset_ = function() {
   var keySetMap = this.contextTypeToKeysetMap_[this.currentInputMethod_];
-  return keySetMap[this.adapter_.getContextType()] ||
-      keySetMap[ContextType.DEFAULT];
+  return keySetMap[this.adapter_.contextType] || this.initialKeyset_;
 };
 
 
@@ -1641,18 +1824,84 @@ Controller.prototype.isSubKeyset_ = function(keysetA, keysetB) {
  */
 Controller.prototype.updateLanguageState_ =
     function(fromRawKeyset, toRawKeyset) {
-  if (fromRawKeyset == 'pinyin-zh-CN.en.compact.qwerty' &&
-      toRawKeyset.indexOf('en.compact') == -1) {
-    this.adapter_.toggleLanguageState(true);
-  } else if (fromRawKeyset.indexOf('en.compact') == -1 &&
-      toRawKeyset == 'pinyin-zh-CN.en.compact.qwerty') {
-    this.adapter_.toggleLanguageState(false);
-  } else if (goog.array.contains(
-      i18n.input.chrome.inputview.util.KEYSETS_HAVE_EN_SWTICHER,
-      toRawKeyset)) {
-    this.adapter_.toggleLanguageState(true);
-    this.model_.stateManager.isEnMode = false;
+  var toggle = false;
+  var toggleState = false;
+  if (fromRawKeyset != toRawKeyset) {
+    // Deal with the switch logic to/from English within the compact layout.
+    if (fromRawKeyset.indexOf('en.compact') *
+        toRawKeyset.indexOf('en.compact') < 0) { // Switches between non-en/en.
+      toggle = true;
+      toggleState = toRawKeyset.indexOf('en.compact') == -1;
+    } else if (goog.array.contains(util.KEYSETS_HAVE_EN_SWTICHER,
+                   toRawKeyset) &&
+               fromRawKeyset.indexOf(toRawKeyset) == 0 &&
+               fromRawKeyset.indexOf('.compact') > 0 ||
+               fromRawKeyset && toRawKeyset.indexOf(fromRawKeyset) == 0 &&
+               toRawKeyset.indexOf('.compact') > 0) {
+      // Switch between full/compact layouts, reset the default button and
+      // language.
+      toggle = true;
+      toggleState = true;
+    }
+  }
+  if (toggle) {
+    this.adapter_.toggleLanguageState(toggleState);
+    this.model_.stateManager.isEnMode = !toggleState;
     this.container_.currentKeysetView.update();
+  }
+};
+
+
+/**
+ * Records the stats which will be reported when input view is closing.
+ *
+ * @param {string} name The metrics name.
+ * @param {number} count The count value for histogram.
+ * @param {number} max .
+ * @param {number} bucketCount .
+ * @private
+ */
+Controller.prototype.recordStatsForClosing_ = function(
+    name, count, max, bucketCount) {
+  if (!this.statsForClosing_[name]) {
+    this.statsForClosing_[name] = [count, max, bucketCount];
+  } else {
+    this.statsForClosing_[name][0] += count;
+    this.statsForClosing_[name][1] = max;
+    this.statsForClosing_[name][2] = bucketCount;
+  }
+};
+
+
+/**
+ * Handles language state changing event.
+ *
+ * @param {!i18n.input.chrome.message.Event} e .
+ * @private
+ */
+Controller.prototype.onUpdateToggleLanguateState_ = function(e) {
+  if (this.adapter_.isA11yMode || this.currentKeyset_.indexOf('.compact') < 0) {
+    // e.msg value means whether is Chinese mode now.
+    if (this.model_.stateManager.isEnMode == e.msg) {
+      this.model_.stateManager.isEnMode = !e.msg;
+      this.container_.currentKeysetView.update();
+    }
+  } else {
+    var pos = this.currentKeyset_.indexOf('en.compact');
+    var toKeyset;
+    if (pos > 0) { // Means en mode
+      if (e.msg) { // Needs switch cn mode
+        toKeyset = this.currentKeyset_.replace('en.compact', 'compact');
+      }
+    } else {
+      if (!e.msg) { // Needs switch en mode
+        toKeyset = this.currentKeyset_.replace('compact', 'en.compact');
+      }
+    }
+    if (toKeyset) {
+      this.resetAll_();
+      this.switchToKeyset(toKeyset);
+    }
   }
 };
 });  // goog.scope

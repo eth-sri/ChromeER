@@ -55,8 +55,7 @@ struct StreamDeviceInfo;
 
 // Object factory for RTC PeerConnections.
 class CONTENT_EXPORT PeerConnectionDependencyFactory
-    : NON_EXPORTED_BASE(public base::NonThreadSafe),
-      NON_EXPORTED_BASE(public AecDumpMessageFilter::AecDumpDelegate) {
+    : NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   PeerConnectionDependencyFactory(
       P2PSocketDispatcher* p2p_socket_dispatcher);
@@ -123,20 +122,8 @@ class CONTENT_EXPORT PeerConnectionDependencyFactory
 
   WebRtcAudioDeviceImpl* GetWebRtcAudioDevice();
 
-  static void AddNativeAudioTrackToBlinkTrack(
-      webrtc::MediaStreamTrackInterface* native_track,
-      const blink::WebMediaStreamTrack& webkit_track,
-      bool is_local_track);
-
   scoped_refptr<base::MessageLoopProxy> GetWebRtcWorkerThread() const;
   scoped_refptr<base::MessageLoopProxy> GetWebRtcSignalingThread() const;
-
-  // AecDumpMessageFilter::AecDumpDelegate implementation.
-  // TODO(xians): Remove when option to disable audio track processing is
-  // removed.
-  void OnAecDumpFile(const IPC::PlatformFileForTransit& file_handle) override;
-  void OnDisableAecDump() override;
-  void OnIpcClosing() override;
 
  protected:
   // Asks the PeerConnection factory to create a Local Audio Source.
@@ -179,6 +166,10 @@ class CONTENT_EXPORT PeerConnectionDependencyFactory
   // creating PeerConnection objects.
   void CreatePeerConnectionFactory();
 
+  void InitializeSignalingThread(
+      const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories,
+      base::WaitableEvent* event);
+
   void InitializeWorkerThread(rtc::Thread** thread,
                               base::WaitableEvent* event);
 
@@ -199,15 +190,11 @@ class CONTENT_EXPORT PeerConnectionDependencyFactory
   scoped_refptr<P2PSocketDispatcher> p2p_socket_dispatcher_;
   scoped_refptr<WebRtcAudioDeviceImpl> audio_device_;
 
-  // This is only used if audio track processing is disabled.
-  // TODO(xians): Remove when option to disable audio track processing is
-  // removed.
-  scoped_refptr<AecDumpMessageFilter> aec_dump_message_filter_;
-
   // PeerConnection threads. signaling_thread_ is created from the
   // "current" chrome thread.
   rtc::Thread* signaling_thread_;
   rtc::Thread* worker_thread_;
+  base::Thread chrome_signaling_thread_;
   base::Thread chrome_worker_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(PeerConnectionDependencyFactory);

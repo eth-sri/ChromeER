@@ -4,40 +4,51 @@
 
 #include "components/copresence/copresence_manager_impl.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/strings/stringprintf.h"
-#include "components/copresence/public/copresence_delegate.h"
+#include "base/timer/timer.h"
+#include "components/copresence/handlers/directive_handler_impl.h"
+#include "components/copresence/handlers/gcm_handler_impl.h"
+#include "components/copresence/proto/rpcs.pb.h"
 #include "components/copresence/public/whispernet_client.h"
 #include "components/copresence/rpc/rpc_handler.h"
 
 namespace {
 
-// Number of characters of suffix to log for auth tokens
-const int kTokenSuffix = 5;
+const int kPollTimerIntervalMs = 3000;   // milliseconds.
+const int kAudioCheckIntervalMs = 1000;  // milliseconds.
 
 }  // namespace
 
 namespace copresence {
 
-PendingRequest::PendingRequest(const ReportRequest& report,
-                               const std::string& app_id,
-                               const std::string& auth_token,
-                               const StatusCallback& callback)
-    : report(new ReportRequest(report)),
-      app_id(app_id),
-      auth_token(auth_token),
-      callback(callback) {}
+// Public functions.
 
-PendingRequest::~PendingRequest() {}
+CopresenceManagerImpl::CopresenceManagerImpl(CopresenceDelegate* delegate)
+    : delegate_(delegate),
+      whispernet_init_callback_(base::Bind(
+          &CopresenceManagerImpl::WhispernetInitComplete,
+          // This callback gets cancelled when we are destroyed.
+          base::Unretained(this))),
+      init_failed_(false),
+      directive_handler_(new DirectiveHandlerImpl),
+      poll_timer_(new base::RepeatingTimer<CopresenceManagerImpl>),
+      audio_check_timer_(new base::RepeatingTimer<CopresenceManagerImpl>) {
+  DCHECK(delegate_);
+  DCHECK(delegate_->GetWhispernetClient());
+  delegate_->GetWhispernetClient()->Initialize(
+      whispernet_init_callback_.callback());
 
-// static
-scoped_ptr<CopresenceManager> CopresenceManager::Create(
-    CopresenceDelegate* delegate) {
-  return make_scoped_ptr(new CopresenceManagerImpl(delegate));
+  if (delegate->GetGCMDriver())
+    gcm_handler_.reset(new GCMHandlerImpl(delegate->GetGCMDriver(),
+                                          directive_handler_.get()));
+
+  rpc_handler_.reset(new RpcHandler(delegate,
+                                    directive_handler_.get(),
+                                    gcm_handler_.get()));
 }
-
-
-// Public methods
 
 CopresenceManagerImpl::~CopresenceManagerImpl() {
   whispernet_init_callback_.Cancel();
@@ -47,6 +58,7 @@ CopresenceManagerImpl::~CopresenceManagerImpl() {
 void CopresenceManagerImpl::ExecuteReportRequest(
     const ReportRequest& request,
     const std::string& app_id,
+    const std::string& auth_token,
     const StatusCallback& callback) {
   // If initialization has failed, reject all requests.
   if (init_failed_) {
@@ -54,95 +66,64 @@ void CopresenceManagerImpl::ExecuteReportRequest(
     return;
   }
 
-  // Check if we are initialized enough to execute this request.
-  // If we haven't seen this auth token yet, we need to register for it.
-  // TODO(ckehoe): Queue per device ID instead of globally.
-  DCHECK(rpc_handler_);
-  const std::string& auth_token = delegate_->GetAuthToken();
-  if (!rpc_handler_->IsRegisteredForToken(auth_token)) {
-    std::string token_str = auth_token.empty() ? "(anonymous)" :
-        base::StringPrintf("(token ...%s)",
-                           auth_token.substr(auth_token.length() - kTokenSuffix,
-                                             kTokenSuffix).c_str());
-    rpc_handler_->RegisterForToken(
-        auth_token,
-        // The manager owns the RpcHandler, so this callback cannot outlive us.
-        base::Bind(&CopresenceManagerImpl::InitStepComplete,
-                   base::Unretained(this),
-                   "Device registration " + token_str));
-    pending_init_operations_++;
-  }
+  // We'll need to modify the ReportRequest, so we make our own copy to send.
+  scoped_ptr<ReportRequest> request_copy(new ReportRequest(request));
+  rpc_handler_->SendReportRequest(
+      request_copy.Pass(), app_id, auth_token, callback);
+}
 
-  // Execute the request if possible, or queue it
-  // if initialization is still in progress.
-  if (pending_init_operations_) {
-    pending_requests_queue_.push_back(
-        new PendingRequest(request, app_id, auth_token, callback));
+
+// Private functions.
+
+void CopresenceManagerImpl::WhispernetInitComplete(bool success) {
+  if (success) {
+    DVLOG(3) << "Whispernet initialized successfully.";
+
+    // We destroy |directive_handler_| before |rpc_handler_|, hence passing
+    // in |rpc_handler_|'s pointer is safe here.
+    directive_handler_->Start(delegate_->GetWhispernetClient(),
+                              base::Bind(&RpcHandler::ReportTokens,
+                                         base::Unretained(rpc_handler_.get())));
+
+    // Start up timers.
+    poll_timer_->Start(FROM_HERE,
+                       base::TimeDelta::FromMilliseconds(kPollTimerIntervalMs),
+                       base::Bind(&CopresenceManagerImpl::PollForMessages,
+                                  base::Unretained(this)));
+    audio_check_timer_->Start(
+        FROM_HERE, base::TimeDelta::FromMilliseconds(kAudioCheckIntervalMs),
+        base::Bind(&CopresenceManagerImpl::AudioCheck, base::Unretained(this)));
   } else {
-    rpc_handler_->SendReportRequest(
-        make_scoped_ptr(new ReportRequest(request)),
-        app_id,
-        auth_token,
-        callback);
-  }
-}
-
-// Private methods
-
-CopresenceManagerImpl::CopresenceManagerImpl(CopresenceDelegate* delegate)
-    : init_failed_(false),
-      // This callback gets cancelled when we are destroyed.
-      whispernet_init_callback_(
-          base::Bind(&CopresenceManagerImpl::InitStepComplete,
-                     base::Unretained(this),
-                     "Whispernet proxy initialization")),
-      pending_init_operations_(0),
-      delegate_(delegate),
-      rpc_handler_(new RpcHandler(delegate)) {
-  DCHECK(delegate);
-  DCHECK(delegate->GetWhispernetClient());
-
-  delegate->GetWhispernetClient()->Initialize(
-      whispernet_init_callback_.callback());
-  pending_init_operations_++;
-}
-
-void CopresenceManagerImpl::CompleteInitialization() {
-  if (pending_init_operations_)
-    return;
-
-  DCHECK(rpc_handler_.get());
-  if (!init_failed_)
-    rpc_handler_->ConnectToWhispernet();
-
-  // Not const because SendReportRequest takes ownership of the ReportRequests.
-  // This is ok though, as the entire queue is deleted afterwards.
-  for (PendingRequest* request : pending_requests_queue_) {
-    if (init_failed_) {
-      request->callback.Run(FAIL);
-    } else {
-      rpc_handler_->SendReportRequest(
-          request->report.Pass(),
-          request->app_id,
-          request->auth_token,
-          request->callback);
-    }
-  }
-  pending_requests_queue_.clear();
-}
-
-void CopresenceManagerImpl::InitStepComplete(
-    const std::string& step, bool success) {
-  if (!success) {
-    LOG(ERROR) << step << " failed!";
+    LOG(ERROR) << "Whispernet initialization failed!";
     init_failed_ = true;
-    // TODO(ckehoe): Retry for registration failures. But maybe not here.
   }
+}
 
-  DVLOG(3) << step << " complete.";
-  DCHECK(pending_init_operations_ > 0);
-  pending_init_operations_--;
-  CompleteInitialization();
+void CopresenceManagerImpl::PollForMessages() {
+  // Report our currently playing tokens.
+  const std::string& audible_token =
+      directive_handler_->GetCurrentAudioToken(AUDIBLE);
+  const std::string& inaudible_token =
+      directive_handler_->GetCurrentAudioToken(INAUDIBLE);
+
+  std::vector<AudioToken> tokens;
+  if (!audible_token.empty())
+    tokens.push_back(AudioToken(audible_token, true));
+  if (!inaudible_token.empty())
+    tokens.push_back(AudioToken(inaudible_token, false));
+
+  if (!tokens.empty())
+    rpc_handler_->ReportTokens(tokens);
+}
+
+void CopresenceManagerImpl::AudioCheck() {
+  if (!directive_handler_->GetCurrentAudioToken(AUDIBLE).empty() &&
+      !directive_handler_->IsAudioTokenHeard(AUDIBLE)) {
+    delegate_->HandleStatusUpdate(AUDIO_FAIL);
+  } else if (!directive_handler_->GetCurrentAudioToken(INAUDIBLE).empty() &&
+             !directive_handler_->IsAudioTokenHeard(INAUDIBLE)) {
+    delegate_->HandleStatusUpdate(AUDIO_FAIL);
+  }
 }
 
 }  // namespace copresence

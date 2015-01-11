@@ -35,7 +35,7 @@ void FakeSessionManagerClient::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
-bool FakeSessionManagerClient::HasObserver(Observer* observer) {
+bool FakeSessionManagerClient::HasObserver(const Observer* observer) const {
   return observers_.HasObserver(observer);
 }
 
@@ -54,6 +54,12 @@ void FakeSessionManagerClient::StartSession(const std::string& user_email) {
 }
 
 void FakeSessionManagerClient::StopSession() {
+}
+
+void FakeSessionManagerClient::NotifySupervisedUserCreationStarted() {
+}
+
+void FakeSessionManagerClient::NotifySupervisedUserCreationFinished() {
 }
 
 void FakeSessionManagerClient::StartDeviceWipe() {

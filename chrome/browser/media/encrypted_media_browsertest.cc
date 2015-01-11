@@ -51,12 +51,15 @@ const char kExternalClearKeyCrashKeySystem[] =
 // Supported media types.
 const char kWebMAudioOnly[] = "audio/webm; codecs=\"vorbis\"";
 const char kWebMVideoOnly[] = "video/webm; codecs=\"vp8\"";
-const char kWebMVP9VideoOnly[] = "video/webm; codecs=\"vp9\"";
 const char kWebMAudioVideo[] = "video/webm; codecs=\"vorbis, vp8\"";
+// Some tests are disabled in Chrome OS official builds. http://crbug.com/430711
+#if !(defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD))
+const char kWebMVP9VideoOnly[] = "video/webm; codecs=\"vp9\"";
 #if defined(USE_PROPRIETARY_CODECS)
 const char kMP4AudioOnly[] = "audio/mp4; codecs=\"mp4a.40.2\"";
 const char kMP4VideoOnly[] = "video/mp4; codecs=\"avc1.4D4041\"";
 #endif  // defined(USE_PROPRIETARY_CODECS)
+#endif  // !(defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD))
 
 // Sessions to load.
 const char kNoSessionToLoad[] = "";
@@ -86,7 +89,7 @@ enum EmeVersion {
 static bool IsMSESupported() {
 #if defined(OS_ANDROID)
   if (base::android::BuildInfo::GetInstance()->sdk_int() < 16) {
-    VLOG(0) << "MSE is only supported in Android 4.1 and later.";
+    DVLOG(0) << "MSE is only supported in Android 4.1 and later.";
     return false;
   }
 #endif  // defined(OS_ANDROID)
@@ -143,7 +146,7 @@ class EncryptedMediaTestBase : public MediaBrowserTest {
                              bool force_invalid_response,
                              const std::string& expected_title) {
     if (src_type == MSE && !IsMSESupported()) {
-      VLOG(0) << "Skipping test - MSE not supported.";
+      DVLOG(0) << "Skipping test - MSE not supported.";
       return;
     }
     base::StringPairs query_params;
@@ -254,7 +257,7 @@ class EncryptedMediaTestBase : public MediaBrowserTest {
       RegisterPepperCdm(command_line, kClearKeyCdmAdapterFileName, key_system);
     }
 #if defined(WIDEVINE_CDM_AVAILABLE) && defined(WIDEVINE_CDM_IS_COMPONENT)
-    else if (IsWidevine(key_system)) {
+    else if (IsWidevine(key_system)) {  // NOLINT
       RegisterPepperCdm(command_line, kWidevineCdmAdapterFileName, key_system);
     }
 #endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(WIDEVINE_CDM_IS_COMPONENT)
@@ -278,7 +281,7 @@ class EncryptedMediaTestBase : public MediaBrowserTest {
     base::FilePath::StringType pepper_plugin = plugin_lib.value();
     pepper_plugin.append(FILE_PATH_LITERAL("#CDM#0.1.0.0;"));
 #if defined(OS_WIN)
-    pepper_plugin.append(base::ASCIIToWide(GetPepperType(key_system)));
+    pepper_plugin.append(base::ASCIIToUTF16(GetPepperType(key_system)));
 #else
     pepper_plugin.append(GetPepperType(key_system));
 #endif
@@ -526,6 +529,8 @@ INSTANTIATE_TEST_CASE_P(MSE_Widevine,
 #endif  // !defined(WIDEVINE_CDM_IS_COMPONENT)
 #endif  // defined(WIDEVINE_CDM_AVAILABLE)
 
+// These tests time out in Chrome OS official builds. http://crbug.com/430711
+#if !(defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD))
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_AudioOnly_WebM) {
   TestSimplePlayback("bear-a_enc-a.webm", kWebMAudioOnly);
 }
@@ -550,17 +555,29 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VP9Video_WebM) {
   TestSimplePlayback("bear-320x240-v-vp9_enc-v.webm", kWebMVP9VideoOnly);
 }
 
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_AudioOnly_WebM_Opus) {
+  TestSimplePlayback("bear-320x240-opus-a_enc-a.webm", kWebMAudioOnly);
+}
+
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VideoAudio_WebM_Opus) {
+  TestSimplePlayback("bear-320x240-opus-av_enc-av.webm", kWebMAudioVideo);
+}
+
+IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VideoClearAudio_WebM_Opus) {
+  TestSimplePlayback("bear-320x240-opus-av_enc-v.webm", kWebMAudioVideo);
+}
+
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, InvalidResponseKeyError) {
   RunInvalidResponseTest();
 }
 
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, ConfigChangeVideo) {
   if (CurrentSourceType() != MSE || !IsMSESupported()) {
-    VLOG(0) << "Skipping test - ConfigChange test requires MSE.";
+    DVLOG(0) << "Skipping test - ConfigChange test requires MSE.";
     return;
   }
   if (!IsPlayBackPossible(CurrentKeySystem())) {
-    VLOG(0) << "Skipping test - ConfigChange test requires video playback.";
+    DVLOG(0) << "Skipping test - ConfigChange test requires video playback.";
     return;
   }
   TestConfigChange();
@@ -573,7 +590,7 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, FrameSizeChangeVideo) {
     return;
 #endif
   if (!IsPlayBackPossible(CurrentKeySystem())) {
-    VLOG(0) << "Skipping test - FrameSizeChange test requires video playback.";
+    DVLOG(0) << "Skipping test - FrameSizeChange test requires video playback.";
     return;
   }
   TestFrameSizeChange();
@@ -583,7 +600,7 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, FrameSizeChangeVideo) {
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VideoOnly_MP4) {
   // MP4 without MSE is not support yet, http://crbug.com/170793.
   if (CurrentSourceType() != MSE) {
-    VLOG(0) << "Skipping test; Can only play MP4 encrypted streams by MSE.";
+    DVLOG(0) << "Skipping test; Can only play MP4 encrypted streams by MSE.";
     return;
   }
   TestSimplePlayback("bear-640x360-v_frag-cenc.mp4", kMP4VideoOnly);
@@ -592,12 +609,13 @@ IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_VideoOnly_MP4) {
 IN_PROC_BROWSER_TEST_P(EncryptedMediaTest, Playback_AudioOnly_MP4) {
   // MP4 without MSE is not support yet, http://crbug.com/170793.
   if (CurrentSourceType() != MSE) {
-    VLOG(0) << "Skipping test; Can only play MP4 encrypted streams by MSE.";
+    DVLOG(0) << "Skipping test; Can only play MP4 encrypted streams by MSE.";
     return;
   }
   TestSimplePlayback("bear-640x360-a_frag-cenc.mp4", kMP4AudioOnly);
 }
 #endif  // defined(USE_PROPRIETARY_CODECS)
+#endif  // !(defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD))
 
 #if defined(WIDEVINE_CDM_AVAILABLE)
 // The parent key system cannot be used in generateKeyRequest.

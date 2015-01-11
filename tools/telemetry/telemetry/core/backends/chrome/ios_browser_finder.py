@@ -27,16 +27,15 @@ IOS_WEBKIT_DEBUG_PROXY = 'ios_webkit_debug_proxy'
 class PossibleIOSBrowser(possible_browser.PossibleBrowser):
 
   """A running iOS browser instance."""
-  def __init__(self, browser_type, finder_options):
-    super(PossibleIOSBrowser, self).__init__(browser_type, 'ios',
-        finder_options, True)
+  def __init__(self, browser_type, _):
+    super(PossibleIOSBrowser, self).__init__(browser_type, 'ios', True)
 
   # TODO(baxley): Implement the following methods for iOS.
-  def Create(self):
-    backend = ios_browser_backend.IosBrowserBackend(
-        self.finder_options.browser_options)
+  def Create(self, finder_options):
+    browser_backend = ios_browser_backend.IosBrowserBackend(
+        self._platform_backend, finder_options.browser_options)
     return browser.Browser(
-        backend, self._platform_backend, self._credentials_path)
+        browser_backend, self._platform_backend, self._credentials_path)
 
   def SupportsOptions(self, finder_options):
     #TODO(baxley): Implement me.
@@ -71,7 +70,7 @@ def FindAllBrowserTypes(_):
 def _IsIosDeviceAttached():
   devices = subprocess.check_output('system_profiler SPUSBDataType', shell=True)
   for line in devices.split('\n'):
-    if line and re.match('\s*(iPod|iPhone|iPad):', line):
+    if line and re.match(r'\s*(iPod|iPhone|iPad):', line):
       return True
   return False
 
@@ -87,8 +86,8 @@ def FindAllAvailableBrowsers(finder_options):
   options = finder_options.browser_options
 
   options.browser_type = 'ios-chrome'
-  backend = ios_browser_backend.IosBrowserBackend(options)
   host = platform.GetHostPlatform()
+  backend = ios_browser_backend.IosBrowserBackend(host, options)
   # TODO(baxley): Use idevice to wake up device or log debug statement.
   if not host.IsApplicationRunning(IOS_WEBKIT_DEBUG_PROXY):
     host.LaunchApplication(IOS_WEBKIT_DEBUG_PROXY)
@@ -104,11 +103,11 @@ def FindAllAvailableBrowsers(finder_options):
   debug_urls = backend.GetWebSocketDebuggerUrls(device_urls)
 
   # Get the userAgent for each UIWebView to find the browsers.
-  browser_pattern = ('\)\s(%s)\/(\d+[\.\d]*)\sMobile'
+  browser_pattern = (r'\)\s(%s)\/(\d+[\.\d]*)\sMobile'
                      % '|'.join(IOS_BROWSERS.keys()))
   browser_types = set()
   for url in debug_urls:
-    context = {'webSocketDebuggerUrl':url , 'id':1}
+    context = {'webSocketDebuggerUrl': url, 'id': 1}
     inspector = inspector_backend.InspectorBackend(backend, context)
     res = inspector.EvaluateJavaScript("navigator.userAgent")
     match_browsers = re.search(browser_pattern, res)

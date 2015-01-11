@@ -28,6 +28,8 @@
 #include "media/base/media_log.h"
 #include "media/base/video_decoder_config.h"
 #include "media/ffmpeg/ffmpeg_common.h"
+#include "media/filters/ffmpeg_aac_bitstream_converter.h"
+#include "media/filters/ffmpeg_bitstream_converter.h"
 #include "media/filters/ffmpeg_glue.h"
 #include "media/filters/ffmpeg_h264_to_annex_b_bitstream_converter.h"
 #include "media/filters/webvtt_util.h"
@@ -91,11 +93,11 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
       task_runner_(base::MessageLoopProxy::current()),
       stream_(stream),
       type_(UNKNOWN),
+      liveness_(LIVENESS_UNKNOWN),
       end_of_stream_(false),
       last_packet_timestamp_(kNoTimestamp()),
       last_packet_duration_(kNoTimestamp()),
       video_rotation_(VIDEO_ROTATION_0),
-      bitstream_converter_enabled_(false),
       fixup_negative_ogg_timestamps_(false) {
   DCHECK(demuxer_);
 
@@ -148,13 +150,6 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
   // Calculate the duration.
   duration_ = ConvertStreamTimestamp(stream->time_base, stream->duration);
 
-#if defined(USE_PROPRIETARY_CODECS)
-  if (stream_->codec->codec_id == AV_CODEC_ID_H264) {
-    bitstream_converter_.reset(
-        new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
-  }
-#endif
-
   if (is_encrypted) {
     AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL,
                                          0);
@@ -174,6 +169,12 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
   }
 }
 
+FFmpegDemuxerStream::~FFmpegDemuxerStream() {
+  DCHECK(!demuxer_);
+  DCHECK(read_cb_.is_null());
+  DCHECK(buffer_queue_.IsEmpty());
+}
+
 void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
@@ -184,7 +185,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 
 #if defined(USE_PROPRIETARY_CODECS)
   // Convert the packet if there is a bitstream filter.
-  if (packet->data && bitstream_converter_enabled_ &&
+  if (packet->data && bitstream_converter_ &&
       !bitstream_converter_->ConvertPacket(packet.get())) {
     LOG(ERROR) << "Format conversion failed.";
   }
@@ -261,7 +262,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
       // allow front discard padding on the first buffer.  Otherwise the discard
       // helper can't figure out which data to discard.  See AudioDiscardHelper.
       int discard_front_samples = base::ByteSwapToLE32(*skip_samples_ptr);
-      if (last_packet_timestamp_ != kNoTimestamp()) {
+      if (last_packet_timestamp_ != kNoTimestamp() && discard_front_samples) {
         DLOG(ERROR) << "Skip samples are only allowed for the first packet.";
         discard_front_samples = 0;
       }
@@ -366,6 +367,9 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     }
   }
 
+  if (packet.get()->flags & AV_PKT_FLAG_KEY)
+    buffer->set_is_key_frame(true);
+
   last_packet_timestamp_ = buffer->timestamp();
   last_packet_duration_ = buffer->duration();
 
@@ -383,8 +387,8 @@ void FFmpegDemuxerStream::FlushBuffers() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(read_cb_.is_null()) << "There should be no pending read";
 
-  // H264 requires that we resend the header after flush.
-  // Reset its bitstream for converter to do so.
+  // H264 and AAC require that we resend the header after flush.
+  // Reset bitstream for converter to do so.
   // This is related to chromium issue 140371 (http://crbug.com/140371).
   ResetBitstreamConverter();
 
@@ -406,9 +410,14 @@ void FFmpegDemuxerStream::Stop() {
   end_of_stream_ = true;
 }
 
-DemuxerStream::Type FFmpegDemuxerStream::type() {
+DemuxerStream::Type FFmpegDemuxerStream::type() const {
   DCHECK(task_runner_->BelongsToCurrentThread());
   return type_;
+}
+
+DemuxerStream::Liveness FFmpegDemuxerStream::liveness() const {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  return liveness_;
 }
 
 void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
@@ -433,8 +442,7 @@ void FFmpegDemuxerStream::EnableBitstreamConverter() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
 #if defined(USE_PROPRIETARY_CODECS)
-  CHECK(bitstream_converter_.get());
-  bitstream_converter_enabled_ = true;
+  InitBitstreamConverter();
 #else
   NOTREACHED() << "Proprietary codecs not enabled.";
 #endif
@@ -442,11 +450,20 @@ void FFmpegDemuxerStream::EnableBitstreamConverter() {
 
 void FFmpegDemuxerStream::ResetBitstreamConverter() {
 #if defined(USE_PROPRIETARY_CODECS)
-  if (!bitstream_converter_enabled_ || !bitstream_converter_)
-    return;
+  if (bitstream_converter_)
+    InitBitstreamConverter();
+#endif  // defined(USE_PROPRIETARY_CODECS)
+}
 
-  bitstream_converter_.reset(
-      new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
+void FFmpegDemuxerStream::InitBitstreamConverter() {
+#if defined(USE_PROPRIETARY_CODECS)
+  if (stream_->codec->codec_id == AV_CODEC_ID_H264) {
+    bitstream_converter_.reset(
+        new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
+  } else if (stream_->codec->codec_id == AV_CODEC_ID_AAC) {
+    bitstream_converter_.reset(
+        new FFmpegAACBitstreamConverter(stream_->codec));
+  }
 #endif  // defined(USE_PROPRIETARY_CODECS)
 }
 
@@ -468,10 +485,10 @@ VideoRotation FFmpegDemuxerStream::video_rotation() {
   return video_rotation_;
 }
 
-FFmpegDemuxerStream::~FFmpegDemuxerStream() {
-  DCHECK(!demuxer_);
-  DCHECK(read_cb_.is_null());
-  DCHECK(buffer_queue_.IsEmpty());
+void FFmpegDemuxerStream::SetLiveness(Liveness liveness) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK_EQ(liveness_, LIVENESS_UNKNOWN);
+  liveness_ = liveness;
 }
 
 base::TimeDelta FFmpegDemuxerStream::GetElapsedTime() const {
@@ -566,7 +583,6 @@ FFmpegDemuxer::FFmpegDemuxer(
       start_time_(kNoTimestamp()),
       preferred_stream_for_seeking_(-1, kNoTimestamp()),
       fallback_stream_for_seeking_(-1, kNoTimestamp()),
-      liveness_(LIVENESS_UNKNOWN),
       text_enabled_(false),
       duration_known_(false),
       need_key_cb_(need_key_cb),
@@ -704,11 +720,6 @@ FFmpegDemuxerStream* FFmpegDemuxer::GetFFmpegStream(
 
 base::TimeDelta FFmpegDemuxer::GetStartTime() const {
   return std::max(start_time_, base::TimeDelta());
-}
-
-Demuxer::Liveness FFmpegDemuxer::GetLiveness() const {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  return liveness_;
 }
 
 void FFmpegDemuxer::AddTextStreams() {
@@ -983,11 +994,11 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     timeline_offset_ += start_time_;
 
   if (max_duration == kInfiniteDuration() && !timeline_offset_.is_null()) {
-    liveness_ = LIVENESS_LIVE;
+    SetLiveness(DemuxerStream::LIVENESS_LIVE);
   } else if (max_duration != kInfiniteDuration()) {
-    liveness_ = LIVENESS_RECORDED;
+    SetLiveness(DemuxerStream::LIVENESS_RECORDED);
   } else {
-    liveness_ = LIVENESS_UNKNOWN;
+    SetLiveness(DemuxerStream::LIVENESS_UNKNOWN);
   }
 
   // Good to go: set the duration and bitrate and notify we're done
@@ -1032,6 +1043,9 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
     AVCodec* codec = avcodec_find_decoder(video_codec->codec_id);
     if (codec) {
       media_log_->SetStringProperty("video_codec_name", codec->name);
+    } else if (video_codec->codec_id == AV_CODEC_ID_VP9) {
+      // ffmpeg doesn't know about VP9 decoder. So we need to log it explicitly.
+      media_log_->SetStringProperty("video_codec_name", "vp9");
     }
 
     media_log_->SetIntegerProperty("width", video_codec->width);
@@ -1268,6 +1282,14 @@ void FFmpegDemuxer::NotifyBufferingChanged() {
 
 void FFmpegDemuxer::OnDataSourceError() {
   host_->OnDemuxerError(PIPELINE_ERROR_READ);
+}
+
+void FFmpegDemuxer::SetLiveness(DemuxerStream::Liveness liveness) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  for (const auto& stream : streams_) {  // |stream| is a ref to a pointer.
+    if (stream)
+      stream->SetLiveness(liveness);
+  }
 }
 
 }  // namespace media

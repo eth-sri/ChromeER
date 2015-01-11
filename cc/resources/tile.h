@@ -15,6 +15,8 @@
 
 namespace cc {
 
+class TileManager;
+
 class CC_EXPORT Tile : public RefCountedManaged<Tile> {
  public:
   enum TileRasterFlags { USE_PICTURE_ANALYSIS = 1 << 0 };
@@ -84,6 +86,10 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   bool required_for_activation() const { return required_for_activation_; }
   void set_required_for_activation(bool is_required) {
     required_for_activation_ = is_required;
+  }
+  bool required_for_draw() const { return required_for_draw_; }
+  void set_required_for_draw(bool is_required) {
+    required_for_draw_ = is_required;
   }
 
   bool use_picture_analysis() const {
@@ -174,6 +180,7 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   int tiling_i_index_;
   int tiling_j_index_;
   bool required_for_activation_;
+  bool required_for_draw_;
 
   Id id_;
   static Id s_next_id_;

@@ -47,7 +47,6 @@ class AURA_EXPORT WindowTreeHostOzone : public WindowTreeHost,
   virtual gfx::Point GetLocationOnNativeScreen() const override;
   virtual void SetCapture() override;
   virtual void ReleaseCapture() override;
-  virtual void PostNativeEvent(const base::NativeEvent& event) override;
   virtual void SetCursorNative(gfx::NativeCursor cursor_type) override;
   virtual void MoveCursorToNative(const gfx::Point& location) override;
   virtual void OnCursorVisibilityChangedNative(bool show) override;
@@ -60,6 +59,9 @@ class AURA_EXPORT WindowTreeHostOzone : public WindowTreeHost,
 
   // The identifier used to create a compositing surface.
   gfx::AcceleratedWidget widget_;
+
+  // Current Aura cursor.
+  gfx::NativeCursor current_cursor_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeHostOzone);
 };

@@ -14,20 +14,76 @@
 #include <mferror.h>
 #include <wmcodecdsp.h>
 
+#include "base/base_paths_win.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/file_version_info.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
+#include "base/path_service.h"
 #include "base/win/windows_version.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_switches.h"
+
+namespace {
+
+// Path is appended on to the PROGRAM_FILES base path.
+const wchar_t kVPXDecoderDLLPath[] = L"Intel\\Media SDK\\";
+
+const wchar_t kVP8DecoderDLLName[] =
+#if defined(ARCH_CPU_X86)
+  L"mfx_mft_vp8vd_32.dll";
+#elif defined(ARCH_CPU_X86_64)
+  L"mfx_mft_vp8vd_64.dll";
+#else
+#error Unsupported Windows CPU Architecture
+#endif
+
+const wchar_t kVP9DecoderDLLName[] =
+#if defined(ARCH_CPU_X86)
+  L"mfx_mft_vp9vd_32.dll";
+#elif defined(ARCH_CPU_X86_64)
+  L"mfx_mft_vp9vd_64.dll";
+#else
+#error Unsupported Windows CPU Architecture
+#endif
+
+const CLSID CLSID_WebmMfVp8Dec = {
+  0x451e3cb7,
+  0x2622,
+  0x4ba5,
+  { 0x8e, 0x1d, 0x44, 0xb3, 0xc4, 0x1d, 0x09, 0x24 }
+};
+
+const CLSID CLSID_WebmMfVp9Dec = {
+  0x07ab4bd2,
+  0x1979,
+  0x4fcd,
+  { 0xa6, 0x97, 0xdf, 0x9a, 0xd1, 0x5b, 0x34, 0xfe }
+};
+
+const CLSID MEDIASUBTYPE_VP80 = {
+  0x30385056,
+  0x0000,
+  0x0010,
+  { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 }
+};
+
+const CLSID MEDIASUBTYPE_VP90 = {
+  0x30395056,
+  0x0000,
+  0x0010,
+  { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 }
+};
+
+}
 
 namespace content {
 
@@ -96,7 +152,7 @@ static IMFSample* CreateEmptySampleWithBuffer(int buffer_length, int align) {
   }
   RETURN_ON_HR_FAILURE(hr, "Failed to create memory buffer for sample", NULL);
 
-  hr = sample->AddBuffer(buffer);
+  hr = sample->AddBuffer(buffer.get());
   RETURN_ON_HR_FAILURE(hr, "Failed to add buffer to sample", NULL);
 
   return sample.Detach();
@@ -114,7 +170,7 @@ static IMFSample* CreateInputSample(const uint8* stream, int size,
   base::win::ScopedComPtr<IMFSample> sample;
   sample.Attach(CreateEmptySampleWithBuffer(std::max(min_size, size),
                                             alignment));
-  RETURN_ON_FAILURE(sample, "Failed to create empty sample", NULL);
+  RETURN_ON_FAILURE(sample.get(), "Failed to create empty sample", NULL);
 
   base::win::ScopedComPtr<IMFMediaBuffer> buffer;
   HRESULT hr = sample->GetBufferByIndex(0, buffer.Receive());
@@ -323,14 +379,14 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
 
   glBindTexture(GL_TEXTURE_2D, picture_buffer_.texture_id());
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
   base::win::ScopedComPtr<IDirect3DSurface9> d3d_surface;
   hr = decoding_texture_->GetSurfaceLevel(0, d3d_surface.Receive());
   RETURN_ON_HR_FAILURE(hr, "Failed to get surface from texture", false);
 
-  hr = decoder.device_->StretchRect(
-      dest_surface, NULL, d3d_surface, NULL, D3DTEXF_NONE);
+  hr = decoder.device_->StretchRect(dest_surface, NULL, d3d_surface.get(), NULL,
+                                    D3DTEXF_NONE);
   RETURN_ON_HR_FAILURE(hr, "Colorspace conversion via StretchRect failed",
                         false);
 
@@ -362,7 +418,7 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
       egl_display,
       decoding_surface_,
       EGL_BACK_BUFFER);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glBindTexture(GL_TEXTURE_2D, current_texture);
   return true;
 }
@@ -410,7 +466,7 @@ bool DXVAVideoDecodeAccelerator::CreateD3DDevManager() {
                                          device_manager_.Receive());
   RETURN_ON_HR_FAILURE(hr, "DXVA2CreateDirect3DDeviceManager9 failed", false);
 
-  hr = device_manager_->ResetDevice(device_, dev_manager_reset_token_);
+  hr = device_manager_->ResetDevice(device_.get(), dev_manager_reset_token_);
   RETURN_ON_HR_FAILURE(hr, "Failed to reset device", false);
 
   hr = device_->CreateQuery(D3DQUERYTYPE_EVENT, query_.Receive());
@@ -431,7 +487,8 @@ DXVAVideoDecodeAccelerator::DXVAVideoDecodeAccelerator(
       pictures_requested_(false),
       inputs_before_decode_(0),
       make_context_current_(make_context_current),
-      weak_this_factory_(this) {
+      weak_this_factory_(this),
+      codec_(media::kUnknownVideoCodec) {
   memset(&input_stream_info_, 0, sizeof(input_stream_info_));
   memset(&output_stream_info_, 0, sizeof(output_stream_info_));
 }
@@ -458,9 +515,11 @@ bool DXVAVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
   // H264PROFILE_HIGH video decoding is janky at times. Needs more
   // investigation. http://crbug.com/426707
   if (profile != media::H264PROFILE_BASELINE &&
-      profile != media::H264PROFILE_MAIN) {
+      profile != media::H264PROFILE_MAIN &&
+      profile != media::VP8PROFILE_ANY &&
+      profile != media::VP9PROFILE_ANY) {
     RETURN_AND_NOTIFY_ON_FAILURE(false,
-        "Unsupported h264 profile", PLATFORM_FAILURE, false);
+        "Unsupported h.264, vp8, or vp9 profile", PLATFORM_FAILURE, false);
   }
 
   RETURN_AND_NOTIFY_ON_FAILURE(
@@ -507,14 +566,14 @@ void DXVAVideoDecodeAccelerator::Decode(
 
   RETURN_AND_NOTIFY_ON_FAILURE((state_ == kNormal || state_ == kStopped ||
                                 state_ == kFlushing),
-      "Invalid state: " << state_, ILLEGAL_STATE,);
+           "Invalid state: " << state_, ILLEGAL_STATE,);
 
   base::win::ScopedComPtr<IMFSample> sample;
   sample.Attach(CreateSampleFromInputBuffer(bitstream_buffer,
                                             input_stream_info_.cbSize,
                                             input_stream_info_.cbAlignment));
-  RETURN_AND_NOTIFY_ON_FAILURE(sample, "Failed to create input sample",
-                               PLATFORM_FAILURE,);
+  RETURN_AND_NOTIFY_ON_FAILURE(sample.get(), "Failed to create input sample",
+                               PLATFORM_FAILURE, );
 
   RETURN_AND_NOTIFY_ON_HR_FAILURE(sample->SetSampleTime(bitstream_buffer.id()),
       "Failed to associate input buffer id with sample", PLATFORM_FAILURE,);
@@ -639,30 +698,51 @@ bool DXVAVideoDecodeAccelerator::CanDecodeOnIOThread() {
 }
 
 bool DXVAVideoDecodeAccelerator::InitDecoder(media::VideoCodecProfile profile) {
-  if (profile < media::H264PROFILE_MIN || profile > media::H264PROFILE_MAX)
-    return false;
+  HMODULE decoder_dll = NULL;
 
-  // We mimic the steps CoCreateInstance uses to instantiate the object. This
-  // was previously done because it failed inside the sandbox, and now is done
-  // as a more minimal approach to avoid other side-effects CCI might have (as
-  // we are still in a reduced sandbox).
-  HMODULE decoder_dll = ::LoadLibrary(L"msmpeg2vdec.dll");
-  RETURN_ON_FAILURE(decoder_dll,
-                    "msmpeg2vdec.dll required for decoding is not loaded",
-                    false);
+  // Profile must fall within the valid range for one of the supported codecs.
+  if (profile >= media::H264PROFILE_MIN && profile <= media::H264PROFILE_MAX) {
+    // We mimic the steps CoCreateInstance uses to instantiate the object. This
+    // was previously done because it failed inside the sandbox, and now is done
+    // as a more minimal approach to avoid other side-effects CCI might have (as
+    // we are still in a reduced sandbox).
+    decoder_dll = ::LoadLibrary(L"msmpeg2vdec.dll");
+    RETURN_ON_FAILURE(decoder_dll,
+                      "msmpeg2vdec.dll required for decoding is not loaded",
+                      false);
 
-  // Check version of DLL, version 6.7.7140 is blacklisted due to high crash
-  // rates in browsers loading that DLL. If that is the version installed we
-  // fall back to software decoding. See crbug/403440.
-  FileVersionInfo* version_info =
-      FileVersionInfo::CreateFileVersionInfoForModule(decoder_dll);
-  RETURN_ON_FAILURE(version_info,
-                    "unable to get version of msmpeg2vdec.dll",
-                    false);
-  base::string16 file_version = version_info->file_version();
-  RETURN_ON_FAILURE(file_version.find(L"6.1.7140") == base::string16::npos,
-                    "blacklisted version of msmpeg2vdec.dll 6.7.7140",
-                    false);
+    // Check version of DLL, version 6.7.7140 is blacklisted due to high crash
+    // rates in browsers loading that DLL. If that is the version installed we
+    // fall back to software decoding. See crbug/403440.
+    FileVersionInfo* version_info =
+        FileVersionInfo::CreateFileVersionInfoForModule(decoder_dll);
+    RETURN_ON_FAILURE(version_info,
+                      "unable to get version of msmpeg2vdec.dll",
+                      false);
+    base::string16 file_version = version_info->file_version();
+    RETURN_ON_FAILURE(file_version.find(L"6.1.7140") == base::string16::npos,
+                      "blacklisted version of msmpeg2vdec.dll 6.7.7140",
+                      false);
+    codec_ = media::kCodecH264;
+  } else if (profile == media::VP8PROFILE_ANY ||
+             profile == media::VP9PROFILE_ANY) {
+    base::FilePath dll_path;
+    RETURN_ON_FAILURE(PathService::Get(base::DIR_PROGRAM_FILES, &dll_path),
+        "failed to get path for DIR_PROGRAM_FILES", false);
+    dll_path = dll_path.Append(kVPXDecoderDLLPath);
+    if (profile == media::VP8PROFILE_ANY) {
+      codec_ = media::kCodecVP8;
+      dll_path = dll_path.Append(kVP8DecoderDLLName);
+    } else {
+      codec_ = media::kCodecVP9;
+      dll_path = dll_path.Append(kVP9DecoderDLLName);
+    }
+    decoder_dll = ::LoadLibraryEx(dll_path.value().data(), NULL,
+        LOAD_WITH_ALTERED_SEARCH_PATH);
+    RETURN_ON_FAILURE(decoder_dll, "vpx decoder dll is not loaded", false);
+  } else {
+    RETURN_ON_FAILURE(false, "Unsupported codec.", false);
+  }
 
   typedef HRESULT(WINAPI * GetClassObject)(
       const CLSID & clsid, const IID & iid, void * *object);
@@ -673,9 +753,22 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(media::VideoCodecProfile profile) {
       get_class_object, "Failed to get DllGetClassObject pointer", false);
 
   base::win::ScopedComPtr<IClassFactory> factory;
-  HRESULT hr = get_class_object(__uuidof(CMSH264DecoderMFT),
-                                __uuidof(IClassFactory),
-                                reinterpret_cast<void**>(factory.Receive()));
+  HRESULT hr;
+  if (codec_ == media::kCodecH264) {
+    hr  = get_class_object(__uuidof(CMSH264DecoderMFT),
+                           __uuidof(IClassFactory),
+                           reinterpret_cast<void**>(factory.Receive()));
+  } else if (codec_ == media::kCodecVP8) {
+    hr  = get_class_object(CLSID_WebmMfVp8Dec,
+                           __uuidof(IClassFactory),
+                           reinterpret_cast<void**>(factory.Receive()));
+  } else if (codec_ == media::kCodecVP9) {
+    hr  = get_class_object(CLSID_WebmMfVp9Dec,
+                           __uuidof(IClassFactory),
+                           reinterpret_cast<void**>(factory.Receive()));
+  } else {
+    RETURN_ON_FAILURE(false, "Unsupported codec.", false);
+  }
   RETURN_ON_HR_FAILURE(hr, "DllGetClassObject for decoder failed", false);
 
   hr = factory->CreateInstance(NULL,
@@ -725,8 +818,11 @@ bool DXVAVideoDecodeAccelerator::CheckDecoderDxvaSupport() {
   hr = attributes->GetUINT32(MF_SA_D3D_AWARE, &dxva);
   RETURN_ON_HR_FAILURE(hr, "Failed to check if decoder supports DXVA", false);
 
-  hr = attributes->SetUINT32(CODECAPI_AVDecVideoAcceleration_H264, TRUE);
-  RETURN_ON_HR_FAILURE(hr, "Failed to enable DXVA H/W decoding", false);
+  if (codec_ == media::kCodecH264) {
+    hr = attributes->SetUINT32(CODECAPI_AVDecVideoAcceleration_H264, TRUE);
+    RETURN_ON_HR_FAILURE(hr, "Failed to enable DXVA H/W decoding", false);
+  }
+
   return true;
 }
 
@@ -744,7 +840,16 @@ bool DXVAVideoDecodeAccelerator::SetDecoderInputMediaType() {
   hr = media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
   RETURN_ON_HR_FAILURE(hr, "Failed to set major input type", false);
 
-  hr = media_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+  if (codec_ == media::kCodecH264) {
+    hr = media_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+  } else if (codec_ == media::kCodecVP8) {
+    hr = media_type->SetGUID(MF_MT_SUBTYPE, MEDIASUBTYPE_VP80);
+  } else if (codec_ == media::kCodecVP9) {
+    hr = media_type->SetGUID(MF_MT_SUBTYPE, MEDIASUBTYPE_VP90);
+  } else {
+    NOTREACHED();
+    RETURN_ON_FAILURE(false, "Unsupported codec on input media type.", false);
+  }
   RETURN_ON_HR_FAILURE(hr, "Failed to set subtype", false);
 
   // Not sure about this. msdn recommends setting this value on the input
@@ -753,7 +858,7 @@ bool DXVAVideoDecodeAccelerator::SetDecoderInputMediaType() {
                              MFVideoInterlace_MixedInterlaceOrProgressive);
   RETURN_ON_HR_FAILURE(hr, "Failed to set interlace mode", false);
 
-  hr = decoder_->SetInputType(0, media_type, 0);  // No flags
+  hr = decoder_->SetInputType(0, media_type.get(), 0);  // No flags
   RETURN_ON_HR_FAILURE(hr, "Failed to set decoder input type", false);
   return true;
 }
@@ -771,7 +876,7 @@ bool DXVAVideoDecodeAccelerator::SetDecoderOutputMediaType(
     RETURN_ON_HR_FAILURE(hr, "Failed to get output major type", false);
 
     if (out_subtype == subtype) {
-      hr = decoder_->SetOutputType(0, out_media_type, 0);  // No flags
+      hr = decoder_->SetOutputType(0, out_media_type.get(), 0);  // No flags
       RETURN_ON_HR_FAILURE(hr, "Failed to set decoder output type", false);
       return true;
     }
@@ -798,10 +903,12 @@ bool DXVAVideoDecodeAccelerator::GetStreamsInfoAndBufferReqs() {
 
   DVLOG(1) << "Input stream info: ";
   DVLOG(1) << "Max latency: " << input_stream_info_.hnsMaxLatency;
-  // There should be three flags, one for requiring a whole frame be in a
-  // single sample, one for requiring there be one buffer only in a single
-  // sample, and one that specifies a fixed sample size. (as in cbSize)
-  CHECK_EQ(input_stream_info_.dwFlags, 0x7u);
+  if (codec_ == media::kCodecH264) {
+    // There should be three flags, one for requiring a whole frame be in a
+    // single sample, one for requiring there be one buffer only in a single
+    // sample, and one that specifies a fixed sample size. (as in cbSize)
+    CHECK_EQ(input_stream_info_.dwFlags, 0x7u);
+  }
 
   DVLOG(1) << "Min buffer size: " << input_stream_info_.cbSize;
   DVLOG(1) << "Max lookahead: " << input_stream_info_.cbMaxLookahead;
@@ -813,7 +920,9 @@ bool DXVAVideoDecodeAccelerator::GetStreamsInfoAndBufferReqs() {
   // allocate its own sample.
   DVLOG(1) << "Flags: "
           << std::hex << std::showbase << output_stream_info_.dwFlags;
-  CHECK_EQ(output_stream_info_.dwFlags, 0x107u);
+  if (codec_ == media::kCodecH264) {
+    CHECK_EQ(output_stream_info_.dwFlags, 0x107u);
+  }
   DVLOG(1) << "Min buffer size: " << output_stream_info_.cbSize;
   DVLOG(1) << "Alignment: " << output_stream_info_.cbAlignment;
   return true;
@@ -822,9 +931,10 @@ bool DXVAVideoDecodeAccelerator::GetStreamsInfoAndBufferReqs() {
 void DXVAVideoDecodeAccelerator::DoDecode() {
   // This function is also called from FlushInternal in a loop which could
   // result in the state transitioning to kStopped due to no decoded output.
-  RETURN_AND_NOTIFY_ON_FAILURE((state_ == kNormal || state_ == kFlushing ||
-                                state_ == kStopped),
-      "DoDecode: not in normal/flushing/stopped state", ILLEGAL_STATE,);
+  RETURN_AND_NOTIFY_ON_FAILURE(
+      (state_ == kNormal || state_ == kFlushing ||
+       state_ == kStopped || state_ == kFlushingPendingInputBuffers),
+          "DoDecode: not in normal/flushing/stopped state", ILLEGAL_STATE,);
 
   MFT_OUTPUT_DATA_BUFFER output_data_buffer = {0};
   DWORD status = 0;
@@ -835,7 +945,7 @@ void DXVAVideoDecodeAccelerator::DoDecode() {
                                        &status);
   IMFCollection* events = output_data_buffer.pEvents;
   if (events != NULL) {
-    VLOG(1) << "Got events from ProcessOuput, but discarding";
+    DVLOG(1) << "Got events from ProcessOuput, but discarding";
     events->Release();
   }
   if (FAILED(hr)) {
@@ -855,7 +965,8 @@ void DXVAVideoDecodeAccelerator::DoDecode() {
       return;
     } else if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
       // No more output from the decoder. Stop playback.
-      state_ = kStopped;
+      if (state_ != kFlushingPendingInputBuffers)
+        state_ = kStopped;
       return;
     } else {
       NOTREACHED() << "Unhandled error in DoDecode()";
@@ -881,7 +992,7 @@ bool DXVAVideoDecodeAccelerator::ProcessOutputSample(IMFSample* sample) {
   RETURN_ON_HR_FAILURE(hr, "Failed to get buffer from output sample", false);
 
   base::win::ScopedComPtr<IDirect3DSurface9> surface;
-  hr = MFGetService(output_buffer, MR_BUFFER_SERVICE,
+  hr = MFGetService(output_buffer.get(), MR_BUFFER_SERVICE,
                     IID_PPV_ARGS(surface.Receive()));
   RETURN_ON_HR_FAILURE(hr, "Failed to get D3D surface from output sample",
                        false);
@@ -944,7 +1055,7 @@ void DXVAVideoDecodeAccelerator::ProcessPendingSamples() {
           hr, "Failed to get buffer from output sample", PLATFORM_FAILURE,);
 
       base::win::ScopedComPtr<IDirect3DSurface9> surface;
-      hr = MFGetService(output_buffer, MR_BUFFER_SERVICE,
+      hr = MFGetService(output_buffer.get(), MR_BUFFER_SERVICE,
                         IID_PPV_ARGS(surface.Receive()));
       RETURN_AND_NOTIFY_ON_HR_FAILURE(
           hr, "Failed to get D3D surface from output sample",
@@ -964,9 +1075,9 @@ void DXVAVideoDecodeAccelerator::ProcessPendingSamples() {
       }
 
       RETURN_AND_NOTIFY_ON_FAILURE(
-          index->second->CopyOutputSampleDataToPictureBuffer(*this, surface),
-          "Failed to copy output sample",
-          PLATFORM_FAILURE, );
+          index->second->CopyOutputSampleDataToPictureBuffer(*this,
+                                                             surface.get()),
+          "Failed to copy output sample", PLATFORM_FAILURE, );
 
       media::Picture output_picture(index->second->id(),
                                     sample_info.input_buffer_id,
@@ -1076,6 +1187,22 @@ void DXVAVideoDecodeAccelerator::DecodePendingInputBuffers() {
        it != pending_input_buffers_copy.end(); ++it) {
     DecodeInternal(*it);
   }
+
+  if (state_ != kFlushingPendingInputBuffers)
+    return;
+
+  // If we are scheduled during a flush operation then mark the flush as
+  // complete if we have no pending input and pending output frames.
+  // If we don't have available output slots then this function will be
+  // scheduled again by the ProcessPendingSamples function once slots become
+  // available.
+  if (pending_input_buffers_.empty() && pending_output_samples_.empty()) {
+    state_ = kNormal;
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&DXVAVideoDecodeAccelerator::NotifyFlushDone,
+                    weak_this_factory_.GetWeakPtr()));
+  }
 }
 
 void DXVAVideoDecodeAccelerator::FlushInternal() {
@@ -1088,6 +1215,20 @@ void DXVAVideoDecodeAccelerator::FlushInternal() {
     DoDecode();
     if (!pending_output_samples_.empty())
       return;
+  }
+
+  // TODO(ananta)
+  // Look into whether we can simplify this function by combining the while
+  // above and the code below into a single block which achieves both. The Flush
+  // transitions in the decoder are a touch intertwined with other portions of
+  // the code like AssignPictureBuffers, ReusePictureBuffers etc.
+  if (!pending_input_buffers_.empty()) {
+    state_ = kFlushingPendingInputBuffers;
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&DXVAVideoDecodeAccelerator::DecodePendingInputBuffers,
+                    weak_this_factory_.GetWeakPtr()));
+    return;
   }
 
   base::MessageLoop::current()->PostTask(
@@ -1115,7 +1256,7 @@ void DXVAVideoDecodeAccelerator::DecodeInternal(
   }
   inputs_before_decode_++;
 
-  HRESULT hr = decoder_->ProcessInput(0, sample, 0);
+  HRESULT hr = decoder_->ProcessInput(0, sample.get(), 0);
   // As per msdn if the decoder returns MF_E_NOTACCEPTING then it means that it
   // has enough data to produce one or more output samples. In this case the
   // recommended options are to
@@ -1130,7 +1271,7 @@ void DXVAVideoDecodeAccelerator::DecodeInternal(
     RETURN_AND_NOTIFY_ON_FAILURE((state_ == kStopped || state_ == kNormal),
         "Failed to process output. Unexpected decoder state: " << state_,
         PLATFORM_FAILURE,);
-    hr = decoder_->ProcessInput(0, sample, 0);
+    hr = decoder_->ProcessInput(0, sample.get(), 0);
     // If we continue to get the MF_E_NOTACCEPTING error we do the following:-
     // 1. Add the input sample to the pending queue.
     // 2. If we don't have any output samples we post the
@@ -1156,7 +1297,8 @@ void DXVAVideoDecodeAccelerator::DecodeInternal(
 
   DoDecode();
 
-  RETURN_AND_NOTIFY_ON_FAILURE((state_ == kStopped || state_ == kNormal),
+  RETURN_AND_NOTIFY_ON_FAILURE((state_ == kStopped || state_ == kNormal ||
+                                state_ == kFlushingPendingInputBuffers),
       "Failed to process output. Unexpected decoder state: " << state_,
       ILLEGAL_STATE,);
 

@@ -57,12 +57,6 @@ class AutomationApiTest : public ExtensionApiTest {
     host_resolver()->AddRule("*", embedded_test_server()->base_url().host());
   }
 
-  void LoadPage() {
-    StartEmbeddedTestServer();
-    const GURL url = GetURLForPath(kDomain, "/index.html");
-    ui_test_utils::NavigateToURL(browser(), url);
-  }
-
  public:
   virtual void SetUpInProcessBrowserTestFixture() override {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
@@ -70,7 +64,9 @@ class AutomationApiTest : public ExtensionApiTest {
 };
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, TestRendererAccessibilityEnabled) {
-  LoadPage();
+  StartEmbeddedTestServer();
+  const GURL url = GetURLForPath(kDomain, "/index.html");
+  ui_test_utils::NavigateToURL(browser(), url);
 
   ASSERT_EQ(1, browser()->tab_strip_model()->count());
   content::WebContents* const tab =
@@ -159,6 +155,12 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopActions) {
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "actions.html"))
       << message_;
 }
+
+// http://crbug.com/435449
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopLoadTabs) {
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop", "load_tabs.html"))
+      << message_;
+}
 #else
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, DesktopNotSupported) {
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/desktop",
@@ -171,6 +173,26 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, CloseTab) {
   ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "close_tab.html"))
       << message_;
 }
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, QuerySelector) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(
+      RunExtensionSubtest("automation/tests/tabs", "queryselector.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, Find) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "find.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, Mixins) {
+  StartEmbeddedTestServer();
+  ASSERT_TRUE(RunExtensionSubtest("automation/tests/tabs", "mixins.html"))
+      << message_;
+}
+
 
 static const int kPid = 1;
 static const int kTab0Rid = 1;
@@ -336,9 +358,9 @@ class FakeAutomationInternalEnableTabFunction
           base::Bind(&TreeSerializationState::InitializeTree0,
                      base::Unretained(&state),
                      base::Unretained(browser_context())));
-      return RespondNow(
-          ArgumentList(api::automation_internal::EnableTab::Results::Create(
-              kPid, kTab0Rid)));
+      // TODO(aboxhall): Need to rewrite this test in terms of tree ids.
+      return RespondNow(ArgumentList(
+          api::automation_internal::EnableTab::Results::Create(0)));
     }
     if (tab_id == 1) {
       // tab 1 <--> tree1
@@ -347,9 +369,8 @@ class FakeAutomationInternalEnableTabFunction
           base::Bind(&TreeSerializationState::InitializeTree1,
                      base::Unretained(&state),
                      base::Unretained(browser_context())));
-      return RespondNow(
-          ArgumentList(api::automation_internal::EnableTab::Results::Create(
-              kPid, kTab1Rid)));
+      return RespondNow(ArgumentList(
+          api::automation_internal::EnableTab::Results::Create(0)));
     }
     return RespondNow(Error("Unrecognised tab_id"));
   }

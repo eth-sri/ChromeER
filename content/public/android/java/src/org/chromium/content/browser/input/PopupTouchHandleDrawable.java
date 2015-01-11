@@ -58,8 +58,10 @@ public class PopupTouchHandleDrawable extends View {
 
     private final int[] mTempScreenCoords = new int[2];
 
+    @SuppressLint("RtlHardcoded")
     static final int LEFT = 0;
     static final int CENTER = 1;
+    @SuppressLint("RtlHardcoded")
     static final int RIGHT = 2;
     private int mOrientation = -1;
 
@@ -222,6 +224,7 @@ public class PopupTouchHandleDrawable extends View {
     }
 
     private void doInvalidate() {
+        if (!mContainer.isShowing()) return;
         updatePosition();
         updateVisibility();
         invalidate();
@@ -356,12 +359,6 @@ public class PopupTouchHandleDrawable extends View {
     @CalledByNative
     private void setCenterOrientation() {
         setOrientation(CENTER);
-    }
-
-    @CalledByNative
-    private void setOpacity(float alpha) {
-        // Ignore opacity updates from the caller as they are not compatible
-        // with the custom fade animation.
     }
 
     @CalledByNative

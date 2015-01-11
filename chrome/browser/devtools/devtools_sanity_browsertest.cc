@@ -31,8 +31,8 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/app_modal_dialogs/javascript_app_modal_dialog.h"
-#include "components/app_modal_dialogs/native_app_modal_dialog.h"
+#include "components/app_modal/javascript_app_modal_dialog.h"
+#include "components/app_modal/native_app_modal_dialog.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -45,12 +45,16 @@
 #include "content/public/browser/worker_service_observer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/switches.h"
 #include "net/socket/tcp_listen_socket.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
+using app_modal::AppModalDialog;
+using app_modal::JavaScriptAppModalDialog;
+using app_modal::NativeAppModalDialog;
 using content::BrowserThread;
 using content::DevToolsAgentHost;
 using content::NavigationController;
@@ -315,7 +319,9 @@ class DevToolsExtensionTest : public DevToolsSanityTest,
   bool LoadExtensionFromPath(const base::FilePath& path) {
     ExtensionService* service = extensions::ExtensionSystem::Get(
         browser()->profile())->extension_service();
-    size_t num_before = service->extensions()->size();
+    extensions::ExtensionRegistry* registry =
+        extensions::ExtensionRegistry::Get(browser()->profile());
+    size_t num_before = registry->enabled_extensions().size();
     {
       content::NotificationRegistrar registrar;
       registrar.Add(this,
@@ -329,7 +335,7 @@ class DevToolsExtensionTest : public DevToolsSanityTest,
       content::RunMessageLoop();
       timeout.Cancel();
     }
-    size_t num_after = service->extensions()->size();
+    size_t num_after = registry->enabled_extensions().size();
     if (num_after != (num_before + 1))
       return false;
 
@@ -876,8 +882,9 @@ IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest, InspectSharedWorker) {
   RunTest("testSharedWorker", kSharedWorkerTestPage, kSharedWorkerTestWorker);
 }
 
+// Disabled, crashes under Dr.Memory and ASan, http://crbug.com/432444.
 IN_PROC_BROWSER_TEST_F(WorkerDevToolsSanityTest,
-                       PauseInSharedWorkerInitialization) {
+                       DISABLED_PauseInSharedWorkerInitialization) {
   ASSERT_TRUE(test_server()->Start());
   GURL url = test_server()->GetURL(kReloadSharedWorkerTestPage);
   ui_test_utils::NavigateToURL(browser(), url);
@@ -928,7 +935,13 @@ class RemoteDebuggingTest: public ExtensionApiTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(RemoteDebuggingTest, RemoteDebugger) {
+// Fails on CrOS. crbug.com/431399
+#if defined(OS_CHROMEOS)
+#define MAYBE_RemoteDebugger DISABLED_RemoteDebugger
+#else
+#define MAYBE_RemoteDebugger RemoteDebugger
+#endif
+IN_PROC_BROWSER_TEST_F(RemoteDebuggingTest, MAYBE_RemoteDebugger) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))

@@ -100,16 +100,34 @@ void EmbeddedWorkerRegistry::OnWorkerScriptLoadFailed(int process_id,
   found->second->OnScriptLoadFailed();
 }
 
-void EmbeddedWorkerRegistry::OnWorkerStarted(
-    int process_id, int embedded_worker_id) {
-  DCHECK(!ContainsKey(worker_process_map_, process_id) ||
-         worker_process_map_[process_id].count(embedded_worker_id) == 0);
+void EmbeddedWorkerRegistry::OnWorkerScriptEvaluated(int process_id,
+                                                     int embedded_worker_id,
+                                                     bool success) {
   WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
   DCHECK(found != worker_map_.end());
   DCHECK_EQ(found->second->process_id(), process_id);
   if (found == worker_map_.end() || found->second->process_id() != process_id)
     return;
-  worker_process_map_[process_id].insert(embedded_worker_id);
+  found->second->OnScriptEvaluated(success);
+}
+
+void EmbeddedWorkerRegistry::OnWorkerStarted(
+    int process_id, int embedded_worker_id) {
+  WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
+  // TODO(falken): Instead of DCHECK, we should terminate the process on
+  // unexpected message. Same with most of the DCHECKs in this file.
+  DCHECK(found != worker_map_.end());
+  DCHECK_EQ(found->second->process_id(), process_id);
+  if (found == worker_map_.end() || found->second->process_id() != process_id)
+    return;
+
+  DCHECK(ContainsKey(worker_process_map_, process_id) &&
+         worker_process_map_[process_id].count(embedded_worker_id) == 1);
+  if (!ContainsKey(worker_process_map_, process_id) ||
+      worker_process_map_[process_id].count(embedded_worker_id) == 0) {
+    return;
+  }
+
   found->second->OnStarted();
 }
 
@@ -164,13 +182,18 @@ void EmbeddedWorkerRegistry::OnReportConsoleMessage(
 }
 
 void EmbeddedWorkerRegistry::AddChildProcessSender(
-    int process_id, IPC::Sender* sender) {
+    int process_id,
+    IPC::Sender* sender,
+    MessagePortMessageFilter* message_port_message_filter) {
   process_sender_map_[process_id] = sender;
+  process_message_port_message_filter_map_[process_id] =
+      message_port_message_filter;
   DCHECK(!ContainsKey(worker_process_map_, process_id));
 }
 
 void EmbeddedWorkerRegistry::RemoveChildProcessSender(int process_id) {
   process_sender_map_.erase(process_id);
+  process_message_port_message_filter_map_.erase(process_id);
   std::map<int, std::set<int> >::iterator found =
       worker_process_map_.find(process_id);
   if (found != worker_process_map_.end()) {
@@ -202,6 +225,11 @@ bool EmbeddedWorkerRegistry::CanHandle(int embedded_worker_id) const {
   return true;
 }
 
+MessagePortMessageFilter*
+EmbeddedWorkerRegistry::MessagePortMessageFilterForProcess(int process_id) {
+  return process_message_port_message_filter_map_[process_id];
+}
+
 EmbeddedWorkerRegistry::EmbeddedWorkerRegistry(
     const base::WeakPtr<ServiceWorkerContextCore>& context,
     int initial_embedded_worker_id)
@@ -214,15 +242,27 @@ EmbeddedWorkerRegistry::~EmbeddedWorkerRegistry() {
   Shutdown();
 }
 
-void EmbeddedWorkerRegistry::SendStartWorker(
+ServiceWorkerStatusCode EmbeddedWorkerRegistry::SendStartWorker(
     scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
-    const StatusCallback& callback,
     int process_id) {
   // The ServiceWorkerDispatcherHost is supposed to be created when the process
   // is created, and keep an entry in process_sender_map_ for its whole
   // lifetime.
   DCHECK(ContainsKey(process_sender_map_, process_id));
-  callback.Run(Send(process_id, new EmbeddedWorkerMsg_StartWorker(*params)));
+
+  int embedded_worker_id = params->embedded_worker_id;
+  WorkerInstanceMap::iterator found = worker_map_.find(embedded_worker_id);
+  DCHECK(found != worker_map_.end());
+  DCHECK_EQ(found->second->process_id(), process_id);
+
+  DCHECK(!ContainsKey(worker_process_map_, process_id) ||
+         worker_process_map_[process_id].count(embedded_worker_id) == 0);
+
+  ServiceWorkerStatusCode status =
+      Send(process_id, new EmbeddedWorkerMsg_StartWorker(*params));
+  if (status == SERVICE_WORKER_OK)
+    worker_process_map_[process_id].insert(embedded_worker_id);
+  return status;
 }
 
 ServiceWorkerStatusCode EmbeddedWorkerRegistry::Send(

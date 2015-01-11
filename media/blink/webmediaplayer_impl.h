@@ -15,12 +15,14 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
 #include "media/base/audio_renderer_sink.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline.h"
 #include "media/base/renderer.h"
 #include "media/base/text_track.h"
 #include "media/blink/buffered_data_source.h"
 #include "media/blink/buffered_data_source_host_impl.h"
+#include "media/blink/encrypted_media_player_support.h"
 #include "media/blink/video_frame_compositor.h"
 #include "media/filters/skcanvas_video_renderer.h"
 #include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
@@ -46,7 +48,6 @@ namespace media {
 
 class AudioHardwareConfig;
 class ChunkDemuxer;
-class EncryptedMediaPlayerSupport;
 class GpuVideoAcceleratorFactories;
 class MediaLog;
 class VideoFrameCompositor;
@@ -71,6 +72,7 @@ class MEDIA_EXPORT WebMediaPlayerImpl
                      blink::WebMediaPlayerClient* client,
                      base::WeakPtr<WebMediaPlayerDelegate> delegate,
                      scoped_ptr<Renderer> renderer,
+                     scoped_ptr<CdmFactory> cdm_factory,
                      const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
 
@@ -154,10 +156,6 @@ class MEDIA_EXPORT WebMediaPlayerImpl
       const blink::WebString& key_system,
       const blink::WebString& session_id);
 
-  // TODO(jrummell): Remove this method once Blink updated to use the other
-  // method.
-  virtual void setContentDecryptionModule(
-      blink::WebContentDecryptionModule* cdm);
   virtual void setContentDecryptionModule(
       blink::WebContentDecryptionModule* cdm,
       blink::WebContentDecryptionModuleResult result);
@@ -210,6 +208,12 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // Returns the current video frame from |compositor_|. Blocks until the
   // compositor can return the frame.
   scoped_refptr<VideoFrame> GetCurrentFrameFromCompositor();
+
+  void SetCdm(CdmContext* cdm_context, const CdmAttachedCB& cdm_attached_cb);
+
+  // Called when a CDM has been attached to the |pipeline_|.
+  void OnCdmAttached(blink::WebContentDecryptionModuleResult result,
+                     bool success);
 
   blink::WebLocalFrame* frame_;
 
@@ -305,7 +309,7 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // Text track objects get a unique index value when they're created.
   int text_track_index_;
 
-  scoped_ptr<EncryptedMediaPlayerSupport> encrypted_media_support_;
+  EncryptedMediaPlayerSupport encrypted_media_support_;
 
   const AudioHardwareConfig& audio_hardware_config_;
 

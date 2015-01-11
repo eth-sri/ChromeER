@@ -307,6 +307,14 @@ public class ChildProcessLauncher {
     }
 
     /**
+     * Called when the renderer commits a navigation. This signals a time at which it is safe to
+     * rely on renderer visibility signalled through setInForeground. See http://crbug.com/421041.
+     */
+    public static void determinedVisibility(int pid) {
+        sBindingManager.determinedVisibility(pid);
+    }
+
+    /**
      * Called when the embedding application is sent to background.
      */
     public static void onSentToBackground() {
@@ -537,18 +545,14 @@ public class ChildProcessLauncher {
             }
 
             @Override
-            public SurfaceWrapper getSurfaceTextureSurface(int surfaceTextureId, int clientId) {
+            public SurfaceWrapper getSurfaceTextureSurface(int surfaceTextureId) {
                 if (callbackType != CALLBACK_FOR_RENDERER_PROCESS) {
                     Log.e(TAG, "Illegal callback for non-renderer process.");
                     return null;
                 }
 
-                if (clientId != childProcessId) {
-                    Log.e(TAG, "Illegal secondaryId for renderer process.");
-                    return null;
-                }
-
-                return ChildProcessLauncher.getSurfaceTextureSurface(surfaceTextureId, clientId);
+                return ChildProcessLauncher.getSurfaceTextureSurface(surfaceTextureId,
+                        childProcessId);
             }
         };
     }

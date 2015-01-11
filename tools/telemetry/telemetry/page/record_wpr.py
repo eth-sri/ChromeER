@@ -10,12 +10,12 @@ from telemetry.core import browser_options
 from telemetry.core import discover
 from telemetry.core import util
 from telemetry.core import wpr_modes
-from telemetry.page import page_runner
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.page import profile_creator
 from telemetry.page import test_expectations
 from telemetry.results import results_options
+from telemetry.user_story import user_story_runner
 
 
 class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
@@ -39,7 +39,6 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
     """Override to ensure all resources are fetched from network."""
     tab.ClearCache(force=False)
     if self.page_test:
-      self.page_test.options = self.options
       self.page_test.WillNavigateToPage(page, tab)
 
   def DidNavigateToPage(self, page, tab):
@@ -53,6 +52,10 @@ class RecorderPageTest(page_test.PageTest):  # pylint: disable=W0223
   def DidRunActions(self, page, tab):
     if self.page_test:
       self.page_test.DidRunActions(page, tab)
+
+  def CleanUpAfterPage(self, page, tab):
+    if self.page_test:
+      self.page_test.CleanUpAfterPage(page, tab)
 
   def ValidateAndMeasurePage(self, page, tab, results):
     if self.page_test:
@@ -151,10 +154,11 @@ class WprRecorder(object):
   def _AddCommandLineArgs(self):
     self._parser.add_option('--page-set-base-dir', action='store',
                             type='string')
-    page_runner.AddCommandLineArgs(self._parser)
+    user_story_runner.AddCommandLineArgs(self._parser)
     if self._benchmark is not None:
       self._benchmark.AddCommandLineArgs(self._parser)
       self._benchmark.SetArgumentDefaults(self._parser)
+    self._parser.add_option('--upload', action='store_true')
     self._SetArgumentDefaults()
 
   def _SetArgumentDefaults(self):
@@ -165,7 +169,7 @@ class WprRecorder(object):
     self._parser.parse_args(args_to_parse)
 
   def _ProcessCommandLineArgs(self):
-    page_runner.ProcessCommandLineArgs(self._parser, self._options)
+    user_story_runner.ProcessCommandLineArgs(self._parser, self._options)
     if self._benchmark is not None:
       self._benchmark.ProcessCommandLineArgs(self._parser, self._options)
 
@@ -183,26 +187,35 @@ class WprRecorder(object):
       'Pageset archive_data_file path must be specified.')
     self._page_set.wpr_archive_info.AddNewTemporaryRecording()
     self._record_page_test.CustomizeBrowserOptions(self._options)
-    page_runner.Run(self._record_page_test, self._page_set,
+    user_story_runner.Run(self._record_page_test, self._page_set,
         test_expectations.TestExpectations(), self._options, results)
 
-  def HandleResults(self, results):
+  def HandleResults(self, results, upload_to_cloud_storage):
     if results.failures or results.skipped_values:
       logging.warning('Some pages failed and/or were skipped. The recording '
                       'has not been updated for these pages.')
     results.PrintSummary()
     self._page_set.wpr_archive_info.AddRecordedPages(
-        results.pages_that_succeeded)
+        results.pages_that_succeeded,
+        upload_to_cloud_storage)
 
 
 def Main(base_dir):
-  quick_args = [a for a in sys.argv[1:] if not a.startswith('-')]
+  quick_args = []
+  upload_to_cloud_storage = False
+
+  for a in sys.argv[1:]:
+    if not a.startswith('-'):
+      quick_args.append(a)
+    elif a == '--upload':
+      upload_to_cloud_storage = True
+
   if len(quick_args) != 1:
-    print >> sys.stderr, 'Usage: record_wpr <PageSet|Benchmark>\n'
+    print >> sys.stderr, 'Usage: record_wpr <PageSet|Benchmark> [--upload]\n'
     sys.exit(1)
   target = quick_args.pop()
   wpr_recorder = WprRecorder(base_dir, target)
   results = wpr_recorder.CreateResults()
   wpr_recorder.Record(results)
-  wpr_recorder.HandleResults(results)
+  wpr_recorder.HandleResults(results, upload_to_cloud_storage)
   return min(255, len(results.failures))

@@ -54,14 +54,19 @@ i18n.input.chrome.inputview.handler.PointerHandler = function(opt_target) {
   this.eventHandler_.
       listen(target, [goog.events.EventType.MOUSEDOWN,
         goog.events.EventType.TOUCHSTART], this.onPointerDown_, true).
-      listen(target, [goog.events.EventType.MOUSEUP,
-        goog.events.EventType.TOUCHEND], this.onPointerUp_, true).
-      listen(target, goog.events.EventType.TOUCHMOVE, this.onTouchMove_,
+      listen(document, goog.events.EventType.TOUCHEND, this.onPointerUp_, true).
+      listen(document, goog.events.EventType.MOUSEUP, this.onPointerUp_, true).
+      listen(target, goog.events.EventType.TOUCHMOVE, this.onPointerMove_,
+          true).
+      listen(target, goog.events.EventType.MOUSEMOVE, this.onPointerMove_,
           true);
 };
 goog.inherits(i18n.input.chrome.inputview.handler.PointerHandler,
     goog.events.EventTarget);
 var PointerHandler = i18n.input.chrome.inputview.handler.PointerHandler;
+var PointerActionBundle =
+    i18n.input.chrome.inputview.handler.PointerActionBundle;
+var Util = i18n.input.chrome.inputview.handler.Util;
 
 
 /**
@@ -89,17 +94,27 @@ PointerHandler.prototype.previousPointerActionBundle_ = null;
 
 
 /**
- * Creates a new pointer handler.
+ * Pointer action bundle for mouse down.
+ * This is used in mouse up handler because mouse up event may have different
+ * target than the mouse down event.
  *
- * @param {!Node} target .
+ * @private {i18n.input.chrome.inputview.handler.PointerActionBundle}
+ */
+PointerHandler.prototype.pointerActionBundleForMouseDown_ = null;
+
+
+/**
+ * Gets the pointer handler for |view|. If not exists, creates a new one.
+ *
+ * @param {!i18n.input.chrome.inputview.elements.Element} view .
  * @return {!i18n.input.chrome.inputview.handler.PointerActionBundle} .
  * @private
  */
-PointerHandler.prototype.createPointerActionBundle_ = function(target) {
-  var uid = goog.getUid(target);
+PointerHandler.prototype.getPointerActionBundle_ = function(view) {
+  var uid = goog.getUid(view);
   if (!this.pointerActionBundles_[uid]) {
     this.pointerActionBundles_[uid] = new i18n.input.chrome.inputview.handler.
-        PointerActionBundle(target, this);
+        PointerActionBundle(view, this);
   }
   return this.pointerActionBundles_[uid];
 };
@@ -112,16 +127,29 @@ PointerHandler.prototype.createPointerActionBundle_ = function(target) {
  * @private
  */
 PointerHandler.prototype.onPointerDown_ = function(e) {
-  var pointerActionBundle = this.createPointerActionBundle_(
-      /** @type {!Node} */ (e.target));
+  var view = Util.getView(/** @type {!Node} */ (e.target));
+  if (!view) {
+    this.dispatchEvent(new i18n.input.chrome.inputview.events.PointerEvent(
+        null, i18n.input.chrome.inputview.events.EventType.POINTER_DOWN,
+        e.target, 0, 0, new Date().getTime()));
+    return;
+  }
+  var pointerActionBundle = this.getPointerActionBundle_(view);
   if (this.previousPointerActionBundle_ &&
       this.previousPointerActionBundle_ != pointerActionBundle) {
     this.previousPointerActionBundle_.cancelDoubleClick();
   }
   this.previousPointerActionBundle_ = pointerActionBundle;
   pointerActionBundle.handlePointerDown(e);
+  if (view.pointerConfig.preventDefault) {
+    e.preventDefault();
+  }
+  if (view.pointerConfig.stopEventPropagation) {
+    e.stopPropagation();
+  }
   if (e.type == goog.events.EventType.MOUSEDOWN) {
     this.mouseDownTick_ = new Date();
+    this.pointerActionBundleForMouseDown_ = pointerActionBundle;
   }
 };
 
@@ -133,6 +161,7 @@ PointerHandler.prototype.onPointerDown_ = function(e) {
  * @private
  */
 PointerHandler.prototype.onPointerUp_ = function(e) {
+  var pointerActionBundle;
   if (e.type == goog.events.EventType.MOUSEUP) {
     // If mouseup happens too fast after mousedown, it may be a tap action on
     // touchpad, so delay the pointer up action so user can see the visual
@@ -141,32 +170,72 @@ PointerHandler.prototype.onPointerUp_ = function(e) {
       goog.Timer.callOnce(this.onPointerUp_.bind(this, e), 50);
       return;
     }
+    if (this.pointerActionBundleForMouseDown_) {
+      this.pointerActionBundleForMouseDown_.handlePointerUp(e);
+      pointerActionBundle = this.pointerActionBundleForMouseDown_;
+      this.pointerActionBundleForMouseDown_ = null;
+    }
+  } else {
+    var view = Util.getView(/** @type {!Node} */ (e.target));
+    if (!view) {
+      return;
+    }
+    pointerActionBundle = this.pointerActionBundles_[goog.getUid(view)];
+    if (pointerActionBundle) {
+      pointerActionBundle.handlePointerUp(e);
+    }
   }
-  var uid = goog.getUid(e.target);
-  var pointerActionBundle = this.pointerActionBundles_[uid];
-  if (pointerActionBundle) {
-    pointerActionBundle.handlePointerUp(e);
+  e.preventDefault();
+  if (pointerActionBundle && pointerActionBundle.view &&
+      pointerActionBundle.view.pointerConfig.stopEventPropagation) {
+    e.stopPropagation();
   }
 };
 
 
 /**
- * Callback for touchmove.
+ * Callback for touchmove or mousemove.
  *
  * @param {!goog.events.BrowserEvent} e The event.
  * @private
  */
-PointerHandler.prototype.onTouchMove_ = function(e) {
+PointerHandler.prototype.onPointerMove_ = function(e) {
+  if (e.type == goog.events.EventType.MOUSEMOVE) {
+    if (this.pointerActionBundleForMouseDown_) {
+      this.pointerActionBundleForMouseDown_.handlePointerMove(
+          /** @type {!Event} */ (e.getBrowserEvent()));
+    }
+    return;
+  }
   var touches = e.getBrowserEvent()['touches'];
   if (!touches || touches.length == 0) {
     return;
   }
+  if (touches.length > 1) {
+    e.preventDefault();
+  }
+  var shouldPreventDefault = false;
+  var shouldStopEventPropagation = false;
   for (var i = 0; i < touches.length; i++) {
-    var uid = goog.getUid(touches[i].target);
-    var pointerActionBundle = this.pointerActionBundles_[uid];
-    if (pointerActionBundle) {
-      pointerActionBundle.handleTouchMove(touches[i]);
+    var view = Util.getView(/** @type {!Node} */ (touches[i].target));
+    if (view) {
+      var pointerActionBundle = this.pointerActionBundles_[goog.getUid(view)];
+      if (pointerActionBundle) {
+        pointerActionBundle.handlePointerMove(touches[i]);
+      }
+      if (view.pointerConfig.preventDefauat) {
+        shouldPreventDefault = true;
+      }
+      if (view.pointerConfig.stopEventPropagation) {
+        shouldStopEventPropagation = true;
+      }
     }
+  }
+  if (shouldPreventDefault) {
+    e.preventDefault();
+  }
+  if (shouldStopEventPropagation) {
+    e.stopPropagation();
   }
 };
 

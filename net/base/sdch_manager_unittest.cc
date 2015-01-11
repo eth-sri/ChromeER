@@ -8,14 +8,15 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/stringprintf.h"
+#include "base/test/simple_test_clock.h"
+#include "net/base/net_log.h"
 #include "net/base/sdch_manager.h"
+#include "net/base/sdch_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace net {
-
-//------------------------------------------------------------------------------
-// Workaround for http://crbug.com/418975; remove when fixed.
-#if !defined(OS_IOS)
 
 //------------------------------------------------------------------------------
 // Provide sample data and compression results with a sample VCDIFF dictionary.
@@ -24,6 +25,32 @@ static const char kTestVcdiffDictionary[] = "DictionaryFor"
     "SdchCompression1SdchCompression2SdchCompression3SdchCompression\n";
 
 //------------------------------------------------------------------------------
+
+class MockSdchObserver : public SdchObserver {
+ public:
+  MockSdchObserver() : get_dictionary_notifications_(0) {}
+
+  const GURL& last_dictionary_request_url() {
+    return last_dictionary_request_url_;
+  }
+  const GURL& last_dictionary_url() { return last_dictionary_url_; }
+  int get_dictionary_notifications() { return get_dictionary_notifications_; }
+
+  // SdchObserver implementation
+  void OnGetDictionary(SdchManager* manager,
+                       const GURL& request_url,
+                       const GURL& dictionary_url) override {
+    ++get_dictionary_notifications_;
+    last_dictionary_request_url_ = request_url;
+    last_dictionary_url_ = dictionary_url;
+  }
+  void OnClearDictionaries(SdchManager* manager) override {}
+
+ private:
+  int get_dictionary_notifications_;
+  GURL last_dictionary_request_url_;
+  GURL last_dictionary_url_;
+};
 
 class SdchManagerTest : public testing::Test {
  protected:
@@ -34,6 +61,8 @@ class SdchManagerTest : public testing::Test {
     default_support_ = sdch_manager_->sdch_enabled();
     default_https_support_ = sdch_manager_->secure_scheme_supported();
   }
+
+  virtual ~SdchManagerTest() {}
 
   SdchManager* sdch_manager() { return sdch_manager_.get(); }
 
@@ -47,14 +76,7 @@ class SdchManagerTest : public testing::Test {
   // failure.
   bool AddSdchDictionary(const std::string& dictionary_text,
                          const GURL& gurl) {
-    std::string list;
-    sdch_manager_->GetAvailDictionaryList(gurl, &list);
-    sdch_manager_->AddSdchDictionary(dictionary_text, gurl);
-    std::string list2;
-    sdch_manager_->GetAvailDictionaryList(gurl, &list2);
-
-    // The list of hashes should change iff the addition succeeds.
-    return (list != list2);
+    return sdch_manager_->AddSdchDictionary(dictionary_text, gurl) == SDCH_OK;
   }
 
  private:
@@ -79,31 +101,34 @@ TEST_F(SdchManagerTest, DomainSupported) {
   GURL google_url("http://www.google.com");
 
   SdchManager::EnableSdchSupport(false);
-  EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(google_url));
+  EXPECT_EQ(SDCH_DISABLED, sdch_manager()->IsInSupportedDomain(google_url));
   SdchManager::EnableSdchSupport(true);
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(google_url));
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(google_url));
 }
 
 TEST_F(SdchManagerTest, DomainBlacklisting) {
   GURL test_url("http://www.test.com");
   GURL google_url("http://www.google.com");
 
-  sdch_manager()->BlacklistDomain(test_url, SdchManager::MIN_PROBLEM_CODE);
-  EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(test_url));
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(google_url));
+  sdch_manager()->BlacklistDomain(test_url, SDCH_OK);
+  EXPECT_EQ(SDCH_DOMAIN_BLACKLIST_INCLUDES_TARGET,
+            sdch_manager()->IsInSupportedDomain(test_url));
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(google_url));
 
-  sdch_manager()->BlacklistDomain(google_url, SdchManager::MIN_PROBLEM_CODE);
-  EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(google_url));
+  sdch_manager()->BlacklistDomain(google_url, SDCH_OK);
+  EXPECT_EQ(SDCH_DOMAIN_BLACKLIST_INCLUDES_TARGET,
+            sdch_manager()->IsInSupportedDomain(google_url));
 }
 
 TEST_F(SdchManagerTest, DomainBlacklistingCaseSensitivity) {
   GURL test_url("http://www.TesT.com");
   GURL test2_url("http://www.tEst.com");
 
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(test_url));
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(test2_url));
-  sdch_manager()->BlacklistDomain(test_url, SdchManager::MIN_PROBLEM_CODE);
-  EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(test2_url));
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(test_url));
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(test2_url));
+  sdch_manager()->BlacklistDomain(test_url, SDCH_OK);
+  EXPECT_EQ(SDCH_DOMAIN_BLACKLIST_INCLUDES_TARGET,
+            sdch_manager()->IsInSupportedDomain(test2_url));
 }
 
 TEST_F(SdchManagerTest, BlacklistingReset) {
@@ -113,7 +138,7 @@ TEST_F(SdchManagerTest, BlacklistingReset) {
   sdch_manager()->ClearBlacklistings();
   EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), 0);
   EXPECT_EQ(sdch_manager()->BlacklistDomainExponential(domain), 0);
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(gurl));
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(gurl));
 }
 
 TEST_F(SdchManagerTest, BlacklistingSingleBlacklist) {
@@ -121,14 +146,15 @@ TEST_F(SdchManagerTest, BlacklistingSingleBlacklist) {
   std::string domain(gurl.host());
   sdch_manager()->ClearBlacklistings();
 
-  sdch_manager()->BlacklistDomain(gurl, SdchManager::MIN_PROBLEM_CODE);
+  sdch_manager()->BlacklistDomain(gurl, SDCH_OK);
   EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), 1);
   EXPECT_EQ(sdch_manager()->BlacklistDomainExponential(domain), 1);
 
   // Check that any domain lookup reduces the blacklist counter.
-  EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(gurl));
+  EXPECT_EQ(SDCH_DOMAIN_BLACKLIST_INCLUDES_TARGET,
+            sdch_manager()->IsInSupportedDomain(gurl));
   EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), 0);
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(gurl));
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(gurl));
 }
 
 TEST_F(SdchManagerTest, BlacklistingExponential) {
@@ -138,18 +164,19 @@ TEST_F(SdchManagerTest, BlacklistingExponential) {
 
   int exponential = 1;
   for (int i = 1; i < 100; ++i) {
-    sdch_manager()->BlacklistDomain(gurl, SdchManager::MIN_PROBLEM_CODE);
+    sdch_manager()->BlacklistDomain(gurl, SDCH_OK);
     EXPECT_EQ(sdch_manager()->BlacklistDomainExponential(domain), exponential);
 
     EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), exponential);
-    EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(gurl));
+    EXPECT_EQ(SDCH_DOMAIN_BLACKLIST_INCLUDES_TARGET,
+              sdch_manager()->IsInSupportedDomain(gurl));
     EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), exponential - 1);
 
     // Simulate a large number of domain checks (which eventually remove the
     // blacklisting).
     sdch_manager()->ClearDomainBlacklisting(domain);
     EXPECT_EQ(sdch_manager()->BlackListDomainCount(domain), 0);
-    EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(gurl));
+    EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(gurl));
 
     // Predict what exponential backoff will be.
     exponential = 1 + 2 * exponential;
@@ -174,12 +201,9 @@ TEST_F(SdchManagerTest, CanAdvertiseDictionaryOverHTTP) {
   EXPECT_TRUE(AddSdchDictionary(dictionary_text,
                                 GURL("http://" + dictionary_domain)));
 
-  std::string dictionary_list;
   // HTTP target URL can advertise dictionary.
-  sdch_manager()->GetAvailDictionaryList(
-      GURL("http://" + dictionary_domain + "/test"),
-      &dictionary_list);
-  EXPECT_FALSE(dictionary_list.empty());
+  EXPECT_TRUE(sdch_manager()->GetDictionarySet(
+      GURL("http://" + dictionary_domain + "/test")));
 }
 
 TEST_F(SdchManagerTest, CanNotAdvertiseDictionaryOverHTTPS) {
@@ -189,12 +213,9 @@ TEST_F(SdchManagerTest, CanNotAdvertiseDictionaryOverHTTPS) {
   EXPECT_TRUE(AddSdchDictionary(dictionary_text,
                                 GURL("http://" + dictionary_domain)));
 
-  std::string dictionary_list;
   // HTTPS target URL should NOT advertise dictionary.
-  sdch_manager()->GetAvailDictionaryList(
-      GURL("https://" + dictionary_domain + "/test"),
-      &dictionary_list);
-  EXPECT_TRUE(dictionary_list.empty());
+  EXPECT_FALSE(sdch_manager()->GetDictionarySet(
+      GURL("https://" + dictionary_domain + "/test")));
 }
 
 TEST_F(SdchManagerTest, CanUseHTTPSDictionaryOverHTTPSIfEnabled) {
@@ -209,19 +230,21 @@ TEST_F(SdchManagerTest, CanUseHTTPSDictionaryOverHTTPSIfEnabled) {
                                 GURL("https://" + dictionary_domain)));
 
   GURL target_url("https://" + dictionary_domain + "/test");
-  std::string dictionary_list;
   // HTTPS target URL should advertise dictionary if secure scheme support is
   // enabled.
-  sdch_manager()->GetAvailDictionaryList(target_url, &dictionary_list);
-  EXPECT_FALSE(dictionary_list.empty());
+  EXPECT_TRUE(sdch_manager()->GetDictionarySet(target_url));
 
   // Dictionary should be available.
-  scoped_refptr<SdchManager::Dictionary> dictionary;
   std::string client_hash;
   std::string server_hash;
   sdch_manager()->GenerateHash(dictionary_text, &client_hash, &server_hash);
-  sdch_manager()->GetVcdiffDictionary(server_hash, target_url, &dictionary);
-  EXPECT_TRUE(dictionary.get() != NULL);
+  SdchProblemCode problem_code;
+  scoped_ptr<SdchManager::DictionarySet> dict_set(
+      sdch_manager()->GetDictionarySetByHash(
+          target_url, server_hash, &problem_code));
+  EXPECT_EQ(SDCH_OK, problem_code);
+  EXPECT_TRUE(dict_set.get());
+  EXPECT_TRUE(dict_set->GetDictionary(server_hash));
 }
 
 TEST_F(SdchManagerTest, CanNotUseHTTPDictionaryOverHTTPS) {
@@ -232,19 +255,20 @@ TEST_F(SdchManagerTest, CanNotUseHTTPDictionaryOverHTTPS) {
                                 GURL("http://" + dictionary_domain)));
 
   GURL target_url("https://" + dictionary_domain + "/test");
-  std::string dictionary_list;
   // HTTPS target URL should not advertise dictionary acquired over HTTP even if
   // secure scheme support is enabled.
   SdchManager::EnableSecureSchemeSupport(true);
-  sdch_manager()->GetAvailDictionaryList(target_url, &dictionary_list);
-  EXPECT_TRUE(dictionary_list.empty());
+  EXPECT_FALSE(sdch_manager()->GetDictionarySet(target_url));
 
-  scoped_refptr<SdchManager::Dictionary> dictionary;
   std::string client_hash;
   std::string server_hash;
   sdch_manager()->GenerateHash(dictionary_text, &client_hash, &server_hash);
-  sdch_manager()->GetVcdiffDictionary(server_hash, target_url, &dictionary);
-  EXPECT_TRUE(dictionary.get() == NULL);
+  SdchProblemCode problem_code;
+  scoped_ptr<SdchManager::DictionarySet> dict_set(
+      sdch_manager()->GetDictionarySetByHash(
+          target_url, server_hash, &problem_code));
+  EXPECT_FALSE(dict_set.get());
+  EXPECT_EQ(SDCH_DICTIONARY_FOUND_HAS_WRONG_SCHEME, problem_code);
 }
 
 TEST_F(SdchManagerTest, CanNotUseHTTPSDictionaryOverHTTP) {
@@ -256,18 +280,19 @@ TEST_F(SdchManagerTest, CanNotUseHTTPSDictionaryOverHTTP) {
                                 GURL("https://" + dictionary_domain)));
 
   GURL target_url("http://" + dictionary_domain + "/test");
-  std::string dictionary_list;
   // HTTP target URL should not advertise dictionary acquired over HTTPS even if
   // secure scheme support is enabled.
-  sdch_manager()->GetAvailDictionaryList(target_url, &dictionary_list);
-  EXPECT_TRUE(dictionary_list.empty());
+  EXPECT_FALSE(sdch_manager()->GetDictionarySet(target_url));
 
-  scoped_refptr<SdchManager::Dictionary> dictionary;
   std::string client_hash;
   std::string server_hash;
   sdch_manager()->GenerateHash(dictionary_text, &client_hash, &server_hash);
-  sdch_manager()->GetVcdiffDictionary(server_hash, target_url, &dictionary);
-  EXPECT_TRUE(dictionary.get() == NULL);
+  SdchProblemCode problem_code;
+  scoped_ptr<SdchManager::DictionarySet> dict_set(
+      sdch_manager()->GetDictionarySetByHash(
+          target_url, server_hash, &problem_code));
+  EXPECT_FALSE(dict_set.get());
+  EXPECT_EQ(SDCH_DICTIONARY_FOUND_HAS_WRONG_SCHEME, problem_code);
 }
 
 TEST_F(SdchManagerTest, FailToSetDomainMismatchDictionary) {
@@ -408,7 +433,7 @@ TEST_F(SdchManagerTest, PathMatch) {
   EXPECT_TRUE(PathMatch("/search/", "/search/"));
 
   // Prefix only works if last character of restriction is a slash, or first
-  // character in path after a match is a slash.  Validate each case separately.
+  // character in path after a match is a slash. Validate each case separately.
 
   // Rely on the slash in the path (not at the end of the restriction).
   EXPECT_TRUE(PathMatch("/search/something", "/search"));
@@ -489,53 +514,53 @@ TEST_F(SdchManagerTest, CanUseMultipleManagers) {
   // can't get them from the other.
   EXPECT_TRUE(AddSdchDictionary(dictionary_text_1,
                                 GURL("http://" + dictionary_domain_1)));
-  scoped_refptr<SdchManager::Dictionary> dictionary;
-  sdch_manager()->GetVcdiffDictionary(
-      server_hash_1,
+  scoped_ptr<SdchManager::DictionarySet> dict_set;
+
+  SdchProblemCode problem_code;
+  dict_set = sdch_manager()->GetDictionarySetByHash(
       GURL("http://" + dictionary_domain_1 + "/random_url"),
-      &dictionary);
-  EXPECT_TRUE(dictionary.get());
+      server_hash_1, &problem_code);
+  EXPECT_TRUE(dict_set);
+  EXPECT_TRUE(dict_set->GetDictionary(server_hash_1));
+  EXPECT_EQ(SDCH_OK, problem_code);
 
   second_manager.AddSdchDictionary(
       dictionary_text_2, GURL("http://" + dictionary_domain_2));
-  second_manager.GetVcdiffDictionary(
-      server_hash_2,
+  dict_set = second_manager.GetDictionarySetByHash(
       GURL("http://" + dictionary_domain_2 + "/random_url"),
-      &dictionary);
-  EXPECT_TRUE(dictionary.get());
+      server_hash_2, &problem_code);
+  EXPECT_TRUE(dict_set);
+  EXPECT_TRUE(dict_set->GetDictionary(server_hash_2));
+  EXPECT_EQ(SDCH_OK, problem_code);
 
-  sdch_manager()->GetVcdiffDictionary(
-      server_hash_2,
+  dict_set = sdch_manager()->GetDictionarySetByHash(
       GURL("http://" + dictionary_domain_2 + "/random_url"),
-      &dictionary);
-  EXPECT_FALSE(dictionary.get());
+      server_hash_2, &problem_code);
+  EXPECT_FALSE(dict_set);
+  EXPECT_EQ(SDCH_DICTIONARY_HASH_NOT_FOUND, problem_code);
 
-  second_manager.GetVcdiffDictionary(
-      server_hash_1,
+  dict_set = second_manager.GetDictionarySetByHash(
       GURL("http://" + dictionary_domain_1 + "/random_url"),
-      &dictionary);
-  EXPECT_FALSE(dictionary.get());
+      server_hash_1, &problem_code);
+  EXPECT_FALSE(dict_set);
+  EXPECT_EQ(SDCH_DICTIONARY_HASH_NOT_FOUND, problem_code);
 }
 
 TEST_F(SdchManagerTest, HttpsCorrectlySupported) {
   GURL url("http://www.google.com");
   GURL secure_url("https://www.google.com");
 
-#if !defined(OS_IOS)
-  // Workaround for http://crbug.com/418975; remove when fixed.
   bool expect_https_support = true;
-#else
-  bool expect_https_support = false;
-#endif
 
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(url));
-  EXPECT_EQ(expect_https_support,
-            sdch_manager()->IsInSupportedDomain(secure_url));
+  SdchProblemCode expected_code =
+      expect_https_support ? SDCH_OK : SDCH_SECURE_SCHEME_NOT_SUPPORTED;
+
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(url));
+  EXPECT_EQ(expected_code, sdch_manager()->IsInSupportedDomain(secure_url));
 
   SdchManager::EnableSecureSchemeSupport(!expect_https_support);
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(url));
-  EXPECT_NE(expect_https_support,
-            sdch_manager()->IsInSupportedDomain(secure_url));
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(url));
+  EXPECT_NE(expected_code, sdch_manager()->IsInSupportedDomain(secure_url));
 }
 
 TEST_F(SdchManagerTest, ClearDictionaryData) {
@@ -550,39 +575,83 @@ TEST_F(SdchManagerTest, ClearDictionaryData) {
 
   EXPECT_TRUE(AddSdchDictionary(dictionary_text,
                                 GURL("http://" + dictionary_domain)));
-  scoped_refptr<SdchManager::Dictionary> dictionary;
-  sdch_manager()->GetVcdiffDictionary(
-      server_hash,
-      GURL("http://" + dictionary_domain + "/random_url"),
-      &dictionary);
-  EXPECT_TRUE(dictionary.get());
 
-  sdch_manager()->BlacklistDomain(GURL(blacklist_url),
-                                  SdchManager::MIN_PROBLEM_CODE);
-  EXPECT_FALSE(sdch_manager()->IsInSupportedDomain(blacklist_url));
+  scoped_ptr<SdchManager::DictionarySet> dict_set;
+
+  SdchProblemCode problem_code;
+  dict_set = sdch_manager()->GetDictionarySetByHash(
+      GURL("http://" + dictionary_domain + "/random_url"),
+      server_hash, &problem_code);
+  EXPECT_TRUE(dict_set);
+  EXPECT_TRUE(dict_set->GetDictionary(server_hash));
+  EXPECT_EQ(SDCH_OK, problem_code);
+
+  sdch_manager()->BlacklistDomain(GURL(blacklist_url), SDCH_OK);
+  EXPECT_EQ(SDCH_DOMAIN_BLACKLIST_INCLUDES_TARGET,
+            sdch_manager()->IsInSupportedDomain(blacklist_url));
 
   sdch_manager()->ClearData();
 
-  dictionary = NULL;
-  sdch_manager()->GetVcdiffDictionary(
-      server_hash,
+  dict_set = sdch_manager()->GetDictionarySetByHash(
       GURL("http://" + dictionary_domain + "/random_url"),
-      &dictionary);
-  EXPECT_FALSE(dictionary.get());
-  EXPECT_TRUE(sdch_manager()->IsInSupportedDomain(blacklist_url));
+      server_hash, &problem_code);
+  EXPECT_FALSE(dict_set);
+  EXPECT_EQ(SDCH_DICTIONARY_HASH_NOT_FOUND, problem_code);
+  EXPECT_EQ(SDCH_OK, sdch_manager()->IsInSupportedDomain(blacklist_url));
 }
 
-#else
+TEST_F(SdchManagerTest, GetDictionaryNotification) {
+  GURL test_request_gurl(GURL("http://www.example.com/data"));
+  GURL test_dictionary_gurl(GURL("http://www.example.com/dict"));
+  MockSdchObserver observer;
+  sdch_manager()->AddObserver(&observer);
 
-TEST(SdchManagerTest, SdchOffByDefault) {
-  GURL google_url("http://www.google.com");
-  SdchManager* sdch_manager(new SdchManager);
+  EXPECT_EQ(0, observer.get_dictionary_notifications());
+  sdch_manager()->OnGetDictionary(test_request_gurl, test_dictionary_gurl);
+  EXPECT_EQ(1, observer.get_dictionary_notifications());
+  EXPECT_EQ(test_request_gurl, observer.last_dictionary_request_url());
+  EXPECT_EQ(test_dictionary_gurl, observer.last_dictionary_url());
 
-  EXPECT_FALSE(sdch_manager->IsInSupportedDomain(google_url));
-  SdchManager::EnableSdchSupport(true);
-  EXPECT_TRUE(sdch_manager->IsInSupportedDomain(google_url));
+  sdch_manager()->RemoveObserver(&observer);
+  sdch_manager()->OnGetDictionary(test_request_gurl, test_dictionary_gurl);
+  EXPECT_EQ(1, observer.get_dictionary_notifications());
+  EXPECT_EQ(test_request_gurl, observer.last_dictionary_request_url());
+  EXPECT_EQ(test_dictionary_gurl, observer.last_dictionary_url());
 }
 
-#endif  // !defined(OS_IOS)
+TEST_F(SdchManagerTest, ExpirationCheckedProperly) {
+  // Create an SDCH dictionary with an expiration time in the past.
+  std::string dictionary_domain("x.y.z.google.com");
+  std::string dictionary_text(base::StringPrintf(
+      "Domain: %s\nMax-age: 0\n\n", dictionary_domain.c_str()));
+  dictionary_text.append(
+      kTestVcdiffDictionary, sizeof(kTestVcdiffDictionary) - 1);
+  std::string client_hash;
+  std::string server_hash;
+  SdchManager::GenerateHash(dictionary_text, &client_hash, &server_hash);
+  GURL target_gurl("http://" + dictionary_domain);
+  AddSdchDictionary(dictionary_text, target_gurl);
+
+  // It should be visible if looked up by hash whether expired or not.
+  scoped_ptr<base::SimpleTestClock> clock(new base::SimpleTestClock);
+  clock->SetNow(base::Time::Now());
+  clock->Advance(base::TimeDelta::FromMinutes(5));
+  SdchProblemCode problem_code;
+  scoped_ptr<SdchManager::DictionarySet> hash_set(
+      sdch_manager()->GetDictionarySetByHash(
+          target_gurl, server_hash, &problem_code).Pass());
+  ASSERT_TRUE(hash_set);
+  ASSERT_EQ(SDCH_OK, problem_code);
+  const_cast<SdchManager::Dictionary*>(
+      hash_set->GetDictionary(server_hash))->SetClockForTesting(
+      clock.Pass());
+
+  // Make sure it's not visible for advertisement, but is visible
+  // if looked up by hash.
+  EXPECT_FALSE(sdch_manager()->GetDictionarySet(target_gurl));
+  EXPECT_TRUE(sdch_manager()->GetDictionarySetByHash(
+      target_gurl, server_hash, &problem_code));
+  EXPECT_EQ(SDCH_OK, problem_code);
+}
 
 }  // namespace net

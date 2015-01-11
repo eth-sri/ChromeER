@@ -31,7 +31,7 @@ namespace chromeos {
 // PowerManagerClient::Observer on creation and unregisters itself on
 // destruction.
 class CHROMEOS_EXPORT RendererFreezer
-    : public PowerManagerClient::Observer,
+    : public PowerManagerClient::RenderProcessManagerDelegate,
       public content::NotificationObserver,
       public content::RenderProcessHostObserver {
  public:
@@ -59,9 +59,9 @@ class CHROMEOS_EXPORT RendererFreezer
   explicit RendererFreezer(scoped_ptr<Delegate> delegate);
   ~RendererFreezer() override;
 
-  // PowerManagerClient::Observer implementation.
+  // PowerManagerClient::RenderProcessManagerDelegate implementation.
   void SuspendImminent() override;
-  void SuspendDone(const base::TimeDelta& sleep_duration) override;
+  void SuspendDone() override;
 
   // content::NotificationObserver implementation.
   void Observe(int type,
@@ -77,12 +77,6 @@ class CHROMEOS_EXPORT RendererFreezer
  private:
   // Called whenever a new renderer process is created.
   void OnRenderProcessCreated(content::RenderProcessHost* rph);
-
-  // Called when all asynchronous work is complete and renderers can be frozen.
-  void OnReadyToSuspend(const base::Closure& power_manager_callback);
-
-  // Used to ensure that renderers do not get frozen if the suspend is canceled.
-  base::CancelableClosure suspend_readiness_callback_;
 
   // Tracks if the renderers are currently frozen.
   bool frozen_;

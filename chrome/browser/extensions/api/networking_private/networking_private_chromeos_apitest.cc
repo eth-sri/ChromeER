@@ -10,7 +10,6 @@
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -34,6 +33,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/test/test_utils.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/switches.h"
 #include "policy/policy_constants.h"
@@ -77,9 +77,9 @@ class TestListener : public content::NotificationObserver {
                    content::NotificationService::AllSources());
   }
 
-  virtual void Observe(int type,
-                       const content::NotificationSource& /* source */,
-                       const content::NotificationDetails& details) override {
+  void Observe(int type,
+               const content::NotificationSource& /* source */,
+               const content::NotificationDetails& details) override {
     const std::string& message = *content::Details<std::string>(details).ptr();
     if (message == message_)
       callback_.Run();
@@ -108,7 +108,7 @@ class NetworkingPrivateChromeOSApiTest : public ExtensionApiTest {
                                kFlagEnableFileAccess | kFlagLoadAsComponent);
   }
 
-  virtual void SetUpInProcessBrowserTestFixture() override {
+  void SetUpInProcessBrowserTestFixture() override {
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
@@ -123,7 +123,7 @@ class NetworkingPrivateChromeOSApiTest : public ExtensionApiTest {
     *out = result;
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(CommandLine* command_line) override {
     ExtensionApiTest::SetUpCommandLine(command_line);
     // Whitelist the extension ID of the test extension.
     command_line->AppendSwitchASCII(
@@ -196,7 +196,7 @@ class NetworkingPrivateChromeOSApiTest : public ExtensionApiTest {
                               true /* add_to_visible */);
   }
 
-  virtual void SetUpOnMainThread() override {
+  void SetUpOnMainThread() override {
     detector_ = new NetworkPortalDetectorTestImpl();
     NetworkPortalDetector::InitializeForTesting(detector_);
 
@@ -314,6 +314,10 @@ class NetworkingPrivateChromeOSApiTest : public ExtensionApiTest {
     profile_test->AddService(kUser1ProfilePath, "stub_wifi2");
 
     AddService("stub_vpn1", "vpn1", shill::kTypeVPN, shill::kStateOnline);
+    service_test_->SetServiceProperty(
+        "stub_vpn1", shill::kProviderTypeProperty,
+        base::StringValue(shill::kProviderOpenVpn));
+    profile_test->AddService(kUser1ProfilePath, "stub_vpn1");
 
     content::RunAllPendingInMessageLoop();
   }
@@ -401,8 +405,12 @@ IN_PROC_BROWSER_TEST_F(NetworkingPrivateChromeOSApiTest, GetStateNonExistent) {
   EXPECT_TRUE(RunNetworkingSubtest("getStateNonExistent")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(NetworkingPrivateChromeOSApiTest, SetProperties) {
-  EXPECT_TRUE(RunNetworkingSubtest("setProperties")) << message_;
+IN_PROC_BROWSER_TEST_F(NetworkingPrivateChromeOSApiTest, SetWiFiProperties) {
+  EXPECT_TRUE(RunNetworkingSubtest("setWiFiProperties")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(NetworkingPrivateChromeOSApiTest, SetVPNProperties) {
+  EXPECT_TRUE(RunNetworkingSubtest("setVPNProperties")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(NetworkingPrivateChromeOSApiTest, CreateNetwork) {

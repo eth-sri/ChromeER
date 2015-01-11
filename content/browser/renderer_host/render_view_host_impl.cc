@@ -69,6 +69,7 @@
 #include "content/public/common/file_chooser_file_info.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_util.h"
@@ -288,9 +289,14 @@ bool RenderViewHostImpl::CreateRenderView(
   params.never_visible = delegate_->IsNeverVisible();
   params.window_was_created_with_opener = window_was_created_with_opener;
   params.next_page_id = next_page_id;
-  GetWebScreenInfo(&params.screen_info);
+  params.enable_auto_resize = auto_resize_enabled();
+  params.min_size = min_size_for_auto_resize();
+  params.max_size = max_size_for_auto_resize();
+  GetResizeParams(&params.initial_size);
 
-  Send(new ViewMsg_New(params));
+  if (!Send(new ViewMsg_New(params)))
+    return false;
+  SetInitialRenderSizeParams(params.initial_size);
 
   // If it's enabled, tell the renderer to set up the Javascript bindings for
   // sending messages back to the browser.
@@ -387,8 +393,10 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
   prefs.container_culling_enabled =
       command_line.HasSwitch(switches::kEnableContainerCulling);
-  prefs.text_blobs_enabled =
-      command_line.HasSwitch(switches::kEnableTextBlobs);
+  // Text blobs rely on impl-side painting for proper LCD handling.
+  prefs.text_blobs_enabled = command_line.HasSwitch(switches::kForceTextBlobs)
+      || (content::IsImplSidePaintingEnabled() &&
+          !command_line.HasSwitch(switches::kDisableTextBlobs));
   prefs.region_based_columns_enabled =
       command_line.HasSwitch(switches::kEnableRegionBasedColumns);
 
@@ -396,11 +404,21 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
     prefs.pinch_virtual_viewport_enabled = true;
     prefs.pinch_overlay_scrollbar_thickness = 10;
   }
+#if defined(OS_MACOSX)
+  prefs.rubber_banding_on_compositor_thread =
+      command_line.HasSwitch(switches::kEnableThreadedEventHandlingMac);
+#endif
   prefs.use_solid_color_scrollbars = ui::IsOverlayScrollbarEnabled();
 
 #if defined(OS_ANDROID)
+  // On Android, user gestures are normally required, unless that requirement
+  // is disabled with a command-line switch or the equivalent field trial is
+  // is set to "Enabled".
+  const std::string autoplay_group_name = base::FieldTrialList::FindFullName(
+      "MediaElementAutoplay");
   prefs.user_gesture_required_for_media_playback = !command_line.HasSwitch(
-      switches::kDisableGestureRequirementForMediaPlayback);
+      switches::kDisableGestureRequirementForMediaPlayback) &&
+          (autoplay_group_name.empty() || autoplay_group_name != "Enabled");
 #endif
 
   prefs.touch_enabled = ui::AreTouchEventsEnabled();
@@ -458,24 +476,50 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
       command_line.HasSwitch(switches::kEnableDeferredImageDecoding) ||
       content::IsImplSidePaintingEnabled();
 
+  prefs.image_color_profiles_enabled =
+      command_line.HasSwitch(switches::kEnableImageColorProfiles);
+
   prefs.spatial_navigation_enabled = command_line.HasSwitch(
       switches::kEnableSpatialNavigation);
 
-  if (command_line.HasSwitch(switches::kV8CacheOptions)) {
-    const std::string v8_cache_options =
-        command_line.GetSwitchValueASCII(switches::kV8CacheOptions);
-    if (v8_cache_options == "parse") {
-      prefs.v8_cache_options = V8_CACHE_OPTIONS_PARSE;
-    } else if (v8_cache_options == "code") {
-      prefs.v8_cache_options = V8_CACHE_OPTIONS_CODE;
-    } else {
-      prefs.v8_cache_options = V8_CACHE_OPTIONS_OFF;
-    }
+  std::string v8_cache_options =
+      command_line.GetSwitchValueASCII(switches::kV8CacheOptions);
+  if (v8_cache_options.empty())
+    v8_cache_options = base::FieldTrialList::FindFullName("V8CacheOptions");
+  if (v8_cache_options == "parse") {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_PARSE;
+  } else if (v8_cache_options == "code") {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_CODE;
+  } else if (v8_cache_options == "code-compressed") {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_CODE_COMPRESSED;
+  } else if (v8_cache_options == "none") {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_NONE;
+  } else if (v8_cache_options == "parse-memory") {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_PARSE_MEMORY;
+  } else if (v8_cache_options == "heuristics") {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_HEURISTICS;
+  } else if (v8_cache_options == "heuristics-mobile") {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_HEURISTICS_MOBILE;
+  } else {
+    prefs.v8_cache_options = V8_CACHE_OPTIONS_DEFAULT;
   }
 
+  std::string streaming_experiment_group =
+      base::FieldTrialList::FindFullName("V8ScriptStreaming");
   prefs.v8_script_streaming_enabled =
-      command_line.HasSwitch(switches::kEnableV8ScriptStreaming) ||
-      base::FieldTrialList::FindFullName("V8ScriptStreaming") == "Enabled";
+      command_line.HasSwitch(switches::kEnableV8ScriptStreaming);
+  if (streaming_experiment_group == "Enabled") {
+    prefs.v8_script_streaming_enabled = true;
+    prefs.v8_script_streaming_mode = V8_SCRIPT_STREAMING_MODE_ALL;
+  } else if (streaming_experiment_group == "OnlyAsyncAndDefer") {
+    prefs.v8_script_streaming_enabled = true;
+    prefs.v8_script_streaming_mode =
+        V8_SCRIPT_STREAMING_MODE_ONLY_ASYNC_AND_DEFER;
+  } else if (streaming_experiment_group == "AllPlusBlockParserBlocking") {
+    prefs.v8_script_streaming_enabled = true;
+    prefs.v8_script_streaming_mode =
+        V8_SCRIPT_STREAMING_MODE_ALL_PLUS_BLOCK_PARSER_BLOCKING;
+  }
 
   GetContentClient()->browser()->OverrideWebkitPrefs(this, url, &prefs);
   return prefs;
@@ -540,6 +584,13 @@ void RenderViewHostImpl::DragTargetDragEnter(
   const int renderer_id = GetProcess()->GetID();
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
+
+#if defined(OS_CHROMEOS)
+  // The externalfile:// scheme is used in Chrome OS to open external files in a
+  // browser tab.
+  if (drop_data.url.SchemeIs(content::kExternalFileScheme))
+    policy->GrantRequestURL(renderer_id, drop_data.url);
+#endif
 
   // The URL could have been cobbled together from any highlighted text string,
   // and can't be interpreted as a capability.
@@ -1069,8 +1120,7 @@ void RenderViewHostImpl::OnDocumentAvailableInMainFrame(
     return;
 
   HostZoomMapImpl* host_zoom_map =
-      static_cast<HostZoomMapImpl*>(HostZoomMap::GetDefaultForBrowserContext(
-          GetProcess()->GetBrowserContext()));
+      static_cast<HostZoomMapImpl*>(HostZoomMap::Get(GetSiteInstance()));
   host_zoom_map->SetTemporaryZoomLevel(GetProcess()->GetID(),
                                        GetRoutingID(),
                                        host_zoom_map->GetDefaultZoomLevel());
@@ -1184,6 +1234,7 @@ void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
 #if defined(OS_WIN)
   if (!is_editable_node && virtual_keyboard_requested_) {
     virtual_keyboard_requested_ = false;
+    delegate_->SetIsVirtualKeyboardRequested(false);
     BrowserThread::PostDelayedTask(
         BrowserThread::UI, FROM_HERE,
         base::Bind(base::IgnoreResult(&DismissVirtualKeyboardTask)),
@@ -1348,12 +1399,12 @@ void RenderViewHostImpl::EnablePreferredSizeMode() {
 
 void RenderViewHostImpl::EnableAutoResize(const gfx::Size& min_size,
                                           const gfx::Size& max_size) {
-  SetShouldAutoResize(true);
+  SetAutoResize(true, min_size, max_size);
   Send(new ViewMsg_EnableAutoResize(GetRoutingID(), min_size, max_size));
 }
 
 void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
-  SetShouldAutoResize(false);
+  SetAutoResize(false, gfx::Size(), gfx::Size());
   Send(new ViewMsg_DisableAutoResize(GetRoutingID(), new_size));
   if (!new_size.IsEmpty())
     GetView()->SetSize(new_size);
@@ -1384,8 +1435,7 @@ void RenderViewHostImpl::NotifyMoveOrResizeStarted() {
 void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
                                       const GURL& url) {
   HostZoomMapImpl* host_zoom_map =
-      static_cast<HostZoomMapImpl*>(HostZoomMap::GetDefaultForBrowserContext(
-          GetProcess()->GetBrowserContext()));
+      static_cast<HostZoomMapImpl*>(HostZoomMap::Get(GetSiteInstance()));
 
   host_zoom_map->SetZoomLevelForView(GetProcess()->GetID(),
                                      GetRoutingID(),
@@ -1401,8 +1451,10 @@ void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {
 #if defined(OS_WIN)
   if (editable) {
     virtual_keyboard_requested_ = base::win::DisplayVirtualKeyboard();
+    delegate_->SetIsVirtualKeyboardRequested(true);
   } else {
     virtual_keyboard_requested_ = false;
+    delegate_->SetIsVirtualKeyboardRequested(false);
     base::win::DismissVirtualKeyboard();
   }
 #endif

@@ -6,8 +6,6 @@
 
 #include <string>
 
-#include "ash/session/session_state_delegate.h"
-#include "ash/shell.h"
 #include "base/bind.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/strings/string_number_conversions.h"
@@ -32,6 +30,11 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if !defined(USE_ATHENA)
+#include "ash/session/session_state_delegate.h"
+#include "ash/shell.h"
+#endif
 
 namespace chromeos {
 namespace options {
@@ -227,8 +230,9 @@ void CoreChromeOSOptionsHandler::SetPref(const std::string& pref_name,
     return ::options::CoreOptionsHandler::SetPref(pref_name, value, metric);
   Profile* profile = Profile::FromWebUI(web_ui());
   OwnerSettingsServiceChromeOS* service =
-      profile ? OwnerSettingsServiceChromeOSFactory::GetForProfile(profile)
-              : nullptr;
+      profile
+          ? OwnerSettingsServiceChromeOSFactory::GetForBrowserContext(profile)
+          : nullptr;
   if (service && service->HandlesSetting(pref_name))
     service->Set(pref_name, *value);
   else

@@ -106,6 +106,14 @@ public class BookmarksBridge {
         }
 
         /**
+         * Invoked when all user-editable nodes have been removed. The exception is partner and
+         * managed bookmarks, which are not affected by this operation.
+         */
+        public void bookmarkAllUserNodesRemoved() {
+            bookmarkModelChanged();
+        }
+
+        /**
          * Invoked when the title or url of a node changes.
          * @param node The node being changed.
          */
@@ -363,13 +371,27 @@ public class BookmarksBridge {
     }
 
     /**
-     * @return All bookmark IDs ordered by descending creation date.
+     * @return All bookmark IDs ordered by descending creation date. Partner/managed bookmarks are
+     *         not included.
      */
     public List<BookmarkId> getAllBookmarkIDsOrderedByCreationDate() {
         assert mIsNativeBookmarkModelLoaded;
         List<BookmarkId> result = new ArrayList<BookmarkId>();
         nativeGetAllBookmarkIDsOrderedByCreationDate(mNativeBookmarksBridge, result);
         return result;
+    }
+
+    /**
+     * Synchronously gets a list of bookmarks that match the specified search query.
+     * @param query Keyword used for searching bookmarks.
+     * @param maxNumberOfResult Maximum number of result to fetch.
+     * @return List of bookmarks that are related to the given query.
+     */
+    public List<BookmarkId> searchBookmarks(String query, int maxNumberOfResult) {
+        List<BookmarkId> bookmarkIds = new ArrayList<BookmarkId>();
+        nativeSearchBookmarks(mNativeBookmarksBridge, bookmarkIds, query,
+                maxNumberOfResult);
+        return bookmarkIds;
     }
 
     /**
@@ -582,6 +604,13 @@ public class BookmarksBridge {
     }
 
     @CalledByNative
+    private void bookmarkAllUserNodesRemoved() {
+        for (BookmarkModelObserver observer : mObservers) {
+            observer.bookmarkAllUserNodesRemoved();
+        }
+    }
+
+    @CalledByNative
     private void bookmarkNodeChanged(BookmarkItem node) {
         if (mIsDoingExtensiveChanges) return;
 
@@ -681,6 +710,8 @@ public class BookmarksBridge {
     private native void nativeDeleteBookmark(long nativeBookmarksBridge, BookmarkId bookmarkId);
     private native void nativeMoveBookmark(long nativeBookmarksBridge, BookmarkId bookmarkId,
             BookmarkId newParentId, int index);
+    private native void nativeSearchBookmarks(long nativeBookmarksBridge,
+            List<BookmarkId> bookmarkIds, String query, int maxNumber);
     private native BookmarkId nativeAddBookmark(long nativeBookmarksBridge, BookmarkId parent,
             int index, String title, String url);
     private native void nativeUndo(long nativeBookmarksBridge);

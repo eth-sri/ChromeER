@@ -17,6 +17,8 @@ NSString* const kBrowserActionGrippyDragFinishedNotification =
     @"BrowserActionGrippyDragFinishedNotification";
 NSString* const kBrowserActionGrippyWillDragNotification =
     @"BrowserActionGrippyWillDragNotification";
+NSString* const kBrowserActionsContainerWillAnimate =
+    @"BrowserActionsContainerWillAnimate";
 NSString* const kTranslationWithDelta =
     @"TranslationWithDelta";
 
@@ -124,7 +126,7 @@ const CGFloat kMinimumContainerWidth = 10.0;
       (NSWidth(containerFrame) < maxWidth_);
 
   // Notify others to see whether this dragging is allowed.
-  if (canDragLeft_ || canDragRight_) {
+  if ((dX < 0.0 && canDragLeft_) || (dX > 0.0 && canDragRight_)) {
     NSDictionary* userInfo = @{ kTranslationWithDelta : @(dX) };
     [[NSNotificationCenter defaultCenter]
         postNotificationName:kBrowserActionGrippyWillDragNotification
@@ -173,6 +175,10 @@ const CGFloat kMinimumContainerWidth = 10.0;
     [[self animator] setFrame:newFrame];
     [NSAnimationContext endGrouping];
     animationEndFrame_ = newFrame;
+
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:kBrowserActionsContainerWillAnimate
+                      object:self];
   } else {
     [self setFrame:newFrame];
     [self setNeedsDisplay:YES];

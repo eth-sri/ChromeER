@@ -7,6 +7,7 @@ import os
 import urlparse
 
 from telemetry import user_story
+from telemetry.page import shared_page_state
 from telemetry.util import cloud_storage
 from telemetry.util import path
 
@@ -24,7 +25,7 @@ def _UpdateCredentials(credentials_path):
 class Page(user_story.UserStory):
   def __init__(self, url, page_set=None, base_dir=None, name='',
                credentials_path=None, labels=None):
-    super(Page, self).__init__(name)
+    super(Page, self).__init__(shared_page_state.SharedPageState, name, labels)
     self._url = url
     self._page_set = page_set
     # Default value of base_dir is the directory of the file that defines the
@@ -40,11 +41,6 @@ class Page(user_story.UserStory):
         logging.error('Invalid credentials path: %s' % credentials_path)
         credentials_path = None
     self._credentials_path = credentials_path
-    if labels is None:
-      labels = set([])
-    elif isinstance(labels, list):
-      labels = set(labels)
-    self._labels = labels
 
     # These attributes can be set dynamically by the page.
     self.synthetic_delays = dict()
@@ -53,11 +49,6 @@ class Page(user_story.UserStory):
     self.skip_waits = False
     self.script_to_evaluate_on_commit = None
     self._SchemeErrorCheck()
-
-
-  @property
-  def labels(self):
-    return self._labels
 
   @property
   def credentials_path(self):

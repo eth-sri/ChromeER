@@ -135,8 +135,8 @@
         'shell/browser/shell_browser_main_parts_mac.mm',
         'shell/browser/shell_content_browser_client.cc',
         'shell/browser/shell_content_browser_client.h',
-        'shell/browser/shell_devtools_delegate.cc',
-        'shell/browser/shell_devtools_delegate.h',
+        'shell/browser/shell_devtools_manager_delegate.cc',
+        'shell/browser/shell_devtools_manager_delegate.h',
         'shell/browser/shell_devtools_frontend.cc',
         'shell/browser/shell_devtools_frontend.h',
         'shell/browser/shell_download_manager_delegate.cc',
@@ -249,8 +249,6 @@
         'shell/renderer/test_runner/mock_webrtc_dtmf_sender_handler.h',
         'shell/renderer/test_runner/mock_webrtc_peer_connection_handler.cc',
         'shell/renderer/test_runner/mock_webrtc_peer_connection_handler.h',
-        'shell/renderer/test_runner/notification_presenter.cc',
-        'shell/renderer/test_runner/notification_presenter.h',
         'shell/renderer/test_runner/spell_check_client.cc',
         'shell/renderer/test_runner/spell_check_client.h',
         'shell/renderer/test_runner/test_common.cc',
@@ -314,6 +312,7 @@
         }],
         ['use_x11 == 1', {
           'dependencies': [
+            '../ui/events/devices/events_devices.gyp:events_devices',
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
         }],
@@ -891,6 +890,12 @@
             ['icu_use_data_file_flag==1', {
               'mac_bundle_resources': [
                 '<(PRODUCT_DIR)/icudtl.dat',
+              ],
+            }],
+            ['v8_use_external_startup_data==1', {
+              'mac_bundle_resources': [
+                '<(PRODUCT_DIR)/natives_blob.bin',
+                '<(PRODUCT_DIR)/snapshot_blob.bin',
               ],
             }],
           ],

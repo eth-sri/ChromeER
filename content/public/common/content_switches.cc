@@ -205,6 +205,10 @@ const char kDisableLogging[]                = "disable-logging";
 // Disables Media Source API (i.e., the MediaSource object).
 const char kDisableMediaSource[]            = "disable-media-source";
 
+// Disable rasterizer that writes directly to GPU memory.
+// Overrides the kEnableOneCopy flag.
+const char kDisableOneCopy[]                = "disable-one-copy";
+
 // Disable Pepper3D.
 const char kDisablePepper3d[]               = "disable-pepper-3d";
 
@@ -251,6 +255,9 @@ const char kDisableSoftwareRasterizer[]     = "disable-software-rasterizer";
 // Disables SVG 1.1 DOM.
 const char kDisableSVG1DOM[]                = "disable-svg1dom";
 
+// Disable text blob rendering.
+const char kDisableTextBlobs[]              = "disable-text-blobs";
+
 // Disable multithreaded GPU compositing of web content.
 const char kDisableThreadedCompositing[]     = "disable-threaded-compositing";
 
@@ -270,10 +277,6 @@ const char kDisableXSLT[]                   = "disable-xslt";
 
 // Disables Blink's XSSAuditor. The XSSAuditor mitigates reflective XSS.
 const char kDisableXSSAuditor[]             = "disable-xss-auditor";
-
-// Disable rasterizer that writes directly to GPU memory associated with tiles.
-// Overrides the kEnableZeroCopy flag.
-const char kDisableZeroCopy[]               = "disable-zero-copy";
 
 // Specifies if the |DOMAutomationController| needs to be bound in the
 // renderer. This binding happens on per-frame basis and hence can potentially
@@ -340,9 +343,13 @@ const char kEnableDeferredImageDecoding[]   = "enable-deferred-image-decoding";
 // Enables delegated renderer.
 const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
 
-// Enables display list based 2d canvas implementation.
+// Enables display list based 2d canvas implementation. Options:
+//  1. Enable: allow browser to use display list for 2d canvas (browser makes
+//     decision).
+//  2. Force: browser always uses display list for 2d canvas.
 const char kEnableDisplayList2dCanvas[]     = "enable-display-list-2d-canvas";
-const char kDisableDisplayList2dCanvas[]     = "disable-display-list-2d-canvas";
+const char kForceDisplayList2dCanvas[]      = "force-display-list-2d-canvas";
+const char kDisableDisplayList2dCanvas[]    = "disable-display-list-2d-canvas";
 
 // Enables restarting interrupted downloads.
 const char kEnableDownloadResumption[]      = "enable-download-resumption";
@@ -374,6 +381,9 @@ const char kEnableGpuRasterization[]        = "enable-gpu-rasterization";
 // tiles may be displayed during fast scrolls especially on slower devices.
 const char kEnableLowResTiling[] = "enable-low-res-tiling";
 
+// Dynamically apply color profiles to web content images.
+const char kEnableImageColorProfiles[]      = "enable-image-color-profiles";
+
 // Paint content on the compositor thread instead of the main thread.
 const char kEnableImplSidePainting[]        = "enable-impl-side-painting";
 
@@ -392,9 +402,6 @@ const char kEnableOneCopy[]                 = "enable-one-copy";
 
 // Enables use of hardware overlay for fullscreen video playback. Android only.
 const char kEnableOverlayFullscreenVideo[]  = "enable-overlay-fullscreen-video";
-
-// Forward overscroll event data from the renderer to the browser.
-const char kEnableOverscrollNotifications[] = "enable-overscroll-notifications";
 
 // Enables compositor-accelerated touch-screen pinch gestures.
 const char kEnablePinch[]                   = "enable-pinch";
@@ -459,9 +466,6 @@ const char kEnableServiceWorkerSync[]       = "enable-service-worker-sync";
 // SYN packet.
 const char kEnableTcpFastOpen[]             = "enable-tcp-fastopen";
 
-// Enable experimental text blob rendering.
-const char kEnableTextBlobs[]               = "enable-text-blobs";
-
 // Enabled threaded compositing for layout tests.
 const char kEnableThreadedCompositing[]     = "enable-threaded-compositing";
 
@@ -518,14 +522,14 @@ const char kEnableZeroCopy[]                = "enable-zero-copy";
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
 
-// Some field trials may be randomized in the browser, and the randomly selected
-// outcome needs to be propagated to the renderer. For instance, this is used
-// to modify histograms recorded in the renderer, or to get the renderer to
-// also set of its state (initialize, or not initialize components) to match the
-// experiment(s). The option is also useful for forcing field trials when
-// testing changes locally. The argument is a list of name and value pairs,
-// separated by slashes. See FieldTrialList::CreateTrialsFromString() in
-// field_trial.h for details.
+// This option can be used to force field trials when testing changes locally.
+// The argument is a list of name and value pairs, separated by slashes. If a
+// trial name is prefixed with an asterisk, that trial will start activated.
+// For example, the following argument defines two trials, with the second one
+// activated: "GoogleNow/Enable/*MaterialDesignNTP/Default/"
+// This option is also used by the browser to send the list of trials to
+// renderers, using the same format. See
+// FieldTrialList::CreateTrialsFromString() in field_trial.h for details.
 const char kForceFieldTrials[]              = "force-fieldtrials";
 
 // Always use the Skia GPU backend for drawing layer tiles. Only valid with GPU
@@ -537,6 +541,11 @@ const char kForceGpuRasterization[]        = "force-gpu-rasterization";
 // a screen reader is detected. The disable-renderer-accessibility switch
 // overrides this if present.
 const char kForceRendererAccessibility[]    = "force-renderer-accessibility";
+
+// Always use text blob rendering, overriding kDisableTextBlobs and any
+// heuristics that may otherwise disable it.
+// TODO(fmalita): remove after --disable-impl-side-painting is phased out.
+const char kForceTextBlobs[]                = "force-text-blobs";
 
 // Passes gpu device_id from browser process to GPU process.
 const char kGpuDeviceID[]                   = "gpu-device-id";
@@ -715,6 +724,13 @@ const char kRendererProcessLimit[]          = "renderer-process-limit";
 // Causes the renderer process to display a dialog on launch.
 const char kRendererStartupDialog[]         = "renderer-startup-dialog";
 
+// Reduce the default `referer` header's granularity.
+const char kReducedReferrerGranularity[] =
+  "reduced-referrer-granularity";
+
+// Handles frame scrolls via the root RenderLayer instead of the FrameView.
+const char kRootLayerScrolls[]              = "root-layer-scrolls";
+
 // Causes the process to run as a sandbox IPC subprocess.
 const char kSandboxIPCProcess[]             = "sandbox-ipc";
 
@@ -830,6 +846,12 @@ const char kUseDiscardableMemory[] = "use-discardable-memory";
 // streams (e.g. WebRTC). Works with --use-fake-device-for-media-stream.
 const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
 
+// Enable native GPU memory buffer support when available.
+const char kEnableNativeGpuMemoryBuffers[] = "enable-native-gpu-memory-buffers";
+
+// Use TEXTURE_EXTERNAL_OES target with CHROMIUM_image extension.
+const char kUseImageExternal[] = "use-image-external";
+
 // Set when Chromium should use a mobile user agent.
 const char kUseMobileUserAgent[] = "use-mobile-user-agent";
 
@@ -868,10 +890,6 @@ const char kZygoteCmdPrefix[]               = "zygote-cmd-prefix";
 const char kZygoteProcess[]                 = "zygote";
 
 #if defined(ENABLE_WEBRTC)
-// Disables audio processing in a MediaStreamTrack. When this flag is on, AEC,
-// NS and AGC will be done in PeerConnection instead of MediaStreamTrack.
-const char kDisableAudioTrackProcessing[]    = "disable-audio-track-processing";
-
 // Disables HW decode acceleration for WebRTC.
 const char kDisableWebRtcHWDecoding[]       = "disable-webrtc-hw-decoding";
 
@@ -887,6 +905,10 @@ const char kEnableWebRtcHWVp8Encoding[]     = "enable-webrtc-hw-vp8-encoding";
 
 // Enables H264 HW encode acceleration for WebRTC.
 const char kEnableWebRtcHWH264Encoding[]    = "enable-webrtc-hw-h264-encoding";
+
+// Override the maximum framerate as can be specified in calls to getUserMedia.
+// This flag expects a value.  Example: --max-gum-fps=17.5
+const char kWebRtcMaxCaptureFramerate[]     = "max-gum-fps";
 #endif
 
 #if defined(OS_ANDROID)
@@ -899,6 +921,9 @@ const char kDisableClickDelay[]             = "disable-click-delay";
 
 // Disable overscroll edge effects like those found in Android views.
 const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
+
+// Disable the pull-to-refresh effect when vertically overscrolling content.
+const char kDisablePullToRefreshEffect[]   = "disable-pull-to-refresh-effect";
 
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";
@@ -964,6 +989,11 @@ const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
 // the kernel. This is only supported on Windows 8 and beyond.
 const char kEnableWin32kRendererLockDown[]
     = "enable_win32k_renderer_lockdown";
+
+// DirectWrite FontCache is shared by browser to renderers using shared memory.
+// This switch allows specifying suffix to shared memory section name to avoid
+// clashes between different instances of Chrome.
+const char kFontCacheSharedMemSuffix[] = "font-cache-shared-mem-suffix";
 #endif
 
 #if defined(ENABLE_PLUGINS)

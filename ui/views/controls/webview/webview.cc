@@ -87,6 +87,10 @@ void WebView::SetFastResize(bool fast_resize) {
   holder_->set_fast_resize(fast_resize);
 }
 
+void WebView::SetResizeBackgroundColor(SkColor resize_background_color) {
+  holder_->set_resize_background_color(resize_background_color);
+}
+
 void WebView::OnWebContentsFocused(content::WebContents* web_contents) {
   FocusManager* focus_manager = GetFocusManager();
   if (focus_manager)
@@ -199,6 +203,14 @@ bool WebView::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   return web_contents() && !web_contents()->IsCrashed();
 }
 
+bool WebView::OnMousePressed(const ui::MouseEvent& event) {
+  if (event.IsOnlyLeftMouseButton() && HitTestPoint(event.location())) {
+    RequestFocus();
+    return true;
+  }
+  return View::OnMousePressed(event);
+}
+
 void WebView::OnFocus() {
   if (web_contents())
     web_contents()->Focus();
@@ -210,7 +222,7 @@ void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
 }
 
 void WebView::GetAccessibleState(ui::AXViewState* state) {
-  state->role = ui::AX_ROLE_GROUP;
+  state->role = ui::AX_ROLE_WEB_VIEW;
 }
 
 gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {

@@ -13,8 +13,8 @@
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/extensions/extension_action_view_controller.h"
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
-#include "chrome/browser/ui/views/extensions/extension_action_view_controller.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_action_view.h"
 #include "extensions/common/extension.h"
@@ -43,7 +43,7 @@ class IconUpdater : public ExtensionActionIconFactory::Observer {
     DCHECK(view_controller);
     view_controller->set_icon_observer(this);
   }
-  ~IconUpdater() override { view_controller_->set_icon_observer(NULL); }
+  ~IconUpdater() override { view_controller_->set_icon_observer(nullptr); }
 
   // ExtensionActionIconFactory::Observer:
   void OnIconUpdated() override {
@@ -158,19 +158,19 @@ ChevronMenuButton::MenuController::MenuController(
        i < browser_actions_container_->num_toolbar_actions(); ++i) {
     ToolbarActionView* view =
         browser_actions_container_->GetToolbarActionViewAt(i);
-    ExtensionActionViewController* view_controller =
-        static_cast<ExtensionActionViewController*>(view->view_controller());
     views::MenuItemView* menu_item = menu_->AppendMenuItemWithIcon(
         command_id,
-        base::UTF8ToUTF16(view_controller->extension()->name()),
-        view_controller->GetIconWithBadge());
+        view->view_controller()->GetActionName(),
+        view->view_controller()->GetIconWithBadge());
 
     // Set the tooltip for this item.
     menu_->SetTooltip(
-        view_controller->GetTooltip(view->GetCurrentWebContents()),
+        view->view_controller()->GetTooltip(view->GetCurrentWebContents()),
         command_id);
 
-    icon_updaters_.push_back(new IconUpdater(menu_item, view_controller));
+    icon_updaters_.push_back(new IconUpdater(
+        menu_item,
+        static_cast<ExtensionActionViewController*>(view->view_controller())));
 
     ++command_id;
   }
@@ -276,8 +276,8 @@ bool ChevronMenuButton::MenuController::AreDropTypesRequired(
 
 bool ChevronMenuButton::MenuController::CanDrop(
     views::MenuItemView* menu, const OSExchangeData& data) {
-  return BrowserActionDragData::CanDrop(data,
-                                        browser_actions_container_->profile());
+  return BrowserActionDragData::CanDrop(
+      data, browser_actions_container_->browser()->profile());
 }
 
 int ChevronMenuButton::MenuController::GetDropOperation(
@@ -316,16 +316,12 @@ int ChevronMenuButton::MenuController::OnPerformDrop(
       drop_data.index() < browser_actions_container_->VisibleBrowserActions())
     --drop_index;
 
-  Profile* profile = browser_actions_container_->profile();
-  // Move the extension in the model.
-  extensions::ExtensionToolbarModel* toolbar_model =
-      extensions::ExtensionToolbarModel::Get(profile);
-  toolbar_model->MoveExtensionIcon(drop_data.id(), drop_index);
-
-  // If the extension was moved to the overflow menu from the main bar, notify
-  // the owner.
-  if (drop_data.index() < browser_actions_container_->VisibleBrowserActions())
-    browser_actions_container_->NotifyActionMovedToOverflow();
+  ToolbarActionsBar::DragType drag_type =
+      drop_data.index() < browser_actions_container_->VisibleBrowserActions() ?
+          ToolbarActionsBar::DRAG_TO_OVERFLOW :
+          ToolbarActionsBar::DRAG_TO_SAME;
+  browser_actions_container_->toolbar_actions_bar()->OnDragDrop(
+      drop_data.index(), drop_index, drag_type);
 
   if (for_drop_)
     owner_->MenuDone();
@@ -341,7 +337,7 @@ void ChevronMenuButton::MenuController::WriteDragData(
   size_t drag_index = IndexForId(sender->GetCommand());
   BrowserActionDragData drag_data(
       browser_actions_container_->GetIdAt(drag_index), drag_index);
-  drag_data.Write(browser_actions_container_->profile(), data);
+  drag_data.Write(browser_actions_container_->browser()->profile(), data);
 }
 
 int ChevronMenuButton::MenuController::GetDragOperations(
@@ -392,7 +388,7 @@ bool ChevronMenuButton::AreDropTypesRequired() {
 
 bool ChevronMenuButton::CanDrop(const OSExchangeData& data) {
   return BrowserActionDragData::CanDrop(
-      data, browser_actions_container_->profile());
+      data, browser_actions_container_->browser()->profile());
 }
 
 void ChevronMenuButton::OnDragEntered(const ui::DropTargetEvent& event) {
@@ -416,16 +412,24 @@ void ChevronMenuButton::OnDragExited() {
 }
 
 int ChevronMenuButton::OnPerformDrop(const ui::DropTargetEvent& event) {
+  weak_factory_.InvalidateWeakPtrs();
   return ui::DragDropTypes::DRAG_MOVE;
 }
 
 void ChevronMenuButton::OnMenuButtonClicked(views::View* source,
                                             const gfx::Point& point) {
   DCHECK_EQ(this, source);
-  ShowOverflowMenu(false);
+  // The menu could already be open if a user dragged an item over it but
+  // ultimately dropped elsewhere (as in that case the menu will close on a
+  // timer). In this case, the click should close the open menu.
+  if (menu_controller_)
+    menu_controller_->CloseMenu();
+  else
+    ShowOverflowMenu(false);
 }
 
 void ChevronMenuButton::ShowOverflowMenu(bool for_drop) {
+  // We should never try to show an overflow menu when one is already visible.
   DCHECK(!menu_controller_);
   menu_controller_.reset(new MenuController(
       this, browser_actions_container_, for_drop));

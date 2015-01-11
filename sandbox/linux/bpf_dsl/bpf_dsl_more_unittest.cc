@@ -40,8 +40,10 @@
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
 #include "sandbox/linux/seccomp-bpf/trap.h"
-#include "sandbox/linux/services/broker_process.h"
 #include "sandbox/linux/services/linux_syscalls.h"
+#include "sandbox/linux/services/syscall_wrappers.h"
+#include "sandbox/linux/syscall_broker/broker_file_permission.h"
+#include "sandbox/linux/syscall_broker/broker_process.h"
 #include "sandbox/linux/tests/scoped_temporary_file.h"
 #include "sandbox/linux/tests/unit_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -72,28 +74,6 @@ void EnableUnsafeTraps() {
   // function has completed.
   setenv(kSandboxDebuggingEnv, "t", 0);
   Die::SuppressInfoMessages(true);
-}
-
-// This test should execute no matter whether we have kernel support. So,
-// we make it a TEST() instead of a BPF_TEST().
-TEST(SandboxBPF, DISABLE_ON_TSAN(CallSupports)) {
-  // We check that we don't crash, but it's ok if the kernel doesn't
-  // support it.
-  bool seccomp_bpf_supported =
-      SandboxBPF::SupportsSeccompSandbox(-1) == SandboxBPF::STATUS_AVAILABLE;
-  // We want to log whether or not seccomp BPF is actually supported
-  // since actual test coverage depends on it.
-  RecordProperty("SeccompBPFSupported",
-                 seccomp_bpf_supported ? "true." : "false.");
-  std::cout << "Seccomp BPF supported: "
-            << (seccomp_bpf_supported ? "true." : "false.") << "\n";
-  RecordProperty("PointerSize", sizeof(void*));
-  std::cout << "Pointer size: " << sizeof(void*) << "\n";
-}
-
-SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(CallSupportsTwice)) {
-  SandboxBPF::SupportsSeccompSandbox(-1);
-  SandboxBPF::SupportsSeccompSandbox(-1);
 }
 
 // BPF_TEST does a lot of the boiler-plate code around setting up a
@@ -130,13 +110,12 @@ class VerboseAPITestingPolicy : public Policy {
 };
 
 SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(VerboseAPITesting)) {
-  if (SandboxBPF::SupportsSeccompSandbox(-1) ==
-      sandbox::SandboxBPF::STATUS_AVAILABLE) {
+  if (SandboxBPF::SupportsSeccompSandbox(
+          SandboxBPF::SeccompLevel::SINGLE_THREADED)) {
     static int counter = 0;
 
-    SandboxBPF sandbox;
-    sandbox.SetSandboxPolicy(new VerboseAPITestingPolicy(&counter));
-    BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
+    SandboxBPF sandbox(new VerboseAPITestingPolicy(&counter));
+    BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::SeccompLevel::SINGLE_THREADED));
 
     BPF_ASSERT_EQ(0, counter);
     BPF_ASSERT_EQ(0, syscall(__NR_uname, 0));
@@ -178,6 +157,14 @@ BPF_TEST_C(SandboxBPF, ApplyBasicBlacklistPolicy, BlacklistNanosleepPolicy) {
   BlacklistNanosleepPolicy::AssertNanosleepFails();
 }
 
+BPF_TEST_C(SandboxBPF, UseVsyscall, BlacklistNanosleepPolicy) {
+  time_t current_time;
+  // time() is implemented as a vsyscall. With an older glibc, with
+  // vsyscall=emulate and some versions of the seccomp BPF patch
+  // we may get SIGKILL-ed. Detect this!
+  BPF_ASSERT_NE(static_cast<time_t>(-1), time(&current_time));
+}
+
 // Now do a simple whitelist test
 
 class WhitelistGetpidPolicy : public Policy {
@@ -203,7 +190,7 @@ class WhitelistGetpidPolicy : public Policy {
 BPF_TEST_C(SandboxBPF, ApplyBasicWhitelistPolicy, WhitelistGetpidPolicy) {
   // getpid() should be allowed
   errno = 0;
-  BPF_ASSERT(syscall(__NR_getpid) > 0);
+  BPF_ASSERT(sys_getpid() > 0);
   BPF_ASSERT(errno == 0);
 
   // getpgid() should be denied
@@ -246,7 +233,7 @@ BPF_TEST(SandboxBPF,
          int /* (*BPF_AUX) */) {
   // getpid() should work properly
   errno = 0;
-  BPF_ASSERT(syscall(__NR_getpid) > 0);
+  BPF_ASSERT(sys_getpid() > 0);
   BPF_ASSERT(errno == 0);
 
   // Our Auxiliary Data, should be reset by the signal handler
@@ -395,9 +382,8 @@ BPF_TEST_C(SandboxBPF, StackingPolicy, StackingPolicyPartOne) {
 
   // Stack a second sandbox with its own policy. Verify that we can further
   // restrict filters, but we cannot relax existing filters.
-  SandboxBPF sandbox;
-  sandbox.SetSandboxPolicy(new StackingPolicyPartTwo());
-  BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
+  SandboxBPF sandbox(new StackingPolicyPartTwo());
+  BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::SeccompLevel::SINGLE_THREADED));
 
   errno = 0;
   BPF_ASSERT(syscall(__NR_getppid, 0) == -1);
@@ -512,7 +498,7 @@ intptr_t CountSyscalls(const struct arch_seccomp_data& args, void* aux) {
 
   // Verify that within the callback function all filtering is temporarily
   // disabled.
-  BPF_ASSERT(syscall(__NR_getpid) > 1);
+  BPF_ASSERT(sys_getpid() > 1);
 
   // Verify that we can now call the underlying system call without causing
   // infinite recursion.
@@ -549,7 +535,7 @@ class GreyListedPolicy : public Policy {
 };
 
 BPF_TEST(SandboxBPF, GreyListedPolicy, GreyListedPolicy, int /* (*BPF_AUX) */) {
-  BPF_ASSERT(syscall(__NR_getpid) == -1);
+  BPF_ASSERT(sys_getpid() == -1);
   BPF_ASSERT(errno == EPERM);
   BPF_ASSERT(*BPF_AUX == 0);
   BPF_ASSERT(syscall(__NR_geteuid) == syscall(__NR_getuid));
@@ -755,30 +741,35 @@ bool NoOpCallback() {
 class InitializedOpenBroker {
  public:
   InitializedOpenBroker() : initialized_(false) {
-    std::vector<std::string> allowed_files;
-    allowed_files.push_back("/proc/allowed");
-    allowed_files.push_back("/proc/cpuinfo");
+    std::vector<syscall_broker::BrokerFilePermission> permissions;
+    permissions.push_back(
+        syscall_broker::BrokerFilePermission::ReadOnly("/proc/allowed"));
+    permissions.push_back(
+        syscall_broker::BrokerFilePermission::ReadOnly("/proc/cpuinfo"));
 
     broker_process_.reset(
-        new BrokerProcess(EPERM, allowed_files, std::vector<std::string>()));
+        new syscall_broker::BrokerProcess(EPERM, permissions));
     BPF_ASSERT(broker_process() != NULL);
     BPF_ASSERT(broker_process_->Init(base::Bind(&NoOpCallback)));
 
     initialized_ = true;
   }
   bool initialized() { return initialized_; }
-  class BrokerProcess* broker_process() { return broker_process_.get(); }
+  class syscall_broker::BrokerProcess* broker_process() {
+    return broker_process_.get();
+  }
 
  private:
   bool initialized_;
-  scoped_ptr<class BrokerProcess> broker_process_;
+  scoped_ptr<class syscall_broker::BrokerProcess> broker_process_;
   DISALLOW_COPY_AND_ASSIGN(InitializedOpenBroker);
 };
 
 intptr_t BrokerOpenTrapHandler(const struct arch_seccomp_data& args,
                                void* aux) {
   BPF_ASSERT(aux);
-  BrokerProcess* broker_process = static_cast<BrokerProcess*>(aux);
+  syscall_broker::BrokerProcess* broker_process =
+      static_cast<syscall_broker::BrokerProcess*>(aux);
   switch (args.nr) {
     case __NR_faccessat:  // access is a wrapper of faccessat in android
       BPF_ASSERT(static_cast<int>(args.args[0]) == AT_FDCWD);
@@ -824,7 +815,7 @@ class DenyOpenPolicy : public Policy {
 #endif
       case __NR_openat:
         // We get a InitializedOpenBroker class, but our trap handler wants
-        // the BrokerProcess object.
+        // the syscall_broker::BrokerProcess object.
         return Trap(BrokerOpenTrapHandler, iob_->broker_process());
       default:
         return Allow();
@@ -844,7 +835,7 @@ BPF_TEST(SandboxBPF,
          DenyOpenPolicy,
          InitializedOpenBroker /* (*BPF_AUX) */) {
   BPF_ASSERT(BPF_AUX->initialized());
-  BrokerProcess* broker_process = BPF_AUX->broker_process();
+  syscall_broker::BrokerProcess* broker_process = BPF_AUX->broker_process();
   BPF_ASSERT(broker_process != NULL);
 
   // First, use the broker "manually"
@@ -2065,8 +2056,8 @@ class TraceAllPolicy : public Policy {
 };
 
 SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
-  if (SandboxBPF::SupportsSeccompSandbox(-1) !=
-      sandbox::SandboxBPF::STATUS_AVAILABLE) {
+  if (!SandboxBPF::SupportsSeccompSandbox(
+          SandboxBPF::SeccompLevel::SINGLE_THREADED)) {
     return;
   }
 
@@ -2090,12 +2081,11 @@ SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
     pid_t my_pid = getpid();
     BPF_ASSERT_NE(-1, ptrace(PTRACE_TRACEME, -1, NULL, NULL));
     BPF_ASSERT_EQ(0, raise(SIGSTOP));
-    SandboxBPF sandbox;
-    sandbox.SetSandboxPolicy(new TraceAllPolicy);
-    BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
+    SandboxBPF sandbox(new TraceAllPolicy);
+    BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::SeccompLevel::SINGLE_THREADED));
 
     // getpid is allowed.
-    BPF_ASSERT_EQ(my_pid, syscall(__NR_getpid));
+    BPF_ASSERT_EQ(my_pid, sys_getpid());
 
     // write to stdout is skipped and returns a fake value.
     BPF_ASSERT_EQ(kExpectedReturnValue,
@@ -2263,8 +2253,8 @@ void* TsyncApplyToTwoThreadsFunc(void* cond_ptr) {
 }
 
 SANDBOX_TEST(SandboxBPF, Tsync) {
-  if (SandboxBPF::SupportsSeccompThreadFilterSynchronization() !=
-      SandboxBPF::STATUS_AVAILABLE) {
+  if (!(SandboxBPF::SupportsSeccompSandbox(
+          SandboxBPF::SeccompLevel::MULTI_THREADED))) {
     return;
   }
 
@@ -2280,9 +2270,8 @@ SANDBOX_TEST(SandboxBPF, Tsync) {
   BPF_ASSERT_EQ(0, HANDLE_EINTR(syscall(__NR_nanosleep, &ts, NULL)));
 
   // Engage the sandbox.
-  SandboxBPF sandbox;
-  sandbox.SetSandboxPolicy(new BlacklistNanosleepPolicy());
-  BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_MULTI_THREADED));
+  SandboxBPF sandbox(new BlacklistNanosleepPolicy());
+  BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));
 
   // This thread should have the filter applied as well.
   BlacklistNanosleepPolicy::AssertNanosleepFails();
@@ -2312,9 +2301,8 @@ SANDBOX_DEATH_TEST(
   base::Thread thread("sandbox.linux.StartMultiThreadedAsSingleThreaded");
   BPF_ASSERT(thread.Start());
 
-  SandboxBPF sandbox;
-  sandbox.SetSandboxPolicy(new AllowAllPolicy());
-  BPF_ASSERT(!sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
+  SandboxBPF sandbox(new AllowAllPolicy());
+  BPF_ASSERT(!sandbox.StartSandbox(SandboxBPF::SeccompLevel::SINGLE_THREADED));
 }
 
 // http://crbug.com/407357
@@ -2325,9 +2313,8 @@ SANDBOX_DEATH_TEST(
     DEATH_MESSAGE(
         "Cannot start sandbox; process may be single-threaded when "
         "reported as not")) {
-  SandboxBPF sandbox;
-  sandbox.SetSandboxPolicy(new AllowAllPolicy());
-  BPF_ASSERT(!sandbox.StartSandbox(SandboxBPF::PROCESS_MULTI_THREADED));
+  SandboxBPF sandbox(new AllowAllPolicy());
+  BPF_ASSERT(!sandbox.StartSandbox(SandboxBPF::SeccompLevel::MULTI_THREADED));
 }
 #endif  // !defined(THREAD_SANITIZER)
 

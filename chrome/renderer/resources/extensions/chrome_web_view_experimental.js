@@ -18,7 +18,7 @@ var EventBindings = require('event_bindings');
 var idGeneratorNatives = requireNative('id_generator');
 var MessagingNatives = requireNative('messaging_natives');
 var utils = require('utils');
-var WebView = require('webView').WebView;
+var WebViewImpl = require('webView').WebViewImpl;
 
 function GetUniqueSubEventName(eventName) {
   return eventName + '/' + idGeneratorNatives.GetNextId();
@@ -94,7 +94,7 @@ var WebViewContextMenus = utils.expose(
     { functions: ['create', 'remove', 'removeAll', 'update'] });
 
 /** @private */
-WebView.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
+WebViewImpl.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
   var requestId = e.requestId;
   // Construct the event.menu object.
   var actionTaken = false;
@@ -112,19 +112,19 @@ WebView.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
       validateCall();
       // TODO(lazyboy): WebViewShowContextFunction doesn't do anything useful
       // with |items|, implement.
-      ChromeWebView.showContextMenu(this.guestInstanceId, requestId, items);
+      ChromeWebView.showContextMenu(this.guest.getId(), requestId, items);
     }.bind(this)
   };
   webViewEvent.menu = menu;
-  var webviewNode = this.webviewNode;
-  var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
+  var element = this.element;
+  var defaultPrevented = !element.dispatchEvent(webViewEvent);
   if (actionTaken) {
     return;
   }
   if (!defaultPrevented) {
     actionTaken = true;
     // The default action is equivalent to just showing the context menu as is.
-    ChromeWebView.showContextMenu(this.guestInstanceId, requestId, undefined);
+    ChromeWebView.showContextMenu(this.guest.getId(), requestId, undefined);
 
     // TODO(lazyboy): Figure out a way to show warning message only when
     // listeners are registered for this event.
@@ -132,7 +132,7 @@ WebView.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
 };
 
 /** @private */
-WebView.prototype.setupExperimentalContextMenus = function() {
+WebViewImpl.prototype.setupExperimentalContextMenus = function() {
   var createContextMenus = function() {
     return function() {
       if (this.contextMenus_) {
@@ -168,7 +168,7 @@ WebView.prototype.setupExperimentalContextMenus = function() {
 
   // Expose <webview>.contextMenus object.
   Object.defineProperty(
-      this.webviewNode,
+      this.element,
       'contextMenus',
       {
         get: createContextMenus(),

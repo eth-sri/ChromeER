@@ -77,7 +77,9 @@ class PepperDeviceTest;
 class SkBitmap;
 struct PP_NetAddress_Private;
 struct FrameMsg_Navigate_Params;
+struct ViewMsg_New_Params;
 struct ViewMsg_PostMessage_Params;
+struct ViewMsg_Resize_Params;
 struct ViewMsg_StopFinding_Params;
 
 namespace base {
@@ -163,27 +165,13 @@ class CONTENT_EXPORT RenderViewImpl
   // |opener_id| will be MSG_ROUTING_NONE. When |swapped_out| is true, the
   // |proxy_routing_id| is specified, so a RenderFrameProxy can be created for
   // this RenderView's main RenderFrame.
-  static RenderViewImpl* Create(int32 opener_id,
-                                bool window_was_created_with_opener,
-                                const RendererPreferences& renderer_prefs,
-                                const WebPreferences& webkit_prefs,
-                                int32 routing_id,
-                                int32 main_frame_routing_id,
-                                int32 surface_id,
-                                int64 session_storage_namespace_id,
-                                const base::string16& frame_name,
-                                bool is_renderer_created,
-                                bool swapped_out,
-                                int32 proxy_routing_id,
-                                bool hidden,
-                                bool never_visible,
-                                int32 next_page_id,
-                                const blink::WebScreenInfo& screen_info);
+  static RenderViewImpl* Create(const ViewMsg_New_Params& params,
+                                bool was_created_by_renderer);
 
   // Used by content_layouttest_support to hook into the creation of
   // RenderViewImpls.
   static void InstallCreateHook(
-      RenderViewImpl* (*create_render_view_impl)(RenderViewImplParams*));
+      RenderViewImpl* (*create_render_view_impl)(const ViewMsg_New_Params&));
 
   // Returns the RenderViewImpl containing the given WebView.
   static RenderViewImpl* FromWebView(blink::WebView* webview);
@@ -427,7 +415,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void unregisterProtocolHandler(const blink::WebString& scheme,
                                          const blink::WebURL& url);
   virtual blink::WebPageVisibilityState visibilityState() const;
-  virtual blink::WebPushClient* webPushClient();
   virtual void draggableRegionsChanged();
 
 #if defined(OS_ANDROID)
@@ -536,9 +523,10 @@ class CONTENT_EXPORT RenderViewImpl
   void InstrumentWillComposite() override;
 
  protected:
-  explicit RenderViewImpl(RenderViewImplParams* params);
+  explicit RenderViewImpl(const ViewMsg_New_Params& params);
 
-  void Initialize(RenderViewImplParams* params);
+  void Initialize(const ViewMsg_New_Params& params,
+                  bool was_created_by_renderer);
   void SetScreenMetricsEmulationParameters(float device_scale_factor,
                                            const gfx::Point& root_layer_offset,
                                            float root_layer_scale) override;
@@ -750,10 +738,6 @@ class CONTENT_EXPORT RenderViewImpl
                                  int pending_history_list_offset,
                                  int32 page_id,
                                  bool is_reload);
-
-  // Make the given |frame| show an empty, unscriptable page.
-  // TODO(creis): Move this to RenderFrame.
-  void NavigateToSwappedOutURL(blink::WebFrame* frame);
 
   // If we initiated a navigation, this function will populate |document_state|
   // with the navigation information saved in OnNavigate().

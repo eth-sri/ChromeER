@@ -10,12 +10,11 @@
     {
       'target_name': 'app_shell_lib',
       'type': 'static_library',
-      'defines!': ['CONTENT_IMPLEMENTATION'],
       'dependencies': [
         'app_shell_version_header',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_prefs_test_support',
-        '<(DEPTH)/components/components.gyp:omaha_query_params',
+        '<(DEPTH)/components/components.gyp:omaha_client',
         '<(DEPTH)/components/components.gyp:pref_registry',
         '<(DEPTH)/components/components.gyp:user_prefs',
         '<(DEPTH)/components/components.gyp:web_cache_renderer',
@@ -31,6 +30,7 @@
         '<(DEPTH)/extensions/extensions.gyp:extensions_common',
         '<(DEPTH)/extensions/extensions.gyp:extensions_renderer',
         '<(DEPTH)/extensions/extensions.gyp:extensions_shell_and_test_pak',
+        '<(DEPTH)/extensions/extensions.gyp:extensions_utility',
         '<(DEPTH)/extensions/extensions_resources.gyp:extensions_resources',
         '<(DEPTH)/extensions/shell/browser/api/api_registration.gyp:shell_api_registration',
         '<(DEPTH)/extensions/shell/common/api/api.gyp:shell_api',
@@ -38,7 +38,6 @@
         '<(DEPTH)/mojo/mojo_base.gyp:mojo_environment_chromium',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
-        '<(DEPTH)/ui/wm/wm.gyp:wm',
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
       ],
       'include_dirs': [
@@ -51,6 +50,8 @@
         'app/shell_main_delegate.h',
         'browser/api/identity/identity_api.cc',
         'browser/api/identity/identity_api.h',
+        'browser/shell_browser_context_keyed_service_factories.cc',
+        'browser/shell_browser_context_keyed_service_factories.h',
         'browser/default_shell_browser_main_delegate.cc',
         'browser/default_shell_browser_main_delegate.h',
         'browser/desktop_controller.cc',
@@ -70,8 +71,6 @@
         'browser/shell_browser_main_parts.h',
         'browser/shell_content_browser_client.cc',
         'browser/shell_content_browser_client.h',
-        'browser/shell_desktop_controller.cc',
-        'browser/shell_desktop_controller.h',
         'browser/shell_device_client.cc',
         'browser/shell_device_client.h',
         'browser/shell_display_info_provider.cc',
@@ -100,6 +99,8 @@
         'browser/shell_runtime_api_delegate.h',
         'browser/shell_special_storage_policy.cc',
         'browser/shell_special_storage_policy.h',
+        'browser/shell_speech_recognition_manager_delegate.cc',
+        'browser/shell_speech_recognition_manager_delegate.h',
         'browser/shell_url_request_context_getter.cc',
         'browser/shell_url_request_context_getter.h',
         'browser/shell_web_contents_modal_dialog_manager.cc',
@@ -113,13 +114,31 @@
         'renderer/shell_content_renderer_client.h',
         'renderer/shell_extensions_renderer_client.cc',
         'renderer/shell_extensions_renderer_client.h',
+        'utility/shell_content_utility_client.cc',
+        'utility/shell_content_utility_client.h',
       ],
       'conditions': [
+        ['use_aura==1', {
+          'dependencies': [
+            '<(DEPTH)/ui/wm/wm.gyp:wm',
+          ],
+          'sources': [
+            'browser/shell_app_window_client_aura.cc',
+            'browser/shell_desktop_controller_aura.cc',
+            'browser/shell_desktop_controller_aura.h',
+            'browser/shell_native_app_window_aura.cc',
+            'browser/shell_native_app_window_aura.h',
+          ],
+        }],
         ['chromeos==1', {
           'dependencies': [
             '<(DEPTH)/chromeos/chromeos.gyp:chromeos',
             '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos',
             '<(DEPTH)/ui/display/display.gyp:display',
+          ],
+          'sources': [
+            'browser/api/shell_gcd/shell_gcd_api.cc',
+            'browser/api/shell_gcd/shell_gcd_api.h',
           ],
         }],
         ['disable_nacl==0 and OS=="linux"', {
@@ -145,7 +164,6 @@
     {
       'target_name': 'app_shell',
       'type': 'executable',
-      'defines!': ['CONTENT_IMPLEMENTATION'],
       'dependencies': [
         'app_shell_lib',
         '<(DEPTH)/extensions/extensions.gyp:extensions_shell_and_test_pak',
@@ -200,11 +218,15 @@
         '../browser/api/socket/socket_apitest.cc',
         '../browser/api/sockets_tcp/sockets_tcp_apitest.cc',
         '../browser/api/sockets_udp/sockets_udp_apitest.cc',
+        '../browser/api/system_cpu/system_cpu_apitest.cc',
+        '../browser/api/system_memory/system_memory_apitest.cc',
+        '../browser/api/system_network/system_network_apitest.cc',
         '../browser/api/usb/usb_apitest.cc',
         '../browser/guest_view/app_view/app_view_apitest.cc',
         '../browser/guest_view/web_view/web_view_apitest.h',
         '../browser/guest_view/web_view/web_view_apitest.cc',
         '../browser/guest_view/web_view/web_view_media_access_apitest.cc',
+        '../browser/updater/update_service_browsertest.cc',
         'browser/shell_browsertest.cc',
         'test/shell_apitest.cc',
         'test/shell_apitest.h',
@@ -240,20 +262,27 @@
         '../test/extensions_unittests_main.cc',
         'browser/api/identity/identity_api_unittest.cc',
         'browser/shell_audio_controller_chromeos_unittest.cc',
-        'browser/shell_desktop_controller_unittest.cc',
-        'browser/shell_nacl_browser_delegate_unittest.cc',
+        'browser/shell_native_app_window_aura_unittest.cc',
         'browser/shell_oauth2_token_service_unittest.cc',
         'common/shell_content_client_unittest.cc'
       ],
       'conditions': [
-        ['disable_nacl==1', {
-          'sources!': [
+        ['disable_nacl==0', {
+          'sources': [
             'browser/shell_nacl_browser_delegate_unittest.cc',
+          ],
+        }],
+        ['use_aura==1', {
+          'sources': [
+            'browser/shell_desktop_controller_aura_unittest.cc',
           ],
         }],
         ['chromeos==1', {
           'dependencies': [
             '<(DEPTH)/chromeos/chromeos.gyp:chromeos_test_support_without_gmock',
+          ],
+          'sources': [
+            'browser/api/shell_gcd/shell_gcd_api_unittest.cc',
           ],
         }],
         ['OS=="win" and win_use_allocator_shim==1', {
@@ -289,8 +318,8 @@
           'action': [
             'python',
             '<(version_py_path)',
-            '-e', 'VERSION_FULL="<(version_full)"',
             '-f', '<(lastchange_path)',
+            '-f', '<(version_path)',
             'common/version.h.in',
             '<@(_outputs)',
           ],

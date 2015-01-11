@@ -25,8 +25,8 @@
 #include "ui/display/types/display_mode.h"
 #include "ui/display/types/display_snapshot.h"
 #include "ui/display/util/display_util.h"
-#include "ui/events/device_data_manager.h"
-#include "ui/events/touchscreen_device.h"
+#include "ui/events/devices/device_data_manager.h"
+#include "ui/events/devices/touchscreen_device.h"
 #include "ui/gfx/display.h"
 #include "ui/wm/core/user_activity_detector.h"
 
@@ -63,13 +63,17 @@ const float kAdditionalDeviceScaleFactorsFor4k[] = {1.25f, 2.0f};
 //  * the area in pixels in ascending order
 //  * refresh rate in descending order
 struct DisplayModeSorter {
+  explicit DisplayModeSorter(bool is_internal) : is_internal(is_internal) {}
+
   bool operator()(const DisplayMode& a, const DisplayMode& b) {
-    gfx::Size size_a_dip = a.GetSizeInDIP();
-    gfx::Size size_b_dip = b.GetSizeInDIP();
+    gfx::Size size_a_dip = a.GetSizeInDIP(is_internal);
+    gfx::Size size_b_dip = b.GetSizeInDIP(is_internal);
     if (size_a_dip.GetArea() == size_b_dip.GetArea())
       return (a.refresh_rate > b.refresh_rate);
     return (size_a_dip.GetArea() < size_b_dip.GetArea());
   }
+
+  bool is_internal;
 };
 
 }  // namespace
@@ -96,8 +100,8 @@ std::vector<DisplayMode> DisplayChangeObserver::GetInternalDisplayModeList(
     display_mode_list.push_back(mode);
   }
 
-  std::sort(
-      display_mode_list.begin(), display_mode_list.end(), DisplayModeSorter());
+  std::sort(display_mode_list.begin(), display_mode_list.end(),
+            DisplayModeSorter(true));
   return display_mode_list;
 }
 
@@ -160,8 +164,8 @@ std::vector<DisplayMode> DisplayChangeObserver::GetExternalDisplayModeList(
     }
   }
 
-  std::sort(
-      display_mode_list.begin(), display_mode_list.end(), DisplayModeSorter());
+  std::sort(display_mode_list.begin(), display_mode_list.end(),
+            DisplayModeSorter(false));
   return display_mode_list;
 }
 
@@ -203,9 +207,19 @@ void DisplayChangeObserver::OnDisplayModeChanged(
   for (size_t i = 0; i < display_states.size(); ++i) {
     const DisplayConfigurator::DisplayState& state = display_states[i];
 
-    if (state.display->type() == ui::DISPLAY_CONNECTION_TYPE_INTERNAL &&
-        gfx::Display::InternalDisplayId() == gfx::Display::kInvalidDisplayID) {
-      gfx::Display::SetInternalDisplayId(state.display->display_id());
+    if (state.display->type() == ui::DISPLAY_CONNECTION_TYPE_INTERNAL) {
+      if (gfx::Display::InternalDisplayId() ==
+          gfx::Display::kInvalidDisplayID) {
+        gfx::Display::SetInternalDisplayId(state.display->display_id());
+      } else {
+#if defined(USE_OZONE)
+        // TODO(dnicoara) Remove when Ozone can properly perform the initial
+        // display configuration.
+        gfx::Display::SetInternalDisplayId(state.display->display_id());
+#endif
+        DCHECK_EQ(gfx::Display::InternalDisplayId(),
+                  state.display->display_id());
+      }
     }
 
     const ui::DisplayMode* mode_info = state.display->current_mode();
@@ -267,7 +281,7 @@ void DisplayChangeObserver::OnDisplayModeChanged(
   // For the purposes of user activity detection, ignore synthetic mouse events
   // that are triggered by screen resizes: http://crbug.com/360634
   ::wm::UserActivityDetector* user_activity_detector =
-      Shell::GetInstance()->user_activity_detector();
+      ::wm::UserActivityDetector::Get();
   if (user_activity_detector)
     user_activity_detector->OnDisplayPowerChanging();
 }

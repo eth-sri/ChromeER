@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "base/files/file_path.h"
+#include "base/files/file_posix_hooks_internal.h"
 #include "base/logging.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/posix/eintr_wrapper.h"
@@ -166,6 +167,14 @@ void File::Info::FromStat(const stat_wrapper_t& stat_info) {
                                   Time::kNanosecondsPerMicrosecond);
 }
 
+// Default implementations of Protect/Unprotect hooks defined as weak symbols
+// where possible.
+void ProtectFileDescriptor(int fd) {
+}
+
+void UnprotectFileDescriptor(int fd) {
+}
+
 // NaCl doesn't implement system calls to open files directly.
 #if !defined(OS_NACL)
 // TODO(erikkay): does it make sense to support FLAG_EXCLUSIVE_* here?
@@ -252,6 +261,7 @@ void File::InitializeUnsafe(const FilePath& name, uint32 flags) {
   async_ = ((flags & FLAG_ASYNC) == FLAG_ASYNC);
   error_details_ = FILE_OK;
   file_.reset(descriptor);
+  ProtectFileDescriptor(descriptor);
 }
 #endif  // !defined(OS_NACL)
 
@@ -264,6 +274,8 @@ PlatformFile File::GetPlatformFile() const {
 }
 
 PlatformFile File::TakePlatformFile() {
+  if (IsValid())
+    UnprotectFileDescriptor(GetPlatformFile());
   return file_.release();
 }
 
@@ -272,6 +284,7 @@ void File::Close() {
     return;
 
   base::ThreadRestrictions::AssertIOAllowed();
+  UnprotectFileDescriptor(GetPlatformFile());
   file_.reset();
 }
 
@@ -483,9 +496,54 @@ File::Error File::OSErrorToFileError(int saved_errno) {
   }
 }
 
+File::MemoryCheckingScopedFD::MemoryCheckingScopedFD() {
+  UpdateChecksum();
+}
+
+File::MemoryCheckingScopedFD::MemoryCheckingScopedFD(int fd) : file_(fd) {
+  UpdateChecksum();
+}
+
+File::MemoryCheckingScopedFD::~MemoryCheckingScopedFD() {}
+
+// static
+void File::MemoryCheckingScopedFD::ComputeMemoryChecksum(
+    unsigned int* out_checksum) const {
+  // Use a single iteration of a linear congruentional generator (lcg) to
+  // provide a cheap checksum unlikely to be accidentally matched by a random
+  // memory corruption.
+
+  // By choosing constants that satisfy the Hull-Duebell Theorem on lcg cycle
+  // length, we insure that each distinct fd value maps to a distinct checksum,
+  // which maximises the utility of our checksum.
+
+  // This code uses "unsigned int" throughout for its defined modular semantics,
+  // which implicitly gives us a divisor that is a power of two.
+
+  const unsigned int kMultiplier = 13035 * 4 + 1;
+  COMPILE_ASSERT(((kMultiplier - 1) & 3) == 0, pred_must_be_multiple_of_four);
+  const unsigned int kIncrement = 1595649551;
+  COMPILE_ASSERT(kIncrement & 1, must_be_coprime_to_powers_of_two);
+
+  *out_checksum =
+      static_cast<unsigned int>(file_.get()) * kMultiplier + kIncrement;
+}
+
+void File::MemoryCheckingScopedFD::Check() const {
+  unsigned int computed_checksum;
+  ComputeMemoryChecksum(&computed_checksum);
+  CHECK_EQ(file_memory_checksum_, computed_checksum) << "corrupted fd memory";
+}
+
+void File::MemoryCheckingScopedFD::UpdateChecksum() {
+  ComputeMemoryChecksum(&file_memory_checksum_);
+}
+
 void File::SetPlatformFile(PlatformFile file) {
-  DCHECK(!file_.is_valid());
+  CHECK(!file_.is_valid());
   file_.reset(file);
+  if (file_.is_valid())
+    ProtectFileDescriptor(GetPlatformFile());
 }
 
 }  // namespace base

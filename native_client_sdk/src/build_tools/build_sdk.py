@@ -25,8 +25,8 @@ import os
 import re
 import sys
 
-if sys.version_info < (2, 6, 0):
-  sys.stderr.write("python 2.6 or later is required run this script\n")
+if sys.version_info < (2, 7, 0):
+  sys.stderr.write("python 2.7 or later is required run this script\n")
   sys.exit(1)
 
 # local includes
@@ -57,7 +57,7 @@ CYGTAR = os.path.join(BUILD_DIR, 'cygtar.py')
 PKGVER = os.path.join(BUILD_DIR, 'package_version', 'package_version.py')
 
 NACLPORTS_URL = 'https://chromium.googlesource.com/external/naclports.git'
-NACLPORTS_REV = '873ca4910a5f9d4206306aacb4ed79c587c6a5f3'
+NACLPORTS_REV = 'e53078c33d99b0b3cbadbbbbb92cccf7a48d5dc1'
 
 GYPBUILD_DIR = 'gypbuild'
 
@@ -146,7 +146,7 @@ def GetPNaClTranslatorLib(tcpath, arch):
 
 def BuildStepDownloadToolchains(toolchains):
   buildbot_common.BuildStep('Running package_version.py')
-  args = [sys.executable, PKGVER, '--exclude', 'arm_trusted']
+  args = [sys.executable, PKGVER, '--mode', 'nacl_core_sdk']
   if 'bionic' in toolchains:
     build_platform = '%s_x86' % getos.GetPlatform()
     args.extend(['--append', os.path.join(build_platform, 'nacl_arm_bionic')])
@@ -457,7 +457,7 @@ def GypNinjaBuild_NaCl(rel_out_dir):
   out_dir_arm = MakeNinjaRelPath(rel_out_dir + '-arm')
   GypNinjaBuild('ia32', gyp_py, nacl_core_sdk_gyp, 'nacl_core_sdk', out_dir)
   GypNinjaBuild('arm', gyp_py, nacl_core_sdk_gyp, 'nacl_core_sdk', out_dir_arm)
-  GypNinjaBuild('ia32', gyp_py, all_gyp, 'ncval_new', out_dir)
+  GypNinjaBuild(None, gyp_py, all_gyp, 'ncval_new', out_dir)
 
   platform = getos.GetPlatform()
   if platform == 'win':
@@ -488,7 +488,7 @@ def GypNinjaBuild_Breakpad(rel_out_dir):
   out_dir = MakeNinjaRelPath(rel_out_dir)
   gyp_file = os.path.join(SRC_DIR, 'breakpad', 'breakpad.gyp')
   build_list = ['dump_syms', 'minidump_dump', 'minidump_stackwalk']
-  GypNinjaBuild('ia32', gyp_py, gyp_file, build_list, out_dir)
+  GypNinjaBuild(None, gyp_py, gyp_file, build_list, out_dir)
 
 
 def GypNinjaBuild_PPAPI(arch, rel_out_dir):
@@ -519,7 +519,7 @@ def GypNinjaBuild(arch, gyp_py_script, gyp_file, targets,
   gyp_defines = []
   if options.mac_sdk:
     gyp_defines.append('mac_sdk=%s' % options.mac_sdk)
-  if arch:
+  if arch is not None:
     gyp_defines.append('target_arch=%s' % arch)
     if arch == 'arm':
       if getos.GetPlatform() == 'linux':
@@ -866,7 +866,7 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
                     'zlib-1.2.3/README')
   src_root = os.path.join(NACLPORTS_DIR, 'out', 'build')
   output_license = os.path.join(out_dir, 'ports', 'LICENSE')
-  GenerateNotice(src_root , output_license, extra_licenses)
+  GenerateNotice(src_root, output_license, extra_licenses)
   readme = os.path.join(out_dir, 'ports', 'README')
   oshelpers.Copy(['-v', os.path.join(SDK_SRC_DIR, 'README.naclports'), readme])
 
@@ -933,7 +933,7 @@ def main(args):
     pass
 
   global options
-  options, args = parser.parse_args(args[1:])
+  options, args = parser.parse_args(args)
   if args:
     parser.error("Unexpected arguments: %s" % str(args))
 
@@ -1068,6 +1068,6 @@ def main(args):
 
 if __name__ == '__main__':
   try:
-    sys.exit(main(sys.argv))
+    sys.exit(main(sys.argv[1:]))
   except KeyboardInterrupt:
     buildbot_common.ErrorExit('build_sdk: interrupted')

@@ -7,11 +7,11 @@
 namespace extensions {
 namespace switches {
 
-// Path to an app to load at startup.
-const char kAppShellAppPath[] = "app-shell-app-path";
-
 // Bounds for the host window to create (i.e. "800x600").
 const char kAppShellHostWindowBounds[] = "app-shell-host-window-bounds";
+
+// ID of an extension CRX to be downloaded from the web store.
+const char kAppShellInstallCrx[] = "app-shell-install-crx";
 
 // SSID of the preferred WiFi network.
 const char kAppShellPreferredNetwork[] = "app-shell-preferred-network";

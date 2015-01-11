@@ -46,9 +46,14 @@ const SkColor kFolderTitleHintTextColor = SkColorSetRGB(0xA0, 0xA0, 0xA0);
 const SkColor kFolderBubbleColor = SK_ColorWHITE;
 // Color of the folder bubble shadow.
 const SkColor kFolderShadowColor = SkColorSetRGB(0xBF, 0xBF, 0xBF);
-const float kFolderBubbleRadius = 22;
-const float kFolderShadowRadius = 22.5;
+const float kFolderBubbleRadius = 23;
+const float kFolderShadowRadius = 23.5;
 const float kFolderShadowOffsetY = 1;
+
+const int kCardShadowBlur = 4;
+const int kCardShadowYOffset = 1;
+const SkColor kCardShadowColor = SkColorSetARGB(0x4C, 0, 0, 0);
+const SkColor kCardBackgroundColor = SK_ColorWHITE;
 
 // Duration in milliseconds for page transition.
 const int kPageTransitionDurationInMs = 180;
@@ -64,6 +69,9 @@ const int kFolderTransitionInDurationMs = 400;
 // Duration in milliseconds for fading out the old page when opening or closing
 // a folder.
 const int kFolderTransitionOutDurationMs = 30;
+
+// The height of the custom page widget when collapsed on the start page.
+const int kCustomPageCollapsedHeight = 78;
 
 // Animation curve used for fading in the target page when opening or closing
 // a folder.

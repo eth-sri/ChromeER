@@ -5,9 +5,14 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 
 #include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "base/barrier_closure.h"
+#include "base/bind.h"
 #include "base/files/file_path.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
@@ -17,12 +22,34 @@
 #include "content/browser/service_worker/service_worker_quota_client.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/service_worker_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/special_storage_policy.h"
 
 namespace content {
+
+namespace {
+
+typedef std::set<std::string> HeaderNameSet;
+base::LazyInstance<HeaderNameSet> g_excluded_header_name_set =
+    LAZY_INSTANCE_INITIALIZER;
+}
+
+void ServiceWorkerContext::AddExcludedHeadersForFetchEvent(
+    const std::set<std::string>& header_names) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  g_excluded_header_name_set.Get().insert(header_names.begin(),
+                                          header_names.end());
+}
+
+bool ServiceWorkerContext::IsExcludedHeaderNameForFetchEvent(
+    const std::string& header_name) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  return g_excluded_header_name_set.Get().find(header_name) !=
+         g_excluded_header_name_set.Get().end();
+}
 
 ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     BrowserContext* browser_context)
@@ -179,26 +206,19 @@ void ServiceWorkerContextWrapper::DidGetAllRegistrationsForGetAllOrigins(
   std::vector<ServiceWorkerUsageInfo> usage_infos;
 
   std::map<GURL, ServiceWorkerUsageInfo> origins;
-  for (std::vector<ServiceWorkerRegistrationInfo>::const_iterator it =
-           registrations.begin();
-       it != registrations.end();
-       ++it) {
-    const ServiceWorkerRegistrationInfo& registration_info = *it;
+  for (const auto& registration_info : registrations) {
     GURL origin = registration_info.pattern.GetOrigin();
 
     ServiceWorkerUsageInfo& usage_info = origins[origin];
     if (usage_info.origin.is_empty())
       usage_info.origin = origin;
     usage_info.scopes.push_back(registration_info.pattern);
+    usage_info.total_size_bytes += registration_info.stored_version_size_bytes;
   }
 
-  for (std::map<GURL, ServiceWorkerUsageInfo>::const_iterator it =
-           origins.begin();
-       it != origins.end();
-       ++it) {
-    usage_infos.push_back(it->second);
+  for (const auto& origin_info_pair : origins) {
+    usage_infos.push_back(origin_info_pair.second);
   }
-
   callback.Run(usage_infos);
 }
 

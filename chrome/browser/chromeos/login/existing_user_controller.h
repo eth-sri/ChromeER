@@ -90,6 +90,7 @@ class ExistingUserController : public LoginDisplay::Delegate,
   virtual void MigrateUserData(const std::string& old_password) override;
   virtual void OnSigninScreenReady() override;
   virtual void OnStartEnterpriseEnrollment() override;
+  virtual void OnStartEnableDebuggingScreen() override;
   virtual void OnStartKioskEnableScreen() override;
   virtual void OnStartKioskAutolaunchScreen() override;
   virtual void ResetPublicSessionAutoLoginTimer() override;
@@ -97,11 +98,6 @@ class ExistingUserController : public LoginDisplay::Delegate,
   virtual void SetDisplayEmail(const std::string& email) override;
   virtual void ShowWrongHWIDScreen() override;
   virtual void Signout() override;
-
-  void LoginAsRetailModeUser();
-  void LoginAsGuest();
-  void LoginAsPublicSession(const UserContext& user_context);
-  void LoginAsKioskApp(const std::string& app_id, bool diagnostic_mode);
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -138,6 +134,11 @@ class ExistingUserController : public LoginDisplay::Delegate,
   friend class ExistingUserControllerAutoLoginTest;
   friend class ExistingUserControllerPublicSessionTest;
   friend class MockLoginPerformerDelegate;
+
+  void LoginAsRetailModeUser();
+  void LoginAsGuest();
+  void LoginAsPublicSession(const UserContext& user_context);
+  void LoginAsKioskApp(const std::string& app_id, bool diagnostic_mode);
 
   // Retrieve public session auto-login policy and update the timer.
   void ConfigurePublicSessionAutoLogin();
@@ -191,6 +192,9 @@ class ExistingUserController : public LoginDisplay::Delegate,
 
   // Shows "reset device" screen.
   void ShowResetScreen();
+
+  // Shows "enable developer features" screen.
+  void ShowEnableDebuggingScreen();
 
   // Shows kiosk feature enable screen.
   void ShowKioskEnableScreen();

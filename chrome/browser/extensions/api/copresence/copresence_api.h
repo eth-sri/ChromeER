@@ -24,10 +24,14 @@ class CopresenceManager;
 class WhispernetClient;
 }
 
+namespace gcm {
+class GCMDriver;
+}
+
 namespace extensions {
 
-class CopresenceService : public BrowserContextKeyedAPI,
-                          public copresence::CopresenceDelegate {
+class CopresenceService final : public BrowserContextKeyedAPI,
+                                public copresence::CopresenceDelegate {
  public:
   explicit CopresenceService(content::BrowserContext* context);
   ~CopresenceService() override;
@@ -47,6 +51,11 @@ class CopresenceService : public BrowserContextKeyedAPI,
 
   void set_api_key(const std::string& app_id,
                    const std::string& api_key);
+
+  std::string auth_token() const {
+    return auth_token_;
+  }
+
   void set_auth_token(const std::string& token);
 
   // Manager override for testing.
@@ -63,11 +72,12 @@ class CopresenceService : public BrowserContextKeyedAPI,
   void HandleMessages(const std::string& app_id,
                       const std::string& subscription_id,
                       const std::vector<copresence::Message>& message) override;
+  void HandleStatusUpdate(copresence::CopresenceStatus status) override;
   net::URLRequestContextGetter* GetRequestContext() const override;
   const std::string GetPlatformVersionString() const override;
   const std::string GetAPIKey(const std::string& app_id) const override;
-  const std::string GetAuthToken() const override;
   copresence::WhispernetClient* GetWhispernetClient() override;
+  gcm::GCMDriver* GetGCMDriver() override;
 
   // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "CopresenceService"; }
@@ -120,7 +130,7 @@ class CopresenceSetAuthTokenFunction : public ChromeUIThreadExtensionFunction {
 
  protected:
   virtual ~CopresenceSetAuthTokenFunction() {}
-  virtual ExtensionFunction::ResponseAction Run() override;
+  ExtensionFunction::ResponseAction Run() override;
 };
 
 }  // namespace extensions

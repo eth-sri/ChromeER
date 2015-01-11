@@ -37,9 +37,6 @@ const char kDisableBootAnimation[] = "disable-boot-animation";
 // Disables the ChromeOS demo.
 const char kDisableDemoMode[] = "disable-demo-mode";
 
-// Disable Easy sign-in.
-const char kDisableEasySignin[] = "disable-easy-signin";
-
 // Disable HID-detection OOBE screen.
 const char kDisableHIDDetectionOnOOBE[] = "disable-hid-detection-on-oobe";
 
@@ -241,6 +238,10 @@ const char kSmsTestMessages[] = "sms-test-messages";
 // This option is for testing the chromeos build of chrome on the desktop only.
 const char kStubCrosSettings[] = "stub-cros-settings";
 
+// Indicates that the system is running in dev mode. The dev mode probing is
+// done by session manager.
+const char kSystemDevMode[] = "system-developer-mode";
+
 // Enables animated transitions during first-run tutorial.
 const char kEnableFirstRunUITransitions[] = "enable-first-run-ui-transitions";
 
@@ -259,6 +260,10 @@ const char kGoldenScreenshotsDir[] = "golden-screenshots-dir";
 
 // Screenshot testing: specifies the directoru where artifacts will be stored.
 const char kArtifactsDir[] = "artifacts-dir";
+
+// Bypass proxy for captive portal authorization.
+const char kEnableCaptivePortalBypassProxy[] =
+    "enable-captive-portal-bypass-proxy";
 
 }  // namespace switches
 }  // namespace chromeos

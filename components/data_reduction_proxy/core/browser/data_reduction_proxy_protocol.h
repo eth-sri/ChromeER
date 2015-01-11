@@ -25,28 +25,30 @@ class GURL;
 
 namespace data_reduction_proxy {
 
+class DataReductionProxyEventStore;
 class DataReductionProxyParams;
 
 // Decides whether to mark the data reduction proxy as temporarily bad and
 // put it on the proxy retry list. Returns true if the request should be
-// retried. Sets |override_response_headers| to redirect if so. Returns
-// the DataReductionProxyBypassType (if not NULL).
+// retried. Updates the load flags in |request| for some bypass types, e.g.,
+// "block-once". Returns the DataReductionProxyBypassType (if not NULL).
 bool MaybeBypassProxyAndPrepareToRetry(
     const DataReductionProxyParams* params,
     net::URLRequest* request,
-    const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
-    DataReductionProxyBypassType* proxy_bypass_type);
+    DataReductionProxyBypassType* proxy_bypass_type,
+    DataReductionProxyEventStore* event_store);
 
-// Configure |result| to proceed directly to the origin if |result|'s current
-// proxy is the data reduction proxy, the
-// |net::LOAD_BYPASS_DATA_REDUCTION_PROXY| |load_flag| is set, and the
-// DataCompressionProxyCriticalBypass Finch trial is set.
-// This handler is intended to be invoked only by
-// |ChromeNetworkDelegate.NotifyResolveProxy|.
+// Adds data reduction proxies to |result|, where applicable, if result
+// otherwise uses a direct connection for |url|, the proxy service's effective
+// proxy configuration is not the data reduction proxy configuration, and the
+// data reduction proxy is not bypassed. Also, configures |result| to proceed
+// directly to the origin if |result|'s current proxy is the data
+// reduction proxy, the |net::LOAD_BYPASS_DATA_REDUCTION_PROXY| |load_flag| is
+// set, and the DataCompressionProxyCriticalBypass Finch trial is set.
 void OnResolveProxyHandler(const GURL& url,
                            int load_flags,
                            const net::ProxyConfig& data_reduction_proxy_config,
+                           const net::ProxyConfig& proxy_service_proxy_config,
                            const net::ProxyRetryInfoMap& proxy_retry_info,
                            const DataReductionProxyParams* params,
                            net::ProxyInfo* result);
@@ -69,7 +71,7 @@ void OverrideResponseAsRedirect(
 // |data_reduction_proxies.second| to the retry list only if |bypass_all| is
 // true. Visible as part of the public API for testing.
 void MarkProxiesAsBadUntil(net::URLRequest* request,
-                           base::TimeDelta& bypass_duration,
+                           const base::TimeDelta& bypass_duration,
                            bool bypass_all,
                            const std::pair<GURL, GURL>& data_reduction_proxies);
 

@@ -193,8 +193,22 @@ import org.chromium.content_public.browser.WebContents;
      * exiting-transition stylesheets.
      */
     @Override
-    public void beginExitTransition(String cssSelector) {
-        nativeBeginExitTransition(mNativeWebContentsAndroid, cssSelector);
+    public void beginExitTransition(String cssSelector, boolean exitToNativeApp) {
+        nativeBeginExitTransition(mNativeWebContentsAndroid, cssSelector, exitToNativeApp);
+    }
+
+    /**
+     * Hide transition elements.
+     */
+    public void hideTransitionElements(String cssSelector) {
+        nativeHideTransitionElements(mNativeWebContentsAndroid, cssSelector);
+    }
+
+    /**
+     * Show transition elements.
+     */
+    public void showTransitionElements(String cssSelector) {
+        nativeShowTransitionElements(mNativeWebContentsAndroid, cssSelector);
     }
 
     /**
@@ -203,6 +217,14 @@ import org.chromium.content_public.browser.WebContents;
     @Override
     public void clearNavigationTransitionData() {
         nativeClearNavigationTransitionData(mNativeWebContentsAndroid);
+    }
+
+    /**
+     * Fetch transition elements.
+     */
+    @Override
+    public void fetchTransitionElements(String url) {
+        nativeFetchTransitionElements(mNativeWebContentsAndroid, url);
     }
 
     @CalledByNative
@@ -234,6 +256,21 @@ import org.chromium.content_public.browser.WebContents;
         }
     }
 
+    @CalledByNative
+    private void addNavigationTransitionElements(String name, int x, int y, int width, int height) {
+        if (mNavigationTransitionDelegate != null) {
+            mNavigationTransitionDelegate.addNavigationTransitionElements(
+                    name, x, y, width, height);
+        }
+    }
+
+    @CalledByNative
+    private void onTransitionElementsFetched(String cssSelector) {
+        if (mNavigationTransitionDelegate != null) {
+            mNavigationTransitionDelegate.onTransitionElementsFetched(cssSelector);
+        }
+    }
+
     @Override
     public void evaluateJavaScript(String script, JavaScriptCallback callback) {
         nativeEvaluateJavaScript(mNativeWebContentsAndroid, script, callback);
@@ -243,13 +280,6 @@ import org.chromium.content_public.browser.WebContents;
     private static void onEvaluateJavaScriptResult(
             String jsonResult, JavaScriptCallback callback) {
         callback.handleJavaScriptResult(jsonResult);
-    }
-
-    @Override
-    public void postMessageToFrame(String frameName, String message,
-            String sourceOrigin, String targetOrigin) {
-        nativePostMessageToFrame(mNativeWebContentsAndroid, frameName, message, sourceOrigin,
-                targetOrigin);
     }
 
     private native String nativeGetTitle(long nativeWebContentsAndroid);
@@ -282,10 +312,13 @@ import org.chromium.content_public.browser.WebContents;
     private native void nativeSetupTransitionView(long nativeWebContentsAndroid,
             String markup);
     private native void nativeBeginExitTransition(long nativeWebContentsAndroid,
+            String cssSelector, boolean exitToNativeApp);
+    private native void nativeHideTransitionElements(long nativeWebContentsAndroid,
+            String cssSelector);
+    private native void nativeShowTransitionElements(long nativeWebContentsAndroid,
             String cssSelector);
     private native void nativeClearNavigationTransitionData(long nativeWebContentsAndroid);
+    private native void nativeFetchTransitionElements(long nativeWebContentsAndroid, String url);
     private native void nativeEvaluateJavaScript(long nativeWebContentsAndroid,
             String script, JavaScriptCallback callback);
-    private native void nativePostMessageToFrame(long nativeWebContentsAndroid, String frameId,
-            String message, String sourceOrigin, String targetOrigin);
 }

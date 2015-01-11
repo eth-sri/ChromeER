@@ -84,7 +84,7 @@ Status GetWebCryptoUsagesFromJwkKeyOps(const base::ListValue* key_ops,
   for (size_t i = 0; i < key_ops->GetSize(); ++i) {
     std::string key_op;
     if (!key_ops->GetString(i, &key_op)) {
-      return Status::ErrorJwkPropertyWrongType(
+      return Status::ErrorJwkMemberWrongType(
           base::StringPrintf("key_ops[%d]", static_cast<int>(i)), "string");
     }
 
@@ -137,6 +137,13 @@ blink::WebCryptoAlgorithm CreateRsaHashedImportAlgorithm(
       id, new blink::WebCryptoRsaHashedImportParams(CreateAlgorithm(hash_id)));
 }
 
+blink::WebCryptoAlgorithm CreateEcImportAlgorithm(
+    blink::WebCryptoAlgorithmId id,
+    blink::WebCryptoNamedCurve named_curve) {
+  return blink::WebCryptoAlgorithm::adoptParamsAndCreate(
+      id, new blink::WebCryptoEcKeyImportParams(named_curve));
+}
+
 bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,
                        blink::WebCryptoKeyUsageMask b) {
   return (a & b) == b;
@@ -176,7 +183,7 @@ Status GetAesKeyGenLengthInBits(const blink::WebCryptoAesKeyGenParams* params,
   if (*keylen_bits == 192)
     return Status::ErrorAes192BitUnsupported();
 
-  return Status::ErrorGenerateKeyLength();
+  return Status::ErrorGenerateAesKeyLength();
 }
 
 Status GetHmacKeyGenLengthInBits(const blink::WebCryptoHmacKeyGenParams* params,
@@ -196,14 +203,16 @@ Status GetHmacKeyGenLengthInBits(const blink::WebCryptoHmacKeyGenParams* params,
     }
   }
 
+  // TODO(eroman): Non multiple of 8 bit keylengths should be allowed:
+  // http://crbug.com/431085.
   if (params->optionalLengthBits() % 8)
-    return Status::ErrorGenerateKeyLength();
+    return Status::ErrorGenerateHmacKeyLengthPartialByte();
 
   *keylen_bits = params->optionalLengthBits();
 
-  // TODO(eroman): NSS fails when generating a zero-length secret key.
+  // Zero-length HMAC keys are disallowed by the spec.
   if (*keylen_bits == 0)
-    return Status::ErrorGenerateKeyLength();
+    return Status::ErrorGenerateHmacKeyLengthZero();
 
   return Status::Success();
 }
@@ -241,8 +250,7 @@ Status GetRsaKeyGenParameters(
   }
 
   if (!BigIntegerToUint(params->publicExponent().data(),
-                        params->publicExponent().size(),
-                        public_exponent)) {
+                        params->publicExponent().size(), public_exponent)) {
     return Status::ErrorGenerateKeyPublicExponent();
   }
 

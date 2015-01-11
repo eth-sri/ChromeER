@@ -16,7 +16,7 @@ ChromeBrowserMainExtraPartsViews::ChromeBrowserMainExtraPartsViews() {
 }
 
 ChromeBrowserMainExtraPartsViews::~ChromeBrowserMainExtraPartsViews() {
-  SetConstrainedWindowViewsClient(scoped_ptr<ConstrainedWindowViewsClient>());
+  constrained_window::SetConstrainedWindowViewsClient(nullptr);
 }
 
 void ChromeBrowserMainExtraPartsViews::ToolkitInitialized() {

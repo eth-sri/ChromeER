@@ -125,7 +125,7 @@ base::DictionaryValue* ConvertDisplayModeToValue(int64 display_id,
                                                  const ash::DisplayMode& mode) {
   bool is_internal = GetDisplayManager()->IsInternalDisplayId(display_id);
   base::DictionaryValue* result = new base::DictionaryValue();
-  gfx::Size size_dip = mode.GetSizeInDIP();
+  gfx::Size size_dip = mode.GetSizeInDIP(is_internal);
   result->SetInteger("width", size_dip.width());
   result->SetInteger("height", size_dip.height());
   result->SetInteger("originalWidth", mode.size.width());
@@ -145,18 +145,14 @@ base::DictionaryValue* ConvertDisplayModeToValue(int64 display_id,
 }  // namespace
 
 DisplayOptionsHandler::DisplayOptionsHandler() {
-#if !defined(USE_ATHENA)
   // ash::Shell doesn't exist in Athena.
   // See: http://crbug.com/416961
   ash::Shell::GetInstance()->display_controller()->AddObserver(this);
-#endif
 }
 
 DisplayOptionsHandler::~DisplayOptionsHandler() {
-#if !defined(USE_ATHENA)
   // ash::Shell doesn't exist in Athena.
   ash::Shell::GetInstance()->display_controller()->RemoveObserver(this);
-#endif
 }
 
 void DisplayOptionsHandler::GetLocalizedValues(
@@ -208,11 +204,9 @@ void DisplayOptionsHandler::GetLocalizedValues(
 
 void DisplayOptionsHandler::InitializePage() {
   DCHECK(web_ui());
-#if !defined(USE_ATHENA)
   web_ui()->CallJavascriptFunction(
       "options.BrowserOptions.enableDisplayButton",
       base::FundamentalValue(true));
-#endif
 }
 
 void DisplayOptionsHandler::RegisterMessages() {

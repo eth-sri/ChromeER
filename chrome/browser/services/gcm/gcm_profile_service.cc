@@ -10,15 +10,13 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/gcm_driver/gcm_driver.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 
 #if defined(OS_ANDROID)
 #include "components/gcm_driver/gcm_driver_android.h"
 #else
 #include "base/bind.h"
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/services/gcm/chromeos_gcm_connection_observer.h"
-#endif
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/services/gcm/gcm_account_tracker.h"
@@ -165,11 +163,6 @@ GCMProfileService::GCMProfileService(
       profile_->GetPath().Append(chrome::kGCMStoreDirname),
       profile_->GetRequestContext());
 
-#if defined(OS_CHROMEOS)
-  chromeos_connection_observer_.reset(new gcm::ChromeOSGCMConnectionObserver);
-  driver_->AddConnectionObserver(chromeos_connection_observer_.get());
-#endif
-
   identity_observer_.reset(new IdentityObserver(profile, driver_.get()));
 }
 #endif  // defined(OS_ANDROID)
@@ -182,33 +175,11 @@ GCMProfileService::GCMProfileService()
 GCMProfileService::~GCMProfileService() {
 }
 
-void GCMProfileService::AddAppHandler(const std::string& app_id,
-                                      GCMAppHandler* handler) {
-  if (driver_)
-    driver_->AddAppHandler(app_id, handler);
-}
-
-void GCMProfileService::RemoveAppHandler(const std::string& app_id) {
-  if (driver_)
-    driver_->RemoveAppHandler(app_id);
-}
-
-void GCMProfileService::Register(const std::string& app_id,
-                                 const std::vector<std::string>& sender_ids,
-                                 const GCMDriver::RegisterCallback& callback) {
-  if (driver_)
-    driver_->Register(app_id, sender_ids, callback);
-}
-
 void GCMProfileService::Shutdown() {
 #if !defined(OS_ANDROID)
   identity_observer_.reset();
 #endif  // !defined(OS_ANDROID)
   if (driver_) {
-#if defined(OS_CHROMEOS)
-    driver_->RemoveConnectionObserver(chromeos_connection_observer_.get());
-    chromeos_connection_observer_.reset();
-#endif
     driver_->Shutdown();
     driver_.reset();
   }

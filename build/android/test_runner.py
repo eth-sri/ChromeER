@@ -21,7 +21,10 @@ from pylib import constants
 from pylib import forwarder
 from pylib import ports
 from pylib.base import base_test_result
+from pylib.base import environment_factory
 from pylib.base import test_dispatcher
+from pylib.base import test_instance_factory
+from pylib.base import test_run_factory
 from pylib.gtest import gtest_config
 from pylib.gtest import setup as gtest_setup
 from pylib.gtest import test_options as gtest_test_options
@@ -45,9 +48,6 @@ from pylib.utils import reraiser_thread
 from pylib.utils import run_tests_helper
 
 
-HOST_TESTS = ['junit', 'python']
-
-
 def AddCommonOptions(option_parser):
   """Adds all common options to |option_parser|."""
 
@@ -64,6 +64,11 @@ def AddCommonOptions(option_parser):
   group.add_option('--build-directory', dest='build_directory',
                    help=('Path to the directory in which build files are'
                          ' located (should not include build type)'))
+  group.add_option('--output-directory', dest='output_directory',
+                   help=('Path to the directory in which build files are'
+                         ' located (must include build type). This will take'
+                         ' precedence over --debug, --release and'
+                         ' --build-directory'))
   group.add_option('--num_retries', dest='num_retries', type='int',
                    default=2,
                    help=('Number of retries for a test before '
@@ -78,15 +83,37 @@ def AddCommonOptions(option_parser):
                    dest='flakiness_dashboard_server',
                    help=('Address of the server that is hosting the '
                          'Chrome for Android flakiness dashboard.'))
+  group.add_option('--enable-platform-mode', action='store_true',
+                   help=('Run the test scripts in platform mode, which '
+                         'conceptually separates the test runner from the '
+                         '"device" (local or remote, real or emulated) on '
+                         'which the tests are running. [experimental]'))
+  group.add_option('-e', '--environment', default='local',
+                   help=('Test environment to run in. Must be one of: %s' %
+                         ', '.join(constants.VALID_ENVIRONMENTS)))
+  group.add_option('--adb-path',
+                   help=('Specify the absolute path of the adb binary that '
+                         'should be used.'))
   option_parser.add_option_group(group)
 
 
-def ProcessCommonOptions(options):
+def ProcessCommonOptions(options, error_func):
   """Processes and handles all common options."""
   run_tests_helper.SetLogLevel(options.verbose_count)
   constants.SetBuildType(options.build_type)
   if options.build_directory:
     constants.SetBuildDirectory(options.build_directory)
+  if options.output_directory:
+    constants.SetOutputDirectort(options.output_directory)
+  if options.adb_path:
+    constants.SetAdbPath(options.adb_path)
+  # Some things such as Forwarder require ADB to be in the environment path.
+  adb_dir = os.path.dirname(constants.GetAdbPath())
+  if adb_dir and adb_dir not in os.environ['PATH'].split(os.pathsep):
+    os.environ['PATH'] = adb_dir + os.pathsep + os.environ['PATH']
+  if options.environment not in constants.VALID_ENVIRONMENTS:
+    error_func('--environment must be one of: %s' %
+               ', '.join(constants.VALID_ENVIRONMENTS))
 
 
 def AddDeviceOptions(option_parser):
@@ -98,11 +125,6 @@ def AddDeviceOptions(option_parser):
                    dest='tool',
                    help=('Run the test under a tool '
                          '(use --tool help to list them)'))
-  group.add_option('--skip-deps-push', dest='push_deps',
-                   action='store_false', default=True,
-                   help=('Do not push dependencies to the device. '
-                         'Use this at own risk for speeding up test '
-                         'execution on local machine.'))
   group.add_option('-d', '--device', dest='test_device',
                    help=('Target device for the test suite '
                          'to run on.'))
@@ -259,6 +281,11 @@ def AddInstrumentationTestOptions(option_parser):
   option_parser.add_option('--device-flags', dest='device_flags', default='',
                            help='The relative filepath to a file containing '
                                 'command-line flags to set on the device')
+  option_parser.add_option('--isolate_file_path',
+                           '--isolate-file-path',
+                           dest='isolate_file_path',
+                           help='.isolate file path to override the default '
+                                'path')
 
 
 def ProcessInstrumentationOptions(options, error_func):
@@ -308,7 +335,6 @@ def ProcessInstrumentationOptions(options, error_func):
   return instrumentation_test_options.InstrumentationOptions(
       options.tool,
       options.cleanup_test_files,
-      options.push_deps,
       options.annotations,
       options.exclude_annotations,
       options.test_filter,
@@ -322,7 +348,8 @@ def ProcessInstrumentationOptions(options, error_func):
       options.test_apk_jar_path,
       options.test_runner,
       options.test_support_apk_path,
-      options.device_flags
+      options.device_flags,
+      options.isolate_file_path
       )
 
 
@@ -387,7 +414,6 @@ def ProcessUIAutomatorOptions(options, error_func):
   return uiautomator_test_options.UIAutomatorOptions(
       options.tool,
       options.cleanup_test_files,
-      options.push_deps,
       options.annotations,
       options.exclude_annotations,
       options.test_filter,
@@ -520,6 +546,14 @@ def AddPerfTestOptions(option_parser):
       '--output-json-list',
       help='Write a simple list of names from --steps into the given file.')
   option_parser.add_option(
+      '--collect-chartjson-data',
+      action='store_true',
+      help='Cache the chartjson output from each step for later use.')
+  option_parser.add_option(
+      '--output-chartjson-data',
+      default='',
+      help='Write out chartjson into the given file.')
+  option_parser.add_option(
       '--print-step',
       help='The name of a previously executed perf step to print.')
   option_parser.add_option(
@@ -559,7 +593,8 @@ def ProcessPerfTestOptions(options, args, error_func):
   return perf_test_options.PerfOptions(
       options.steps, options.flaky_steps, options.output_json_list,
       options.print_step, options.no_timeout, options.test_filter,
-      options.dry_run, single_step)
+      options.dry_run, single_step, options.collect_chartjson_data,
+      options.output_chartjson_data)
 
 
 def AddPythonTestOptions(option_parser):
@@ -591,7 +626,6 @@ def _RunGTests(options, devices):
     gtest_options = gtest_test_options.GTestOptions(
         options.tool,
         options.cleanup_test_files,
-        options.push_deps,
         options.test_filter,
         options.run_disabled,
         options.test_arguments,
@@ -647,7 +681,8 @@ def _RunInstrumentationTests(options, error_func, devices):
   exit_code = 0
 
   if options.run_java_tests:
-    runner_factory, tests = instrumentation_setup.Setup(instrumentation_options)
+    runner_factory, tests = instrumentation_setup.Setup(
+        instrumentation_options, devices)
 
     test_results, exit_code = test_dispatcher.RunTests(
         tests, runner_factory, devices, shard=True, test_timeout=None,
@@ -740,6 +775,10 @@ def _RunPerfTests(options, args, error_func):
   if perf_options.output_json_list:
     return perf_test_runner.OutputJsonList(
         perf_options.steps, perf_options.output_json_list)
+
+  if perf_options.output_chartjson_data:
+    return perf_test_runner.OutputChartjson(
+        perf_options.print_step, perf_options.output_chartjson_data)
 
   # Just print the results from a single previously executed step.
   if perf_options.print_step:
@@ -840,9 +879,12 @@ def RunTestsCommand(command, options, args, option_parser):
       option_parser.error('Unrecognized arguments: %s' % (' '.join(args)))
       return constants.ERROR_EXIT_CODE
 
-  ProcessCommonOptions(options)
+  ProcessCommonOptions(options, option_parser.error)
 
-  if command in HOST_TESTS:
+  if options.enable_platform_mode:
+    return RunTestsInPlatformMode(command, options, option_parser)
+
+  if command in constants.LOCAL_MACHINE_TESTS:
     devices = []
   else:
     devices = _GetAttachedDevices(options.test_device)
@@ -869,6 +911,35 @@ def RunTestsCommand(command, options, args, option_parser):
     return _RunPythonTests(options, option_parser.error)
   else:
     raise Exception('Unknown test type.')
+
+
+_SUPPORTED_IN_PLATFORM_MODE = [
+  # TODO(jbudorick): Add support for more test types.
+  'gtest',
+]
+
+
+def RunTestsInPlatformMode(command, options, option_parser):
+
+  if command not in _SUPPORTED_IN_PLATFORM_MODE:
+    option_parser.error('%s is not yet supported in platform mode' % command)
+
+  with environment_factory.CreateEnvironment(
+      command, options, option_parser.error) as env:
+    with test_instance_factory.CreateTestInstance(
+        command, options, option_parser.error) as test:
+      with test_run_factory.CreateTestRun(
+          options, env, test, option_parser.error) as test_run:
+        results = test_run.RunTests()
+
+        report_results.LogFull(
+            results=results,
+            test_type=test.TestType(),
+            test_package=test_run.TestPackage(),
+            annotation=options.annotations,
+            flakiness_server=options.flakiness_dashboard_server)
+
+  return results
 
 
 def HelpCommand(command, _options, args, option_parser):

@@ -181,7 +181,7 @@ void MigrateChromiumShortcutsCallback() {
 // be retrieved in the HKCR registry subkey method implemented below. We call
 // AssocQueryString with the new Win8-only flag ASSOCF_IS_PROTOCOL instead.
 base::string16 GetAppForProtocolUsingAssocQuery(const GURL& url) {
-  base::string16 url_scheme = base::ASCIIToWide(url.scheme());
+  base::string16 url_scheme = base::ASCIIToUTF16(url.scheme());
   // Don't attempt to query protocol association on an empty string.
   if (url_scheme.empty())
     return base::string16();
@@ -206,9 +206,9 @@ base::string16 GetAppForProtocolUsingAssocQuery(const GURL& url) {
 }
 
 base::string16 GetAppForProtocolUsingRegistry(const GURL& url) {
-  base::string16 url_spec = base::ASCIIToWide(url.possibly_invalid_spec());
+  base::string16 url_spec = base::ASCIIToUTF16(url.possibly_invalid_spec());
   const base::string16 cmd_key_path =
-      base::ASCIIToWide(url.scheme() + "\\shell\\open\\command");
+      base::ASCIIToUTF16(url.scheme() + "\\shell\\open\\command");
   base::win::RegKey cmd_key(HKEY_CLASSES_ROOT,
                             cmd_key_path.c_str(),
                             KEY_READ);
@@ -476,7 +476,7 @@ int ShellIntegration::MigrateShortcutsInPathInternal(
     base::win::ScopedComPtr<IPersistFile> persist_file;
     if (FAILED(shell_link.CreateInstance(CLSID_ShellLink, NULL,
                                          CLSCTX_INPROC_SERVER)) ||
-        FAILED(persist_file.QueryFrom(shell_link)) ||
+        FAILED(persist_file.QueryFrom(shell_link.get())) ||
         FAILED(persist_file->Load(shortcut.value().c_str(), STGM_READ))) {
       DLOG(WARNING) << "Failed loading shortcut at " << shortcut.value();
       continue;
@@ -489,9 +489,9 @@ int ShellIntegration::MigrateShortcutsInPathInternal(
     // Validate the existing app id for the shortcut.
     base::win::ScopedComPtr<IPropertyStore> property_store;
     propvariant.Reset();
-    if (FAILED(property_store.QueryFrom(shell_link)) ||
-        property_store->GetValue(PKEY_AppUserModel_ID,
-                                 propvariant.Receive()) != S_OK) {
+    if (FAILED(property_store.QueryFrom(shell_link.get())) ||
+        property_store->GetValue(PKEY_AppUserModel_ID, propvariant.Receive()) !=
+            S_OK) {
       // When in doubt, prefer not updating the shortcut.
       NOTREACHED();
       continue;

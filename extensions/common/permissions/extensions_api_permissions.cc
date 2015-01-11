@@ -73,13 +73,15 @@ std::vector<APIPermissionInfo*> ExtensionsAPIPermissions::GetAllPermissions()
       {APIPermission::kU2fDevices, "u2fDevices", APIPermissionInfo::kFlagNone,
        IDS_EXTENSION_PROMPT_WARNING_U2F_DEVICES,
        PermissionMessage::kU2fDevices},
-      {APIPermission::kUsb, "usb", APIPermissionInfo::kFlagNone,
-       IDS_EXTENSION_PROMPT_WARNING_USB, PermissionMessage::kUsb},
+      {APIPermission::kUsb, "usb", APIPermissionInfo::kFlagNone},
       {APIPermission::kUsbDevice, "usbDevices", APIPermissionInfo::kFlagNone, 0,
        PermissionMessage::kNone, &CreateAPIPermission<UsbDevicePermission>},
       {APIPermission::kVideoCapture, "videoCapture",
        APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_VIDEO_CAPTURE,
        PermissionMessage::kVideoCapture},
+      {APIPermission::kVpnProvider, "vpnProvider",
+       APIPermissionInfo::kFlagCannotBeOptional,
+       IDS_EXTENSION_PROMPT_WARNING_VPN, PermissionMessage::kVpnProvider},
       // NOTE(kalman): This is provided by a manifest property but needs to
       // appear in the install permission dialogue, so we need a fake
       // permission for it. See http://crbug.com/247857.

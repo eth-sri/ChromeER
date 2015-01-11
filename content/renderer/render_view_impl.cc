@@ -22,7 +22,6 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/process/kill.h"
 #include "base/process/process.h"
 #include "base/strings/string_number_conversions.h"
@@ -93,7 +92,6 @@
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
-#include "content/renderer/render_view_impl_params.h"
 #include "content/renderer/render_view_mouse_lock_dispatcher.h"
 #include "content/renderer/render_widget_fullscreen_pepper.h"
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
@@ -334,7 +332,7 @@ const int kDelaySecondsForContentStateSync = 1;
 const size_t kContentIntentDelayMilliseconds = 700;
 #endif
 
-static RenderViewImpl* (*g_create_render_view_impl)(RenderViewImplParams*) =
+static RenderViewImpl* (*g_create_render_view_impl)(const ViewMsg_New_Params&) =
     NULL;
 
 // static
@@ -642,13 +640,13 @@ void ApplyFontsFromMap(const ScriptFontFamilyMap& map,
 
 }  // namespace
 
-RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
+RenderViewImpl::RenderViewImpl(const ViewMsg_New_Params& params)
     : RenderWidget(blink::WebPopupTypeNone,
-                   params->screen_info,
-                   params->swapped_out,
-                   params->hidden,
-                   params->never_visible),
-      webkit_preferences_(params->webkit_prefs),
+                   params.initial_size.screen_info,
+                   params.swapped_out,
+                   params.hidden,
+                   params.never_visible),
+      webkit_preferences_(params.web_preferences),
       send_content_state_immediately_(false),
       enabled_bindings_(0),
       send_preferred_size_changes_(false),
@@ -658,7 +656,7 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       suppress_dialogs_until_swap_out_(false),
       page_id_(-1),
       last_page_id_sent_to_browser_(-1),
-      next_page_id_(params->next_page_id),
+      next_page_id_(params.next_page_id),
       history_list_offset_(-1),
       history_list_length_(0),
       frames_in_progress_(0),
@@ -684,21 +682,23 @@ RenderViewImpl::RenderViewImpl(RenderViewImplParams* params)
       pepper_last_mouse_event_target_(NULL),
 #endif
       enumeration_completion_id_(0),
-      session_storage_namespace_id_(params->session_storage_namespace_id),
+      session_storage_namespace_id_(params.session_storage_namespace_id),
       next_snapshot_id_(0) {
 }
 
-void RenderViewImpl::Initialize(RenderViewImplParams* params) {
-  routing_id_ = params->routing_id;
-  surface_id_ = params->surface_id;
-  if (params->opener_id != MSG_ROUTING_NONE && params->is_renderer_created)
-    opener_id_ = params->opener_id;
+void RenderViewImpl::Initialize(
+    const ViewMsg_New_Params& params,
+    bool was_created_by_renderer) {
+  routing_id_ = params.view_id;
+  surface_id_ = params.surface_id;
+  if (params.opener_route_id != MSG_ROUTING_NONE && was_created_by_renderer)
+    opener_id_ = params.opener_route_id;
 
   // Ensure we start with a valid next_page_id_ from the browser.
   DCHECK_GE(next_page_id_, 0);
 
   main_render_frame_.reset(RenderFrameImpl::Create(
-      this, params->main_frame_routing_id));
+      this, params.main_frame_routing_id));
   // The main frame WebLocalFrame object is closed by
   // RenderFrameImpl::frameDetached().
   WebLocalFrame* web_frame = WebLocalFrame::create(main_render_frame_.get());
@@ -719,8 +719,10 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
           : net::android::GetTelephonyNetworkCountryIso();
   content_detectors_.push_back(linked_ptr<ContentDetector>(
       new AddressDetector()));
-  content_detectors_.push_back(linked_ptr<ContentDetector>(
-      new PhoneNumberDetector(region_code)));
+  if (!region_code.empty()) {
+    content_detectors_.push_back(linked_ptr<ContentDetector>(
+        new PhoneNumberDetector(region_code)));
+  }
   content_detectors_.push_back(linked_ptr<ContentDetector>(
       new EmailDetector()));
 #endif
@@ -751,6 +753,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       ShouldUseTransitionCompositing(device_scale_factor_));
   webview()->settings()->setThreadedScrollingEnabled(
       !command_line.HasSwitch(switches::kDisableThreadedScrolling));
+  webview()->settings()->setRootLayerScrolls(
+      command_line.HasSwitch(switches::kRootLayerScrolls));
 
   ApplyWebPreferences(webkit_preferences_, webview());
 
@@ -758,10 +762,10 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
       command_line.HasSwitch(switches::kAllowInsecureWebSocketFromHttpsOrigin));
 
   RenderFrameProxy* proxy = NULL;
-  if (params->proxy_routing_id != MSG_ROUTING_NONE) {
-    CHECK(params->swapped_out);
+  if (params.proxy_routing_id != MSG_ROUTING_NONE) {
+    CHECK(params.swapped_out);
     proxy = RenderFrameProxy::CreateProxyToReplaceFrame(
-        main_render_frame_.get(), params->proxy_routing_id);
+        main_render_frame_.get(), params.proxy_routing_id);
     main_render_frame_->set_render_frame_proxy(proxy);
   }
 
@@ -780,14 +784,20 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   if (switches::IsTouchEditingEnabled())
     webview()->settings()->setTouchEditingEnabled(true);
 
-  if (!params->frame_name.empty())
-    webview()->mainFrame()->setName(params->frame_name);
+  if (!params.frame_name.empty())
+    webview()->mainFrame()->setName(params.frame_name);
 
   // TODO(davidben): Move this state from Blink into content.
-  if (params->window_was_created_with_opener)
+  if (params.window_was_created_with_opener)
     webview()->setOpenedByDOM();
 
-  OnSetRendererPrefs(params->renderer_prefs);
+  OnSetRendererPrefs(params.renderer_preferences);
+
+  if (!params.enable_auto_resize) {
+    OnResize(params.initial_size);
+  } else {
+    OnEnableAutoResize(params.min_size, params.max_size);
+  }
 
   new MHTMLGenerator(this);
 #if defined(OS_MACOSX)
@@ -796,7 +806,7 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   // The next group of objects all implement RenderViewObserver, so are deleted
   // along with the RenderView automatically.
-  devtools_agent_ = new DevToolsAgent(this);
+  devtools_agent_ = new DevToolsAgent(main_render_frame_.get());
   if (RenderWidgetCompositor* rwc = compositor()) {
     webview()->devToolsAgent()->setLayerTreeId(rwc->GetLayerTreeId());
   }
@@ -817,8 +827,8 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
 
   // If we have an opener_id but we weren't created by a renderer, then
   // it's the browser asking us to set our opener to another RenderView.
-  if (params->opener_id != MSG_ROUTING_NONE && !params->is_renderer_created) {
-    RenderViewImpl* opener_view = FromRoutingID(params->opener_id);
+  if (params.opener_route_id != MSG_ROUTING_NONE && !was_created_by_renderer) {
+    RenderViewImpl* opener_view = FromRoutingID(params.opener_route_id);
     if (opener_view)
       webview()->mainFrame()->setOpener(opener_view->webview()->mainFrame());
   }
@@ -826,7 +836,7 @@ void RenderViewImpl::Initialize(RenderViewImplParams* params) {
   // If we are initially swapped out, navigate to kSwappedOutURL.
   // This ensures we are in a unique origin that others cannot script.
   if (is_swapped_out_ && webview()->mainFrame()->isWebLocalFrame())
-    NavigateToSwappedOutURL(webview()->mainFrame());
+    main_render_frame_->NavigateToSwappedOutURL();
 }
 
 RenderViewImpl::~RenderViewImpl() {
@@ -1036,12 +1046,20 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   WebRuntimeFeatures::enableTouch(prefs.touch_enabled);
   settings->setMaxTouchPoints(prefs.pointer_events_max_touch_points);
+  settings->setAvailablePointerTypes(prefs.available_pointer_types);
+  settings->setPrimaryPointerType(
+      static_cast<WebSettings::PointerType>(prefs.primary_pointer_type));
+  settings->setAvailableHoverTypes(prefs.available_hover_types);
+  settings->setPrimaryHoverType(
+      static_cast<WebSettings::HoverType>(prefs.primary_hover_type));
   settings->setDeviceSupportsTouch(prefs.device_supports_touch);
   settings->setDeviceSupportsMouse(prefs.device_supports_mouse);
   settings->setEnableTouchAdjustment(prefs.touch_adjustment_enabled);
 
   settings->setDeferredImageDecodingEnabled(
       prefs.deferred_image_decoding_enabled);
+  WebRuntimeFeatures::enableImageColorProfiles(
+      prefs.image_color_profiles_enabled);
   settings->setShouldRespectImageOrientation(
       prefs.should_respect_image_orientation);
 
@@ -1067,6 +1085,9 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       static_cast<WebSettings::V8CacheOptions>(prefs.v8_cache_options));
 
   settings->setV8ScriptStreamingEnabled(prefs.v8_script_streaming_enabled);
+  settings->setV8ScriptStreamingMode(
+      static_cast<WebSettings::V8ScriptStreamingMode>(
+          prefs.v8_script_streaming_mode));
 
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
@@ -1116,57 +1137,29 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
   settings->setPinchOverlayScrollbarThickness(
       prefs.pinch_overlay_scrollbar_thickness);
+  settings->setRubberBandingOnCompositorThread(
+      prefs.rubber_banding_on_compositor_thread);
   settings->setUseSolidColorScrollbars(prefs.use_solid_color_scrollbars);
 }
 
 /*static*/
 RenderViewImpl* RenderViewImpl::Create(
-    int32 opener_id,
-    bool window_was_created_with_opener,
-    const RendererPreferences& renderer_prefs,
-    const WebPreferences& webkit_prefs,
-    int32 routing_id,
-    int32 main_frame_routing_id,
-    int32 surface_id,
-    int64 session_storage_namespace_id,
-    const base::string16& frame_name,
-    bool is_renderer_created,
-    bool swapped_out,
-    int32 proxy_routing_id,
-    bool hidden,
-    bool never_visible,
-    int32 next_page_id,
-    const blink::WebScreenInfo& screen_info) {
-  DCHECK(routing_id != MSG_ROUTING_NONE);
-  RenderViewImplParams params(opener_id,
-                              window_was_created_with_opener,
-                              renderer_prefs,
-                              webkit_prefs,
-                              routing_id,
-                              main_frame_routing_id,
-                              surface_id,
-                              session_storage_namespace_id,
-                              frame_name,
-                              is_renderer_created,
-                              swapped_out,
-                              proxy_routing_id,
-                              hidden,
-                              never_visible,
-                              next_page_id,
-                              screen_info);
+    const ViewMsg_New_Params& params,
+    bool was_created_by_renderer) {
+  DCHECK(params.view_id != MSG_ROUTING_NONE);
   RenderViewImpl* render_view = NULL;
   if (g_create_render_view_impl)
-    render_view = g_create_render_view_impl(&params);
+    render_view = g_create_render_view_impl(params);
   else
-    render_view = new RenderViewImpl(&params);
+    render_view = new RenderViewImpl(params);
 
-  render_view->Initialize(&params);
+  render_view->Initialize(params, was_created_by_renderer);
   return render_view;
 }
 
 // static
 void RenderViewImpl::InstallCreateHook(
-    RenderViewImpl* (*create_render_view_impl)(RenderViewImplParams*)) {
+    RenderViewImpl* (*create_render_view_impl)(const ViewMsg_New_Params&)) {
   CHECK(!g_create_render_view_impl);
   g_create_render_view_impl = create_render_view_impl;
 }
@@ -1462,7 +1455,7 @@ void RenderViewImpl::OnMoveCaret(const gfx::Point& point) {
   if (!webview())
     return;
 
-  Send(new ViewHostMsg_MoveCaret_ACK(routing_id_));
+  Send(new InputHostMsg_MoveCaret_ACK(routing_id_));
 
   webview()->focusedFrame()->moveCaretSelection(point);
 }
@@ -1666,28 +1659,37 @@ WebView* RenderViewImpl::createView(WebLocalFrame* creator,
   // TODO(vangelis): Can we tell if the new view will be a background page?
   bool never_visible = false;
 
+  ViewMsg_Resize_Params initial_size = ViewMsg_Resize_Params();
+  initial_size.screen_info = screen_info_;
+
   // The initial hidden state for the RenderViewImpl here has to match what the
   // browser will eventually decide for the given disposition. Since we have to
   // return from this call synchronously, we just have to make our best guess
   // and rely on the browser sending a WasHidden / WasShown message if it
   // disagrees.
-  RenderViewImpl* view = RenderViewImpl::Create(
-      routing_id_,
-      true,  // window_was_created_with_opener
-      renderer_preferences_,
-      webkit_preferences_,
-      routing_id,
-      main_frame_routing_id,
-      surface_id,
-      cloned_session_storage_namespace_id,
-      base::string16(),  // WebCore will take care of setting the correct name.
-      true,              // is_renderer_created
-      false,             // swapped_out
-      MSG_ROUTING_NONE,  // proxy_routing_id
-      params.disposition == NEW_BACKGROUND_TAB,  // hidden
-      never_visible,
-      1,  // next_page_id
-      screen_info_);
+  ViewMsg_New_Params view_params;
+  view_params.opener_route_id = routing_id_;
+  view_params.window_was_created_with_opener = true;
+  view_params.renderer_preferences = renderer_preferences_;
+  view_params.web_preferences = webkit_preferences_;
+  view_params.view_id = routing_id;
+  view_params.main_frame_routing_id = main_frame_routing_id;
+  view_params.surface_id = surface_id;
+  view_params.session_storage_namespace_id =
+      cloned_session_storage_namespace_id;
+  // WebCore will take care of setting the correct name.
+  view_params.frame_name = base::string16();
+  view_params.swapped_out = false;
+  view_params.proxy_routing_id = MSG_ROUTING_NONE;
+  view_params.hidden = (params.disposition == NEW_BACKGROUND_TAB);
+  view_params.never_visible = never_visible;
+  view_params.next_page_id = 1;
+  view_params.initial_size = initial_size;
+  view_params.enable_auto_resize = false;
+  view_params.min_size = gfx::Size();
+  view_params.max_size = gfx::Size();
+
+  RenderViewImpl* view = RenderViewImpl::Create(view_params, true);
   view->opened_by_user_gesture_ = params.user_gesture;
 
   // Record whether the creator frame is trying to suppress the opener field.
@@ -3217,21 +3219,6 @@ void RenderViewImpl::OnSuppressDialogsUntilSwapOut() {
   suppress_dialogs_until_swap_out_ = true;
 }
 
-void RenderViewImpl::NavigateToSwappedOutURL(blink::WebFrame* frame) {
-  // We use loadRequest instead of loadHTMLString because the former commits
-  // synchronously.  Otherwise a new navigation can interrupt the navigation
-  // to kSwappedOutURL. If that happens to be to the page we had been
-  // showing, then WebKit will never send a commit and we'll be left spinning.
-  // TODO(creis): Until we move this to RenderFrame, we may call this from a
-  // swapped out RenderFrame while our own is_swapped_out_ is false.
-  RenderFrameImpl* rf = RenderFrameImpl::FromWebFrame(frame);
-  CHECK(is_swapped_out_ || rf->is_swapped_out());
-  GURL swappedOutURL(kSwappedOutURL);
-  WebURLRequest request(swappedOutURL);
-  if (frame->isWebLocalFrame())
-    frame->loadRequest(request);
-}
-
 void RenderViewImpl::OnClosePage() {
   FOR_EACH_OBSERVER(RenderViewObserver, observers_, ClosePage());
   // TODO(creis): We'd rather use webview()->Close() here, but that currently
@@ -3937,12 +3924,6 @@ blink::WebPageVisibilityState RenderViewImpl::visibilityState() const {
   return current_state;
 }
 
-blink::WebPushClient* RenderViewImpl::webPushClient() {
-  // TODO(mvanouwerkerk): Remove this method once the Push API code in Blink
-  // has also switched over to Frame.
-  return main_render_frame_->pushClient();
-}
-
 void RenderViewImpl::draggableRegionsChanged() {
   FOR_EACH_OBSERVER(
       RenderViewObserver,
@@ -3953,8 +3934,6 @@ void RenderViewImpl::draggableRegionsChanged() {
 #if defined(OS_ANDROID)
 WebContentDetectionResult RenderViewImpl::detectContentAround(
     const WebHitTestResult& touch_hit) {
-  DCHECK(!touch_hit.isNull());
-  DCHECK(!touch_hit.node().isNull());
   DCHECK(touch_hit.node().isTextNode());
 
   // Process the position with all the registered content detectors until
@@ -3988,7 +3967,7 @@ void RenderViewImpl::cancelScheduledContentIntents() {
 void RenderViewImpl::LaunchAndroidContentIntent(const GURL& intent,
                                                 size_t request_id) {
   if (request_id != expected_content_intent_id_)
-      return;
+    return;
 
   // Remove the content highlighting if any.
   scheduleComposite();
@@ -4039,6 +4018,9 @@ bool RenderViewImpl::didTapMultipleTargets(
     const WebSize& inner_viewport_offset,
     const WebRect& touch_rect,
     const WebVector<WebRect>& target_rects) {
+  if (!switches::IsLinkDisambiguationPopupEnabled())
+    return false;
+
   // Never show a disambiguation popup when accessibility is enabled,
   // as this interferes with "touch exploration".
   AccessibilityMode accessibility_mode =

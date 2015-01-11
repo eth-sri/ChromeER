@@ -327,6 +327,13 @@ void AccountTrackerService::StopTrackingAccount(const std::string& account_id) {
 
 void AccountTrackerService::StartFetchingUserInfo(
     const std::string& account_id) {
+  // Don't bother fetching for supervised users since this causes the token
+  // service to raise spurious auth errors.
+  // TODO(treib): this string is also used in supervised_user_constants.cc.
+  // Should put in a common place.
+  if (account_id == "managed_user@localhost")
+    return;
+
   if (ContainsKey(user_info_requests_, account_id))
     DeleteFetcher(user_info_requests_[account_id]);
 
@@ -466,7 +473,10 @@ std::string AccountTrackerService::PickAccountIdForAccount(
   switch(GetMigrationState(pref_service)) {
     case MIGRATION_NOT_STARTED:
     case MIGRATION_IN_PROGRESS:
-      return gaia::CanonicalizeEmail(gaia::SanitizeEmail(email));
+      // Some tests don't use a real email address.  To support these cases,
+      // don't try to canonicalize these strings.
+      return (email.find('@') == std::string::npos) ? email :
+          gaia::CanonicalizeEmail(email);
     case MIGRATION_DONE:
       return gaia;
     default:
@@ -477,6 +487,10 @@ std::string AccountTrackerService::PickAccountIdForAccount(
 
 void AccountTrackerService::SeedAccountInfo(const std::string& gaia,
                                             const std::string& email) {
+  DVLOG(1) << "AccountTrackerService::SeedAccountInfo"
+           << " gaia_id=" << gaia
+           << " email=" << email;
+
   DCHECK(!gaia.empty());
   DCHECK(!email.empty());
   const std::string account_id = PickAccountIdForAccount(gaia, email);

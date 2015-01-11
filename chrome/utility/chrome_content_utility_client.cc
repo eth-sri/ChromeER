@@ -30,6 +30,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "chrome/utility/font_cache_handler_win.h"
 #include "chrome/utility/shell_handler_win.h"
 #endif
 
@@ -41,7 +42,7 @@
 #include "chrome/utility/media_galleries/media_metadata_parser.h"
 #endif
 
-#if defined(ENABLE_FULL_PRINTING) || defined(OS_WIN)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(OS_WIN)
 #include "chrome/utility/printing_handler.h"
 #endif
 
@@ -86,7 +87,7 @@ ChromeContentUtilityClient::ChromeContentUtilityClient()
   handlers_.push_back(new image_writer::ImageWriterHandler());
 #endif
 
-#if defined(ENABLE_FULL_PRINTING) || defined(OS_WIN)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(OS_WIN)
   handlers_.push_back(new PrintingHandler());
 #endif
 
@@ -99,6 +100,7 @@ ChromeContentUtilityClient::ChromeContentUtilityClient()
 
 #if defined(OS_WIN)
   handlers_.push_back(new ShellHandler());
+  handlers_.push_back(new FontCacheHandler());
 #endif
 }
 
@@ -165,7 +167,7 @@ void ChromeContentUtilityClient::PreSandboxStartup() {
   extensions::ExtensionsHandler::PreSandboxStartup();
 #endif
 
-#if defined(ENABLE_FULL_PRINTING) || defined(OS_WIN)
+#if defined(ENABLE_PRINT_PREVIEW) || defined(OS_WIN)
   PrintingHandler::PreSandboxStartup();
 #endif
 
@@ -249,6 +251,9 @@ void ChromeContentUtilityClient::OnCreateZipFile(
     const base::FilePath& src_dir,
     const std::vector<base::FilePath>& src_relative_paths,
     const base::FileDescriptor& dest_fd) {
+  // dest_fd should be closed in the function. See ipc/ipc_message_util.h for
+  // details.
+  base::ScopedFD fd_closer(dest_fd.fd);
   bool succeeded = true;
 
   // Check sanity of source relative paths. Reject if path is absolute or

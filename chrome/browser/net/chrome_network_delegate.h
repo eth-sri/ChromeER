@@ -72,12 +72,15 @@ class PrerenderTracker;
 class ChromeNetworkDelegate : public net::NetworkDelegate {
  public:
   // Provides an opportunity to interpose on proxy resolution. Called before
-  // ProxyService.ResolveProxy() returns. |proxy_info| contains information
-  // about the proxy being used, and may be modified by this callback.
+  // ProxyService.ResolveProxy() returns. Two proxy configurations are provided
+  // that specify the data reduction proxy's configuration and the effective
+  // configuration according to the proxy service, respectively. Retry info is
+  // presumed to be from the proxy service.
   typedef base::Callback<void(
       const GURL& url,
       int load_flags,
       const net::ProxyConfig& data_reduction_proxy_config,
+      const net::ProxyConfig& proxy_service_proxy_config,
       const net::ProxyRetryInfoMap& proxy_retry_info_map,
       const data_reduction_proxy::DataReductionProxyParams* params,
       net::ProxyInfo* result)> OnResolveProxyHandler;
@@ -206,7 +209,7 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   // Creates a Value summary of the persistent state of the network session.
   // The caller is responsible for deleting the returned value.
   // Must be called on the UI thread.
-  static base::Value* HistoricNetworkStatsInfoToValue();
+  static base::Value* HistoricNetworkStatsInfoToValue(PrefService* prefs);
 
   // Creates a Value summary of the state of the network session. The caller is
   // responsible for deleting the returned value.

@@ -32,7 +32,7 @@ public class ChromeWebContentsDelegateAndroid extends WebContentsDelegateAndroid
         return false;
     }
 
-    @CalledByNative
+    @Override
     public void webContentsCreated(long sourceWebContents, long openerRenderFrameId,
             String frameName, String targetUrl, long newWebContents) {
     }

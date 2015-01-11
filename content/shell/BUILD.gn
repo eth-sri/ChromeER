@@ -83,8 +83,8 @@ static_library("content_shell_lib") {
     "browser/shell_browser_main_parts_mac.mm",
     "browser/shell_content_browser_client.cc",
     "browser/shell_content_browser_client.h",
-    "browser/shell_devtools_delegate.cc",
-    "browser/shell_devtools_delegate.h",
+    "browser/shell_devtools_manager_delegate.cc",
+    "browser/shell_devtools_manager_delegate.h",
     "browser/shell_devtools_frontend.cc",
     "browser/shell_devtools_frontend.h",
     "browser/shell_download_manager_delegate.cc",
@@ -194,8 +194,6 @@ static_library("content_shell_lib") {
     "renderer/test_runner/mock_webrtc_dtmf_sender_handler.h",
     "renderer/test_runner/mock_webrtc_peer_connection_handler.cc",
     "renderer/test_runner/mock_webrtc_peer_connection_handler.h",
-    "renderer/test_runner/notification_presenter.cc",
-    "renderer/test_runner/notification_presenter.h",
     "renderer/test_runner/spell_check_client.cc",
     "renderer/test_runner/spell_check_client.h",
     "renderer/test_runner/test_common.cc",
@@ -289,6 +287,8 @@ static_library("content_shell_lib") {
     # Some tests rely on this tool at runtime. Note: it might be better if
     # the tests that needed it had this as a dep instead of adding it here.
     datadeps = [ "//tools/xdisplaycheck" ]
+
+    deps += [ "//ui/events/devices" ]
   }
 
   if (is_android) {
@@ -459,7 +459,8 @@ repack("pak") {
 }
 
 # TODO(GYP): Figure out what this should be on android
-if (!is_android) {
+# and make linking this work on the Mac.
+if (!is_android && !is_mac) {
 
 executable("content_shell") {
   testonly = true

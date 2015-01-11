@@ -34,6 +34,12 @@ class HotwordPrivateEventService : public BrowserContextKeyedAPI {
 
   void OnHotwordSessionStopped();
 
+  void OnHotwordTriggered();
+
+  void OnFinalizeSpeakerModel();
+
+  void OnSpeakerModelSaved();
+
  private:
   friend class BrowserContextKeyedAPIFactory<HotwordPrivateEventService>;
 
@@ -131,6 +137,101 @@ class HotwordPrivateGetLaunchStateFunction :
 
   // ExtensionFunction:
   bool RunSync() override;
+};
+
+class HotwordPrivateStartTrainingFunction :
+    public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("hotwordPrivate.startTraining",
+                             HOTWORDPRIVATE_STARTTRAINING)
+
+ protected:
+  ~HotwordPrivateStartTrainingFunction() override {}
+
+  // ExtensionFunction:
+  bool RunSync() override;
+};
+
+class HotwordPrivateFinalizeSpeakerModelFunction :
+    public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("hotwordPrivate.finalizeSpeakerModel",
+                             HOTWORDPRIVATE_FINALIZESPEAKERMODEL)
+
+ protected:
+  ~HotwordPrivateFinalizeSpeakerModelFunction() override {}
+
+  // ExtensionFunction:
+  bool RunSync() override;
+};
+
+class HotwordPrivateNotifySpeakerModelSavedFunction :
+    public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("hotwordPrivate.notifySpeakerModelSaved",
+                             HOTWORDPRIVATE_NOTIFYSPEAKERMODELSAVED)
+
+ protected:
+  ~HotwordPrivateNotifySpeakerModelSavedFunction() override {}
+
+  // ExtensionFunction:
+  bool RunSync() override;
+};
+
+class HotwordPrivateStopTrainingFunction :
+    public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("hotwordPrivate.stopTraining",
+                             HOTWORDPRIVATE_STOPTRAINING)
+
+ protected:
+  ~HotwordPrivateStopTrainingFunction() override {}
+
+  // ExtensionFunction:
+  bool RunSync() override;
+};
+
+class HotwordPrivateGetLocalizedStringsFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("hotwordPrivate.getLocalizedStrings",
+                             HOTWORDPRIVATE_GETLOCALIZEDSTRINGS)
+
+ protected:
+  virtual ~HotwordPrivateGetLocalizedStringsFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunSync() override;
+};
+
+class HotwordPrivateSetAudioHistoryEnabledFunction
+    : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("hotwordPrivate.setAudioHistoryEnabled",
+                             HOTWORDPRIVATE_SETAUDIOHISTORYENABLED)
+
+ protected:
+  virtual ~HotwordPrivateSetAudioHistoryEnabledFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunAsync() override;
+
+  void SetResultAndSendResponse(bool success, bool new_enabled_value);
+};
+
+class HotwordPrivateGetAudioHistoryEnabledFunction
+    : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("hotwordPrivate.getAudioHistoryEnabled",
+                             HOTWORDPRIVATE_GETAUDIOHISTORYENABLED)
+
+ protected:
+  virtual ~HotwordPrivateGetAudioHistoryEnabledFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunAsync() override;
+
+  void SetResultAndSendResponse(bool success, bool new_enabled_value);
 };
 
 }  // namespace extensions

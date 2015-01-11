@@ -9,12 +9,12 @@
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/layers/layer.h"
-#include "cc/resources/picture_pile.h"
 #include "cc/trees/occlusion_tracker.h"
 
 namespace cc {
 
 class ContentLayerClient;
+class RecordingSource;
 class ResourceUpdateQueue;
 
 class CC_EXPORT PictureLayer : public Layer {
@@ -39,28 +39,33 @@ class CC_EXPORT PictureLayer : public Layer {
 
   ContentLayerClient* client() { return client_; }
 
-  PicturePile* GetPicturePileForTesting() { return &pile_; }
+  RecordingSource* GetRecordingSourceForTesting() {
+    return recording_source_.get();
+  }
 
  protected:
   explicit PictureLayer(ContentLayerClient* client);
+  // Allow tests to inject a recording source.
+  PictureLayer(ContentLayerClient* client, scoped_ptr<RecordingSource> source);
   ~PictureLayer() override;
 
   bool HasDrawableContent() const override;
-  void UpdateCanUseLCDText();
+  bool UpdateCanUseLCDText();
 
  private:
   ContentLayerClient* client_;
-  PicturePile pile_;
+  scoped_ptr<RecordingSource> recording_source_;
   devtools_instrumentation::
       ScopedLayerObjectTracker instrumentation_object_tracker_;
   // Invalidation to use the next time update is called.
   InvalidationRegion pending_invalidation_;
   // Invalidation from the last time update was called.
-  Region pile_invalidation_;
+  Region recording_invalidation_;
   gfx::Rect last_updated_visible_content_rect_;
 
   int update_source_frame_number_;
-  bool can_use_lcd_text_last_frame_;
+  bool can_use_lcd_text_for_update_;
+  bool is_mask_;
 
   DISALLOW_COPY_AND_ASSIGN(PictureLayer);
 };

@@ -69,6 +69,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     // DEPRECATED: Special state for component extensions.
     // Maintained as a placeholder since states may be stored to disk.
     ENABLED_COMPONENT_DEPRECATED,
+    // Add new states here as this enum is stored in prefs.
     NUM_STATES
   };
 
@@ -102,7 +103,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
     DISABLE_REMOTE_INSTALL = 1 << 11,
     DISABLE_INACTIVE_EPHEMERAL_APP = 1 << 12,  // Cached ephemeral apps are
                                                // disabled to prevent activity.
-    DISABLE_REASON_LAST = 1 << 13,  // This should always be the last value
+    DISABLE_EXTERNAL_EXTENSION = 1 << 13,  // External extensions might be
+                                           // disabled for user prompting.
+    DISABLE_REASON_LAST = 1 << 14,  // This should always be the last value
   };
 
   // A base class for parsed manifest data that APIs want to store on
@@ -539,6 +542,7 @@ struct UnloadedExtensionInfo {
     REASON_TERMINATE,         // Extension has terminated.
     REASON_BLACKLIST,         // Extension has been blacklisted.
     REASON_PROFILE_SHUTDOWN,  // Profile is being shut down.
+    REASON_LOCK_ALL,          // All extensions for the profile are blocked.
   };
 
   Reason reason;

@@ -47,6 +47,8 @@
       'ash_touch_exploration_manager_chromeos.h',
       'cancel_mode.cc',
       'cancel_mode.h',
+      'content/display/screen_orientation_delegate_chromeos.cc',
+      'content/display/screen_orientation_delegate_chromeos.h',
       'debug.cc',
       'debug.h',
       'default_accessibility_delegate.cc',
@@ -151,18 +153,6 @@
       'host/root_window_transformer.h',
       'host/transformer_helper.cc',
       'host/transformer_helper.h',
-      'ime/candidate_view.cc',
-      'ime/candidate_view.h',
-      'ime/candidate_window_view.cc',
-      'ime/candidate_window_view.h',
-      'ime/infolist_window.cc',
-      'ime/infolist_window.h',
-      'ime/input_method_menu_item.cc',
-      'ime/input_method_menu_item.h',
-      'ime/input_method_menu_manager.cc',
-      'ime/input_method_menu_manager.h',
-      'ime/mode_indicator_view.cc',
-      'ime/mode_indicator_view.h',
       'keyboard_uma_event_filter.cc',
       'keyboard_uma_event_filter.h',
       'magnifier/magnification_controller.cc',
@@ -550,6 +540,9 @@
       'wm/mru_window_tracker.h',
       'wm/overlay_event_filter.cc',
       'wm/overlay_event_filter.h',
+      'wm/overview/overview_animation_type.h',
+      'wm/overview/scoped_overview_animation_settings.h',
+      'wm/overview/scoped_overview_animation_settings.cc',
       'wm/overview/scoped_transform_overview_window.cc',
       'wm/overview/scoped_transform_overview_window.h',
       'wm/overview/scoped_window_copy.cc',
@@ -771,6 +764,7 @@
       'accelerators/spoken_feedback_toggler_unittest.cc',
       'ash_touch_exploration_manager_chromeos_unittest.cc',
       'autoclick/autoclick_unittest.cc',
+      'content/display/screen_orientation_delegate_chromeos_unittest.cc',
       'desktop_background/desktop_background_controller_unittest.cc',
       'desktop_background/wallpaper_resizer_unittest.cc',
       'dip_unittest.cc',
@@ -794,10 +788,6 @@
       'frame/custom_frame_view_ash_unittest.cc',
       'frame/default_header_painter_unittest.cc',
       'host/ash_window_tree_host_x11_unittest.cc',
-      'ime/candidate_view_unittest.cc',
-      'ime/candidate_window_view_unittest.cc',
-      'ime/input_method_menu_item_unittest.cc',
-      'ime/input_method_menu_manager_unittest.cc',
       'keyboard_overlay/keyboard_overlay_delegate_unittest.cc',
       'keyboard_overlay/keyboard_overlay_view_unittest.cc',
       'magnifier/magnification_controller_unittest.cc',
@@ -911,6 +901,7 @@
         '../ui/aura/aura.gyp:aura',
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/compositor/compositor.gyp:compositor',
+        '../ui/events/devices/events_devices.gyp:events_devices',
         '../ui/events/events.gyp:events',
         '../ui/events/events.gyp:events_base',
         '../ui/events/events.gyp:gesture_detection',
@@ -1041,6 +1032,7 @@
         '../testing/gtest.gyp:gtest',
         '../ui/accessibility/accessibility.gyp:ax_gen',
         '../ui/app_list/app_list.gyp:app_list_test_support',
+        '../ui/events/devices/events_devices.gyp:events_devices',
         '../ui/views/views.gyp:views_test_support',
         'ash',
         'ash_resources.gyp:ash_resources',
@@ -1089,6 +1081,7 @@
         '../ui/base/ui_base.gyp:ui_base_test_support',
         '../ui/compositor/compositor.gyp:compositor',
         '../ui/compositor/compositor.gyp:compositor_test_support',
+        '../ui/events/devices/events_devices.gyp:events_devices',
         '../ui/events/events.gyp:events',
         '../ui/events/events.gyp:events_test_support',
         '../ui/events/events.gyp:gesture_detection',
@@ -1116,6 +1109,7 @@
       'conditions': [
         ['chromeos==0', {
           'sources!': [
+            'content/display/screen_orientation_delegate_chromeos_unittest.cc',
             # TODO(zork): fix this test to build on Windows. See: crosbug.com/26906
             'focus_cycler_unittest.cc',
             # All tests for multiple displays: not supported on Windows Ash.
@@ -1251,6 +1245,11 @@
             '../device/bluetooth/bluetooth.gyp:device_bluetooth',
           ],
         }],
+        ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
+          'dependencies': [
+            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+          ],
+        }],
       ],
     },
     {
@@ -1276,6 +1275,11 @@
         ['chromeos==1', {
           'dependencies': [
             '../ui/display/display.gyp:display',
+          ],
+        }],
+        ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
+          'dependencies': [
+            '<(DEPTH)/base/allocator/allocator.gyp:allocator',
           ],
         }],
       ],

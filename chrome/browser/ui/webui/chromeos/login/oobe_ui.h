@@ -11,6 +11,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/login/ui/oobe_display.h"
 #include "chrome/browser/ui/webui/chromeos/login/core_oobe_handler.h"
@@ -25,7 +26,9 @@ class AppLaunchSplashScreenActor;
 class BaseScreenHandler;
 class ControllerPairingScreenActor;
 class DeviceDisabledScreenActor;
+class ErrorScreen;
 class ErrorScreenHandler;
+class GaiaScreenHandler;
 class HostPairingScreenActor;
 class KioskAppMenuHandler;
 class KioskEnableScreenActor;
@@ -33,7 +36,6 @@ class LoginScreenContext;
 class NativeWindowDelegate;
 class NetworkDropdownHandler;
 class NetworkStateInformer;
-class GaiaScreenHandler;
 class SigninScreenHandler;
 class SigninScreenHandlerDelegate;
 class UpdateScreenHandler;
@@ -64,6 +66,7 @@ class OobeUI : public OobeDisplay,
   // JS oobe/login screens names.
   static const char kScreenOobeHIDDetection[];
   static const char kScreenOobeNetwork[];
+  static const char kScreenOobeEnableDebugging[];
   static const char kScreenOobeEula[];
   static const char kScreenOobeUpdate[];
   static const char kScreenOobeEnrollment[];
@@ -95,7 +98,8 @@ class OobeUI : public OobeDisplay,
   virtual CoreOobeActor* GetCoreOobeActor() override;
   virtual UpdateScreenActor* GetUpdateScreenActor() override;
   virtual NetworkScreenActor* GetNetworkScreenActor() override;
-  virtual EulaScreenActor* GetEulaScreenActor() override;
+  virtual EulaView* GetEulaView() override;
+  virtual EnableDebuggingScreenActor* GetEnableDebuggingScreenActor() override;
   virtual EnrollmentScreenActor* GetEnrollmentScreenActor() override;
   virtual ResetScreenActor* GetResetScreenActor() override;
   virtual KioskAutolaunchScreenActor* GetKioskAutolaunchScreenActor() override;
@@ -118,6 +122,7 @@ class OobeUI : public OobeDisplay,
       override;
   virtual HostPairingScreenActor* GetHostPairingScreenActor() override;
   DeviceDisabledScreenActor* GetDeviceDisabledScreenActor() override;
+  virtual GaiaScreenHandler* GetGaiaScreenActor() override;
 
   // Collects localized strings from the owned handlers.
   void GetLocalizedStrings(base::DictionaryValue* localized_strings);
@@ -187,7 +192,8 @@ class OobeUI : public OobeDisplay,
   // Screens actors. Note, OobeUI owns them via |handlers_|, not directly here.
   UpdateScreenHandler* update_screen_handler_;
   NetworkScreenActor* network_screen_actor_;
-  EulaScreenActor* eula_screen_actor_;
+  EnableDebuggingScreenActor* debugging_screen_actor_;
+  EulaView* eula_view_;
   EnrollmentScreenActor* enrollment_screen_actor_;
   HIDDetectionScreenActor* hid_detection_screen_actor_;
   ResetScreenActor* reset_screen_actor_;
@@ -220,6 +226,8 @@ class OobeUI : public OobeDisplay,
   std::vector<BaseScreenHandler*> handlers_;  // Non-owning pointers.
 
   KioskAppMenuHandler* kiosk_app_menu_handler_;  // Non-owning pointers.
+
+  scoped_ptr<ErrorScreen> error_screen_;
 
   // Id of the current oobe/login screen.
   Screen current_screen_;

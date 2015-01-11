@@ -7,6 +7,7 @@
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/tray_item_more.h"
+#include "ash/system/tray_accessibility.h"
 #include "ash/virtual_keyboard_controller.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
@@ -22,34 +23,44 @@ namespace tray {
 // System tray item that handles toggling the state of the keyboard between
 // enabled and disabled.
 class KeyboardLockDefaultView : public TrayItemMore,
-                                public VirtualKeyboardObserver {
+                                public VirtualKeyboardObserver,
+                                public AccessibilityObserver {
  public:
-  explicit KeyboardLockDefaultView(SystemTrayItem* owner, bool visible);
+  explicit KeyboardLockDefaultView(SystemTrayItem* owner, bool suppressed);
   virtual ~KeyboardLockDefaultView();
 
   // ActionableView
-  virtual bool PerformAction(const ui::Event& event) override;
+  bool PerformAction(const ui::Event& event) override;
 
   // VirtualKeyboardObserver
-  virtual void OnKeyboardSuppressionChanged(bool suppressed) override;
+  void OnKeyboardSuppressionChanged(bool suppressed) override;
+
+  // AccessibilityObserver:
+  void OnAccessibilityModeChanged(
+      ui::AccessibilityNotificationVisibility notify) override;
 
  private:
   void Update();
+
+  // Whether the virtual keyboard is suppressed.
+  bool suppressed_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardLockDefaultView);
 };
 
 KeyboardLockDefaultView::KeyboardLockDefaultView(SystemTrayItem* owner,
-                                                 bool visible)
-    : TrayItemMore(owner, false) {
-  SetVisible(visible);
+                                                 bool suppressed)
+    : TrayItemMore(owner, false), suppressed_(suppressed) {
   Update();
   Shell::GetInstance()->system_tray_notifier()->AddVirtualKeyboardObserver(
       this);
+  Shell::GetInstance()->system_tray_notifier()->AddAccessibilityObserver(this);
 }
 
 KeyboardLockDefaultView::~KeyboardLockDefaultView() {
   Shell::GetInstance()->system_tray_notifier()->RemoveVirtualKeyboardObserver(
+      this);
+  Shell::GetInstance()->system_tray_notifier()->RemoveAccessibilityObserver(
       this);
 }
 
@@ -64,35 +75,47 @@ void KeyboardLockDefaultView::Update() {
   base::string16 label;
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   if (keyboard::IsKeyboardEnabled()) {
-    SetImage(bundle.GetImageNamed(IDR_AURA_UBER_TRAY_VIRTUAL_KEYBOARD)
-                 .ToImageSkia());
+    SetImage(
+        bundle.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_VIRTUAL_KEYBOARD_ENABLED));
     label = l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_KEYBOARD_ENABLED);
   } else {
-    // TODO (rsadam@): Use crossed keyboard image.
-    SetImage(bundle.GetImageNamed(IDR_AURA_UBER_TRAY_VIRTUAL_KEYBOARD)
-                 .ToImageSkia());
+    SetImage(
+        bundle.GetImageSkiaNamed(IDR_AURA_UBER_TRAY_VIRTUAL_KEYBOARD_DISABLED));
     label = l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_KEYBOARD_DISABLED);
   }
   SetLabel(label);
   SetAccessibleName(label);
+  SetVisible(suppressed_ &&
+             !Shell::GetInstance()
+                  ->accessibility_delegate()
+                  ->IsVirtualKeyboardEnabled());
 }
 
 void KeyboardLockDefaultView::OnKeyboardSuppressionChanged(bool suppressed) {
+  suppressed_ = suppressed;
   Update();
-  SetVisible(suppressed);
+}
+
+void KeyboardLockDefaultView::OnAccessibilityModeChanged(
+    ui::AccessibilityNotificationVisibility notify) {
+  Update();
 }
 
 }  // namespace tray
 
 TrayKeyboardLock::TrayKeyboardLock(SystemTray* system_tray)
-    : TrayImageItem(system_tray, IDR_AURA_UBER_TRAY_VIRTUAL_KEYBOARD),
+    : TrayImageItem(system_tray,
+                    IDR_AURA_UBER_TRAY_VIRTUAL_KEYBOARD_SUPPRESSED),
       virtual_keyboard_suppressed_(false) {
   Shell::GetInstance()->system_tray_notifier()->AddVirtualKeyboardObserver(
       this);
+  Shell::GetInstance()->system_tray_notifier()->AddAccessibilityObserver(this);
 }
 
 TrayKeyboardLock::~TrayKeyboardLock() {
   Shell::GetInstance()->system_tray_notifier()->RemoveVirtualKeyboardObserver(
+      this);
+  Shell::GetInstance()->system_tray_notifier()->RemoveAccessibilityObserver(
       this);
 }
 
@@ -102,17 +125,16 @@ void TrayKeyboardLock::OnKeyboardSuppressionChanged(bool suppressed) {
 }
 
 views::View* TrayKeyboardLock::CreateDefaultView(user::LoginStatus status) {
-  return new tray::KeyboardLockDefaultView(this, ShouldDefaultViewBeVisible());
+  return new tray::KeyboardLockDefaultView(this, virtual_keyboard_suppressed_);
+}
+
+void TrayKeyboardLock::OnAccessibilityModeChanged(
+    ui::AccessibilityNotificationVisibility notify) {
+  tray_view()->SetVisible(ShouldTrayBeVisible());
 }
 
 bool TrayKeyboardLock::GetInitialVisibility() {
   return ShouldTrayBeVisible();
-}
-
-bool TrayKeyboardLock::ShouldDefaultViewBeVisible() {
-  // Do not show if the accessibility keyboard is enabled.
-  return virtual_keyboard_suppressed_ &&
-         !keyboard::GetAccessibilityKeyboardEnabled();
 }
 
 bool TrayKeyboardLock::ShouldTrayBeVisible() {

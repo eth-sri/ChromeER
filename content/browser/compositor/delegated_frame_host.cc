@@ -11,7 +11,9 @@
 #include "cc/output/copy_output_request.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
+#include "cc/surfaces/surface.h"
 #include "cc/surfaces/surface_factory.h"
+#include "cc/surfaces/surface_manager.h"
 #include "content/browser/compositor/resize_lock.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -24,8 +26,31 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/effects/SkLumaColorFilter.h"
 #include "ui/gfx/frame_time.h"
+#include "ui/gfx/geometry/dip_util.h"
 
 namespace content {
+
+namespace {
+
+void SatisfyCallback(cc::SurfaceManager* manager,
+                     cc::SurfaceSequence sequence) {
+  std::vector<uint32_t> sequences;
+  sequences.push_back(sequence.sequence);
+  manager->DidSatisfySequences(sequence.id_namespace, &sequences);
+}
+
+void RequireCallback(cc::SurfaceManager* manager,
+                     cc::SurfaceId id,
+                     cc::SurfaceSequence sequence) {
+  cc::Surface* surface = manager->GetSurfaceForId(id);
+  if (!surface) {
+    LOG(ERROR) << "Attempting to require callback on nonexistent surface";
+    return;
+  }
+  surface->AddDestructionDependency(sequence);
+}
+
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // DelegatedFrameHostClient
@@ -58,6 +83,7 @@ DelegatedFrameHost::DelegatedFrameHost(DelegatedFrameHostClient* client)
       last_output_surface_id_(0),
       pending_delegated_ack_count_(0),
       skipped_frames_(false),
+      current_scale_factor_(1.f),
       can_lock_compositor_(YES_CAN_LOCK),
       delegated_frame_evictor_(new DelegatedFrameEvictor(this)) {
   ImageTransportFactory::GetInstance()->AddObserver(this);
@@ -114,7 +140,7 @@ bool DelegatedFrameHost::ShouldCreateResizeLock() {
   if (resize_lock_)
     return false;
 
-  if (host->should_auto_resize())
+  if (host->auto_resize_enabled())
     return false;
 
   gfx::Size desired_size = client_->DesiredFrameSize();
@@ -130,20 +156,13 @@ bool DelegatedFrameHost::ShouldCreateResizeLock() {
 
 void DelegatedFrameHost::RequestCopyOfOutput(
     scoped_ptr<cc::CopyOutputRequest> request) {
-  if (use_surfaces_) {
-    if (surface_factory_ && !surface_id_.is_null())
-      surface_factory_->RequestCopyOfSurface(surface_id_, request.Pass());
-    else
-      request->SendEmptyResult();
-  } else {
-    client_->GetLayer()->RequestCopyOfOutput(request.Pass());
-  }
+  client_->GetLayer()->RequestCopyOfOutput(request.Pass());
 }
 
 void DelegatedFrameHost::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& output_size,
-    CopyFromCompositingSurfaceCallback& callback,
+    ReadbackRequestCallback& callback,
     const SkColorType color_type) {
   // Only ARGB888 and RGB565 supported as of now.
   bool format_support = ((color_type == kAlpha_8_SkColorType) ||
@@ -151,7 +170,7 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
                          (color_type == kN32_SkColorType));
   DCHECK(format_support);
   if (!CanCopyToBitmap()) {
-    callback.Run(false, SkBitmap());
+    callback.Run(SkBitmap(), content::READBACK_SURFACE_UNAVAILABLE);
     return;
   }
 
@@ -307,12 +326,12 @@ void DelegatedFrameHost::SwapDelegatedFrame(
 
   gfx::Size frame_size = root_pass->output_rect.size();
   gfx::Size frame_size_in_dip =
-      ConvertSizeToDIP(frame_device_scale_factor, frame_size);
+      gfx::ConvertSizeToDIP(frame_device_scale_factor, frame_size);
 
   gfx::Rect damage_rect = gfx::ToEnclosingRect(root_pass->damage_rect);
   damage_rect.Intersect(gfx::Rect(frame_size));
   gfx::Rect damage_rect_in_dip =
-      ConvertRectToDIP(frame_device_scale_factor, damage_rect);
+      gfx::ConvertRectToDIP(frame_device_scale_factor, damage_rect);
 
   if (ShouldSkipFrame(frame_size_in_dip)) {
     cc::CompositorFrameAck ack;
@@ -371,9 +390,9 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     EvictDelegatedFrame();
   } else {
     if (use_surfaces_) {
+      ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
+      cc::SurfaceManager* manager = factory->GetSurfaceManager();
       if (!surface_factory_) {
-        ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
-        cc::SurfaceManager* manager = factory->GetSurfaceManager();
         id_allocator_ =
             factory->GetContextFactory()->CreateSurfaceIdAllocator();
         surface_factory_ =
@@ -381,23 +400,18 @@ void DelegatedFrameHost::SwapDelegatedFrame(
       }
       if (surface_id_.is_null() || frame_size != current_surface_size_ ||
           frame_size_in_dip != current_frame_size_in_dip_) {
-        if (!surface_id_.is_null()) {
-          if (compositor) {
-            std::set<cc::SurfaceSequence> seq;
-            seq.insert(compositor->InsertSurfaceSequenceForNextFrame());
-            // Destruction of this surface needs to wait for compositors that
-            // have drawn using it to swap frames that don't reference it.
-            // TODO(jbauman): Handle cases where the compositor has been
-            // changed since the last draw.
-            surface_factory_->DestroyOnSequence(surface_id_, seq);
-          } else {
-            surface_factory_->Destroy(surface_id_);
-          }
-        }
+        if (!surface_id_.is_null())
+          surface_factory_->Destroy(surface_id_);
         surface_id_ = id_allocator_->GenerateId();
-        surface_factory_->Create(surface_id_, frame_size);
-        client_->GetLayer()->SetShowSurface(surface_id_, frame_size_in_dip);
+        surface_factory_->Create(surface_id_);
+        // manager must outlive compositors using it.
+        client_->GetLayer()->SetShowSurface(
+            surface_id_,
+            base::Bind(&SatisfyCallback, base::Unretained(manager)),
+            base::Bind(&RequireCallback, base::Unretained(manager)), frame_size,
+            frame_device_scale_factor, frame_size_in_dip);
         current_surface_size_ = frame_size;
+        current_scale_factor_ = frame_device_scale_factor;
       }
       scoped_ptr<cc::CompositorFrame> compositor_frame =
           make_scoped_ptr(new cc::CompositorFrame());
@@ -540,10 +554,10 @@ void DelegatedFrameHost::EvictDelegatedFrame() {
 void DelegatedFrameHost::CopyFromCompositingSurfaceHasResult(
     const gfx::Size& dst_size_in_pixel,
     const SkColorType color_type,
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    ReadbackRequestCallback& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
   if (result->IsEmpty() || result->size().IsEmpty()) {
-    callback.Run(false, SkBitmap());
+    callback.Run(SkBitmap(), content::READBACK_FAILED);
     return;
   }
 
@@ -562,7 +576,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResult(
 }
 
 static void CopyFromCompositingSurfaceFinished(
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    ReadbackRequestCallback& callback,
     scoped_ptr<cc::SingleReleaseCallback> release_callback,
     scoped_ptr<SkBitmap> bitmap,
     scoped_ptr<SkAutoLockPixels> bitmap_pixels_lock,
@@ -572,23 +586,25 @@ static void CopyFromCompositingSurfaceFinished(
   uint32 sync_point = 0;
   if (result) {
     GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
-    sync_point = gl_helper->InsertSyncPoint();
+    if (gl_helper)
+      sync_point = gl_helper->InsertSyncPoint();
   }
   bool lost_resource = sync_point == 0;
   release_callback->Run(sync_point, lost_resource);
 
-  callback.Run(result, *bitmap);
+  callback.Run(*bitmap,
+               result ? content::READBACK_SUCCESS : content::READBACK_FAILED);
 }
 
 // static
 void DelegatedFrameHost::PrepareTextureCopyOutputResult(
     const gfx::Size& dst_size_in_pixel,
     const SkColorType color_type,
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    ReadbackRequestCallback& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
   DCHECK(result->HasTexture());
   base::ScopedClosureRunner scoped_callback_runner(
-      base::Bind(callback, false, SkBitmap()));
+      base::Bind(callback, SkBitmap(), content::READBACK_FAILED));
 
   // TODO(sikugu): We should be able to validate the format here using
   // GLHelper::IsReadbackConfigSupported before we processs the result.
@@ -636,11 +652,11 @@ void DelegatedFrameHost::PrepareTextureCopyOutputResult(
 void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
     const gfx::Size& dst_size_in_pixel,
     const SkColorType color_type,
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
+    ReadbackRequestCallback& callback,
     scoped_ptr<cc::CopyOutputResult> result) {
   if (color_type != kN32_SkColorType && color_type != kAlpha_8_SkColorType) {
     NOTIMPLEMENTED();
-    callback.Run(false, SkBitmap());
+    callback.Run(SkBitmap(), READBACK_FORMAT_NOT_SUPPORTED);
     return;
   }
   DCHECK(result->HasBitmap());
@@ -659,7 +675,7 @@ void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
   }
   if (color_type == kN32_SkColorType) {
     DCHECK_EQ(scaled_bitmap.colorType(), kN32_SkColorType);
-    callback.Run(true, scaled_bitmap);
+    callback.Run(scaled_bitmap, READBACK_SUCCESS);
     return;
   }
   DCHECK_EQ(color_type, kAlpha_8_SkColorType);
@@ -671,7 +687,7 @@ void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
   bool success = grayscale_bitmap.tryAllocPixels(
       SkImageInfo::MakeA8(scaled_bitmap.width(), scaled_bitmap.height()));
   if (!success) {
-    callback.Run(false, SkBitmap());
+    callback.Run(SkBitmap(), content::READBACK_MEMORY_ALLOCATION_FAILURE);
     return;
   }
   SkCanvas canvas(grayscale_bitmap);
@@ -680,7 +696,7 @@ void DelegatedFrameHost::PrepareBitmapCopyOutputResult(
       skia::AdoptRef(SkLumaColorFilter::Create());
   paint.setColorFilter(filter.get());
   canvas.drawBitmap(scaled_bitmap, SkIntToScalar(0), SkIntToScalar(0), &paint);
-  callback.Run(true, grayscale_bitmap);
+  callback.Run(grayscale_bitmap, READBACK_SUCCESS);
 }
 
 // static
@@ -998,7 +1014,13 @@ void DelegatedFrameHost::OnLayerRecreated(ui::Layer* old_layer,
                                        current_frame_size_in_dip_);
   }
   if (!surface_id_.is_null()) {
-    new_layer->SetShowSurface(surface_id_, current_frame_size_in_dip_);
+    ImageTransportFactory* factory = ImageTransportFactory::GetInstance();
+    cc::SurfaceManager* manager = factory->GetSurfaceManager();
+    new_layer->SetShowSurface(
+        surface_id_, base::Bind(&SatisfyCallback, base::Unretained(manager)),
+        base::Bind(&RequireCallback, base::Unretained(manager)),
+        current_surface_size_, current_scale_factor_,
+        current_frame_size_in_dip_);
   }
 }
 

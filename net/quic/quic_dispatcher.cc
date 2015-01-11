@@ -367,6 +367,7 @@ QuicConnection* QuicDispatcher::CreateQuicConnection(
                             connection_writer_factory_,
                             /* owns_writer= */ true,
                             /* is_server= */ true,
+                            crypto_config_.HasProofSource(),
                             supported_versions_);
 }
 

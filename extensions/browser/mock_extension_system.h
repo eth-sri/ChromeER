@@ -25,6 +25,8 @@ class MockExtensionSystem : public ExtensionSystem {
 
   content::BrowserContext* browser_context() { return browser_context_; }
 
+  void set_event_router(EventRouter* router) { event_router_ = router; }
+
   // ExtensionSystem overrides:
   void InitForRegularProfile(bool extensions_enabled) override;
   ExtensionService* extension_service() override;
@@ -36,8 +38,6 @@ class MockExtensionSystem : public ExtensionSystem {
   InfoMap* info_map() override;
   LazyBackgroundTaskQueue* lazy_background_task_queue() override;
   EventRouter* event_router() override;
-  WarningService* warning_service() override;
-  Blacklist* blacklist() override;
   ErrorConsole* error_console() override;
   InstallVerifier* install_verifier() override;
   QuotaService* quota_service() override;
@@ -51,6 +51,9 @@ class MockExtensionSystem : public ExtensionSystem {
  private:
   content::BrowserContext* browser_context_;
   OneShotEvent ready_;
+
+  // Not owned, defaults to null.
+  EventRouter* event_router_;
 
   DISALLOW_COPY_AND_ASSIGN(MockExtensionSystem);
 };

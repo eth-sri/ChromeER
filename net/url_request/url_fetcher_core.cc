@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/sequenced_task_runner.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -34,7 +35,6 @@ namespace {
 
 const int kBufferSize = 4096;
 const int kUploadProgressTimerInterval = 100;
-bool g_interception_enabled = false;
 bool g_ignore_certificate_requests = false;
 
 void EmptyCompletionCallback(int result) {}
@@ -390,6 +390,11 @@ void URLFetcherCore::OnReceivedRedirect(URLRequest* request,
 }
 
 void URLFetcherCore::OnResponseStarted(URLRequest* request) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 URLFetcherCore::OnResponseStarted"));
+
   DCHECK_EQ(request, request_.get());
   DCHECK(network_task_runner_->BelongsToCurrentThread());
   if (request_->status().is_success()) {
@@ -418,6 +423,11 @@ void URLFetcherCore::OnCertificateRequested(
 
 void URLFetcherCore::OnReadCompleted(URLRequest* request,
                                      int bytes_read) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 URLFetcherCore::OnReadCompleted"));
+
   DCHECK(request == request_);
   DCHECK(network_task_runner_->BelongsToCurrentThread());
 
@@ -470,10 +480,6 @@ int URLFetcherCore::GetNumFetcherCores() {
   return g_registry.Get().size();
 }
 
-void URLFetcherCore::SetEnableInterceptionForTests(bool enabled) {
-  g_interception_enabled = enabled;
-}
-
 void URLFetcherCore::SetIgnoreCertificateRequests(bool ignored) {
   g_ignore_certificate_requests = ignored;
 }
@@ -514,8 +520,6 @@ void URLFetcherCore::StartURLRequest() {
       original_url_, DEFAULT_PRIORITY, this, NULL);
   request_->set_stack_trace(stack_trace_);
   int flags = request_->load_flags() | load_flags_;
-  if (!g_interception_enabled)
-    flags = flags | LOAD_DISABLE_INTERCEPT;
 
   if (is_chunked_upload_)
     request_->EnableChunkedUpload();

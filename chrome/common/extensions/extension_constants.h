@@ -79,6 +79,9 @@ extern const char kHotwordAudioVerificationAppId[];
 // The extension id of the hotword voice search trigger extension.
 extern const char kHotwordExtensionId[];
 
+// The extension id of the new (experimental) hotword extension.
+extern const char kHotwordNewExtensionId[];
+
 // The extension id of the hotword shared module.
 extern const char kHotwordSharedModuleId[];
 
@@ -105,12 +108,6 @@ extern const char kYoutubeAppId[];
 
 // The extension id of the in-app payments support application.
 extern const char kInAppPaymentsSupportAppId[];
-
-// The name of the app launch histogram.
-extern const char kAppLaunchHistogram[];
-
-// The name of the app launch histogram for platform apps.
-extern const char kPlatformAppLaunchHistogram[];
 
 // The buckets used for app launches.
 enum AppLaunchBucket {
@@ -262,39 +259,5 @@ extern const uint8 kWebstoreSignaturesPublicKey[];
 extern const int kWebstoreSignaturesPublicKeySize;
 
 }  // namespace extension_misc
-
-namespace extensions {
-
-// This enum is used for the launch type the user wants to use for an
-// application.
-// Do not remove items or re-order this enum as it is used in preferences
-// and histograms.
-enum LaunchType {
-  LAUNCH_TYPE_INVALID = -1,
-  LAUNCH_TYPE_FIRST = 0,
-  LAUNCH_TYPE_PINNED = LAUNCH_TYPE_FIRST,
-  LAUNCH_TYPE_REGULAR = 1,
-  LAUNCH_TYPE_FULLSCREEN = 2,
-  LAUNCH_TYPE_WINDOW = 3,
-  NUM_LAUNCH_TYPES,
-
-  // Launch an app in the in the way a click on the NTP would,
-  // if no user pref were set.  Update this constant to change
-  // the default for the NTP and chrome.management.launchApp().
-  LAUNCH_TYPE_DEFAULT = LAUNCH_TYPE_REGULAR
-};
-
-// Don't remove items or change the order of this enum.  It's used in
-// histograms and preferences.
-enum LaunchContainer {
-  LAUNCH_CONTAINER_WINDOW,
-  LAUNCH_CONTAINER_PANEL,
-  LAUNCH_CONTAINER_TAB,
-  // For platform apps, which don't actually have a container (they just get a
-  // "onLaunched" event).
-  LAUNCH_CONTAINER_NONE
-};
-
-}  // namespace extensions
 
 #endif  // CHROME_COMMON_EXTENSIONS_EXTENSION_CONSTANTS_H_

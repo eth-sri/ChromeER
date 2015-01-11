@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_PASSWORD_MANAGER_CLIENT_H_
 #define COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_PASSWORD_MANAGER_CLIENT_H_
 
+#include "base/callback.h"
 #include "base/metrics/field_trial.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/password_manager/core/browser/password_store.h"
@@ -64,6 +65,15 @@ class PasswordManagerClient {
   virtual bool PromptUserToSavePassword(
       scoped_ptr<PasswordFormManager> form_to_save) = 0;
 
+  // Informs the embedder of a password forms that the user should choose from.
+  // Returns true if the prompt is indeed displayed. If the prompt is not
+  // displayed, returns false and does not call |callback|.
+  // |callback| should be invoked with the chosen form.
+  // Note: The implementation takes ownership of all PasswordForms in |forms|.
+  virtual bool PromptUserToChooseCredentials(
+      const std::vector<autofill::PasswordForm*>& forms,
+      base::Callback<void(const CredentialInfo&)> callback) = 0;
+
   // Called when a password is saved in an automated fashion. Embedder may
   // inform the user that this save has occured.
   virtual void AutomaticPasswordSave(
@@ -109,11 +119,14 @@ class PasswordManagerClient {
   virtual void OnLogRouterAvailabilityChanged(bool router_can_be_used);
 
   // Forward |text| for display to the LogRouter (if registered with one).
-  virtual void LogSavePasswordProgress(const std::string& text);
+  virtual void LogSavePasswordProgress(const std::string& text) const;
 
   // Returns true if logs recorded via LogSavePasswordProgress will be
   // displayed, and false otherwise.
   virtual bool IsLoggingActive() const;
+
+  // Returns true if last navigation page had HTTP error i.e 5XX or 4XX
+  virtual bool WasLastNavigationHTTPError() const;
 
   // Returns the authorization prompt policy to be used with the given form.
   // Only relevant on OSX.

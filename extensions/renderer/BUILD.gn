@@ -2,11 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
+
+assert(enable_extensions)
+
 # GYP version: extensions/extensions.gyp:extensions_renderer
 source_set("renderer") {
   sources = [
     "activity_log_converter_strategy.cc",
     "activity_log_converter_strategy.h",
+    "api/automation/automation_api_helper.cc",
+    "api/automation/automation_api_helper.h",
     "api_activity_logger.cc",
     "api_activity_logger.h",
     "api_definitions_natives.cc",
@@ -47,10 +53,14 @@ source_set("renderer") {
     "extensions_renderer_client.h",
     "file_system_natives.cc",
     "file_system_natives.h",
+    "guest_view/extensions_guest_view_container.cc",
+    "guest_view/extensions_guest_view_container.h",
     "guest_view/guest_view_container.cc",
     "guest_view/guest_view_container.h",
     "guest_view/guest_view_internal_custom_bindings.cc",
     "guest_view/guest_view_internal_custom_bindings.h",
+    "guest_view/mime_handler_view/mime_handler_view_container.cc",
+    "guest_view/mime_handler_view/mime_handler_view_container.h",
     "i18n_custom_bindings.cc",
     "i18n_custom_bindings.h",
     "id_generator_custom_bindings.cc",
@@ -157,7 +167,7 @@ source_set("renderer") {
     "//content:resources",
     "//extensions:extensions_resources",
     "//gin",
-    "//mojo/bindings/js",
+    "//mojo/edk/js",
     "//skia",
     "//third_party/WebKit/public:blink",
   ]

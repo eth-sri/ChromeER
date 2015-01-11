@@ -31,6 +31,8 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         bug=428845)
     self.Fail('conformance/glsl/misc/expression-list-in-declarator-initializer.html',
         bug=428845)
+    self.Fail('conformance/uniforms/gl-uniform-arrays.html',
+        bug=433385)
 
     # Win failures
     self.Fail('conformance/glsl/misc/struct-equals.html',
@@ -47,6 +49,8 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['win'], bug=420357)
     self.Fail('conformance/glsl/misc/ternary-operators-in-global-initializers.html',
         ['win'], bug=415694)
+    self.Fail('conformance/glsl/misc/struct-specifiers-in-uniforms.html',
+        ['win'], bug=433412)
     # This test still causes itself and any tests afterwards to time out
     # in Win Debug bots.
     self.Skip('conformance/textures/texture-copying-feedback-loops.html',
@@ -71,6 +75,12 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['win7', 'intel'], bug=372511)
     self.Fail('conformance/glsl/misc/shader-with-array-of-structs-uniform.html',
         ['win7', 'intel', 'nvidia'], bug=373972)
+
+    # Win / AMD failures
+    self.Fail('conformance/extensions/ext-sRGB.html',
+        ['win', 'amd'], bug=839) # angle bug ID
+    self.Fail('conformance/extensions/webgl-depth-texture.html',
+        ['win', 'amd'], bug=839) # angle bug ID
 
     # Mac / Intel failures
     # Radar 13499466
@@ -153,6 +163,40 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # Linux failures
     self.Fail('conformance/textures/default-texture.html',
         ['linux', ('nvidia', 0x104a)], bug=422152)
+    self.Fail('conformance/programs/program-test.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/rendering/multisample-corruption.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/default-texture.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/tex-image-and-sub-image-2d-with-video.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/' +
+        'tex-image-and-sub-image-2d-with-webgl-canvas.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/' +
+        'tex-image-and-sub-image-2d-with-webgl-canvas-rgb565.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/' +
+        'tex-image-and-sub-image-2d-with-webgl-canvas-rgba4444.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/' +
+        'tex-image-and-sub-image-2d-with-webgl-canvas-rgba5551.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/texture-mips.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/texture-npot-video.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/textures/texture-size.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/more/functions/copyTexSubImage2D.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/more/functions/drawArraysOutOfBounds.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/more/functions/texImage2DHTML.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
+    self.Fail('conformance/more/functions/texSubImage2DHTML.html',
+        ['linux', ('amd', 0x68f9)], bug=436212)
 
     # Android failures
     # The following test is very slow and therefore times out on Android bot.
@@ -274,3 +318,9 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['chromeos', ('intel', 0xa011)], bug=375554)
     self.Skip('conformance/uniforms/uniform-default-values.html',
         ['chromeos', ('intel', 0xa011)], bug=375554)
+
+    # Flaky on Mac & Linux
+    self.Fail('conformance/textures/texture-upload-size.html',
+        ['mac'], bug=436493)
+    self.Fail('conformance/textures/texture-upload-size.html',
+        ['linux'], bug=436493)

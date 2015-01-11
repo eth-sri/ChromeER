@@ -41,6 +41,7 @@ class CC_SURFACES_EXPORT SurfaceAggregator {
                            SurfaceId surface_id);
 
   void HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
+                         float opacity,
                          RenderPass* dest_pass);
   void CopySharedQuadState(const SharedQuadState* source_sqs,
                            const gfx::Transform& content_to_target_transform,
@@ -48,16 +49,22 @@ class CC_SURFACES_EXPORT SurfaceAggregator {
   void CopyQuadsToPass(const QuadList& source_quad_list,
                        const SharedQuadStateList& source_shared_quad_state_list,
                        const gfx::Transform& content_to_target_transform,
+                       float opacity,
                        RenderPass* dest_pass,
                        SurfaceId surface_id);
   void CopyPasses(const DelegatedFrameData* frame_data, Surface* surface);
+
+  // Remove Surfaces that were referenced before but aren't currently
+  // referenced from the ResourceProvider.
+  void RemoveUnreferencedChildren();
 
   bool TakeResources(Surface* surface,
                      const DelegatedFrameData* frame_data,
                      RenderPassList* render_pass_list);
   int ChildIdForSurface(Surface* surface);
   gfx::Rect DamageRectForSurface(const Surface* surface,
-                                 const RenderPass& source);
+                                 const RenderPass& source,
+                                 const gfx::Rect& full_rect);
 
   SurfaceManager* manager_;
   ResourceProvider* provider_;

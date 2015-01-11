@@ -249,7 +249,6 @@ def TranslateConstants(token):
 def ExpressionToText(value):
   return TranslateConstants(value)
 
-
 def IsArrayPointerField(field):
   return mojom.IsArrayKind(field.kind)
 
@@ -264,6 +263,12 @@ def IsMapPointerField(field):
 
 def IsHandleField(field):
   return mojom.IsAnyHandleKind(field.kind)
+
+def IsInterfaceRequestParameter(parameter):
+  return mojom.IsInterfaceRequestKind(parameter.kind)
+
+def IsInterfaceParameter(parameter):
+  return mojom.IsInterfaceKind(parameter.kind)
 
 
 class Generator(generator.Generator):
@@ -282,6 +287,8 @@ class Generator(generator.Generator):
     "is_string_pointer_field": IsStringPointerField,
     "is_handle_field": IsHandleField,
     "js_type": JavaScriptType,
+    "is_interface_request_parameter": IsInterfaceRequestParameter,
+    "is_interface_parameter": IsInterfaceParameter,
     "stylize_method": generator.StudlyCapsToCamel,
     "validate_array_params": JavaScriptValidateArrayParams,
     "validate_handle_params": JavaScriptValidateHandleParams,
@@ -306,7 +313,7 @@ class Generator(generator.Generator):
   def GenerateAMDModule(self):
     return self.GetParameters()
 
-  @UseJinja("js_templates/module.html.tmpl", filters=js_filters)
+  @UseJinja("js_templates/module.sky.tmpl", filters=js_filters)
   def GenerateHTMLModule(self):
     return self.GetParameters()
 
@@ -314,7 +321,7 @@ class Generator(generator.Generator):
     self.Write(self.GenerateAMDModule(),
         self.MatchMojomFilePath("%s.js" % self.module.name))
     self.Write(self.GenerateHTMLModule(),
-        self.MatchMojomFilePath("%s.html" % self.module.name))
+        self.MatchMojomFilePath("%s.sky" % self.module.name))
 
   def GetImports(self):
     used_names = set()

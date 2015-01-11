@@ -28,6 +28,8 @@ class MockUserManager : public ChromeUserManager {
   MOCK_METHOD0(Shutdown, void(void));
   MOCK_CONST_METHOD0(GetUsersAllowedForMultiProfile,
                      user_manager::UserList(void));
+  MOCK_CONST_METHOD0(GetUsersAllowedForSupervisedUsersCreation,
+                     user_manager::UserList(void));
   MOCK_CONST_METHOD0(GetLoggedInUsers, const user_manager::UserList&(void));
   MOCK_CONST_METHOD0(GetLRULoggedInUsers, const user_manager::UserList&(void));
   MOCK_METHOD3(UserLoggedIn, void(
@@ -56,7 +58,7 @@ class MockUserManager : public ChromeUserManager {
   MOCK_CONST_METHOD0(IsCurrentUserNonCryptohomeDataEphemeral, bool(void));
   MOCK_CONST_METHOD0(CanCurrentUserLock, bool(void));
   MOCK_CONST_METHOD0(IsUserLoggedIn, bool(void));
-  MOCK_CONST_METHOD0(IsLoggedInAsRegularUser, bool(void));
+  MOCK_CONST_METHOD0(IsLoggedInAsUserWithGaiaAccount, bool(void));
   MOCK_CONST_METHOD0(IsLoggedInAsDemoUser, bool(void));
   MOCK_CONST_METHOD0(IsLoggedInAsPublicAccount, bool(void));
   MOCK_CONST_METHOD0(IsLoggedInAsGuest, bool(void));

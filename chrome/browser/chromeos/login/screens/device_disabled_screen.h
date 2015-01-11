@@ -6,17 +6,22 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_SCREENS_DEVICE_DISABLED_SCREEN_H_
 
 #include "base/macros.h"
-#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/screens/base_screen.h"
 #include "chrome/browser/chromeos/login/screens/device_disabled_screen_actor.h"
+#include "chrome/browser/chromeos/system/device_disabling_manager.h"
 
 namespace chromeos {
+
+namespace system {
+class DeviceDisablingManager;
+}
 
 class BaseScreenDelegate;
 
 // Screen informing the user that the device has been disabled by its owner.
 class DeviceDisabledScreen : public BaseScreen,
-                             public DeviceDisabledScreenActor::Delegate {
+                             public DeviceDisabledScreenActor::Delegate,
+                             public system::DeviceDisablingManager::Observer {
  public:
   DeviceDisabledScreen(BaseScreenDelegate* base_screen_delegate,
                        DeviceDisabledScreenActor* actor);
@@ -30,18 +35,18 @@ class DeviceDisabledScreen : public BaseScreen,
 
   // DeviceDisabledScreenActor::Delegate:
   void OnActorDestroyed(DeviceDisabledScreenActor* actor) override;
+  const std::string& GetEnrollmentDomain() const override;
+  const std::string& GetMessage() const override;
+
+  // system::DeviceDisablingManager::Observer:
+  void OnDisabledMessageChanged(const std::string& disabled_message) override;
 
  private:
-  // Indicate to the observer that the screen was skipped because the device is
-  // not disabled.
-  void IndicateDeviceNotDisabled();
+  DeviceDisabledScreenActor* actor_;
+  system::DeviceDisablingManager* device_disabling_manager_;
 
   // Whether the screen is currently showing.
   bool showing_;
-
-  DeviceDisabledScreenActor* actor_;
-
-  base::WeakPtrFactory<DeviceDisabledScreen> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceDisabledScreen);
 };

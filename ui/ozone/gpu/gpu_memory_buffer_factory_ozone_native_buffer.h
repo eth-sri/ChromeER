@@ -8,6 +8,7 @@
 #include <map>
 
 #include "base/memory/ref_counted.h"
+#include "base/synchronization/lock.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/ozone/gpu/ozone_gpu_export.h"
@@ -28,23 +29,26 @@ class OZONE_GPU_EXPORT GpuMemoryBufferFactoryOzoneNativeBuffer {
   virtual ~GpuMemoryBufferFactoryOzoneNativeBuffer();
 
   // Creates a GPU memory buffer identified by |id|.
-  bool CreateGpuMemoryBuffer(const gfx::GpuMemoryBufferId& id,
+  bool CreateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
                              const gfx::Size& size,
                              gfx::GpuMemoryBuffer::Format format,
-                             gfx::GpuMemoryBuffer::Usage usage);
+                             gfx::GpuMemoryBuffer::Usage usage,
+                             int client_id);
 
   // Destroys GPU memory buffer identified by |id|.
-  void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferId& id);
+  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id, int client_id);
 
   // Creates a GLImage instance for GPU memory buffer identified by |id|.
   scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
-      const gfx::GpuMemoryBufferId& id,
+      gfx::GpuMemoryBufferId id,
       const gfx::Size& size,
       gfx::GpuMemoryBuffer::Format format,
-      unsigned internalformat);
+      unsigned internalformat,
+      int client_id);
 
  private:
   BufferToPixmapMap native_pixmap_map_;
+  base::Lock native_pixmap_map_lock_;
 };
 
 }  // namespace ui

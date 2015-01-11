@@ -69,7 +69,8 @@ bool WebContentsAndroid::Register(JNIEnv* env) {
 
 WebContentsAndroid::WebContentsAndroid(WebContents* web_contents)
     : web_contents_(web_contents),
-      navigation_controller_(&(web_contents->GetController())) {
+      navigation_controller_(&(web_contents->GetController())),
+      weak_factory_(this) {
   JNIEnv* env = AttachCurrentThread();
   obj_.Reset(env,
              Java_WebContentsImpl_create(
@@ -177,15 +178,81 @@ void WebContentsAndroid::SetupTransitionView(JNIEnv* env,
 
 void WebContentsAndroid::BeginExitTransition(JNIEnv* env,
                                              jobject jobj,
-                                             jstring css_selector) {
+                                             jstring css_selector,
+                                             jboolean exit_to_native_app) {
   web_contents_->GetMainFrame()->Send(new FrameMsg_BeginExitTransition(
       web_contents_->GetMainFrame()->GetRoutingID(),
-      ConvertJavaStringToUTF8(env, css_selector)));
+      ConvertJavaStringToUTF8(env, css_selector),
+      exit_to_native_app));
 }
+
+void WebContentsAndroid::HideTransitionElements(JNIEnv* env,
+                                                jobject jobj,
+                                                jstring css_selector) {
+  web_contents_->GetMainFrame()->Send(
+      new FrameMsg_HideTransitionElements(
+          web_contents_->GetMainFrame()->GetRoutingID(),
+          ConvertJavaStringToUTF8(env, css_selector)));
+}
+
+void WebContentsAndroid::ShowTransitionElements(JNIEnv* env,
+                                                jobject jobj,
+                                                jstring css_selector) {
+  web_contents_->GetMainFrame()->Send(
+      new FrameMsg_ShowTransitionElements(
+          web_contents_->GetMainFrame()->GetRoutingID(),
+          ConvertJavaStringToUTF8(env, css_selector)));
+}
+
 
 void WebContentsAndroid::ClearNavigationTransitionData(JNIEnv* env,
                                                        jobject jobj) {
   static_cast<WebContentsImpl*>(web_contents_)->ClearNavigationTransitionData();
+}
+
+void WebContentsAndroid::FetchTransitionElements(JNIEnv* env,
+                                                 jobject jobj,
+                                                 jstring jurl) {
+  GURL url(base::android::ConvertJavaStringToUTF8(env, jurl));
+  RenderFrameHost* frame = web_contents_->GetMainFrame();
+
+  scoped_ptr<TransitionLayerData> transition_data(new TransitionLayerData());
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&TransitionRequestManager::GetPendingTransitionRequest,
+                 base::Unretained(TransitionRequestManager::GetInstance()),
+                 frame->GetProcess()->GetID(),
+                 frame->GetRoutingID(),
+                 url,
+                 transition_data.get()),
+      base::Bind(&WebContentsAndroid::OnTransitionElementsFetched,
+                 weak_factory_.GetWeakPtr(),
+                 base::Passed(&transition_data)));
+}
+
+void WebContentsAndroid::OnTransitionElementsFetched(
+    scoped_ptr<const TransitionLayerData> transition_data,
+    bool has_transition_data) {
+  // FetchTransitionElements is called after the navigation transition state
+  // machine starts, which means there must be transition data.
+  DCHECK(has_transition_data);
+  JNIEnv* env = AttachCurrentThread();
+
+  std::vector<TransitionElement>::const_iterator it =
+      transition_data->elements.begin();
+  for (; it != transition_data->elements.end(); ++it) {
+    ScopedJavaLocalRef<jstring> jstring_name(ConvertUTF8ToJavaString(env,
+                                                                     it->id));
+    Java_WebContentsImpl_addNavigationTransitionElements(
+        env, obj_.obj(), jstring_name.obj(),
+        it->rect.x(), it->rect.y(), it->rect.width(), it->rect.height());
+  }
+
+  ScopedJavaLocalRef<jstring> jstring_css_selector(
+      ConvertUTF8ToJavaString(env, transition_data->css_selector));
+  Java_WebContentsImpl_onTransitionElementsFetched(
+      env, obj_.obj(), jstring_css_selector.obj());
 }
 
 void WebContentsAndroid::OnHide(JNIEnv* env, jobject obj) {
@@ -375,25 +442,6 @@ void WebContentsAndroid::EvaluateJavaScript(JNIEnv* env,
 
   web_contents_->GetMainFrame()->ExecuteJavaScript(
       ConvertJavaStringToUTF16(env, script), js_callback);
-}
-
-// TODO(sgurun) add support for posting a frame whose name is known (only
-//               main frame is supported at this time, see crbug.com/389721)
-// TODO(sgurun) add support for passing message ports
-void WebContentsAndroid::PostMessageToFrame(JNIEnv* env, jobject obj,
-    jstring frame_name, jstring message, jstring source_origin,
-    jstring target_origin) {
-
-  RenderViewHost* host = web_contents_->GetRenderViewHost();
-  if (!host)
-    return;
-  ViewMsg_PostMessage_Params params;
-  params.source_origin = ConvertJavaStringToUTF16(env, source_origin);
-  params.target_origin = ConvertJavaStringToUTF16(env, target_origin);
-  params.data = ConvertJavaStringToUTF16(env, message);
-  params.is_data_raw_string = true;
-  params.source_routing_id = MSG_ROUTING_NONE;
-  host->Send(new ViewMsg_PostMessageEvent(host->GetRoutingID(), params));
 }
 
 }  // namespace content

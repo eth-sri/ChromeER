@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-function MockWindow(width, height) {
+function MockWindow(width, height, sizer) {
   this.innerWidth = width;
   this.innerHeight = height;
   this.addEventListener = function(e, f) {
@@ -12,10 +12,19 @@ function MockWindow(width, height) {
       this.resizeCallback = f;
   },
   this.scrollTo = function(x, y) {
+    if (sizer) {
+      x = Math.min(x, parseInt(sizer.style.width) - width);
+      y = Math.min(y, parseInt(sizer.style.height) - height);
+    }
     this.pageXOffset = Math.max(0, x);
     this.pageYOffset = Math.max(0, y);
     this.scrollCallback();
   };
+  if (sizer) {
+    sizer.resizeCallback_ = function() {
+      this.scrollTo(this.pageXOffset, this.pageYOffset);
+    }.bind(this);
+  }
   this.pageXOffset = 0;
   this.pageYOffset = 0;
   this.scrollCallback = null;
@@ -23,9 +32,22 @@ function MockWindow(width, height) {
 }
 
 function MockSizer() {
+  var sizer = this;
   this.style = {
-    width: '0px',
-    height: '0px'
+    width_: '0px',
+    height_: '0px',
+    get height() { return this.height_; },
+    set height(height) {
+      this.height_ = height;
+      if (sizer.resizeCallback_)
+        sizer.resizeCallback_();
+    },
+    get width() { return this.width_; },
+    set width(width) {
+      this.width_ = width;
+      if (sizer.resizeCallback_)
+        sizer.resizeCallback_();
+    },
   };
 }
 
@@ -67,8 +89,9 @@ function MockDocumentDimensions(width, height) {
 
 var tests = [
   function testDocumentNeedsScrollbars() {
-    var viewport = new Viewport(new MockWindow(100, 100), new MockSizer(),
-                                function() {}, function() {}, function() {}, 0);
+    var viewport =
+        new Viewport(new MockWindow(100, 100), new MockSizer(), function() {},
+                     function() {}, function() {}, 10);
     var scrollbars;
 
     viewport.setDocumentDimensions(new MockDocumentDimensions(90, 90));
@@ -86,10 +109,25 @@ var tests = [
     chrome.test.assertTrue(scrollbars.vertical);
     chrome.test.assertTrue(scrollbars.horizontal);
 
-    viewport.setDocumentDimensions(new MockDocumentDimensions(100, 101));
+    viewport.setDocumentDimensions(new MockDocumentDimensions(90, 101));
     scrollbars = viewport.documentNeedsScrollbars_(1);
     chrome.test.assertTrue(scrollbars.vertical);
     chrome.test.assertFalse(scrollbars.horizontal);
+
+    viewport.setDocumentDimensions(new MockDocumentDimensions(101, 90));
+    scrollbars = viewport.documentNeedsScrollbars_(1);
+    chrome.test.assertFalse(scrollbars.vertical);
+    chrome.test.assertTrue(scrollbars.horizontal);
+
+    viewport.setDocumentDimensions(new MockDocumentDimensions(91, 101));
+    scrollbars = viewport.documentNeedsScrollbars_(1);
+    chrome.test.assertTrue(scrollbars.vertical);
+    chrome.test.assertTrue(scrollbars.horizontal);
+
+    viewport.setDocumentDimensions(new MockDocumentDimensions(101, 91));
+    scrollbars = viewport.documentNeedsScrollbars_(1);
+    chrome.test.assertTrue(scrollbars.vertical);
+    chrome.test.assertTrue(scrollbars.horizontal);
 
     viewport.setDocumentDimensions(new MockDocumentDimensions(40, 51));
     scrollbars = viewport.documentNeedsScrollbars_(2);
@@ -104,8 +142,8 @@ var tests = [
   },
 
   function testSetZoom() {
-    var mockWindow = new MockWindow(100, 100);
     var mockSizer = new MockSizer();
+    var mockWindow = new MockWindow(100, 100, mockSizer);
     var mockCallback = new MockViewportChangedCallback();
     var viewport = new Viewport(mockWindow, mockSizer, mockCallback.callback,
                                 function() {}, function() {}, 0);
@@ -141,15 +179,21 @@ var tests = [
     chrome.test.assertEq('400px', mockSizer.style.height);
 
     // Test that the scroll position scales correctly. It scales relative to the
-    // center of the page.
+    // top-left of the page.
     viewport.setZoom(1);
     mockWindow.pageXOffset = 50;
     mockWindow.pageYOffset = 50;
     viewport.setZoom(2);
     chrome.test.assertEq('400px', mockSizer.style.width);
     chrome.test.assertEq('400px', mockSizer.style.height);
-    chrome.test.assertEq(150, mockWindow.pageXOffset);
-    chrome.test.assertEq(150, mockWindow.pageYOffset);
+    chrome.test.assertEq(100, mockWindow.pageXOffset);
+    chrome.test.assertEq(100, mockWindow.pageYOffset);
+    mockWindow.scrollTo(250, 250);
+    viewport.setZoom(1);
+    chrome.test.assertEq('200px', mockSizer.style.width);
+    chrome.test.assertEq('200px', mockSizer.style.height);
+    chrome.test.assertEq(100, mockWindow.pageXOffset);
+    chrome.test.assertEq(100, mockWindow.pageYOffset);
     chrome.test.succeed();
   },
 
@@ -159,8 +203,8 @@ var tests = [
                                 function() {}, function() {}, 0);
 
     var documentDimensions = new MockDocumentDimensions(100, 100);
+    documentDimensions.addPage(50, 100);
     documentDimensions.addPage(100, 100);
-    documentDimensions.addPage(150, 100);
     documentDimensions.addPage(100, 200);
     viewport.setDocumentDimensions(documentDimensions);
     viewport.setZoom(1);
@@ -185,10 +229,19 @@ var tests = [
     mockWindow.scrollTo(0, 180);
     chrome.test.assertEq(2, viewport.getMostVisiblePage());
 
+    // Scrolled just past half way through the second page.
+    mockWindow.scrollTo(0, 160);
+    chrome.test.assertEq(1, viewport.getMostVisiblePage());
+
     // Scrolled just over half way through the first page with 2x zoom.
     viewport.setZoom(2);
     mockWindow.scrollTo(0, 151);
     chrome.test.assertEq(1, viewport.getMostVisiblePage());
+
+    // Zoomed out with the entire document visible.
+    viewport.setZoom(0.25);
+    mockWindow.scrollTo(0, 0);
+    chrome.test.assertEq(0, viewport.getMostVisiblePage());
     chrome.test.succeed();
   },
 
@@ -301,11 +354,11 @@ var tests = [
     chrome.test.assertEq('100px', mockSizer.style.height);
     chrome.test.assertEq(0.5, viewport.zoom);
 
-    // Test that when there are multiple pages the most visible page is sized
-    // to.
+    // Test that when there are multiple pages the height of the most visible
+    // page and the width of the widest page are sized to.
     documentDimensions.reset();
-    documentDimensions.addPage(200, 100);
-    documentDimensions.addPage(100, 400);
+    documentDimensions.addPage(100, 100);
+    documentDimensions.addPage(200, 400);
     viewport.setDocumentDimensions(documentDimensions);
     viewport.setZoom(1);
     mockWindow.scrollTo(0, 0);
@@ -339,8 +392,7 @@ var tests = [
     mockWindow.scrollTo(0, 175);
     viewport.fitToPage();
     chrome.test.assertEq(0.25, viewport.zoom);
-    // The page will be centred because it is less than the document width.
-    chrome.test.assertEq(12.5, viewport.position.x);
+    chrome.test.assertEq(0, viewport.position.x);
     chrome.test.assertEq(50, viewport.position.y);
     chrome.test.succeed();
   },

@@ -37,6 +37,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "cc/base/switches.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_impl.h"
@@ -110,6 +111,7 @@
 #include "components/rappor/rappor_service.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
+#include "components/translate/content/browser/browser_cld_utils.h"
 #include "components/translate/content/common/cld_data_source.h"
 #include "components/translate/core/browser/translate_download_manager.h"
 #include "components/variations/net/variations_http_header_provider.h"
@@ -118,6 +120,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/power_usage_monitor.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
@@ -182,6 +185,10 @@
 #include "chrome/browser/mac/keystone_glue.h"
 #endif
 
+#if !defined(OS_IOS)
+#include "chrome/browser/ui/app_modal/chrome_javascript_native_dialog_factory.h"
+#endif
+
 #if !defined(DISABLE_NACL)
 #include "chrome/browser/component_updater/pnacl/pnacl_component_installer.h"
 #include "components/nacl/browser/nacl_process_host.h"
@@ -190,9 +197,10 @@
 #if defined(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/startup_helper.h"
 #include "extensions/browser/extension_protocols.h"
+#include "extensions/components/javascript_dialog_extensions_client/javascript_dialog_extension_client_impl.h"
 #endif
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
 #include "printing/printed_document.h"
 #endif
 
@@ -416,9 +424,9 @@ void RegisterComponentsForUpdate() {
     g_browser_process->pnacl_component_installer()->RegisterPnaclComponent(cus);
 #endif
 
-  if (translate::CldDataSource::ShouldRegisterForComponentUpdates()) {
-    RegisterCldComponent(cus);
-  }
+  // Registration of the CLD Component is a no-op unless the CLD data source has
+  // been configured to be the "Component" data source.
+  RegisterCldComponent(cus);
 
   base::FilePath path;
   if (PathService::Get(chrome::DIR_USER_DATA, &path)) {
@@ -495,7 +503,7 @@ void LaunchDevToolsHandlerIfNeeded(const CommandLine& command_line) {
       g_browser_process->CreateDevToolsHttpProtocolHandler(
           chrome::HOST_DESKTOP_TYPE_NATIVE,
           "127.0.0.1",
-          port);
+          static_cast<uint16>(port));
     } else {
       DLOG(WARNING) << "Invalid http debugger port number " << port;
     }
@@ -595,8 +603,10 @@ void ChromeBrowserMainParts::SetupMetricsAndFieldTrials() {
       new base::FieldTrialList(metrics->CreateEntropyProvider().release()));
 
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kEnableBenchmarking))
+  if (command_line->HasSwitch(switches::kEnableBenchmarking) ||
+      command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking)) {
     base::FieldTrial::EnableBenchmarking();
+  }
 
   // Ensure any field trials specified on the command line are initialized.
   if (command_line->HasSwitch(switches::kForceFieldTrials)) {
@@ -1061,6 +1071,14 @@ void ChromeBrowserMainParts::PreProfileInit() {
         base::Bind(&ProfileManager::CleanUpStaleProfiles, profiles_to_delete));
   }
 #endif  // OS_ANDROID
+
+#if defined(ENABLE_EXTENSIONS)
+  javascript_dialog_extensions_client::InstallClient();
+#endif
+
+#if !defined(OS_IOS)
+  InstallChromeJavaScriptNativeDialogFactory();
+#endif
 }
 
 void ChromeBrowserMainParts::PostProfileInit() {
@@ -1418,7 +1436,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     net::SdchManager::EnableSdchSupport(false);
   }
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
   if (parsed_command_line().HasSwitch(switches::kDebugPrint)) {
     base::FilePath path =
         parsed_command_line().GetSwitchValuePath(switches::kDebugPrint);
@@ -1451,7 +1469,7 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   browser_process_->metrics_service()->LogNeedForCleanShutdown();
 #endif
 
-#if defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINT_PREVIEW)
   // Create the instance of the cloud print proxy service so that it can launch
   // the service process if needed. This is needed because the service process
   // might have shutdown because an update was available.
@@ -1488,6 +1506,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
   // triggering the timer and call that explicitly in the approprate place.
   // http://crbug.com/105065.
   browser_process_->notification_ui_manager();
+
+  // This must be called prior to RegisterComponentsForUpdate, in case the CLD
+  // data source is based on the Component Updater.
+  translate::BrowserCldUtils::ConfigureDefaultDataProvider();
 
   if (!parsed_command_line().HasSwitch(switches::kDisableComponentUpdate))
     RegisterComponentsForUpdate();
@@ -1575,6 +1597,11 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
     run_message_loop_ = false;
   }
   browser_creator_.reset();
+
+#if !defined(OS_LINUX) || defined(OS_CHROMEOS)  // http://crbug.com/426393
+  if (g_browser_process->metrics_service()->reporting_active())
+    content::StartPowerUsageMonitor();
+#endif
 
   process_power_collector_.reset(new ProcessPowerCollector);
   process_power_collector_->Initialize();

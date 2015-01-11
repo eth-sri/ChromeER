@@ -34,7 +34,8 @@ void CastContentRendererClient::RenderThreadStarted() {
   // On platforms where the system NSS shared libraries are used,
   // initialize NSS now because it won't be able to load the .so's
   // after entering the sandbox.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(switches::kSingleProcess))
     crypto::InitNSSSafely();
 #endif
 }
@@ -44,7 +45,11 @@ void CastContentRendererClient::RenderViewCreated(
   blink::WebView* webview = render_view->GetWebView();
   if (webview) {
     webview->setBaseBackgroundColor(kColorBlack);
+
+    // The following settings express consistent behaviors across Cast
+    // embedders, though Android has enabled by default for mobile browsers.
     webview->settings()->setShrinksViewportContentToFit(false);
+    webview->settings()->setMediaControlsOverlayPlayButtonEnabled(false);
   }
 }
 

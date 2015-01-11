@@ -39,7 +39,12 @@ namespace base {
 class Thread;
 }
 
+namespace content {
+class DownloadManager;
+}
+
 namespace net {
+class URLRequest;
 class URLRequestContext;
 class URLRequestContextGetter;
 }
@@ -48,6 +53,7 @@ namespace safe_browsing {
 class ClientSideDetectionService;
 class DownloadProtectionService;
 class IncidentReportingService;
+class OffDomainInclusionDetector;
 }
 
 // Construction needs to happen on the main thread.
@@ -130,6 +136,13 @@ class SafeBrowsingService
   // process.
   void RegisterDelayedAnalysisCallback(
       const safe_browsing::DelayedAnalysisCallback& callback);
+
+  // Adds |download_manager| to the set monitored by safe browsing.
+  void AddDownloadManager(content::DownloadManager* download_manager);
+
+  // Observes resource requests made by the renderer and reports suspicious
+  // activity.
+  void OnResourceRequest(const net::URLRequest* request);
 
  protected:
   // Creates the safe browsing service.  Need to initialize before using.
@@ -246,6 +259,9 @@ class SafeBrowsingService
   // The database manager handles the database and download logic.  Accessed on
   // both UI and IO thread.
   scoped_refptr<SafeBrowsingDatabaseManager> database_manager_;
+
+  scoped_ptr<safe_browsing::OffDomainInclusionDetector>
+      off_domain_inclusion_detector_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingService);
 };

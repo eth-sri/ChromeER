@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/strings/string_piece.h"
+#include "net/quic/crypto/cached_network_parameters.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_session.h"
@@ -39,10 +40,24 @@ static const uint32 kInitialSessionFlowControlWindowForTest =
 QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
                                         QuicPacketSequenceNumber least_unacked);
 
+class NiceMockPacketWriterFactory : public QuicConnection::PacketWriterFactory {
+ public:
+  NiceMockPacketWriterFactory() {}
+  ~NiceMockPacketWriterFactory() override {}
+
+  QuicPacketWriter* Create(QuicConnection* /*connection*/) const override;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(NiceMockPacketWriterFactory);
+};
+
 class MockConnection : public QuicConnection {
  public:
   // Uses a MockHelper, ConnectionId of 42, and 127.0.0.1:123.
   explicit MockConnection(bool is_server);
+
+  // Uses a MockHelper, ConnectionId of 42, and 127.0.0.1:123.
+  MockConnection(bool is_server, bool is_secure);
 
   // Uses a MockHelper, ConnectionId of 42.
   MockConnection(IPEndPoint address, bool is_server);
@@ -80,13 +95,17 @@ class MockConnection : public QuicConnection {
   MOCK_METHOD0(OnCanWrite, void());
   MOCK_CONST_METHOD0(HasPendingWrites, bool());
 
+  MOCK_METHOD1(ResumeConnectionState, bool(const CachedNetworkParameters&));
+
   void ReallyProcessUdpPacket(const IPEndPoint& self_address,
                               const IPEndPoint& peer_address,
                               const QuicEncryptedPacket& packet) {
-    return QuicConnection::ProcessUdpPacket(self_address, peer_address, packet);
+    QuicConnection::ProcessUdpPacket(self_address, peer_address, packet);
   }
 
-  virtual bool OnProtocolVersionMismatch(QuicVersion version) { return false; }
+  virtual bool OnProtocolVersionMismatch(QuicVersion version) override {
+    return false;
+  }
 
  private:
   scoped_ptr<QuicConnectionHelperInterface> helper_;

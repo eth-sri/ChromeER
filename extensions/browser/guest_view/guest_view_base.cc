@@ -6,6 +6,7 @@
 
 #include "base/lazy_instance.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/navigation_details.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -27,6 +28,10 @@
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
 using content::WebContents;
+
+namespace content {
+struct FrameNavigateParams;
+}
 
 namespace extensions {
 
@@ -57,15 +62,15 @@ scoped_ptr<base::DictionaryValue> GuestViewBase::Event::GetArguments() {
 
 // This observer ensures that the GuestViewBase destroys itself when its
 // embedder goes away.
-class GuestViewBase::EmbedderLifetimeObserver : public WebContentsObserver {
+class GuestViewBase::OwnerLifetimeObserver : public WebContentsObserver {
  public:
-  EmbedderLifetimeObserver(GuestViewBase* guest,
-                           content::WebContents* embedder_web_contents)
+  OwnerLifetimeObserver(GuestViewBase* guest,
+                        content::WebContents* embedder_web_contents)
       : WebContentsObserver(embedder_web_contents),
         destroyed_(false),
         guest_(guest) {}
 
-  ~EmbedderLifetimeObserver() override {}
+  ~OwnerLifetimeObserver() override {}
 
   // WebContentsObserver implementation.
   void WebContentsDestroyed() override {
@@ -73,10 +78,12 @@ class GuestViewBase::EmbedderLifetimeObserver : public WebContentsObserver {
     Destroy();
   }
 
-  void AboutToNavigateRenderView(
-      content::RenderViewHost* render_view_host) override {
-    // If the embedder navigates then destroy the guest.
-    Destroy();
+  void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) override {
+    // If the embedder navigates to a different page then destroy the guest.
+    if (details.is_navigation_to_different_page())
+      Destroy();
   }
 
   void RenderProcessGone(base::TerminationStatus status) override {
@@ -94,23 +101,51 @@ class GuestViewBase::EmbedderLifetimeObserver : public WebContentsObserver {
 
     destroyed_ = true;
     guest_->EmbedderWillBeDestroyed();
-    guest_->embedder_web_contents_ = NULL;
+    guest_->owner_web_contents_ = NULL;
     guest_->Destroy();
   }
 
-  DISALLOW_COPY_AND_ASSIGN(EmbedderLifetimeObserver);
+  DISALLOW_COPY_AND_ASSIGN(OwnerLifetimeObserver);
+};
+
+// This observer ensures that the GuestViewBase destroys itself when its
+// embedder goes away.
+class GuestViewBase::OpenerLifetimeObserver : public WebContentsObserver {
+ public:
+  OpenerLifetimeObserver(GuestViewBase* guest)
+      : WebContentsObserver(guest->GetOpener()->web_contents()),
+        guest_(guest) {}
+
+  ~OpenerLifetimeObserver() override {}
+
+  // WebContentsObserver implementation.
+  void WebContentsDestroyed() override {
+    if (guest_->attached())
+      return;
+
+    // If the opener is destroyed then destroy the guest.
+    guest_->Destroy();
+  }
+
+ private:
+  GuestViewBase* guest_;
+
+  DISALLOW_COPY_AND_ASSIGN(OpenerLifetimeObserver);
 };
 
 GuestViewBase::GuestViewBase(content::BrowserContext* browser_context,
                              int guest_instance_id)
-    : embedder_web_contents_(NULL),
-      embedder_render_process_id_(0),
+    : owner_web_contents_(NULL),
+      owner_render_process_id_(0),
       browser_context_(browser_context),
       guest_instance_id_(guest_instance_id),
       view_instance_id_(guestview::kInstanceIDNone),
       element_instance_id_(guestview::kInstanceIDNone),
+      attached_(false),
       initialized_(false),
+      is_being_destroyed_(false),
       auto_size_enabled_(false),
+      is_full_page_plugin_(false),
       weak_ptr_factory_(this) {
 }
 
@@ -152,8 +187,7 @@ void GuestViewBase::Init(const std::string& embedder_extension_id,
     return;
   }
 
-  CreateWebContents(embedder_extension_id,
-                    embedder_process_id,
+  CreateWebContents(embedder_process_id,
                     embedder_site_url,
                     create_params,
                     base::Bind(&GuestViewBase::CompleteInit,
@@ -165,23 +199,23 @@ void GuestViewBase::Init(const std::string& embedder_extension_id,
 
 void GuestViewBase::InitWithWebContents(
     const std::string& embedder_extension_id,
-    content::WebContents* embedder_web_contents,
+    content::WebContents* owner_web_contents,
     content::WebContents* guest_web_contents) {
   DCHECK(guest_web_contents);
-  DCHECK(embedder_web_contents);
-  int embedder_render_process_id =
-      embedder_web_contents->GetRenderProcessHost()->GetID();
-  content::RenderProcessHost* embedder_render_process_host =
-      content::RenderProcessHost::FromID(embedder_render_process_id);
+  DCHECK(owner_web_contents);
+  int owner_render_process_id =
+      owner_web_contents->GetRenderProcessHost()->GetID();
+  content::RenderProcessHost* owner_render_process_host =
+      content::RenderProcessHost::FromID(owner_render_process_id);
 
   embedder_extension_id_ = embedder_extension_id;
-  embedder_render_process_id_ = embedder_render_process_host->GetID();
+  owner_render_process_id_ = owner_render_process_host->GetID();
 
   // At this point, we have just created the guest WebContents, we need to add
   // an observer to the embedder WebContents. This observer will be responsible
   // for destroying the guest WebContents if the embedder goes away.
-  embedder_web_contents_observer_.reset(
-      new EmbedderLifetimeObserver(this, embedder_web_contents));
+  owner_lifetime_observer_.reset(
+      new OwnerLifetimeObserver(this, owner_web_contents));
 
   WebContentsObserver::Observe(guest_web_contents);
   guest_web_contents->SetDelegate(this);
@@ -287,6 +321,8 @@ bool GuestViewBase::IsDragAndDropEnabled() const {
 }
 
 void GuestViewBase::DidAttach(int guest_proxy_routing_id) {
+  opener_lifetime_observer_.reset();
+
   // Give the derived class an opportunity to perform some actions.
   DidAttachToEmbedder();
 
@@ -313,6 +349,11 @@ void GuestViewBase::GuestSizeChanged(const gfx::Size& old_size,
 }
 
 void GuestViewBase::Destroy() {
+  if (is_being_destroyed_)
+    return;
+
+  is_being_destroyed_ = true;
+
   DCHECK(web_contents());
 
   // Give the derived class an opportunity to perform some cleanup.
@@ -344,9 +385,12 @@ void GuestViewBase::SetAttachParams(const base::DictionaryValue& params) {
 void GuestViewBase::SetOpener(GuestViewBase* guest) {
   if (guest && guest->IsViewType(GetViewType())) {
     opener_ = guest->weak_ptr_factory_.GetWeakPtr();
+    if (!attached())
+      opener_lifetime_observer_.reset(new OpenerLifetimeObserver(this));
     return;
   }
   opener_ = base::WeakPtr<GuestViewBase>();
+  opener_lifetime_observer_.reset();
 }
 
 void GuestViewBase::RegisterDestructionCallback(
@@ -355,18 +399,20 @@ void GuestViewBase::RegisterDestructionCallback(
 }
 
 void GuestViewBase::WillAttach(content::WebContents* embedder_web_contents,
-                               int element_instance_id) {
-  embedder_web_contents_ = embedder_web_contents;
+                               int element_instance_id,
+                               bool is_full_page_plugin) {
+  owner_web_contents_ = embedder_web_contents;
+  attached_ = true;
 
   // If we are attaching to a different WebContents than the one that created
   // the guest, we need to create a new LifetimeObserver.
-  if (embedder_web_contents !=
-      embedder_web_contents_observer_->web_contents()) {
-    embedder_web_contents_observer_.reset(
-        new EmbedderLifetimeObserver(this, embedder_web_contents));
+  if (embedder_web_contents != owner_lifetime_observer_->web_contents()) {
+    owner_lifetime_observer_.reset(
+        new OwnerLifetimeObserver(this, embedder_web_contents));
   }
 
   element_instance_id_ = element_instance_id;
+  is_full_page_plugin_ = is_full_page_plugin;
 
   WillAttachToEmbedder();
 }
@@ -384,12 +430,6 @@ void GuestViewBase::DidStopLoading(content::RenderViewHost* render_view_host) {
 
 void GuestViewBase::RenderViewReady() {
   GuestReady();
-  content::RenderViewHost* rvh = web_contents()->GetRenderViewHost();
-  if (auto_size_enabled_) {
-    rvh->EnableAutoResize(min_auto_size_, max_auto_size_);
-  } else {
-    rvh->DisableAutoResize(element_size_);
-  }
 }
 
 void GuestViewBase::WebContentsDestroyed() {
@@ -457,7 +497,7 @@ void GuestViewBase::DispatchEventToEmbedder(Event* event) {
   args->Append(event->GetArguments().release());
 
   EventRouter::DispatchEvent(
-      embedder_web_contents_,
+      owner_web_contents_,
       browser_context_,
       embedder_extension_id_,
       event->name(),

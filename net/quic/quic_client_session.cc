@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_activity_monitor.h"
 #include "net/http/transport_security_state.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_server_info.h"
@@ -285,6 +286,24 @@ QuicClientSession::~QuicClientSession() {
     }
   }
   const QuicConnectionStats stats = connection()->GetStats();
+  if (server_info_ && stats.min_rtt_us > 0) {
+    base::TimeTicks wait_for_data_start_time =
+        server_info_->wait_for_data_start_time();
+    base::TimeTicks wait_for_data_end_time =
+        server_info_->wait_for_data_end_time();
+    if (!wait_for_data_start_time.is_null() &&
+        !wait_for_data_end_time.is_null()) {
+      base::TimeDelta wait_time =
+          wait_for_data_end_time - wait_for_data_start_time;
+      const base::HistogramBase::Sample kMaxWaitToRtt = 1000;
+      base::HistogramBase::Sample wait_to_rtt =
+          static_cast<base::HistogramBase::Sample>(
+              100 * wait_time.InMicroseconds() / stats.min_rtt_us);
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicServerInfo.WaitForDataReadyToRtt",
+                                  wait_to_rtt, 0, kMaxWaitToRtt, 50);
+    }
+  }
+
   if (stats.max_sequence_reordering == 0)
     return;
   const base::HistogramBase::Sample kMaxReordering = 100;
@@ -583,12 +602,28 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   if (event == HANDSHAKE_CONFIRMED) {
     UMA_HISTOGRAM_TIMES("Net.QuicSession.HandshakeConfirmedTime",
                         base::TimeTicks::Now() - handshake_start_);
+    if (server_info_) {
+      // Track how long it has taken to finish handshake once we start waiting
+      // for reading of QUIC server information from disk cache. We could use
+      // this data to compare total time taken if we were to cancel the disk
+      // cache read vs waiting for the read to complete.
+      base::TimeTicks wait_for_data_start_time =
+          server_info_->wait_for_data_start_time();
+      if (!wait_for_data_start_time.is_null()) {
+        UMA_HISTOGRAM_TIMES(
+            "Net.QuicServerInfo.WaitForDataReady.HandshakeConfirmedTime",
+            base::TimeTicks::Now() - wait_for_data_start_time);
+      }
+    }
+
     ObserverSet::iterator it = observers_.begin();
     while (it != observers_.end()) {
       Observer* observer = *it;
       ++it;
       observer->OnCryptoHandshakeConfirmed();
     }
+    if (server_info_)
+      server_info_->OnExternalCacheHit();
   }
   QuicSession::OnCryptoHandshakeEvent(event);
 }
@@ -631,6 +666,18 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
             "Net.QuicSession.TimedOutWithOpenStreams.ConsecutiveTLPCount",
             connection()->sent_packet_manager().consecutive_tlp_count());
       }
+      if (connection()->sent_packet_manager().HasUnackedPackets()) {
+        UMA_HISTOGRAM_TIMES(
+            "Net.QuicSession.LocallyTimedOutWithOpenStreams."
+                "TimeSinceLastReceived.UnackedPackets",
+            NetworkActivityMonitor::GetInstance()->GetTimeSinceLastReceived());
+      } else {
+        UMA_HISTOGRAM_TIMES(
+            "Net.QuicSession.LocallyTimedOutWithOpenStreams."
+                "TimeSinceLastReceived.NoUnackedPackets",
+            NetworkActivityMonitor::GetInstance()->GetTimeSinceLastReceived());
+      }
+
     } else {
       UMA_HISTOGRAM_COUNTS(
           "Net.QuicSession.ConnectionClose.NumOpenStreams.HandshakeTimedOut",
@@ -681,7 +728,7 @@ void QuicClientSession::OnProofValid(
     const QuicCryptoClientConfig::CachedState& cached) {
   DCHECK(cached.proof_valid());
 
-  if (!server_info_ || !server_info_->IsReadyToPersist()) {
+  if (!server_info_) {
     return;
   }
 

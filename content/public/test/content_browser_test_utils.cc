@@ -63,14 +63,27 @@ void LoadDataWithBaseURL(Shell* window, const GURL& url,
   same_tab_observer.Wait();
 }
 
-void NavigateToURL(Shell* window, const GURL& url) {
+bool NavigateToURL(Shell* window, const GURL& url) {
   NavigateToURLBlockUntilNavigationsComplete(window, url, 1);
+  if (!IsLastCommittedEntryOfPageType(window->web_contents(),
+                                      PAGE_TYPE_NORMAL))
+    return false;
+  return window->web_contents()->GetLastCommittedURL() == url;
+}
+
+bool NavigateToURLAndExpectNoCommit(Shell* window, const GURL& url) {
+  NavigationEntry* old_entry =
+      window->web_contents()->GetController().GetLastCommittedEntry();
+  NavigateToURLBlockUntilNavigationsComplete(window, url, 1);
+  NavigationEntry* new_entry =
+      window->web_contents()->GetController().GetLastCommittedEntry();
+  return old_entry == new_entry;
 }
 
 void WaitForAppModalDialog(Shell* window) {
-  ShellJavaScriptDialogManager* dialog_manager=
+  ShellJavaScriptDialogManager* dialog_manager =
       static_cast<ShellJavaScriptDialogManager*>(
-          window->GetJavaScriptDialogManager());
+          window->GetJavaScriptDialogManager(window->web_contents()));
 
   scoped_refptr<MessageLoopRunner> runner = new MessageLoopRunner();
   dialog_manager->set_dialog_request_callback(runner->QuitClosure());

@@ -43,7 +43,7 @@ public class DevToolsBridgeServerTest extends ServiceTestCase<LocalBindingTestSe
     protected void setUp() throws Exception {
         super.setUp();
         setupService();
-        mFactory = new SessionDependencyFactory();
+        mFactory = SessionDependencyFactory.newInstance();
     }
 
     @Override
@@ -74,9 +74,10 @@ public class DevToolsBridgeServerTest extends ServiceTestCase<LocalBindingTestSe
 
         Future<String> response = TestUtils.asyncRequest(CLIENT_SOCKET_NAME, REQUEST);
         LocalSocket serverSocket = serverListeningSocket.accept();
-        String request = TestUtils.readAll(serverSocket);
+        String request = TestUtils.read(serverSocket, REQUEST.length());
         Assert.assertEquals(REQUEST, request);
-        TestUtils.writeAndShutdown(serverSocket, RESPONSE);
+        TestUtils.write(serverSocket, RESPONSE);
+        serverSocket.close();
         Assert.assertEquals(RESPONSE, response.get());
 
         clientSession.dispose();

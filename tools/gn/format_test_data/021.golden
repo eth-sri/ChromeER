@@ -1,9 +1,12 @@
 f(aaaaaaaaaaaaaaaaaaa)
+
 f(aaaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaa)
 
 # Exactly 80 wide.
 f(aaaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaa, aaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaa, aaaaa)
+
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 
@@ -40,11 +43,10 @@ aaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaa + aaaaaaaaaaaaaaaaaaaaaaaaa,
              aaaaaaaaaaaa)
 
 # 80 ---------------------------------------------------------------------------
-aaaaaaaaaaaa(
-    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa +
-        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
-    aaaaaaaaaaaa,
-    aaaaaaaaaaaa)
+aaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa +
+                 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
+             aaaaaaaaaaaa,
+             aaaaaaaaaaaa)
 
 aaaaaaaaaaaa(
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,

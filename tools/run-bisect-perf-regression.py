@@ -111,18 +111,18 @@ def _LoadConfigFile(config_file_path):
     return {}
 
 
-def _ValidateConfigFile(config_contents, valid_parameters):
+def _ValidateConfigFile(config_contents, required_parameters):
   """Validates the config file contents, checking whether all values are
   non-empty.
 
   Args:
     config_contents: A config dictionary.
-    valid_parameters: A list of parameters to check for.
+    required_parameters: A list of parameters to check for.
 
   Returns:
     True if valid.
   """
-  for parameter in valid_parameters:
+  for parameter in required_parameters:
     if parameter not in config_contents:
       return False
     value = config_contents[parameter]
@@ -146,13 +146,13 @@ def _ValidatePerfConfigFile(config_contents):
   Returns:
     True if valid.
   """
-  valid_parameters = [
+  required_parameters = [
       'command',
       'repeat_count',
       'truncate_percent',
       'max_time_minutes',
   ]
-  return _ValidateConfigFile(config_contents, valid_parameters)
+  return _ValidateConfigFile(config_contents, required_parameters)
 
 
 def _ValidateBisectConfigFile(config_contents):
@@ -167,7 +167,7 @@ def _ValidateBisectConfigFile(config_contents):
   Returns:
     True if valid.
   """
-  valid_params = [
+  required_params = [
       'command',
       'good_revision',
       'bad_revision',
@@ -176,7 +176,7 @@ def _ValidateBisectConfigFile(config_contents):
       'truncate_percent',
       'max_time_minutes',
   ]
-  return _ValidateConfigFile(config_contents, valid_params)
+  return _ValidateConfigFile(config_contents, required_params)
 
 
 def _OutputFailedResults(text_to_print):
@@ -210,6 +210,9 @@ def _CreateBisectOptionsFromConfig(config):
   if config.has_key('improvement_direction'):
     opts_dict['improvement_direction'] = int(config['improvement_direction'])
 
+  if config.has_key('bug_id') and str(config['bug_id']).isdigit():
+    opts_dict['bug_id'] = config['bug_id']
+
   opts_dict['build_preference'] = 'ninja'
   opts_dict['output_buildbot_annotations'] = True
 
@@ -233,6 +236,21 @@ def _CreateBisectOptionsFromConfig(config):
   return bisect_perf_regression.BisectOptions.FromDict(opts_dict)
 
 
+def _ParseCloudLinksFromOutput(output, bucket):
+  cloud_file_links = [t for t in output.splitlines()
+      if 'storage.googleapis.com/chromium-telemetry/%s/' % bucket in t]
+
+  # What we're getting here is basically "View online at http://..." so parse
+  # out just the URL portion.
+  for i in xrange(len(cloud_file_links)):
+    cloud_file_link = cloud_file_links[i]
+    cloud_file_link = [t for t in cloud_file_link.split(' ')
+        if 'storage.googleapis.com/chromium-telemetry/%s/' % bucket in t]
+    assert cloud_file_link, 'Couldn\'t parse URL from output.'
+    cloud_file_links[i] = cloud_file_link[0]
+  return cloud_file_links
+
+
 def _RunPerformanceTest(config):
   """Runs a performance test with and without the current patch.
 
@@ -248,19 +266,23 @@ def _RunPerformanceTest(config):
   bisect_utils.OutputAnnotationStepStart('Building With Patch')
 
   opts = _CreateBisectOptionsFromConfig(config)
-  b = bisect_perf_regression.BisectPerformanceMetrics(opts)
+  b = bisect_perf_regression.BisectPerformanceMetrics(opts, os.getcwd())
 
   if bisect_utils.RunGClient(['runhooks']):
     raise RuntimeError('Failed to run gclient runhooks')
 
-  if not b.BuildCurrentRevision('chromium'):
+  if not b.ObtainBuild('chromium'):
     raise RuntimeError('Patched version failed to build.')
 
   bisect_utils.OutputAnnotationStepClosed()
   bisect_utils.OutputAnnotationStepStart('Running With Patch')
 
   results_with_patch = b.RunPerformanceTestAndParseResults(
-      opts.command, opts.metric, reset_on_first_run=True, results_label='Patch')
+      opts.command,
+      opts.metric,
+      reset_on_first_run=True,
+      upload_on_last_run=True,
+      results_label='Patch')
 
   if results_with_patch[1]:
     raise RuntimeError('Patched version failed to run performance test.')
@@ -282,7 +304,7 @@ def _RunPerformanceTest(config):
   if bisect_utils.RunGClient(['runhooks']):
     raise RuntimeError('Failed to run gclient runhooks')
 
-  if not b.BuildCurrentRevision('chromium'):
+  if not b.ObtainBuild('chromium'):
     raise RuntimeError('Unpatched version failed to build.')
 
   bisect_utils.OutputAnnotationStepClosed()
@@ -295,19 +317,16 @@ def _RunPerformanceTest(config):
     raise RuntimeError('Unpatched version failed to run performance test.')
 
   # Find the link to the cloud stored results file.
-  output = results_without_patch[2]
-  cloud_file_link = [t for t in output.splitlines()
-      if 'storage.googleapis.com/chromium-telemetry/html-results/' in t]
-  if cloud_file_link:
-    # What we're getting here is basically "View online at http://..." so parse
-    # out just the URL portion.
-    cloud_file_link = cloud_file_link[0]
-    cloud_file_link = [t for t in cloud_file_link.split(' ')
-        if 'storage.googleapis.com/chromium-telemetry/html-results/' in t]
-    assert cloud_file_link, 'Couldn\'t parse URL from output.'
-    cloud_file_link = cloud_file_link[0]
-  else:
-    cloud_file_link = ''
+  cloud_file_link = _ParseCloudLinksFromOutput(
+      results_without_patch[2], 'html-results')
+
+  cloud_file_link = cloud_file_link[0] if cloud_file_link else ''
+
+  profiler_file_links_with_patch = _ParseCloudLinksFromOutput(
+      results_with_patch[2], 'profiling-results')
+
+  profiler_file_links_without_patch = _ParseCloudLinksFromOutput(
+      results_without_patch[2], 'profiling-results')
 
   # Calculate the % difference in the means of the 2 runs.
   percent_diff_in_means = None
@@ -336,6 +355,16 @@ def _RunPerformanceTest(config):
     bisect_utils.OutputAnnotationStepClosed()
   elif cloud_file_link:
     bisect_utils.OutputAnnotationStepLink('HTML Results', cloud_file_link)
+
+  if profiler_file_links_with_patch and profiler_file_links_without_patch:
+    for i in xrange(len(profiler_file_links_with_patch)):
+      bisect_utils.OutputAnnotationStepLink(
+          'With Patch - Profiler Data[%d]' % i,
+          profiler_file_links_with_patch[i])
+    for i in xrange(len(profiler_file_links_without_patch)):
+      bisect_utils.OutputAnnotationStepLink(
+          'Without Patch - Profiler Data[%d]' % i,
+          profiler_file_links_without_patch[i])
 
 
 def _SetupAndRunPerformanceTest(config, path_to_goma):
@@ -383,59 +412,50 @@ def _RunBisectionScript(
   """
   _PrintConfigStep(config)
 
-  cmd = ['python', os.path.join(BISECT_SCRIPT_DIR, 'bisect_perf_regression.py'),
-         '-c', config['command'],
-         '-g', config['good_revision'],
-         '-b', config['bad_revision'],
-         '-m', config['metric'],
-         '--working_directory', working_directory,
-         '--output_buildbot_annotations']
+  # Construct the basic command with all necessary arguments.
+  cmd = [
+      'python',
+      os.path.join(BISECT_SCRIPT_DIR, 'bisect_perf_regression.py'),
+      '--command', config['command'],
+      '--good_revision', config['good_revision'],
+      '--bad_revision', config['bad_revision'],
+      '--metric', config['metric'],
+      '--working_directory', working_directory,
+      '--output_buildbot_annotations'
+  ]
 
-  if config.get('metric'):
-    cmd.extend(['-m', config['metric']])
-
-  if config['repeat_count']:
-    cmd.extend(['-r', config['repeat_count']])
-
-  if config['truncate_percent']:
-    cmd.extend(['-t', config['truncate_percent']])
-
-  if config['max_time_minutes']:
-    cmd.extend(['--max_time_minutes', config['max_time_minutes']])
-
-  if config.has_key('bisect_mode'):
-    cmd.extend(['--bisect_mode', config['bisect_mode']])
-
-  if config.has_key('improvement_direction'):
-    cmd.extend(['-d', config['improvement_direction']])
+  # Add flags for any optional config parameters if given in the config.
+  options = [
+      ('repeat_count', '--repeat_test_count'),
+      ('truncate_percent', '--truncate_percent'),
+      ('max_time_minutes', '--max_time_minutes'),
+      ('bisect_mode', '--bisect_mode'),
+      ('improvement_direction', '--improvement_direction'),
+      ('bug_id', '--bug_id'),
+      ('builder_host', '--builder_host'),
+      ('builder_port', '--builder_port'),
+  ]
+  for config_key, flag in options:
+    if config.has_key(config_key):
+      cmd.extend([flag, config[config_key]])
 
   cmd.extend(['--build_preference', 'ninja'])
 
-  if '--browser=cros' in config['command']:
-    cmd.extend(['--target_platform', 'cros'])
-
-    if os.environ[CROS_BOARD_ENV] and os.environ[CROS_IP_ENV]:
-      cmd.extend(['--cros_board', os.environ[CROS_BOARD_ENV]])
-      cmd.extend(['--cros_remote_ip', os.environ[CROS_IP_ENV]])
-    else:
-      print ('Error: Cros build selected, but BISECT_CROS_IP or'
-             'BISECT_CROS_BOARD undefined.\n')
-      return 1
-
-  if 'android' in config['command']:
-    if 'android-chrome-shell' in config['command']:
-      cmd.extend(['--target_platform', 'android'])
-    elif 'android-chrome' in config['command']:
-      cmd.extend(['--target_platform', 'android-chrome'])
-    else:
-      cmd.extend(['--target_platform', 'android'])
+  # Possibly set the target platform name based on the browser name in a
+  # Telemetry command.
+  if 'android-chrome-shell' in config['command']:
+    cmd.extend(['--target_platform', 'android'])
+  elif 'android-chrome' in config['command']:
+    cmd.extend(['--target_platform', 'android-chrome'])
+  elif 'android' in config['command']:
+    cmd.extend(['--target_platform', 'android'])
 
   if path_to_goma:
     # For Windows XP platforms, goma service is not supported.
     # Moreover we don't compile chrome when gs_bucket flag is set instead
     # use builds archives, therefore ignore goma service for Windows XP.
     # See http://crbug.com/330900.
-    if config.get('gs_bucket') and platform.release() == 'XP':
+    if platform.release() == 'XP':
       print ('Goma doesn\'t have a win32 binary, therefore it is not supported '
              'on Windows XP platform. Please refer to crbug.com/330900.')
       path_to_goma = None
@@ -444,23 +464,13 @@ def _RunBisectionScript(
   if path_to_extra_src:
     cmd.extend(['--extra_src', path_to_extra_src])
 
-  # These flags are used to download build archives from cloud storage if
-  # available, otherwise will post a try_job_http request to build it on the
-  # try server.
-  if config.get('gs_bucket'):
-    if config.get('builder_host') and config.get('builder_port'):
-      cmd.extend(['--gs_bucket', config['gs_bucket'],
-                  '--builder_host', config['builder_host'],
-                  '--builder_port', config['builder_port']
-                 ])
-    else:
-      print ('Error: Specified gs_bucket, but missing builder_host or '
-             'builder_port information in config.')
-      return 1
-
   if dry_run:
-    cmd.extend(['--debug_ignore_build', '--debug_ignore_sync',
-        '--debug_ignore_perf_test'])
+    cmd.extend([
+        '--debug_ignore_build',
+        '--debug_ignore_sync',
+        '--debug_ignore_perf_test'
+    ])
+
   cmd = [str(c) for c in cmd]
 
   with Goma(path_to_goma) as _:

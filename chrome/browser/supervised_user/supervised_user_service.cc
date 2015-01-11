@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -79,10 +80,6 @@ GURL SupervisedUserService::Delegate::GetBlacklistURL() const {
 }
 
 std::string SupervisedUserService::Delegate::GetSafeSitesCx() const {
-  return std::string();
-}
-
-std::string SupervisedUserService::Delegate::GetSafeSitesApiKey() const {
   return std::string();
 }
 
@@ -171,14 +168,13 @@ void SupervisedUserService::URLFilterContext::OnBlacklistLoaded() {
 
 void SupervisedUserService::URLFilterContext::InitAsyncURLChecker(
     net::URLRequestContextGetter* context,
-    const std::string& cx,
-    const std::string& api_key) {
-  ui_url_filter_->InitAsyncURLChecker(context, cx, api_key);
+    const std::string& cx) {
+  ui_url_filter_->InitAsyncURLChecker(context, cx);
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
       base::Bind(&SupervisedUserURLFilter::InitAsyncURLChecker,
-                 io_url_filter_, context, cx, api_key));
+                 io_url_filter_, context, cx));
 }
 
 SupervisedUserService::SupervisedUserService(Profile* profile)
@@ -455,8 +451,9 @@ syncer::ModelTypeSet SupervisedUserService::GetPreferredDataTypes() const {
 }
 
 void SupervisedUserService::OnHistoryRecordingStateChanged() {
-  includes_sync_sessions_type_ =
+  bool record_history =
       profile_->GetPrefs()->GetBoolean(prefs::kRecordHistory);
+  includes_sync_sessions_type_ = record_history;
   ProfileSyncServiceFactory::GetForProfile(profile_)
       ->ReconfigureDatatypeManager();
 }
@@ -551,7 +548,7 @@ SupervisedUserService::GetActiveSiteLists() {
     return site_lists.Pass();
 
   for (const scoped_refptr<const extensions::Extension>& extension :
-           *extension_service->extensions()) {
+       extensions::ExtensionRegistry::Get(profile_)->enabled_extensions()) {
     if (!extension_service->IsExtensionEnabled(extension->id()))
       continue;
 
@@ -860,7 +857,7 @@ void SupervisedUserService::SetActive(bool active) {
       const std::string& cx = delegate_->GetSafeSitesCx();
       if (!cx.empty()) {
         url_filter_context_.InitAsyncURLChecker(
-            profile_->GetRequestContext(), cx, delegate_->GetSafeSitesApiKey());
+            profile_->GetRequestContext(), cx);
       }
     }
 

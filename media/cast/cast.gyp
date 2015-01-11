@@ -165,8 +165,10 @@
         'sender/frame_sender.h',
         'sender/software_video_encoder.h',
         'sender/video_encoder.h',
+        'sender/video_encoder.cc',
         'sender/video_encoder_impl.h',
         'sender/video_encoder_impl.cc',
+        'sender/video_frame_factory.h',
         'sender/video_sender.h',
         'sender/video_sender.cc',
         'sender/vp8_encoder.cc',
@@ -190,6 +192,13 @@
             'sender/vp8_encoder.h',
           ],
         }], # OS=="ios"
+        # iOS and OS X encoders
+        ['OS=="ios" or OS=="mac"', {
+          'sources': [
+            'sender/h264_vt_encoder.cc',
+            'sender/h264_vt_encoder.h',
+          ],
+        }],  # OS=="ios" or OS=="mac"
       ], # conditions
     },
     {

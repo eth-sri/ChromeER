@@ -14,12 +14,12 @@
 
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "ui/events/devices/x11/device_data_manager_x11.h"
+#include "ui/events/devices/x11/device_list_cache_x11.h"
+#include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
-#include "ui/events/x/device_data_manager_x11.h"
-#include "ui/events/x/device_list_cache_x.h"
-#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -109,7 +109,6 @@ class XModifierStateWatcher{
   DISALLOW_COPY_AND_ASSIGN(XModifierStateWatcher);
 };
 
-#if defined(USE_XI2_MT)
 // Detects if a touch event is a driver-generated 'special event'.
 // A 'special event' is a touch event with maximum radius and pressure at
 // location (0, 0).
@@ -139,7 +138,6 @@ bool TouchEventIsGeneratedHack(const base::NativeEvent& native_event) {
 
   return radius * 2 == max;
 }
-#endif
 
 int GetEventFlagsFromXState(unsigned int state) {
   int flags = 0;
@@ -246,7 +244,6 @@ int GetButtonMaskForX2Event(XIDeviceEvent* xievent) {
 ui::EventType GetTouchEventType(const base::NativeEvent& native_event) {
   XIDeviceEvent* event =
       static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-#if defined(USE_XI2_MT)
   switch(event->evtype) {
     case XI_TouchBegin:
       return TouchEventIsGeneratedHack(native_event) ? ui::ET_UNKNOWN :
@@ -258,7 +255,6 @@ ui::EventType GetTouchEventType(const base::NativeEvent& native_event) {
       return TouchEventIsGeneratedHack(native_event) ? ui::ET_TOUCH_CANCELLED :
                                                        ui::ET_TOUCH_RELEASED;
   }
-#endif  // defined(USE_XI2_MT)
 
   DCHECK(ui::TouchFactory::GetInstance()->IsTouchDevice(event->sourceid));
   switch (event->evtype) {
@@ -358,7 +354,7 @@ namespace ui {
 
 void UpdateDeviceList() {
   XDisplay* display = gfx::GetXDisplay();
-  DeviceListCacheX::GetInstance()->UpdateDeviceList(display);
+  DeviceListCacheX11::GetInstance()->UpdateDeviceList(display);
   TouchFactory::GetInstance()->UpdateDeviceList(display);
   DeviceDataManagerX11::GetInstance()->UpdateDeviceList(display);
 }
@@ -487,7 +483,6 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
           static_cast<XIDeviceEvent*>(native_event->xcookie.data);
 
       switch (xievent->evtype) {
-#if defined(USE_XI2_MT)
         case XI_TouchBegin:
         case XI_TouchUpdate:
         case XI_TouchEnd:
@@ -496,7 +491,6 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
                  GetEventFlagsFromXState(
                      XModifierStateWatcher::GetInstance()->state());
           break;
-#endif
         case XI_ButtonPress:
         case XI_ButtonRelease: {
           const bool touch =
@@ -642,7 +636,7 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return KeyboardCodeFromXKeyEvent(native_event);
 }
 
-const char* CodeFromNative(const base::NativeEvent& native_event) {
+DomCode CodeFromNative(const base::NativeEvent& native_event) {
   return CodeFromXEvent(native_event);
 }
 

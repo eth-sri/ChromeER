@@ -118,6 +118,7 @@ class ResolutionNotificationController;
 class RootWindowController;
 class ScopedTargetRootWindow;
 class ScreenAsh;
+class ScreenOrientationDelegate;
 class ScreenPositionController;
 class SessionStateDelegate;
 class Shelf;
@@ -368,9 +369,6 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   MruWindowTracker* mru_window_tracker() {
     return mru_window_tracker_.get();
   }
-  ::wm::UserActivityDetector* user_activity_detector() {
-    return user_activity_detector_.get();
-  }
   VideoDetector* video_detector() {
     return video_detector_.get();
   }
@@ -536,6 +534,10 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
 
   LogoutConfirmationController* logout_confirmation_controller() {
     return logout_confirmation_controller_.get();
+  }
+
+  ScreenOrientationDelegate* screen_orientation_delegate() {
+    return screen_orientation_delegate_.get();
   }
 
   VirtualKeyboardController* virtual_keyboard_controller() {
@@ -704,8 +706,6 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   scoped_ptr< ::wm::InputMethodEventFilter> input_method_filter_;
 
   scoped_ptr<DisplayManager> display_manager_;
-  scoped_ptr<base::WeakPtrFactory<DisplayManager> >
-      weak_display_manager_factory_;
 
   scoped_ptr<LocaleNotificationController> locale_notification_controller_;
 
@@ -732,6 +732,9 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
 
   // Listens for output changes and updates the display manager.
   scoped_ptr<DisplayChangeObserver> display_change_observer_;
+
+  // Implements content::ScreenOrientationDelegate for ChromeOS
+  scoped_ptr<ScreenOrientationDelegate> screen_orientation_delegate_;
 
   scoped_ptr<TouchTransformerController> touch_transformer_controller_;
 

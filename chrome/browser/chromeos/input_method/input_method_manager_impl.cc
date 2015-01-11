@@ -8,8 +8,6 @@
 
 #include <sstream>
 
-#include "ash/ime/input_method_menu_item.h"
-#include "ash/ime/input_method_menu_manager.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/location.h"
@@ -30,14 +28,16 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/ime/component_extension_ime_manager.h"
-#include "chromeos/ime/extension_ime_util.h"
-#include "chromeos/ime/fake_ime_keyboard.h"
-#include "chromeos/ime/ime_keyboard.h"
-#include "chromeos/ime/input_method_delegate.h"
 #include "components/user_manager/user_manager.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "ui/base/accelerators/accelerator.h"
+#include "ui/base/ime/chromeos/component_extension_ime_manager.h"
+#include "ui/base/ime/chromeos/extension_ime_util.h"
+#include "ui/base/ime/chromeos/fake_ime_keyboard.h"
+#include "ui/base/ime/chromeos/ime_keyboard.h"
+#include "ui/base/ime/chromeos/input_method_delegate.h"
+#include "ui/chromeos/ime/input_method_menu_item.h"
+#include "ui/chromeos/ime/input_method_menu_manager.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_util.h"
 
@@ -982,9 +982,9 @@ void InputMethodManagerImpl::ChangeInputMethodInternal(
     // extension IMEs via InputMethodEngine::(Set|Update)MenuItems.
     // If the current input method is a keyboard layout, empty
     // properties are sufficient.
-    const ash::ime::InputMethodMenuItemList empty_menu_item_list;
-    ash::ime::InputMethodMenuManager* input_method_menu_manager =
-        ash::ime::InputMethodMenuManager::GetInstance();
+    const ui::ime::InputMethodMenuItemList empty_menu_item_list;
+    ui::ime::InputMethodMenuManager* input_method_menu_manager =
+        ui::ime::InputMethodMenuManager::GetInstance();
     input_method_menu_manager->SetCurrentInputMethodMenuItemList(
             empty_menu_item_list);
   }
@@ -1061,7 +1061,7 @@ void InputMethodManagerImpl::ActivateInputMethodMenuItem(
     const std::string& key) {
   DCHECK(!key.empty());
 
-  if (ash::ime::InputMethodMenuManager::GetInstance()->
+  if (ui::ime::InputMethodMenuManager::GetInstance()->
       HasInputMethodMenuItemForKey(key)) {
     IMEEngineHandlerInterface* engine =
         IMEBridge::Get()->GetCurrentEngineHandler();
@@ -1097,19 +1097,21 @@ ComponentExtensionIMEManager*
 scoped_refptr<InputMethodManager::State> InputMethodManagerImpl::CreateNewState(
     Profile* profile) {
   StateImpl* new_state = new StateImpl(this, profile);
-#if defined(USE_ATHENA)
-  // Athena for now doesn't have user preferences for input methods,
-  // therefore no one sets the active input methods in IMF. So just set
-  // the default IME here.
-  // TODO(shuchen): we need to better initialize with user preferences.
+
+  // Active IM should be set to owner's default.
+  PrefService* prefs = g_browser_process->local_state();
+  const std::string initial_input_method_id =
+      prefs->GetString(chromeos::language_prefs::kPreferredKeyboardLayout);
+
   const InputMethodDescriptor* descriptor =
       GetInputMethodUtil()->GetInputMethodDescriptorFromId(
-          GetInputMethodUtil()->GetFallbackInputMethodDescriptor().id());
+          initial_input_method_id.empty()
+              ? GetInputMethodUtil()->GetFallbackInputMethodDescriptor().id()
+              : initial_input_method_id);
   if (descriptor) {
     new_state->active_input_method_ids.push_back(descriptor->id());
     new_state->current_input_method = *descriptor;
   }
-#endif
   return scoped_refptr<InputMethodManager::State>(new_state);
 }
 

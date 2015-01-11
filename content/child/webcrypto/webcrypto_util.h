@@ -21,8 +21,8 @@ class Status;
 
 // Converts a JWK "key_ops" array to the corresponding WebCrypto usages.
 CONTENT_EXPORT Status
-    GetWebCryptoUsagesFromJwkKeyOps(const base::ListValue* key_ops,
-                                    blink::WebCryptoKeyUsageMask* usages);
+GetWebCryptoUsagesFromJwkKeyOps(const base::ListValue* key_ops,
+                                blink::WebCryptoKeyUsageMask* usages);
 
 // Composes a JWK key_ops array from a Web Crypto usage mask.
 base::ListValue* CreateJwkKeyOpsFromWebCryptoUsages(
@@ -43,6 +43,11 @@ CONTENT_EXPORT blink::WebCryptoAlgorithm CreateHmacImportAlgorithm(
 CONTENT_EXPORT blink::WebCryptoAlgorithm CreateRsaHashedImportAlgorithm(
     blink::WebCryptoAlgorithmId id,
     blink::WebCryptoAlgorithmId hash_id);
+
+// Creates an import algorithm for EC keys.
+CONTENT_EXPORT blink::WebCryptoAlgorithm CreateEcImportAlgorithm(
+    blink::WebCryptoAlgorithmId id,
+    blink::WebCryptoNamedCurve named_curve);
 
 // Returns true if the set bits in b make up a subset of the set bits in a.
 bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,

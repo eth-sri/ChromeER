@@ -15,11 +15,11 @@
 #include "base/synchronization/lock.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_export.h"
+#include "net/quic/crypto/cached_network_parameters.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_handshake_message.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_secret_boxer.h"
-#include "net/quic/crypto/source_address_token.h"
 #include "net/quic/quic_time.h"
 
 namespace net {
@@ -325,6 +325,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
 
   // Set and take ownership of the callback to invoke on primary config changes.
   void AcquirePrimaryConfigChangedCb(PrimaryConfigChangedCallback* cb);
+
+  // Returns true if this config has a |proof_source_|.
+  bool HasProofSource() const;
 
  private:
   friend class test::QuicCryptoServerConfigPeer;

@@ -19,8 +19,8 @@ gfx::PointF GetDefaultCursorLocation(DriWindow* window) {
 
 }  // namespace
 
-DriWindowManager::DriWindowManager(HardwareCursorDelegate* cursor_delegate)
-    : last_allocated_widget_(0), cursor_(new DriCursor(cursor_delegate, this)) {
+DriWindowManager::DriWindowManager(DriGpuPlatformSupportHost* sender)
+    : last_allocated_widget_(0), cursor_(new DriCursor(this, sender)) {
 }
 
 DriWindowManager::~DriWindowManager() {
@@ -59,6 +59,14 @@ DriWindow* DriWindowManager::GetWindow(gfx::AcceleratedWidget widget) {
     return it->second;
 
   NOTREACHED() << "Attempting to get non-existing window " << widget;
+  return NULL;
+}
+
+DriWindow* DriWindowManager::GetWindowAt(const gfx::Point& location) {
+  for (auto it = window_map_.begin(); it != window_map_.end(); ++it)
+    if (it->second->GetBounds().Contains(location))
+      return it->second;
+
   return NULL;
 }
 

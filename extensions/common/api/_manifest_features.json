@@ -93,6 +93,14 @@
     // app.content_security_policy whitelist).
     "extension_types": ["extension", "legacy_packaged_app"]
   },
+  "current_locale": {
+    "channel": "stable",
+    "extension_types": "all"
+  },
+  "default_locale": {
+    "channel": "stable",
+    "extension_types": "all"
+  },
   "description": {
     "channel": "stable",
     "extension_types": "all"
@@ -155,7 +163,8 @@
     "whitelist": [
       "07BD6A765FFC289FF755D7CAB2893A40EC337FEC",  // http://crbug.com/404000
       "896B85CC7E913E11C34892C1425A093C0701D386",  // http://crbug.com/404000
-      "11A01C82EF355E674E4F9728A801F5C3CB40D83F"   // http://crbug.com/404000
+      "11A01C82EF355E674E4F9728A801F5C3CB40D83F",  // http://crbug.com/404000
+      "F410C88469990EE7947450311D24B8AF2ADB2595"   // http://crbug.com/404000
     ]
   },
   "manifest_version": {
@@ -191,6 +200,11 @@
       "F7FA7ABC1ECB89BA8EE6656847EFABBF43BB9BCA",
       "1A26E32DE447A17CBE5E9750CDBA78F58539B39C",  // TODO(rockot): Kill these.
       "E61F841D8210B6A9891E5384CB665FBED31FCD7B",  // http://crbug.com/281715
+
+      "07BD6A765FFC289FF755D7CAB2893A40EC337FEC",  // http://crbug.com/430730
+      "896B85CC7E913E11C34892C1425A093C0701D386",  // http://crbug.com/430730
+      "11A01C82EF355E674E4F9728A801F5C3CB40D83F",  // http://crbug.com/430730
+      "F410C88469990EE7947450311D24B8AF2ADB2595",  // http://crbug.com/430730
 
       // TODO(joaodasilva): remove these two once we have the new policy to
       // grant auto approval by ID. http://crbug.com/399392

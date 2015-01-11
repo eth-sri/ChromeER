@@ -5,6 +5,7 @@
 #include "athena/content/app_activity.h"
 
 #include "athena/activity/public/activity_manager.h"
+#include "athena/activity/public/activity_view.h"
 #include "athena/content/app_activity_registry.h"
 #include "athena/content/content_proxy.h"
 #include "athena/content/media_utils.h"
@@ -24,7 +25,8 @@ AppActivity::AppActivity(const std::string& app_id, views::WebView* web_view)
     : app_id_(app_id),
       web_view_(web_view),
       current_state_(ACTIVITY_UNLOADED),
-      app_activity_registry_(nullptr) {
+      app_activity_registry_(nullptr),
+      activity_view_(nullptr) {
   Observe(web_view->GetWebContents());
 }
 
@@ -93,7 +95,9 @@ Activity::ActivityMediaState AppActivity::GetMediaState() {
 }
 
 aura::Window* AppActivity::GetWindow() {
-  return !web_view_ ? nullptr : web_view_->GetWidget()->GetNativeWindow();
+  return web_view_ && web_view_->GetWidget()
+             ? web_view_->GetWidget()->GetNativeWindow()
+             : nullptr;
 }
 
 content::WebContents* AppActivity::GetWebContents() {
@@ -101,6 +105,10 @@ content::WebContents* AppActivity::GetWebContents() {
 }
 
 void AppActivity::Init() {
+  // Before we remove the proxy, we have to register the activity and
+  // initialize its to move it to the proper activity list location.
+  RegisterActivity();
+
   DCHECK(app_activity_registry_);
   Activity* app_proxy = app_activity_registry_->unloaded_activity_proxy();
   if (app_proxy) {
@@ -135,6 +143,16 @@ void AppActivity::Init() {
     // The proxy should now be deleted.
     DCHECK(!app_activity_registry_->unloaded_activity_proxy());
   }
+
+  // Make sure the content gets properly shown.
+  if (current_state_ == ACTIVITY_VISIBLE) {
+    HideContentProxy();
+  } else if (current_state_ == ACTIVITY_INVISIBLE) {
+    ShowContentProxy();
+  } else {
+    // If not previously specified, we change the state now to invisible..
+    SetCurrentState(ACTIVITY_INVISIBLE);
+  }
 }
 
 SkColor AppActivity::GetRepresentativeColor() const {
@@ -150,25 +168,13 @@ gfx::ImageSkia AppActivity::GetIcon() const {
   return gfx::ImageSkia();
 }
 
-bool AppActivity::UsesFrame() const {
-  return false;
+void AppActivity::SetActivityView(ActivityView* view) {
+  DCHECK(!activity_view_);
+  activity_view_ = view;
 }
 
-views::Widget* AppActivity::CreateWidget() {
-  // Before we remove the proxy, we have to register the activity and
-  // initialize its to move it to the proper activity list location.
-  RegisterActivity();
-  Init();
-  // Make sure the content gets properly shown.
-  if (current_state_ == ACTIVITY_VISIBLE) {
-    HideContentProxy();
-  } else if (current_state_ == ACTIVITY_INVISIBLE) {
-    ShowContentProxy();
-  } else {
-    // If not previously specified, we change the state now to invisible..
-    SetCurrentState(ACTIVITY_INVISIBLE);
-  }
-  return web_view_->GetWidget();
+bool AppActivity::UsesFrame() const {
+  return false;
 }
 
 views::View* AppActivity::GetContentsView() {
@@ -201,7 +207,8 @@ AppActivity::AppActivity(const std::string& app_id)
     : app_id_(app_id),
       web_view_(nullptr),
       current_state_(ACTIVITY_UNLOADED),
-      app_activity_registry_(nullptr) {
+      app_activity_registry_(nullptr),
+      activity_view_(nullptr) {
 }
 
 AppActivity::~AppActivity() {
@@ -212,12 +219,14 @@ AppActivity::~AppActivity() {
 
 void AppActivity::TitleWasSet(content::NavigationEntry* entry,
                               bool explicit_set) {
-  ActivityManager::Get()->UpdateActivity(this);
+  if (activity_view_)
+    activity_view_->UpdateTitle();
 }
 
 void AppActivity::DidUpdateFaviconURL(
     const std::vector<content::FaviconURL>& candidates) {
-  ActivityManager::Get()->UpdateActivity(this);
+  if (activity_view_)
+    activity_view_->UpdateIcon();
 }
 
 // Register an |activity| with an application.

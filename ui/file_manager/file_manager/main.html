@@ -38,6 +38,7 @@
 
       <!-- metrics.js initiates load performance tracking
            so we want to parse it as early as possible -->
+      <script src="foreground/js/metrics_base.js"></script>
       <script src="foreground/js/metrics.js"></script>
 
       <!-- Loads the client of the image loader extension -->
@@ -84,6 +85,8 @@
       <script src="foreground/js/error_counter.js"></script>
 
       <script src="common/js/async_util.js"></script>
+      <script src="common/js/file_type.js"></script>
+      <script src="common/js/importer_common.js"></script>
       <script src="common/js/volume_manager_common.js"></script>
       <script src="common/js/util.js"></script>
       <script src="common/js/progress_center_common.js"></script>
@@ -93,7 +96,9 @@
       <script src="foreground/js/ui/file_manager_dialog_base.js"></script>
 
       <script src="foreground/js/app_installer.js"></script>
+      <script src="foreground/js/app_state_controller.js"></script>
       <script src="foreground/js/cws_container_client.js"></script>
+      <script src="foreground/js/dialog_action_controller.js"></script>
       <script src="foreground/js/directory_contents.js"></script>
       <script src="foreground/js/directory_model.js"></script>
       <script src="foreground/js/file_manager.js"></script>
@@ -101,15 +106,19 @@
       <script src="foreground/js/file_selection.js"></script>
       <script src="foreground/js/file_tasks.js"></script>
       <script src="foreground/js/file_transfer_controller.js"></script>
-      <script src="foreground/js/file_type.js"></script>
       <script src="foreground/js/file_watcher.js"></script>
       <script src="foreground/js/folder_shortcuts_data_model.js"></script>
+      <script src="foreground/js/gear_menu_controller.js"></script>
+      <script src="foreground/js/launch_param.js"></script>
       <script src="foreground/js/metadata/metadata_cache.js"></script>
+      <script src="foreground/js/metadata_update_controller.js"></script>
       <script src="foreground/js/naming_controller.js"></script>
       <script src="foreground/js/navigation_list_model.js"></script>
       <script src="foreground/js/progress_center_item_group.js"></script>
+      <script src="foreground/js/scan_controller.js"></script>
       <script src="foreground/js/search_controller.js"></script>
       <script src="foreground/js/share_client.js"></script>
+      <script src="foreground/js/spinner_controller.js"></script>
       <script src="foreground/js/thumbnail_loader.js"></script>
       <script src="foreground/js/ui/conflict_dialog.js"></script>
       <script src="foreground/js/ui/default_action_dialog.js"></script>
@@ -121,6 +130,8 @@
       <script src="foreground/js/ui/file_grid.js"></script>
       <script src="foreground/js/ui/file_manager_ui.js"></script>
       <script src="foreground/js/ui/file_table.js"></script>
+      <script src="foreground/js/ui/gear_menu.js"></script>
+      <script src="foreground/js/ui/list_container.js"></script>
       <script src="foreground/js/ui/location_line.js"></script>
       <script src="foreground/js/ui/multi_profile_share_dialog.js"></script>
       <script src="foreground/js/ui/preview_panel.js"></script>
@@ -130,6 +141,7 @@
       <script src="foreground/js/ui/share_dialog.js"></script>
       <script src="foreground/js/ui/suggest_apps_dialog.js"></script>
       <script src="foreground/js/ui/tree.css.js"></script>
+      <script src="foreground/js/main_window_component.js"></script>
       <script src="foreground/js/volume_manager_wrapper.js"></script>
 
       <!-- For accurate load performance tracking main.js should be

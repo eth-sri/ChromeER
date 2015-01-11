@@ -21,13 +21,15 @@ goog.provide('i18n.input.chrome.inputview.SpecNodeName');
  */
 i18n.input.chrome.inputview.SpecNodeName = {
   ALIGN: 'align',
+  ARIA_LABEL: 'ariaLabel',
   CHARACTERS: 'characters',
   CHILDREN: 'children',
   CONDITION: 'condition',
   DIRECTION: 'direction',
+  DISABLE_LONGPRESS: 'disableLongpress',
+  EMOJI_NAMES: 'emojiNames',
   GIVE_WEIGHT_TO: 'giveWeightTo',
   HAS_ALTGR_KEY: 'hasAltGrKey',
-  HAS_COMPACT_KEYBOARD: 'hasCompactKeyboard',
   HEIGHT: 'height',
   HEIGHT_IN_WEIGHT: 'heightInWeight',
   HEIGHT_PERCENT: 'heightPercent',
@@ -65,6 +67,7 @@ i18n.input.chrome.inputview.SpecNodeName = {
   WIDTH_IN_WEIGHT: 'widthInWeight',
   WIDTH_PERCENT: 'widthPercent',
   IS_EMOTICON: 'isEmoticon',
-  MORE_KEYS_SHIFT_OPERATION: 'moreKeysShiftOperation'
+  MORE_KEYS_SHIFT_OPERATION: 'moreKeysShiftOperation',
+  ON_SHIFT: 'onShift'
 };
 

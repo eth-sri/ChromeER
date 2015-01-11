@@ -28,7 +28,6 @@
 #include "net/base/escape.h"
 #include "printing/pdf_metafile_skia.h"
 #include "printing/units.h"
-#include "skia/ext/vector_platform_device_skia.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
@@ -39,12 +38,18 @@
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebPluginDocument.h"
 #include "third_party/WebKit/public/web/WebPrintParams.h"
+#include "third_party/WebKit/public/web/WebPrintPresetOptions.h"
 #include "third_party/WebKit/public/web/WebPrintScalingOption.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/common/extensions/extension_constants.h"
+#include "extensions/common/constants.h"
+#endif  // defined(ENABLE_EXTENSIONS)
 
 using content::WebPreferences;
 
@@ -62,16 +67,15 @@ enum PrintPreviewHelperEvents {
 
 const double kMinDpi = 1.0;
 
+#if !defined(ENABLE_PRINT_PREVIEW)
+bool g_is_preview_enabled_ = false;
+#else
+bool g_is_preview_enabled_ = true;
+
 const char kPageLoadScriptFormat[] =
     "document.open(); document.write(%s); document.close();";
 
 const char kPageSetupScriptFormat[] = "setup(%s);";
-
-#if defined(ENABLE_FULL_PRINTING)
-bool g_is_preview_enabled_ = true;
-#else
-bool g_is_preview_enabled_ = false;
-#endif
 
 void ExecuteScript(blink::WebFrame* frame,
                    const char* script_format,
@@ -81,6 +85,7 @@ void ExecuteScript(blink::WebFrame* frame,
   std::string script = base::StringPrintf(script_format, json.c_str());
   frame->executeScript(blink::WebString(base::UTF8ToUTF16(script)));
 }
+#endif  // !defined(ENABLE_PRINT_PREVIEW)
 
 int GetDPI(const PrintMsg_Print_Params* print_params) {
 #if defined(OS_MACOSX)
@@ -405,6 +410,24 @@ PrintMsg_Print_Params CalculatePrintParamsForCss(
   return result_params;
 }
 
+// Return the PDF object element if |frame| is the out of process PDF extension.
+blink::WebElement GetPdfElement(blink::WebLocalFrame* frame) {
+#if defined(ENABLE_EXTENSIONS)
+  GURL url = frame->document().url();
+  if (url.SchemeIs(extensions::kExtensionScheme) &&
+      url.host() == extension_misc::kPdfExtensionId) {
+    // <object> with id="plugin" is created in
+    // chrome/browser/resources/pdf/pdf.js.
+    auto plugin_element = frame->document().getElementById("plugin");
+    if (!plugin_element.isNull()) {
+      return plugin_element;
+    }
+    NOTREACHED();
+  }
+#endif  // defined(ENABLE_EXTENSIONS)
+  return blink::WebElement();
+}
+
 }  // namespace
 
 FrameReference::FrameReference(blink::WebLocalFrame* frame) {
@@ -443,6 +466,7 @@ blink::WebView* FrameReference::view() {
   return view_;
 }
 
+#if defined(ENABLE_PRINT_PREVIEW)
 // static - Not anonymous so that platform implementations can use it.
 void PrintWebViewHelper::PrintHeaderAndFooter(
     blink::WebCanvas* canvas,
@@ -452,10 +476,6 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
     float webkit_scale_factor,
     const PageSizeMargins& page_layout,
     const PrintMsg_Print_Params& params) {
-  skia::VectorPlatformDeviceSkia* device =
-      static_cast<skia::VectorPlatformDeviceSkia*>(canvas->getTopDevice());
-  device->setDrawingArea(SkPDFDevice::kMargin_DrawingArea);
-
   SkAutoCanvasRestore auto_restore(canvas, true);
   canvas->scale(1 / webkit_scale_factor, 1 / webkit_scale_factor);
 
@@ -502,9 +522,8 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
 
   web_view->close();
   frame->close();
-
-  device->setDrawingArea(SkPDFDevice::kContent_DrawingArea);
 }
+#endif  // defined(ENABLE_PRINT_PREVIEW)
 
 // static - Not anonymous so that platform implementations can use it.
 float PrintWebViewHelper::RenderPageContent(blink::WebFrame* frame,
@@ -849,10 +868,10 @@ void PrintWebViewHelper::PrintPage(blink::WebLocalFrame* frame,
 bool PrintWebViewHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintWebViewHelper, message)
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintPages, OnPrintPages)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintForSystemDialog, OnPrintForSystemDialog)
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
     IPC_MESSAGE_HANDLER(PrintMsg_InitiatePrintPreview, OnInitiatePrintPreview)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintPreview, OnPrintPreview)
     IPC_MESSAGE_HANDLER(PrintMsg_PrintForPrintPreview, OnPrintForPrintPreview)
@@ -888,15 +907,13 @@ void PrintWebViewHelper::OnPrintForPrintPreview(
   // The out-of-process plugin element is nested within a frame.
   blink::WebLocalFrame* plugin_frame = pdf_element.document().frame();
   blink::WebElement plugin_element = pdf_element;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kOutOfProcessPdf)) {
+  if (switches::OutOfProcessPdfEnabled()) {
     if (!pdf_element.hasHTMLTagName("iframe")) {
       NOTREACHED();
       return;
     }
     plugin_frame = blink::WebLocalFrame::fromFrameOwnerElement(pdf_element);
-    // <object> with id="plugin" is created in
-    // chrome/browser/resources/pdf/pdf.js.
-    plugin_element = plugin_frame->document().getElementById("plugin");
+    plugin_element = GetPdfElement(plugin_frame);
     if (plugin_element.isNull()) {
       NOTREACHED();
       return;
@@ -949,11 +966,15 @@ bool PrintWebViewHelper::GetPrintFrame(blink::WebLocalFrame** frame) {
   return true;
 }
 
-#if !defined(DISABLE_BASIC_PRINTING)
+#if defined(ENABLE_BASIC_PRINTING)
 void PrintWebViewHelper::OnPrintPages() {
   blink::WebLocalFrame* frame;
-  if (GetPrintFrame(&frame))
-    Print(frame, blink::WebNode());
+  if (!GetPrintFrame(&frame))
+    return;
+  // If we are printing a PDF extension frame, find the plugin node and print
+  // that instead.
+  auto plugin = GetPdfElement(frame);
+  Print(frame, plugin);
 }
 
 void PrintWebViewHelper::OnPrintForSystemDialog() {
@@ -964,7 +985,7 @@ void PrintWebViewHelper::OnPrintForSystemDialog() {
   }
   Print(frame, print_preview_context_.source_node());
 }
-#endif  // !DISABLE_BASIC_PRINTING
+#endif  // ENABLE_BASIC_PRINTING
 
 void PrintWebViewHelper::GetPageSizeAndContentAreaFromPageLayout(
     const PageSizeMargins& page_layout_in_points,
@@ -1205,6 +1226,13 @@ void PrintWebViewHelper::OnInitiatePrintPreview(bool selection_only) {
   blink::WebLocalFrame* frame = NULL;
   GetPrintFrame(&frame);
   DCHECK(frame);
+  // If we are printing a PDF extension frame, find the plugin node and print
+  // that instead.
+  auto plugin = GetPdfElement(frame);
+  if (!plugin.isNull()) {
+    PrintNode(plugin);
+    return;
+  }
   print_preview_context_.InitWithFrame(frame);
   RequestPrintPreview(selection_only ?
                       PRINT_PREVIEW_USER_INITIATED_SELECTION :
@@ -1455,8 +1483,14 @@ void PrintWebViewHelper::SetOptionsFromDocument(
   blink::WebLocalFrame* source_frame = print_preview_context_.source_frame();
   const blink::WebNode& source_node = print_preview_context_.source_node();
 
-  params.is_scaling_disabled =
-      source_frame->isPrintScalingDisabledForPlugin(source_node);
+  blink::WebPrintPresetOptions preset_options;
+  if (!source_frame->getPrintPresetOptionsForPlugin(source_node,
+                                                    &preset_options)) {
+    return;
+  }
+
+  params.is_scaling_disabled = preset_options.isScalingDisabled;
+  params.copies = preset_options.copies;
 }
 
 bool PrintWebViewHelper::UpdatePrintSettings(

@@ -13,6 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
+#include "net/base/net_util.h"
 
 namespace net {
 
@@ -26,13 +27,7 @@ const int64 kUpdateCacheDelayMs = 1000;
 // Time to wait before starting an update the preferences from the
 // http_server_properties_impl_ cache. Scheduling another update during this
 // period will reset the timer.
-// TODO(rtenneti): Remove OS_ANDROID ifdef after testing if flushing of
-// AlternateProtocolHosts to disk in 500ms helps with QUIC's 0RTT or not.
-#if defined(OS_ANDROID)
-const int64 kUpdatePrefsDelayMs = 500;
-#else
 const int64 kUpdatePrefsDelayMs = 5000;
-#endif
 
 // "version" 0 indicates, http_server_properties doesn't have "version"
 // property.
@@ -419,7 +414,7 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnPrefThread() {
       int port = 0;
       if (!port_alternate_protocol_dict->GetIntegerWithoutPathExpansion(
               "port", &port) ||
-          (port > (1 << 16))) {
+          !IsPortValid(port)) {
         DVLOG(1) << "Malformed Alternate-Protocol server: " << server_str;
         detected_corrupted_prefs = true;
         continue;
@@ -448,9 +443,8 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnPrefThread() {
         continue;
       }
 
-      net::AlternateProtocolInfo port_alternate_protocol(port,
-                                                         protocol,
-                                                         probability);
+      net::AlternateProtocolInfo port_alternate_protocol(
+          static_cast<uint16>(port), protocol, probability);
       alternate_protocol_map->Put(server, port_alternate_protocol);
       ++count;
     } while (false);
@@ -746,11 +740,11 @@ void HttpServerPropertiesManager::UpdatePrefsOnPrefThread(
     }
 
     // Save alternate_protocol.
-    if (server_pref.alternate_protocol) {
+    const net::AlternateProtocolInfo* port_alternate_protocol =
+        server_pref.alternate_protocol;
+    if (port_alternate_protocol && !port_alternate_protocol->is_broken) {
       base::DictionaryValue* port_alternate_protocol_dict =
           new base::DictionaryValue;
-      const net::AlternateProtocolInfo* port_alternate_protocol =
-          server_pref.alternate_protocol;
       port_alternate_protocol_dict->SetInteger("port",
                                                port_alternate_protocol->port);
       const char* protocol_str =

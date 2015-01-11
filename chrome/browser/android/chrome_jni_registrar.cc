@@ -37,6 +37,7 @@
 #include "chrome/browser/android/signin/account_management_screen_helper.h"
 #include "chrome/browser/android/signin/signin_manager_android.h"
 #include "chrome/browser/android/tab_android.h"
+#include "chrome/browser/android/tab_state.h"
 #include "chrome/browser/android/uma_bridge.h"
 #include "chrome/browser/android/uma_utils.h"
 #include "chrome/browser/android/url_utilities.h"
@@ -48,6 +49,7 @@
 #include "chrome/browser/invalidation/invalidation_service_factory_android.h"
 #include "chrome/browser/lifetime/application_lifetime_android.h"
 #include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings_android.h"
+#include "chrome/browser/notifications/notification_ui_manager_android.h"
 #include "chrome/browser/prerender/external_prerender_handler_android.h"
 #include "chrome/browser/profiles/profile_android.h"
 #include "chrome/browser/search_engines/template_url_service_android.h"
@@ -58,17 +60,20 @@
 #include "chrome/browser/ui/android/autofill/autofill_dialog_result.h"
 #include "chrome/browser/ui/android/autofill/autofill_logger_android.h"
 #include "chrome/browser/ui/android/autofill/autofill_popup_view_android.h"
+#include "chrome/browser/ui/android/autofill/credit_card_scanner_view_android.h"
 #include "chrome/browser/ui/android/autofill/password_generation_popup_view_android.h"
 #include "chrome/browser/ui/android/chrome_http_auth_handler.h"
 #include "chrome/browser/ui/android/context_menu_helper.h"
 #include "chrome/browser/ui/android/infobars/auto_login_infobar_delegate_android.h"
 #include "chrome/browser/ui/android/infobars/confirm_infobar.h"
 #include "chrome/browser/ui/android/infobars/data_reduction_proxy_infobar.h"
+#include "chrome/browser/ui/android/infobars/generated_password_saved_infobar.h"
 #include "chrome/browser/ui/android/infobars/infobar_android.h"
 #include "chrome/browser/ui/android/infobars/infobar_container_android.h"
 #include "chrome/browser/ui/android/infobars/translate_infobar.h"
 #include "chrome/browser/ui/android/javascript_app_modal_dialog_android.h"
 #include "chrome/browser/ui/android/navigation_popup.h"
+#include "chrome/browser/ui/android/omnibox/omnibox_url_emphasizer.h"
 #include "chrome/browser/ui/android/omnibox/omnibox_view_util.h"
 #include "chrome/browser/ui/android/ssl_client_certificate_request.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_jni_bridge.h"
@@ -83,7 +88,7 @@
 #include "components/variations/android/component_jni_registrar.h"
 #include "components/web_contents_delegate_android/component_jni_registrar.h"
 
-#if defined(ENABLE_PRINTING) && !defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINTING) && !defined(ENABLE_PRINT_PREVIEW)
 #include "printing/printing_context_android.h"
 #endif
 
@@ -134,6 +139,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "ConfirmInfoBarDelegate", RegisterConfirmInfoBarDelegate },
   { "ContentViewUtil", RegisterContentViewUtil },
   { "ContextMenuHelper", RegisterContextMenuHelper },
+  { "CreditCardScanner", autofill::CreditCardScannerViewAndroid::Register },
   { "DataReductionProxyInfoBarDelegate", DataReductionProxyInfoBar::Register },
   { "DataReductionProxySettings", DataReductionProxySettingsAndroid::Register },
   { "DevToolsServer", RegisterDevToolsServer },
@@ -152,6 +158,8 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "FontSizePrefsAndroid", FontSizePrefsAndroid::Register },
   { "ForeignSessionHelper",
     ForeignSessionHelper::RegisterForeignSessionHelper },
+  { "GeneratedPasswordSavedInfoBarDelegate",
+    RegisterGeneratedPasswordSavedInfoBarDelegate },
   { "InfoBarContainer", RegisterInfoBarContainer },
   { "InvalidationServiceFactory",
     invalidation::InvalidationServiceFactoryAndroid::Register },
@@ -165,7 +173,11 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "NavigationPopup", NavigationPopup::RegisterNavigationPopup },
   { "NewTabPagePrefs",
     NewTabPagePrefs::RegisterNewTabPagePrefs },
+  { "NotificationUIManager",
+    NotificationUIManagerAndroid::RegisterNotificationUIManager },
   { "OmniboxPrerender", RegisterOmniboxPrerender },
+  { "OmniboxUrlEmphasizer",
+    OmniboxUrlEmphasizer::RegisterOmniboxUrlEmphasizer },
   { "OmniboxViewUtil", OmniboxViewUtil::RegisterOmniboxViewUtil },
   { "PasswordGenerationPopup",
     autofill::PasswordGenerationPopupViewAndroid::Register},
@@ -184,6 +196,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "StartupMetricUtils", RegisterStartupMetricUtils },
   { "TabAndroid", TabAndroid::RegisterTabAndroid },
   { "TabModelJniBridge", TabModelJniBridge::Register},
+  { "TabState", RegisterTabState },
   { "TemplateUrlServiceAndroid", TemplateUrlServiceAndroid::Register },
   { "ToolbarModelAndroid", ToolbarModelAndroid::RegisterToolbarModelAndroid },
   { "TranslateInfoBarDelegate", RegisterTranslateInfoBarDelegate },
@@ -197,7 +210,7 @@ static base::android::RegistrationMethod kChromeRegisteredMethods[] = {
   { "WebsiteSettingsPopupLegacyAndroid",
     WebsiteSettingsPopupLegacyAndroid::
         RegisterWebsiteSettingsPopupLegacyAndroid },
-#if defined(ENABLE_PRINTING) && !defined(ENABLE_FULL_PRINTING)
+#if defined(ENABLE_PRINTING) && !defined(ENABLE_PRINT_PREVIEW)
   { "PrintingContext",
     printing::PrintingContextAndroid::RegisterPrintingContext},
 #endif

@@ -114,7 +114,6 @@ Status GenerateKey(const blink::WebCryptoAlgorithm& algorithm,
   return impl->GenerateKey(algorithm, extractable, usages, result);
 }
 
-// Note that this function may be called from the target Blink thread.
 Status ImportKey(blink::WebCryptoKeyFormat format,
                  const CryptoData& key_data,
                  const blink::WebCryptoAlgorithm& algorithm,
@@ -136,8 +135,8 @@ Status ImportKey(blink::WebCryptoKeyFormat format,
     case blink::WebCryptoKeyFormatSpki:
       return impl->ImportKeySpki(key_data, algorithm, extractable, usages, key);
     case blink::WebCryptoKeyFormatPkcs8:
-      return impl->ImportKeyPkcs8(
-          key_data, algorithm, extractable, usages, key);
+      return impl->ImportKeyPkcs8(key_data, algorithm, extractable, usages,
+                                  key);
     case blink::WebCryptoKeyFormatJwk:
       return impl->ImportKeyJwk(key_data, algorithm, extractable, usages, key);
     default:
@@ -200,8 +199,8 @@ Status WrapKey(blink::WebCryptoKeyFormat format,
   Status status = ExportKey(format, key_to_wrap, &exported_data);
   if (status.IsError())
     return status;
-  return EncryptDontCheckUsage(
-      wrapping_algorithm, wrapping_key, CryptoData(exported_data), buffer);
+  return EncryptDontCheckUsage(wrapping_algorithm, wrapping_key,
+                               CryptoData(exported_data), buffer);
 }
 
 Status UnwrapKey(blink::WebCryptoKeyFormat format,
@@ -228,8 +227,8 @@ Status UnwrapKey(blink::WebCryptoKeyFormat format,
     return status;
 
   std::vector<uint8_t> buffer;
-  status = DecryptDontCheckKeyUsage(
-      wrapping_algorithm, wrapping_key, wrapped_key_data, &buffer);
+  status = DecryptDontCheckKeyUsage(wrapping_algorithm, wrapping_key,
+                                    wrapped_key_data, &buffer);
   if (status.IsError())
     return status;
 
@@ -238,14 +237,59 @@ Status UnwrapKey(blink::WebCryptoKeyFormat format,
   // key_ops). As long as the ImportKey error messages don't describe actual
   // key bytes however this should be OK. For more discussion see
   // http://crubg.com/372040
-  return ImportKey(
-      format, CryptoData(buffer), algorithm, extractable, usages, key);
+  return ImportKey(format, CryptoData(buffer), algorithm, extractable, usages,
+                   key);
+}
+
+Status DeriveBits(const blink::WebCryptoAlgorithm& algorithm,
+                  const blink::WebCryptoKey& base_key,
+                  unsigned int length_bits,
+                  std::vector<uint8_t>* derived_bytes) {
+  if (!KeyUsageAllows(base_key, blink::WebCryptoKeyUsageDeriveBits))
+    return Status::ErrorUnexpected();
+
+  if (algorithm.id() != base_key.algorithm().id())
+    return Status::ErrorUnexpected();
+
+  const AlgorithmImplementation* impl = NULL;
+  Status status = GetAlgorithmImplementation(algorithm.id(), &impl);
+  if (status.IsError())
+    return status;
+
+  return impl->DeriveBits(algorithm, base_key, length_bits, derived_bytes);
 }
 
 scoped_ptr<blink::WebCryptoDigestor> CreateDigestor(
     blink::WebCryptoAlgorithmId algorithm) {
   PlatformInit();
   return CreatePlatformDigestor(algorithm);
+}
+
+bool SerializeKeyForClone(const blink::WebCryptoKey& key,
+                          blink::WebVector<uint8_t>* key_data) {
+  const AlgorithmImplementation* impl = NULL;
+  Status status = GetAlgorithmImplementation(key.algorithm().id(), &impl);
+  if (status.IsError())
+    return false;
+
+  status = impl->SerializeKeyForClone(key, key_data);
+  return status.IsSuccess();
+}
+
+bool DeserializeKeyForClone(const blink::WebCryptoKeyAlgorithm& algorithm,
+                            blink::WebCryptoKeyType type,
+                            bool extractable,
+                            blink::WebCryptoKeyUsageMask usages,
+                            const CryptoData& key_data,
+                            blink::WebCryptoKey* key) {
+  const AlgorithmImplementation* impl = NULL;
+  Status status = GetAlgorithmImplementation(algorithm.id(), &impl);
+  if (status.IsError())
+    return false;
+
+  status = impl->DeserializeKeyForClone(algorithm, type, extractable, usages,
+                                        key_data, key);
+  return status.IsSuccess();
 }
 
 }  // namespace webcrypto

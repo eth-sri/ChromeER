@@ -221,12 +221,14 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
       target_tree->page_scale_delta() / target_tree->sent_page_scale_delta());
   target_tree->set_sent_page_scale_delta(1);
 
-  target_tree->page_scale_animation_ = page_scale_animation_.Pass();
+  target_tree->pending_page_scale_animation_ =
+      pending_page_scale_animation_.Pass();
 
   if (page_scale_layer_ && inner_viewport_scroll_layer_) {
     target_tree->SetViewportLayersFromIds(
-        page_scale_layer_->id(),
-        inner_viewport_scroll_layer_->id(),
+        overscroll_elasticity_layer_ ? overscroll_elasticity_layer_->id()
+                                     : Layer::INVALID_ID,
+        page_scale_layer_->id(), inner_viewport_scroll_layer_->id(),
         outer_viewport_scroll_layer_ ? outer_viewport_scroll_layer_->id()
                                      : Layer::INVALID_ID);
   } else {
@@ -425,9 +427,11 @@ void LayerTreeImpl::ApplyScrollDeltasSinceBeginMainFrame() {
 }
 
 void LayerTreeImpl::SetViewportLayersFromIds(
+    int overscroll_elasticity_layer_id,
     int page_scale_layer_id,
     int inner_viewport_scroll_layer_id,
     int outer_viewport_scroll_layer_id) {
+  overscroll_elasticity_layer_ = LayerById(overscroll_elasticity_layer_id);
   page_scale_layer_ = LayerById(page_scale_layer_id);
   DCHECK(page_scale_layer_);
 
@@ -490,28 +494,21 @@ bool LayerTreeImpl::UpdateDrawProperties() {
 
     ++render_surface_layer_list_id_;
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
-        root_layer(),
-        DrawViewportSize(),
-        layer_tree_host_impl_->DrawTransform(),
-        device_scale_factor(),
-        total_page_scale_factor(),
-        page_scale_layer,
-        resource_provider()->max_texture_size(),
-        settings().can_use_lcd_text,
+        root_layer(), DrawViewportSize(),
+        layer_tree_host_impl_->DrawTransform(), device_scale_factor(),
+        total_page_scale_factor(), page_scale_layer,
+        resource_provider()->max_texture_size(), settings().can_use_lcd_text,
+        settings().layers_always_allowed_lcd_text,
         can_render_to_separate_surface,
         settings().layer_transforms_should_scale_layer_contents,
-        &render_surface_layer_list_,
-        render_surface_layer_list_id_);
+        &render_surface_layer_list_, render_surface_layer_list_id_);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
   }
 
   {
-    TRACE_EVENT2("cc",
-                 "LayerTreeImpl::UpdateTilePriorities",
-                 "IsActive",
-                 IsActiveTree(),
-                 "SourceFrameNumber",
-                 source_frame_number_);
+    TRACE_EVENT_BEGIN2("cc", "LayerTreeImpl::UpdateTilePriorities", "IsActive",
+                       IsActiveTree(), "SourceFrameNumber",
+                       source_frame_number_);
     scoped_ptr<OcclusionTracker<LayerImpl>> occlusion_tracker;
     if (settings().use_occlusion_for_tile_prioritization) {
       occlusion_tracker.reset(new OcclusionTracker<LayerImpl>(
@@ -528,6 +525,7 @@ bool LayerTreeImpl::UpdateDrawProperties() {
     // draw properties) and not because any ordering is required.
     typedef LayerIterator<LayerImpl> LayerIteratorType;
     LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list_);
+    size_t layers_updated_count = 0;
     for (LayerIteratorType it =
              LayerIteratorType::Begin(&render_surface_layer_list_);
          it != end;
@@ -544,6 +542,7 @@ bool LayerTreeImpl::UpdateDrawProperties() {
       if (it.represents_itself()) {
         layer->UpdateTiles(occlusion_in_content_space,
                            resourceless_software_draw);
+        ++layers_updated_count;
       }
 
       if (!it.represents_contributing_render_surface()) {
@@ -555,15 +554,20 @@ bool LayerTreeImpl::UpdateDrawProperties() {
       if (layer->mask_layer()) {
         layer->mask_layer()->UpdateTiles(occlusion_in_content_space,
                                          resourceless_software_draw);
+        ++layers_updated_count;
       }
       if (layer->replica_layer() && layer->replica_layer()->mask_layer()) {
         layer->replica_layer()->mask_layer()->UpdateTiles(
             occlusion_in_content_space, resourceless_software_draw);
+        ++layers_updated_count;
       }
 
       if (occlusion_tracker)
         occlusion_tracker->LeaveLayer(it);
     }
+
+    TRACE_EVENT_END1("cc", "LayerTreeImpl::UpdateTilePriorities",
+                     "layers_updated_count", layers_updated_count);
   }
 
   DCHECK(!needs_update_draw_properties_) <<
@@ -1480,45 +1484,14 @@ BlockingTaskRunner* LayerTreeImpl::BlockingMainThreadTaskRunner() const {
   return proxy()->blocking_main_thread_task_runner();
 }
 
-void LayerTreeImpl::SetPageScaleAnimation(
-    const gfx::Vector2d& target_offset,
-    bool anchor_point,
-    float page_scale,
-    base::TimeDelta duration) {
-  if (!InnerViewportScrollLayer())
-    return;
-
-  gfx::ScrollOffset scroll_total = TotalScrollOffset();
-  gfx::SizeF scaled_scrollable_size = ScrollableSize();
-  gfx::SizeF viewport_size = InnerViewportContainerLayer()->bounds();
-
-  // Easing constants experimentally determined.
-  scoped_ptr<TimingFunction> timing_function =
-      CubicBezierTimingFunction::Create(.8, 0, .3, .9);
-
-  // TODO(miletus) : Pass in ScrollOffset.
-  page_scale_animation_ =
-      PageScaleAnimation::Create(ScrollOffsetToVector2dF(scroll_total),
-                                 total_page_scale_factor(),
-                                 viewport_size,
-                                 scaled_scrollable_size,
-                                 timing_function.Pass());
-
-  if (anchor_point) {
-    gfx::Vector2dF anchor(target_offset);
-    page_scale_animation_->ZoomWithAnchor(anchor,
-                                          page_scale,
-                                          duration.InSecondsF());
-  } else {
-    gfx::Vector2dF scaled_target_offset = target_offset;
-    page_scale_animation_->ZoomTo(scaled_target_offset,
-                                  page_scale,
-                                  duration.InSecondsF());
-  }
+void LayerTreeImpl::SetPendingPageScaleAnimation(
+    scoped_ptr<PendingPageScaleAnimation> pending_animation) {
+  pending_page_scale_animation_ = pending_animation.Pass();
 }
 
-scoped_ptr<PageScaleAnimation> LayerTreeImpl::TakePageScaleAnimation() {
-  return page_scale_animation_.Pass();
+scoped_ptr<PendingPageScaleAnimation>
+    LayerTreeImpl::TakePendingPageScaleAnimation() {
+  return pending_page_scale_animation_.Pass();
 }
 
 }  // namespace cc

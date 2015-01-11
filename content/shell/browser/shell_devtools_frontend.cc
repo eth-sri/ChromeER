@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
-#include "base/path_service.h"
+#include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -19,7 +19,7 @@
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
 #include "content/shell/browser/shell_content_browser_client.h"
-#include "content/shell/browser/shell_devtools_delegate.h"
+#include "content/shell/browser/shell_devtools_manager_delegate.h"
 #include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_switches.h"
 #include "net/base/filename_util.h"
@@ -40,10 +40,10 @@ ShellDevToolsFrontend* ShellDevToolsFrontend::Show(
       shell,
       agent.get());
 
-  ShellDevToolsDelegate* delegate = ShellContentBrowserClient::Get()
-                                        ->shell_browser_main_parts()
-                                        ->devtools_delegate();
-  shell->LoadURL(delegate->devtools_http_handler()->GetFrontendURL());
+  DevToolsHttpHandler* http_handler = ShellContentBrowserClient::Get()
+                                          ->shell_browser_main_parts()
+                                          ->devtools_http_handler();
+  shell->LoadURL(http_handler->GetFrontendURL());
 
   return devtools_frontend;
 }
@@ -77,14 +77,10 @@ ShellDevToolsFrontend::~ShellDevToolsFrontend() {
 void ShellDevToolsFrontend::RenderViewCreated(
     RenderViewHost* render_view_host) {
   if (!frontend_host_) {
-    frontend_host_.reset(DevToolsFrontendHost::Create(render_view_host, this));
+    frontend_host_.reset(
+        DevToolsFrontendHost::Create(web_contents()->GetMainFrame(), this));
     agent_host_->AttachClient(this);
   }
-}
-
-void ShellDevToolsFrontend::DocumentOnLoadCompletedInMainFrame() {
-  web_contents()->GetMainFrame()->ExecuteJavaScript(
-      base::ASCIIToUTF16("InspectorFrontendAPI.setUseSoftMenu(true);"));
 }
 
 void ShellDevToolsFrontend::WebContentsDestroyed() {
@@ -95,30 +91,31 @@ void ShellDevToolsFrontend::WebContentsDestroyed() {
 void ShellDevToolsFrontend::HandleMessageFromDevToolsFrontend(
     const std::string& message) {
   std::string method;
-  std::string browser_message;
   int id = 0;
-
   base::ListValue* params = NULL;
   base::DictionaryValue* dict = NULL;
   scoped_ptr<base::Value> parsed_message(base::JSONReader::Read(message));
   if (!parsed_message ||
       !parsed_message->GetAsDictionary(&dict) ||
-      !dict->GetString("method", &method) ||
-      !dict->GetList("params", &params)) {
+      !dict->GetString("method", &method)) {
+    return;
+  }
+  dict->GetList("params", &params);
+
+  std::string browser_message;
+  if (method == "sendMessageToBrowser" && params &&
+      params->GetSize() == 1 && params->GetString(0, &browser_message)) {
+    agent_host_->DispatchProtocolMessage(browser_message);
+  } else if (method == "loadCompleted") {
+    web_contents()->GetMainFrame()->ExecuteJavaScript(
+        base::ASCIIToUTF16("DevToolsAPI.setUseSoftMenu(true);"));
+  } else {
     return;
   }
 
-  if (method != "sendMessageToBrowser" ||
-      params->GetSize() != 1 ||
-      !params->GetString(0, &browser_message)) {
-    return;
-  }
   dict->GetInteger("id", &id);
-
-  agent_host_->DispatchProtocolMessage(browser_message);
-
   if (id) {
-    std::string code = "InspectorFrontendAPI.embedderMessageAck(" +
+    std::string code = "DevToolsAPI.embedderMessageAck(" +
         base::IntToString(id) + ",\"\");";
     base::string16 javascript = base::UTF8ToUTF16(code);
     web_contents()->GetMainFrame()->ExecuteJavaScript(javascript);
@@ -132,7 +129,10 @@ void ShellDevToolsFrontend::HandleMessageFromDevToolsFrontendToBackend(
 
 void ShellDevToolsFrontend::DispatchProtocolMessage(
     DevToolsAgentHost* agent_host, const std::string& message) {
-  std::string code = "InspectorFrontendAPI.dispatchMessage(" + message + ");";
+  base::StringValue message_value(message);
+  std::string param;
+  base::JSONWriter::Write(&message_value, &param);
+  std::string code = "DevToolsAPI.dispatchMessage(" + param + ");";
   base::string16 javascript = base::UTF8ToUTF16(code);
   web_contents()->GetMainFrame()->ExecuteJavaScript(javascript);
 }

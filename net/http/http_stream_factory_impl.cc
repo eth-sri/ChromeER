@@ -184,8 +184,7 @@ AlternateProtocolInfo HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
   if (original_url.SchemeIs("ftp"))
     return kNoAlternateProtocol;
 
-  HostPortPair origin = HostPortPair(original_url.HostNoBrackets(),
-                                     original_url.EffectiveIntPort());
+  HostPortPair origin = HostPortPair::FromURL(original_url);
 
   HttpServerProperties& http_server_properties =
       *session_->http_server_properties();
@@ -194,7 +193,7 @@ AlternateProtocolInfo HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
 
   AlternateProtocolInfo alternate =
       http_server_properties.GetAlternateProtocol(origin);
-  if (alternate.protocol == ALTERNATE_PROTOCOL_BROKEN) {
+  if (alternate.is_broken) {
     HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_BROKEN);
     return kNoAlternateProtocol;
   }

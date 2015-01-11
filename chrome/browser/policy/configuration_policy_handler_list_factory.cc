@@ -27,6 +27,10 @@
 #include "components/translate/core/common/translate_pref_names.h"
 #include "policy/policy_constants.h"
 
+#if defined(OS_ANDROID)
+#include "chrome/browser/search/contextual_search_policy_handler_android.h"
+#endif
+
 #if !defined(OS_IOS)
 #include "chrome/browser/net/disk_cache_dir_policy_handler.h"
 #include "chrome/browser/policy/file_selection_dialogs_policy_handler.h"
@@ -336,9 +340,13 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kDisableSafeBrowsingProceedAnyway,
     prefs::kSafeBrowsingProceedAnywayDisabled,
     base::Value::TYPE_BOOLEAN },
+
+#if defined(ENABLE_SPELLCHECK)
   { key::kSpellCheckServiceEnabled,
     prefs::kSpellCheckUseSpellingService,
     base::Value::TYPE_BOOLEAN },
+#endif  // defined(ENABLE_SPELLCHECK)
+
   { key::kDisableScreenshots,
     prefs::kDisableScreenshots,
     base::Value::TYPE_BOOLEAN },
@@ -570,6 +578,11 @@ scoped_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
       new ProxyPolicyHandler()));
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
       new URLBlacklistPolicyHandler()));
+
+#if defined(OS_ANDROID)
+  handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(
+      new ContextualSearchPolicyHandlerAndroid()));
+#endif
 
 #if !defined(OS_IOS)
   handlers->AddHandler(make_scoped_ptr<ConfigurationPolicyHandler>(

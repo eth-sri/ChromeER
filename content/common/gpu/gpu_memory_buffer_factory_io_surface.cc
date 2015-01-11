@@ -6,7 +6,7 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
+#include "base/logging.h"
 #include "ui/gl/gl_image_io_surface.h"
 
 namespace content {
@@ -27,6 +27,38 @@ void AddIntegerValue(CFMutableDictionaryRef dictionary,
   CFDictionaryAddValue(dictionary, key, number.get());
 }
 
+int32 BytesPerPixel(gfx::GpuMemoryBuffer::Format format) {
+  switch (format) {
+    case gfx::GpuMemoryBuffer::BGRA_8888:
+      return 4;
+    case gfx::GpuMemoryBuffer::RGBA_8888:
+    case gfx::GpuMemoryBuffer::RGBX_8888:
+      NOTREACHED();
+      return 0;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+int32 PixelFormat(gfx::GpuMemoryBuffer::Format format) {
+  switch (format) {
+    case gfx::GpuMemoryBuffer::BGRA_8888:
+      return 'BGRA';
+    case gfx::GpuMemoryBuffer::RGBA_8888:
+    case gfx::GpuMemoryBuffer::RGBX_8888:
+      NOTREACHED();
+      return 0;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+const GpuMemoryBufferFactory::Configuration kSupportedConfigurations[] = {
+  { gfx::GpuMemoryBuffer::BGRA_8888, gfx::GpuMemoryBuffer::MAP }
+};
+
 }  // namespace
 
 GpuMemoryBufferFactoryIOSurface::GpuMemoryBufferFactoryIOSurface() {
@@ -35,11 +67,32 @@ GpuMemoryBufferFactoryIOSurface::GpuMemoryBufferFactoryIOSurface() {
 GpuMemoryBufferFactoryIOSurface::~GpuMemoryBufferFactoryIOSurface() {
 }
 
+// static
+bool GpuMemoryBufferFactoryIOSurface::IsGpuMemoryBufferConfigurationSupported(
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage) {
+  for (auto& configuration : kSupportedConfigurations) {
+    if (configuration.format == format && configuration.usage == usage)
+      return true;
+  }
+
+  return false;
+}
+
+void GpuMemoryBufferFactoryIOSurface::GetSupportedGpuMemoryBufferConfigurations(
+    std::vector<Configuration>* configurations) {
+  configurations->assign(
+      kSupportedConfigurations,
+      kSupportedConfigurations + arraysize(kSupportedConfigurations));
+}
+
 gfx::GpuMemoryBufferHandle
 GpuMemoryBufferFactoryIOSurface::CreateGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferId& id,
+    gfx::GpuMemoryBufferId id,
     const gfx::Size& size,
-    gfx::GpuMemoryBuffer::Format format) {
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage,
+    int client_id) {
   base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
   properties.reset(CFDictionaryCreateMutable(kCFAllocatorDefault,
                                              0,
@@ -47,12 +100,8 @@ GpuMemoryBufferFactoryIOSurface::CreateGpuMemoryBuffer(
                                              &kCFTypeDictionaryValueCallBacks));
   AddIntegerValue(properties, kIOSurfaceWidth, size.width());
   AddIntegerValue(properties, kIOSurfaceHeight, size.height());
-  AddIntegerValue(properties,
-                  kIOSurfaceBytesPerElement,
-                  GpuMemoryBufferImpl::BytesPerPixel(format));
-  AddIntegerValue(properties,
-                  kIOSurfacePixelFormat,
-                  GpuMemoryBufferImplIOSurface::PixelFormat(format));
+  AddIntegerValue(properties, kIOSurfaceBytesPerElement, BytesPerPixel(format));
+  AddIntegerValue(properties, kIOSurfacePixelFormat, PixelFormat(format));
   // TODO(reveman): Remove this when using a mach_port_t to transfer
   // IOSurface to browser and renderer process. crbug.com/323304
   AddBooleanValue(properties, kIOSurfaceIsGlobal, true);
@@ -61,31 +110,39 @@ GpuMemoryBufferFactoryIOSurface::CreateGpuMemoryBuffer(
   if (!io_surface)
     return gfx::GpuMemoryBufferHandle();
 
-  IOSurfaceMapKey key(id.primary_id, id.secondary_id);
+  IOSurfaceMapKey key(id, client_id);
   DCHECK(io_surfaces_.find(key) == io_surfaces_.end());
   io_surfaces_[key] = io_surface;
 
   gfx::GpuMemoryBufferHandle handle;
   handle.type = gfx::IO_SURFACE_BUFFER;
-  handle.global_id = id;
+  handle.id = id;
   handle.io_surface_id = IOSurfaceGetID(io_surface);
   return handle;
 }
 
 void GpuMemoryBufferFactoryIOSurface::DestroyGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferId& id) {
-  IOSurfaceMapKey key(id.primary_id, id.secondary_id);
+    gfx::GpuMemoryBufferId id,
+    int client_id) {
+  IOSurfaceMapKey key(id, client_id);
   IOSurfaceMap::iterator it = io_surfaces_.find(key);
   if (it != io_surfaces_.end())
     io_surfaces_.erase(it);
 }
 
+gpu::ImageFactory* GpuMemoryBufferFactoryIOSurface::AsImageFactory() {
+  return this;
+}
+
 scoped_refptr<gfx::GLImage>
 GpuMemoryBufferFactoryIOSurface::CreateImageForGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferId& id,
+    const gfx::GpuMemoryBufferHandle& handle,
     const gfx::Size& size,
-    gfx::GpuMemoryBuffer::Format format) {
-  IOSurfaceMapKey key(id.primary_id, id.secondary_id);
+    gfx::GpuMemoryBuffer::Format format,
+    unsigned internalformat,
+    int client_id) {
+  DCHECK_EQ(handle.type, gfx::IO_SURFACE_BUFFER);
+  IOSurfaceMapKey key(handle.id, client_id);
   IOSurfaceMap::iterator it = io_surfaces_.find(key);
   if (it == io_surfaces_.end())
     return scoped_refptr<gfx::GLImage>();

@@ -6,6 +6,7 @@
 
 #include <mstcpip.h>
 
+#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -20,6 +21,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/base/network_activity_monitor.h"
 #include "net/base/winsock_init.h"
 #include "net/base/winsock_util.h"
 #include "net/socket/socket_descriptor.h"
@@ -595,6 +597,7 @@ void UDPSocketWin::LogRead(int result, const char* bytes) const {
 
   base::StatsCounter read_bytes("udp.read_bytes");
   read_bytes.Add(result);
+  NetworkActivityMonitor::GetInstance()->IncrementBytesReceived(result);
 }
 
 void UDPSocketWin::DidCompleteWrite() {
@@ -626,11 +629,12 @@ void UDPSocketWin::LogWrite(int result,
 
   base::StatsCounter write_bytes("udp.write_bytes");
   write_bytes.Add(result);
+  NetworkActivityMonitor::GetInstance()->IncrementBytesSent(result);
 }
 
 int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
                                    IPEndPoint* address) {
-  DCHECK(!core_->read_iobuffer_);
+  DCHECK(!core_->read_iobuffer_.get());
   SockaddrStorage& storage = core_->recv_addr_storage_;
   storage.addr_len = sizeof(storage.addr_storage);
 
@@ -670,7 +674,7 @@ int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
 
 int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
                                  const IPEndPoint* address) {
-  DCHECK(!core_->write_iobuffer_);
+  DCHECK(!core_->write_iobuffer_.get());
   SockaddrStorage storage;
   struct sockaddr* addr = storage.addr;
   // Convert address.
@@ -805,8 +809,8 @@ int UDPSocketWin::RandomBind(const IPAddressNumber& address) {
   DCHECK(bind_type_ == DatagramSocket::RANDOM_BIND && !rand_int_cb_.is_null());
 
   for (int i = 0; i < kBindRetries; ++i) {
-    int rv = DoBind(IPEndPoint(address,
-                               rand_int_cb_.Run(kPortStart, kPortEnd)));
+    int rv = DoBind(IPEndPoint(
+        address, static_cast<uint16>(rand_int_cb_.Run(kPortStart, kPortEnd))));
     if (rv == OK || rv != ERR_ADDRESS_IN_USE)
       return rv;
   }

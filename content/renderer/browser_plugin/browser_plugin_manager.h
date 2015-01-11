@@ -51,6 +51,9 @@ class CONTENT_EXPORT BrowserPluginManager
   void UpdateDeviceScaleFactor();
   void UpdateFocusState();
   RenderViewImpl* render_view() const { return render_view_.get(); }
+
+  // Returns a new instance ID to be used by BrowserPlugin. Instance IDs are
+  // unique per process.
   int GetNextInstanceID();
 
   // RenderViewObserver override. Call on render thread.
@@ -64,14 +67,17 @@ class CONTENT_EXPORT BrowserPluginManager
   // then the BrowserPluginManager will be destroyed.
   void OnDestruct() override {}
 
- protected:
+ private:
   // Friend RefCounted so that the dtor can be non-public.
   friend class base::RefCounted<BrowserPluginManager>;
 
   ~BrowserPluginManager() override;
+
+  // IPC message handlers.
+  void OnCompositorFrameSwappedPluginUnavailable(const IPC::Message& message);
+
   // This map is keyed by guest instance IDs.
   IDMap<BrowserPlugin> instances_;
-  int current_instance_id_;
   base::WeakPtr<RenderViewImpl> render_view_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginManager);

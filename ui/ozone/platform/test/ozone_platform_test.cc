@@ -16,6 +16,7 @@
 #include "ui/ozone/public/gpu_platform_support_host.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/ozone_switches.h"
+#include "ui/ozone/public/system_input_injector.h"
 
 namespace ui {
 
@@ -27,33 +28,35 @@ namespace {
 class OzonePlatformTest : public OzonePlatform {
  public:
   OzonePlatformTest(const base::FilePath& dump_file) : file_path_(dump_file) {}
-  virtual ~OzonePlatformTest() {}
+  ~OzonePlatformTest() override {}
 
   // OzonePlatform:
-  virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
+  ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
     return window_manager_.get();
   }
-  virtual CursorFactoryOzone* GetCursorFactoryOzone() override {
+  CursorFactoryOzone* GetCursorFactoryOzone() override {
     return cursor_factory_ozone_.get();
   }
-  virtual GpuPlatformSupport* GetGpuPlatformSupport() override {
+  GpuPlatformSupport* GetGpuPlatformSupport() override {
     return gpu_platform_support_.get();
   }
-  virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
+  GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
     return gpu_platform_support_host_.get();
   }
-  virtual scoped_ptr<PlatformWindow> CreatePlatformWindow(
+  scoped_ptr<SystemInputInjector> CreateSystemInputInjector() override {
+    return nullptr;  // no input injection support.
+  }
+  scoped_ptr<PlatformWindow> CreatePlatformWindow(
       PlatformWindowDelegate* delegate,
       const gfx::Rect& bounds) override {
     return make_scoped_ptr<PlatformWindow>(
         new TestWindow(delegate, window_manager_.get(), bounds));
   }
-  virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
-      override {
+  scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate() override {
     return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateOzone());
   }
 
-  virtual void InitializeUI() override {
+  void InitializeUI() override {
     window_manager_.reset(new TestWindowManager(file_path_));
     window_manager_->Initialize();
     // This unbreaks tests that create their own.
@@ -64,7 +67,7 @@ class OzonePlatformTest : public OzonePlatform {
     gpu_platform_support_host_.reset(CreateStubGpuPlatformSupportHost());
   }
 
-  virtual void InitializeGPU() override {
+  void InitializeGPU() override {
     gpu_platform_support_.reset(CreateStubGpuPlatformSupport());
   }
 

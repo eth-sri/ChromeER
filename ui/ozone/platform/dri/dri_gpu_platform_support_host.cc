@@ -18,13 +18,12 @@ DriGpuPlatformSupportHost::DriGpuPlatformSupportHost()
 DriGpuPlatformSupportHost::~DriGpuPlatformSupportHost() {
 }
 
-bool DriGpuPlatformSupportHost::IsConnected() const {
-  return sender_ != NULL;
-}
-
 void DriGpuPlatformSupportHost::RegisterHandler(
     GpuPlatformSupportHost* handler) {
   handlers_.push_back(handler);
+
+  if (sender_)
+    handler->OnChannelEstablished(host_id_, sender_);
 }
 
 void DriGpuPlatformSupportHost::UnregisterHandler(
@@ -49,36 +48,27 @@ void DriGpuPlatformSupportHost::RemoveChannelObserver(
 
 void DriGpuPlatformSupportHost::OnChannelEstablished(int host_id,
                                                      IPC::Sender* sender) {
-  TRACE_EVENT1("dri",
-               "DriGpuPlatformSupportHost::OnChannelEstablished",
-               "host_id",
-               host_id);
+  TRACE_EVENT1("dri", "DriGpuPlatformSupportHost::OnChannelEstablished",
+               "host_id", host_id);
   host_id_ = host_id;
   sender_ = sender;
-
-  while (!queued_messages_.empty()) {
-    Send(queued_messages_.front());
-    queued_messages_.pop();
-  }
 
   for (size_t i = 0; i < handlers_.size(); ++i)
     handlers_[i]->OnChannelEstablished(host_id, sender);
 
-  FOR_EACH_OBSERVER(
-      ChannelObserver, channel_observers_, OnChannelEstablished());
+  FOR_EACH_OBSERVER(ChannelObserver, channel_observers_,
+                    OnChannelEstablished());
 }
 
 void DriGpuPlatformSupportHost::OnChannelDestroyed(int host_id) {
-  TRACE_EVENT1("dri",
-               "DriGpuPlatformSupportHost::OnChannelDestroyed",
-               "host_id",
-               host_id);
+  TRACE_EVENT1("dri", "DriGpuPlatformSupportHost::OnChannelDestroyed",
+               "host_id", host_id);
   if (host_id_ == host_id) {
     host_id_ = -1;
     sender_ = NULL;
 
-    FOR_EACH_OBSERVER(
-        ChannelObserver, channel_observers_, OnChannelDestroyed());
+    FOR_EACH_OBSERVER(ChannelObserver, channel_observers_,
+                      OnChannelDestroyed());
   }
 
   for (size_t i = 0; i < handlers_.size(); ++i)
@@ -97,7 +87,6 @@ bool DriGpuPlatformSupportHost::Send(IPC::Message* message) {
   if (sender_)
     return sender_->Send(message);
 
-  queued_messages_.push(message);
   return true;
 }
 

@@ -10,36 +10,19 @@
 #include "ui/ozone/common/display_util.h"
 #include "ui/ozone/common/gpu/ozone_gpu_message_params.h"
 #include "ui/ozone/common/gpu/ozone_gpu_messages.h"
-#include "ui/ozone/platform/dri/dri_surface_factory.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_impl.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_manager.h"
 #include "ui/ozone/platform/dri/native_display_delegate_dri.h"
 
 namespace ui {
 
-namespace {
-
-class FindDisplayById {
- public:
-  FindDisplayById(int64_t display_id) : display_id_(display_id) {}
-
-  bool operator()(const DisplaySnapshot_Params& display) const {
-    return display.display_id == display_id_;
-  }
-
- private:
-  int64_t display_id_;
-};
-
-}  // namespace
-
 DriGpuPlatformSupport::DriGpuPlatformSupport(
-    DriSurfaceFactory* dri,
+    DriWrapper* drm,
     DriWindowDelegateManager* window_manager,
     ScreenManager* screen_manager,
     scoped_ptr<NativeDisplayDelegateDri> ndd)
     : sender_(NULL),
-      dri_(dri),
+      drm_(drm),
       window_manager_(window_manager),
       screen_manager_(screen_manager),
       ndd_(ndd.Pass()) {
@@ -77,6 +60,9 @@ bool DriGpuPlatformSupport::OnMessageReceived(const IPC::Message& message) {
   IPC_MESSAGE_HANDLER(OzoneGpuMsg_ConfigureNativeDisplay,
                       OnConfigureNativeDisplay)
   IPC_MESSAGE_HANDLER(OzoneGpuMsg_DisableNativeDisplay, OnDisableNativeDisplay)
+  IPC_MESSAGE_HANDLER(OzoneGpuMsg_TakeDisplayControl, OnTakeDisplayControl)
+  IPC_MESSAGE_HANDLER(OzoneGpuMsg_RelinquishDisplayControl,
+                      OnRelinquishDisplayControl)
   IPC_MESSAGE_UNHANDLED(handled = false);
   IPC_END_MESSAGE_MAP()
 
@@ -95,8 +81,8 @@ void DriGpuPlatformSupport::OnCreateWindowDelegate(
   // with it, we create it ahead of time. So when this call happens we do not
   // create a delegate if it already exists.
   if (!window_manager_->HasWindowDelegate(widget)) {
-    scoped_ptr<DriWindowDelegate> delegate(
-        new DriWindowDelegateImpl(widget, screen_manager_));
+    scoped_ptr<DriWindowDelegate> delegate(new DriWindowDelegateImpl(
+        widget, drm_, window_manager_, screen_manager_));
     delegate->Initialize();
     window_manager_->AddWindowDelegate(widget, delegate.Pass());
   }
@@ -118,12 +104,13 @@ void DriGpuPlatformSupport::OnCursorSet(gfx::AcceleratedWidget widget,
                                         const std::vector<SkBitmap>& bitmaps,
                                         const gfx::Point& location,
                                         int frame_delay_ms) {
-  dri_->SetHardwareCursor(widget, bitmaps, location, frame_delay_ms);
+  window_manager_->GetWindowDelegate(widget)
+      ->SetCursor(bitmaps, location, frame_delay_ms);
 }
 
 void DriGpuPlatformSupport::OnCursorMove(gfx::AcceleratedWidget widget,
                                          const gfx::Point& location) {
-  dri_->MoveHardwareCursor(widget, location);
+  window_manager_->GetWindowDelegate(widget)->MoveCursor(location);
 }
 
 void DriGpuPlatformSupport::OnForceDPMSOn() {
@@ -139,8 +126,7 @@ void DriGpuPlatformSupport::OnRefreshNativeDisplays(
   // their configuration immediately.
   for (size_t i = 0; i < native_displays.size(); ++i) {
     std::vector<DisplaySnapshot_Params>::const_iterator it =
-        std::find_if(cached_displays.begin(),
-                     cached_displays.end(),
+        std::find_if(cached_displays.begin(), cached_displays.end(),
                      FindDisplayById(native_displays[i]->display_id()));
 
     if (it == cached_displays.end())
@@ -183,8 +169,8 @@ void DriGpuPlatformSupport::OnConfigureNativeDisplay(
   // support panel fitting and they can use different modes even if the mode
   // isn't explicitly declared).
   if (!mode)
-    mode = ndd_->FindDisplayMode(
-        mode_param.size, mode_param.is_interlaced, mode_param.refresh_rate);
+    mode = ndd_->FindDisplayMode(mode_param.size, mode_param.is_interlaced,
+                                 mode_param.refresh_rate);
 
   if (!mode) {
     LOG(ERROR) << "Failed to find mode: size=" << mode_param.size.ToString()
@@ -202,6 +188,19 @@ void DriGpuPlatformSupport::OnDisableNativeDisplay(int64_t id) {
     ndd_->Configure(*display, NULL, gfx::Point());
   else
     LOG(ERROR) << "There is no display with ID " << id;
+}
+
+void DriGpuPlatformSupport::OnTakeDisplayControl() {
+  ndd_->TakeDisplayControl();
+}
+
+void DriGpuPlatformSupport::OnRelinquishDisplayControl() {
+  ndd_->RelinquishDisplayControl();
+}
+
+void DriGpuPlatformSupport::RelinquishGpuResources(
+    const base::Closure& callback) {
+  callback.Run();
 }
 
 }  // namespace ui

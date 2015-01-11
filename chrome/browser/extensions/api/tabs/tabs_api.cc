@@ -47,7 +47,6 @@
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/api/tabs.h"
 #include "chrome/common/extensions/api/windows.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -76,6 +75,7 @@
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/default_locale_handler.h"
 #include "extensions/common/message_bundle.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
@@ -855,6 +855,11 @@ bool TabsQueryFunction::RunSync() {
     if (!include_incognito() && GetProfile() != browser->profile())
       continue;
 
+    if (!browser->extension_window_controller()->IsVisibleToExtension(
+            extension())) {
+      continue;
+    }
+
     if (window_id >= 0 && window_id != ExtensionTabUtil::GetWindowId(browser))
       continue;
 
@@ -1545,7 +1550,7 @@ WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(int window_id) {
 
   WebContents* contents = browser->tab_strip_model()->GetActiveWebContents();
   if (!contents) {
-    error_ = keys::kInternalVisibleTabCaptureError;
+    error_ = "No active web contents to capture";
     return NULL;
   }
 
@@ -1557,7 +1562,20 @@ WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(int window_id) {
 }
 
 void TabsCaptureVisibleTabFunction::OnCaptureFailure(FailureReason reason) {
-  error_ = keys::kInternalVisibleTabCaptureError;
+  const char* reason_description = "internal error";
+  switch (reason) {
+    case FAILURE_REASON_UNKNOWN:
+      reason_description = "unknown error";
+      break;
+    case FAILURE_REASON_ENCODING_FAILED:
+      reason_description = "encoding failed";
+      break;
+    case FAILURE_REASON_VIEW_INVISIBLE:
+      reason_description = "view is invisible";
+      break;
+  }
+  error_ = ErrorUtils::FormatErrorMessage("Failed to capture tab: *",
+                                          reason_description);
   SendResponse(false);
 }
 

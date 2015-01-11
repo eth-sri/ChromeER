@@ -5,32 +5,48 @@
 #ifndef CHROME_BROWSER_SEARCH_HOTWORD_AUDIO_HISTORY_HANDLER_H_
 #define CHROME_BROWSER_SEARCH_HOTWORD_AUDIO_HISTORY_HANDLER_H_
 
+#include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "content/public/browser/browser_context.h"
 
 class Profile;
+
+namespace history {
+class WebHistoryService;
+}
 
 // A class which handles the audio history pref for hotwording. This has been
 // pulled into its own class in order to transparently (to the rest of
 // hotwording) handle changing user global pref management systems.
 class HotwordAudioHistoryHandler {
  public:
-  explicit HotwordAudioHistoryHandler(content::BrowserContext* context);
-  ~HotwordAudioHistoryHandler();
+  typedef base::Callback<void(bool success, bool new_enabled_value)>
+      HotwordAudioHistoryCallback;
 
-  // Returns the current preference value based on the user's account info
+  explicit HotwordAudioHistoryHandler(content::BrowserContext* context);
+  virtual ~HotwordAudioHistoryHandler();
+
+  // Updates the current preference value based on the user's account info
   // or false if the user is not signed in.
-  // TODO(rlp): Determine return value -- pref value or success?
-  bool GetAudioHistoryEnabled();
+  void GetAudioHistoryEnabled(const HotwordAudioHistoryCallback& callback);
+
+  // Sets the user's global pref value for enabling audio history.
+  void SetAudioHistoryEnabled(const bool enabled,
+                              const HotwordAudioHistoryCallback& callback);
+
+  // This helper function is made public for testing.
+  virtual history::WebHistoryService* GetWebHistory();
 
  private:
-  // Sets the user's global pref value for enabling audio history.
-  void SetAudioHistoryEnabled(const bool enabled);
-
-  void OnAudioHistoryEnabledChanged(const std::string& pref_name);
+  // Callback called upon completion of the web history request.
+  void AudioHistoryComplete(
+      const HotwordAudioHistoryCallback& callback,
+      bool success,
+      bool new_enabled_value);
 
   Profile* profile_;
-  PrefChangeRegistrar pref_change_registrar_;
+
+  base::WeakPtrFactory<HotwordAudioHistoryHandler> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HotwordAudioHistoryHandler);
 };

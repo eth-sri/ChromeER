@@ -212,7 +212,7 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     if (!isMobileVersion()) {
       // Clicking anywhere in the entryBox will check/uncheck the checkbox.
       entryBox.setAttribute('for', checkbox.id);
-      entryBox.addEventListener('mousedown', entryBoxMousedown);
+      entryBox.addEventListener('mousedown', this.handleMousedown_.bind(this));
       entryBox.addEventListener('click', entryBoxClick);
       entryBox.addEventListener('keydown', this.handleKeydown_.bind(this));
     }
@@ -496,6 +496,21 @@ Visit.prototype.handleKeydown_ = function(e) {
   // Delete or Backspace should delete the entry if allowed.
   if (e.keyIdentifier == 'U+0008' || e.keyIdentifier == 'U+007F')
     this.removeEntryFromHistory_(e);
+};
+
+/**
+ * @param {Event} event A mousedown event.
+ * @private
+ */
+Visit.prototype.handleMousedown_ = function(event) {
+  // Prevent text selection when shift-clicking to select multiple entries.
+  if (event.shiftKey) {
+    event.preventDefault();
+
+    var target = assertInstanceof(event.target, HTMLElement);
+    if (this.model_.getView().isInFocusGrid(target))
+      target.focus();
+  }
 };
 
 /**
@@ -898,6 +913,28 @@ HistoryFocusObserver.prototype = {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+// HistoryFocusGrid:
+
+/**
+ * @param {Node=} opt_boundary
+ * @param {cr.ui.FocusRow.Observer=} opt_observer
+ * @constructor
+ * @extends {cr.ui.FocusGrid}
+ */
+function HistoryFocusGrid(opt_boundary, opt_observer) {
+  cr.ui.FocusGrid.apply(this, arguments);
+}
+
+HistoryFocusGrid.prototype = {
+  __proto__: cr.ui.FocusGrid.prototype,
+
+  /** @override */
+  onMousedown: function(row, e) {
+    return !!findAncestorByClass(e.target, 'menu-button');
+  },
+};
+
+///////////////////////////////////////////////////////////////////////////////
 // HistoryView:
 
 /**
@@ -911,8 +948,8 @@ function HistoryView(model) {
   this.editButtonTd_ = $('edit-button');
   this.editingControlsDiv_ = $('editing-controls');
   this.resultDiv_ = $('results-display');
-  this.focusGrid_ = new cr.ui.FocusGrid(this.resultDiv_,
-                                        new HistoryFocusObserver);
+  this.focusGrid_ = new HistoryFocusGrid(this.resultDiv_,
+                                         new HistoryFocusObserver);
   this.pageDiv_ = $('results-pagination');
   this.model_ = model;
   this.pageIndex_ = 0;
@@ -1254,6 +1291,14 @@ HistoryView.prototype.positionNotificationBar = function() {
   }
 };
 
+/**
+ * @param {Element} el An element to look for.
+ * @return {boolean} Whether |el| is in |this.focusGrid_|.
+ */
+HistoryView.prototype.isInFocusGrid = function(el) {
+  return !!this.focusGrid_.getPositionForTarget(el);
+};
+
 // HistoryView, private: ------------------------------------------------------
 
 /**
@@ -1266,7 +1311,11 @@ HistoryView.prototype.clear_ = function() {
   if (alertOverlay && alertOverlay.classList.contains('showing'))
     hideConfirmationOverlay();
 
-  this.resultDiv_.textContent = '';
+  // Remove everything but <h3 id="results-header"> (the first child).
+  while (this.resultDiv_.children.length > 1) {
+    this.resultDiv_.removeChild(this.resultDiv_.lastElementChild);
+  }
+  $('results-header').textContent = '';
 
   this.currentVisits_.forEach(function(visit) {
     visit.isRendered = false;
@@ -1528,13 +1577,19 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
   var groupByDomain = this.model_.getGroupByDomain();
 
   if (searchText) {
-    // Add a header for the search results, if there isn't already one.
-    if (!this.resultDiv_.querySelector('h3')) {
-      var header = document.createElement('h3');
-      header.textContent = loadTimeData.getStringF('searchResultsFor',
-                                                   searchText);
-      this.resultDiv_.appendChild(header);
+    var headerText;
+    if (!doneLoading) {
+      headerText = loadTimeData.getStringF('searchResultsFor', searchText);
+    } else if (results.length == 0) {
+      headerText = loadTimeData.getString('noSearchResults');
+    } else {
+      var resultId = results.length == 1 ? 'searchResult' : 'searchResults';
+      headerText = loadTimeData.getStringF('foundSearchResults',
+                                           results.length,
+                                           loadTimeData.getString(resultId),
+                                           searchText);
     }
+    $('results-header').textContent = headerText;
 
     this.addTimeframeInterval_(this.resultDiv_);
 
@@ -1544,11 +1599,7 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
     if (!this.model_.editingEntriesAllowed)
       searchResults.classList.add('no-checkboxes');
 
-    if (results.length == 0 && doneLoading) {
-      var noSearchResults = searchResults.appendChild(
-          createElementWithClassName('div', 'no-results-message'));
-      noSearchResults.textContent = loadTimeData.getString('noSearchResults');
-    } else {
+    if (doneLoading) {
       for (var i = 0, visit; visit = results[i]; i++) {
         if (!visit.isRendered) {
           searchResults.appendChild(visit.getResultDOM({
@@ -1565,13 +1616,12 @@ HistoryView.prototype.displayResults_ = function(doneLoading) {
 
     this.addTimeframeInterval_(resultsFragment);
 
-    if (results.length == 0 && doneLoading) {
-      var noResults = resultsFragment.appendChild(
-          createElementWithClassName('div', 'no-results-message'));
-      noResults.textContent = loadTimeData.getString('noResults');
-      this.resultDiv_.appendChild(resultsFragment);
+    var noResults = results.length == 0 && doneLoading;
+    $('results-header').textContent = noResults ?
+        loadTimeData.getString('noResults') : '';
+
+    if (noResults)
       return;
-    }
 
     if (this.getRangeInDays() == HistoryModel.Range.MONTH &&
         groupByDomain) {
@@ -1637,9 +1687,9 @@ HistoryView.prototype.updateFocusGrid_ = function() {
 HistoryView.prototype.updateNavBar_ = function() {
   this.updateRangeButtons_();
 
-  // Supervised users have the control bar on top, don't show it on the bottom
-  // as well.
-  if (!loadTimeData.getBoolean('isSupervisedProfile')) {
+  // If grouping by domain is enabled, there's a control bar on top, don't show
+  // the one on the bottom as well.
+  if (!loadTimeData.getBoolean('groupByDomain')) {
     $('newest-button').hidden = this.pageIndex_ == 0;
     $('newer-button').hidden = this.pageIndex_ == 0;
     $('older-button').hidden =
@@ -1879,7 +1929,7 @@ function load() {
     });
   }
 
-  if (!loadTimeData.getBoolean('showDeleteVisitUI'))
+  if (loadTimeData.getBoolean('hideDeleteVisitUI'))
     $('remove-visit').hidden = true;
 
   searchField.addEventListener('search', doSearch);
@@ -1890,15 +1940,16 @@ function load() {
     activeVisit = null;
   });
 
-  // Only show the controls if the command line switch is activated.
-  if (loadTimeData.getBoolean('groupByDomain') ||
-      loadTimeData.getBoolean('isSupervisedProfile')) {
-    // Hide the top container which has the "Clear browsing data" and "Remove
-    // selected entries" buttons since they're unavailable for supervised users.
-    $('top-container').hidden = true;
+  // Only show the controls if the command line switch is activated or the user
+  // is supervised.
+  if (loadTimeData.getBoolean('groupByDomain')) {
     $('history-page').classList.add('big-topbar-page');
     $('filter-controls').hidden = false;
   }
+  // Hide the top container which has the "Clear browsing data" and "Remove
+  // selected entries" buttons if deleting history is not allowed.
+  if (!loadTimeData.getBoolean('allowDeletingHistory'))
+    $('top-container').hidden = true;
 
   uber.setTitle(loadTimeData.getString('title'));
 
@@ -2161,12 +2212,6 @@ function updateParentCheckbox(checkbox) {
   var groupCheckbox = entry.querySelector('.site-domain-wrapper input');
   if (groupCheckbox)
     groupCheckbox.checked = false;
-}
-
-function entryBoxMousedown(event) {
-  // Prevent text selection when shift-clicking to select multiple entries.
-  if (event.shiftKey)
-    event.preventDefault();
 }
 
 /**

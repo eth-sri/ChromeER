@@ -27,6 +27,7 @@ namespace switches {
 
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
+extern const char kActivateExistingProfileBrowser[];
 extern const char kAllowCrossOriginAuthPrompt[];
 extern const char kAllowFileAccess[];
 extern const char kAllowHttpScreenCapture[];
@@ -36,7 +37,6 @@ extern const char kAlternateProtocolProbabilityThreshold[];
 extern const char kAlwaysAuthorizePlugins[];
 extern const char kAppId[];
 extern const char kApp[];
-extern const char kAppListStartPageURL[];
 extern const char kAppsCheckoutURL[];
 extern const char kAppsGalleryDownloadURL[];
 extern const char kAppsGalleryURL[];
@@ -88,6 +88,7 @@ extern const char kDisableNTPOtherSessionsMenu[];
 extern const char kDisableOfflineAutoReload[];
 extern const char kDisableOfflineAutoReloadVisibleOnly[];
 extern const char kDisableOriginChip[];
+extern const char kDisableOutOfProcessPdf[];
 extern const char kDisablePasswordManagerReauthentication[];
 extern const char kDisablePeopleSearch[];
 extern const char kDisablePermissionsBubbles[];
@@ -102,7 +103,6 @@ extern const char kDisableQuicPortSelection[];
 extern const char kDisableSavePasswordBubble[];
 extern const char kDisableSearchButtonInOmnibox[];
 extern const char kDisableSessionCrashedBubble[];
-extern const char kDisableSpdy31[];
 extern const char kDisableSuggestionsService[];
 extern const char kDisableSupervisedUserBlacklist[];
 extern const char kDisableSupervisedUserSafeSites[];
@@ -133,6 +133,7 @@ extern const char kEnableDomainReliability[];
 extern const char kEnableEnhancedBookmarks[];
 extern const char kEnableEphemeralApps[];
 extern const char kEnableExperimentalHotwording[];
+extern const char kEnableExperimentalHotwordHardware[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableFastUnload[];
@@ -148,6 +149,7 @@ extern const char kEnableOfflineLoadStaleCache[];
 extern const char kDisableOfflineLoadStaleCache[];
 extern const char kEnableOriginChipAlways[];
 extern const char kEnableOriginChipOnSrp[];
+extern const char kEnableOutOfProcessPdf[];
 extern const char kEnablePanels[];
 extern const char kEnablePermissionsBubbles[];
 extern const char kEnablePluginPlaceholderShadowDom[];
@@ -171,8 +173,6 @@ extern const char kEnableSettingsWindow[];
 extern const char kEnableShowModalDialog[];
 extern const char kDisableSettingsWindow[];
 extern const char kEnableSpdy4[];
-extern const char kEnableSpellingAutoCorrect[];
-extern const char kEnableSpellingFeedbackFieldTrial[];
 extern const char kEnableSSLConnectJobWaiting[];
 extern const char kEnableStaleWhileRevalidate[];
 extern const char kEnableStreamlinedHostedApps[];
@@ -185,7 +185,6 @@ extern const char kEnableTabAudioMuting[];
 extern const char kEnableThumbnailRetargeting[];
 extern const char kEnableTranslateNewUX[];
 extern const char kEnableUserAlternateProtocolPorts[];
-extern const char kEnableWebSocketOverSpdy[];
 extern const char kEnableWebsiteSettingsManager[];
 extern const char kEnhancedBookmarksExperiment[];
 extern const char kExplicitlyAllowedPorts[];
@@ -249,7 +248,6 @@ extern const char kNumPacThreads[];
 extern const char kOpenInNewWindow[];
 extern const char kOriginToForceQuicOn[];
 extern const char kOriginalProcessStartTime[];
-extern const char kOutOfProcessPdf[];
 extern const char kPackExtension[];
 extern const char kPackExtensionKey[];
 extern const char kParentProfile[];
@@ -307,11 +305,19 @@ extern const char kSpeculativeResourcePrefetching[];
 extern const char kSpeculativeResourcePrefetchingDisabled[];
 extern const char kSpeculativeResourcePrefetchingEnabled[];
 extern const char kSpeculativeResourcePrefetchingLearning[];
+#if defined(ENABLE_SPELLCHECK)
+extern const char kEnableSpellingAutoCorrect[];
+extern const char kEnableSpellingFeedbackFieldTrial[];
 extern const char kSpellingServiceFeedbackUrl[];
 extern const char kSpellingServiceFeedbackIntervalSeconds[];
+#endif
 extern const char kSSLVersionMax[];
 extern const char kSSLVersionMin[];
 extern const char kSSLVersionFallbackMin[];
+extern const char kSSLVersionSSLv3[];
+extern const char kSSLVersionTLSv1[];
+extern const char kSSLVersionTLSv11[];
+extern const char kSSLVersionTLSv12[];
 extern const char kStartMaximized[];
 extern const char kSupervisedUserId[];
 extern const char kSupervisedUserSyncToken[];
@@ -338,6 +344,7 @@ extern const char kVersion[];
 extern const char kWindowPosition[];
 extern const char kWindowSize[];
 extern const char kWinHttpProxyResolver[];
+extern const char kWinJumplistAction[];
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 extern const char kPluginsMetadataServerURL[];
@@ -384,7 +391,7 @@ extern const char kWaitForMutex[];
 extern const char kWindows8Search[];
 #endif
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OFFICIAL_BUILD)
+#if defined(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
 extern const char kDebugPrint[];
 #endif
 
@@ -399,6 +406,7 @@ extern const char kFileManagerExtensionPath[];
 #endif
 
 bool AboutInSettingsEnabled();
+bool OutOfProcessPdfEnabled();
 bool SettingsWindowEnabled();
 
 #if defined(OS_CHROMEOS)

@@ -4,9 +4,9 @@
 
 #include "net/tools/quic/quic_server_session.h"
 
+#include "net/quic/crypto/cached_network_parameters.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/crypto/quic_random.h"
-#include "net/quic/crypto/source_address_token.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_crypto_server_stream.h"
 #include "net/quic/quic_flags.h"
@@ -129,8 +129,8 @@ TEST_P(QuicServerSessionTest, CloseStreamDueToReset) {
 
   // Send a reset (and expect the peer to send a RST in response).
   QuicRstStreamFrame rst1(kClientDataStreamId1, QUIC_STREAM_NO_ERROR, 0);
-  EXPECT_CALL(*connection_, SendRstStream(kClientDataStreamId1,
-                                          QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
+  EXPECT_CALL(*connection_,
+              SendRstStream(kClientDataStreamId1, QUIC_RST_ACKNOWLEDGEMENT, 0));
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
 
@@ -145,8 +145,8 @@ TEST_P(QuicServerSessionTest, CloseStreamDueToReset) {
 TEST_P(QuicServerSessionTest, NeverOpenStreamDueToReset) {
   // Send a reset (and expect the peer to send a RST in response).
   QuicRstStreamFrame rst1(kClientDataStreamId1, QUIC_STREAM_NO_ERROR, 0);
-  EXPECT_CALL(*connection_, SendRstStream(kClientDataStreamId1,
-                                          QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
+  EXPECT_CALL(*connection_,
+              SendRstStream(kClientDataStreamId1, QUIC_RST_ACKNOWLEDGEMENT, 0));
   visitor_->OnRstStream(rst1);
   EXPECT_EQ(0u, session_->GetNumOpenStreams());
 
@@ -173,8 +173,8 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
 
   // Send a reset (and expect the peer to send a RST in response).
   QuicRstStreamFrame rst(kClientDataStreamId1, QUIC_STREAM_NO_ERROR, 0);
-  EXPECT_CALL(*connection_, SendRstStream(kClientDataStreamId1,
-                                          QUIC_RST_FLOW_CONTROL_ACCOUNTING, 0));
+  EXPECT_CALL(*connection_,
+              SendRstStream(kClientDataStreamId1, QUIC_RST_ACKNOWLEDGEMENT, 0));
   visitor_->OnRstStream(rst);
 
   // If we were tracking, we'd probably want to reject this because it's data
@@ -192,7 +192,6 @@ TEST_P(QuicServerSessionTest, AcceptClosedStream) {
 }
 
 TEST_P(QuicServerSessionTest, MaxOpenStreams) {
-  ValueRestore<bool> old_flag(&FLAGS_quic_allow_more_open_streams, true);
   // Test that the server closes the connection if a client attempts to open too
   // many data streams. The server accepts slightly more than the negotiated
   // stream limit to deal with rare cases where a client FIN/RST is lost.
@@ -230,7 +229,6 @@ TEST_P(QuicServerSessionTest, MaxOpenStreams) {
 }
 
 TEST_P(QuicServerSessionTest, MaxOpenStreamsImplicit) {
-  ValueRestore<bool> old_flag(&FLAGS_quic_allow_more_open_streams, true);
   // Test that the server closes the connection if a client attempts to open too
   // many data streams implicitly.  The server accepts slightly more than the
   // negotiated stream limit to deal with rare cases where a client FIN/RST is
@@ -292,7 +290,7 @@ class MockQuicCryptoServerStream : public QuicCryptoServerStream {
   explicit MockQuicCryptoServerStream(
       const QuicCryptoServerConfig& crypto_config, QuicSession* session)
       : QuicCryptoServerStream(crypto_config, session) {}
-  virtual ~MockQuicCryptoServerStream() {}
+  ~MockQuicCryptoServerStream() override {}
 
   MOCK_METHOD1(SendServerConfigUpdate,
                void(const CachedNetworkParameters* cached_network_parameters));
@@ -305,6 +303,7 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
   if (version() <= QUIC_VERSION_21) {
     return;
   }
+
   // Test that bandwidth estimate updates are sent to the client, only after the
   // bandwidth estimate has changes sufficiently, and enough time has passed.
 
@@ -323,6 +322,11 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
       QuicConnectionPeer::GetSentPacketManager(session_->connection());
   QuicSustainedBandwidthRecorder& bandwidth_recorder =
       QuicSentPacketManagerPeer::GetBandwidthRecorder(sent_packet_manager);
+  // Seed an rtt measurement equal to the initial default rtt.
+  RttStats* rtt_stats =
+      QuicSentPacketManagerPeer::GetRttStats(sent_packet_manager);
+  rtt_stats->UpdateRtt(QuicTime::Delta::FromMicroseconds(
+      rtt_stats->initial_rtt_us()), QuicTime::Delta::Zero(), QuicTime::Zero());
   QuicSustainedBandwidthRecorderPeer::SetBandwidthEstimate(
       &bandwidth_recorder, bandwidth_estimate_kbytes_per_second);
   QuicSustainedBandwidthRecorderPeer::SetMaxBandwidthEstimate(
@@ -339,11 +343,18 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
       bandwidth_estimate_kbytes_per_second * 1.6;
   session_->OnCongestionWindowChange(now);
 
-  // Bandwidth estimate has now changed sufficiently and enough time has passed.
+  // Bandwidth estimate has now changed sufficiently and enough time has passed,
+  // but not enough packets have been sent.
   int64 srtt_ms =
-      sent_packet_manager->GetRttStats()->SmoothedRtt().ToMilliseconds();
+      sent_packet_manager->GetRttStats()->smoothed_rtt().ToMilliseconds();
   now = now.Add(QuicTime::Delta::FromMilliseconds(
       kMinIntervalBetweenServerConfigUpdatesRTTs * srtt_ms));
+  session_->OnCongestionWindowChange(now);
+
+  // Bandwidth estimate has now changed sufficiently, enough time has passed,
+  // and enough packets have been sent.
+  QuicConnectionPeer::SetSequenceNumberOfLastSentPacket(
+      session_->connection(), kMinPacketsBetweenServerConfigUpdates);
 
   // Verify that the proto has exactly the values we expect.
   CachedNetworkParameters expected_network_params;
@@ -356,7 +367,7 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
   expected_network_params.set_min_rtt_ms(session_->connection()
                                              ->sent_packet_manager()
                                              .GetRttStats()
-                                             ->MinRtt()
+                                             ->min_rtt()
                                              .ToMilliseconds());
   expected_network_params.set_previous_connection_state(
       CachedNetworkParameters::CONGESTION_AVOIDANCE);
@@ -368,6 +379,46 @@ TEST_P(QuicServerSessionTest, BandwidthEstimates) {
               SendServerConfigUpdate(EqualsProto(expected_network_params)))
       .Times(1);
   session_->OnCongestionWindowChange(now);
+}
+
+TEST_P(QuicServerSessionTest, BandwidthResumptionExperiment) {
+  ValueRestore<bool> old_flag(
+      &FLAGS_quic_enable_bandwidth_resumption_experiment, true);
+
+  // Test that if a client provides a CachedNetworkParameters with the same
+  // serving region as the current server, that this data is passed down to the
+  // send algorithm.
+
+  // Client has sent kBWRE connection option to trigger bandwidth resumption.
+  QuicTagVector copt;
+  copt.push_back(kBWRE);
+  QuicConfigPeer::SetReceivedConnectionOptions(session_->config(), copt);
+
+  const string kTestServingRegion = "a serving region";
+  session_->set_serving_region(kTestServingRegion);
+
+  QuicCryptoServerStream* crypto_stream =
+      static_cast<QuicCryptoServerStream*>(
+          QuicSessionPeer::GetCryptoStream(session_.get()));
+
+  // No effect if no CachedNetworkParameters provided.
+  EXPECT_CALL(*connection_, ResumeConnectionState(_)).Times(0);
+  session_->OnConfigNegotiated();
+
+  // No effect if CachedNetworkParameters provided, but different serving
+  // regions.
+  CachedNetworkParameters cached_network_params;
+  cached_network_params.set_bandwidth_estimate_bytes_per_second(1);
+  cached_network_params.set_serving_region("different serving region");
+  crypto_stream->set_previous_cached_network_params(cached_network_params);
+  EXPECT_CALL(*connection_, ResumeConnectionState(_)).Times(0);
+  session_->OnConfigNegotiated();
+
+  // Same serving region results in CachedNetworkParameters being stored.
+  cached_network_params.set_serving_region(kTestServingRegion);
+  crypto_stream->set_previous_cached_network_params(cached_network_params);
+  EXPECT_CALL(*connection_, ResumeConnectionState(_)).Times(1);
+  session_->OnConfigNegotiated();
 }
 
 }  // namespace

@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/guid.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
@@ -18,6 +19,7 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/blob_handle.h"
 #include "content/public/browser/resource_request_info.h"
+#include "content/public/browser/service_worker_context.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
@@ -29,17 +31,6 @@
 #include "ui/base/page_transition_types.h"
 
 namespace content {
-
-namespace {
-
-// Keep in sync with kDevToolsRequestInitiator and
-// kDevToolsEmulateNetworkConditionsClientId defined in
-// devtools_network_transaction.cc and InspectorResourceAgent.cpp.
-const char kDevToolsRequestInitiator[] = "X-DevTools-Request-Initiator";
-const char kDevToolsEmulateNetworkConditionsClientId[] =
-    "X-DevTools-Emulate-Network-Conditions-Client-Id";
-
-}  // namespace
 
 ServiceWorkerURLRequestJob::ServiceWorkerURLRequestJob(
     net::URLRequest* request,
@@ -186,6 +177,11 @@ void ServiceWorkerURLRequestJob::OnBeforeNetworkStart(net::URLRequest* request,
 }
 
 void ServiceWorkerURLRequestJob::OnResponseStarted(net::URLRequest* request) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 ServiceWorkerURLRequestJob::OnResponseStarted"));
+
   // TODO(falken): Add Content-Length, Content-Type if they were not provided in
   // the ServiceWorkerResponse.
   response_time_ = base::Time::Now();
@@ -194,6 +190,11 @@ void ServiceWorkerURLRequestJob::OnResponseStarted(net::URLRequest* request) {
 
 void ServiceWorkerURLRequestJob::OnReadCompleted(net::URLRequest* request,
                                                  int bytes_read) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 ServiceWorkerURLRequestJob::OnReadCompleted"));
+
   SetStatus(request->status());
   if (!request->status().is_success()) {
     NotifyDone(request->status());
@@ -299,10 +300,8 @@ ServiceWorkerURLRequestJob::CreateFetchRequest() {
   request->method = request_->method();
   const net::HttpRequestHeaders& headers = request_->extra_request_headers();
   for (net::HttpRequestHeaders::Iterator it(headers); it.GetNext();) {
-    if (it.name() == kDevToolsRequestInitiator ||
-        it.name() == kDevToolsEmulateNetworkConditionsClientId) {
+    if (ServiceWorkerContext::IsExcludedHeaderNameForFetchEvent(it.name()))
       continue;
-    }
     request->headers[it.name()] = it.value();
   }
   request->blob_uuid = blob_uuid;

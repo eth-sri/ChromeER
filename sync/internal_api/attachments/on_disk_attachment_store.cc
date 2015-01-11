@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/sequenced_task_runner.h"
 #include "sync/internal_api/attachments/proto/attachment_store.pb.h"
+#include "sync/internal_api/public/attachments/attachment_util.h"
 #include "sync/protocol/attachments.pb.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/options.h"
@@ -82,33 +83,47 @@ leveldb::Status WriteStoreMetadata(
 }  // namespace
 
 OnDiskAttachmentStore::OnDiskAttachmentStore(
-    const scoped_refptr<base::SequencedTaskRunner>& callback_task_runner)
-    : callback_task_runner_(callback_task_runner) {
+    const scoped_refptr<base::SequencedTaskRunner>& callback_task_runner,
+    const base::FilePath& path)
+    : callback_task_runner_(callback_task_runner), path_(path) {
 }
 
 OnDiskAttachmentStore::~OnDiskAttachmentStore() {
 }
 
+void OnDiskAttachmentStore::Init(const InitCallback& callback) {
+  DCHECK(CalledOnValidThread());
+  Result result_code = OpenOrCreate(path_);
+  callback_task_runner_->PostTask(FROM_HERE, base::Bind(callback, result_code));
+}
+
 void OnDiskAttachmentStore::Read(const AttachmentIdList& ids,
                                  const ReadCallback& callback) {
   DCHECK(CalledOnValidThread());
-  DCHECK(db_);
   scoped_ptr<AttachmentMap> result_map(new AttachmentMap());
   scoped_ptr<AttachmentIdList> unavailable_attachments(new AttachmentIdList());
 
-  AttachmentIdList::const_iterator iter = ids.begin();
-  const AttachmentIdList::const_iterator end = ids.end();
-  for (; iter != end; ++iter) {
-    scoped_ptr<Attachment> attachment = ReadSingleAttachment(*iter);
-    if (attachment) {
-      result_map->insert(std::make_pair(*iter, *attachment));
-    } else {
-      unavailable_attachments->push_back(*iter);
+  Result result_code = STORE_INITIALIZATION_FAILED;
+
+  if (db_) {
+    result_code = SUCCESS;
+    AttachmentIdList::const_iterator iter = ids.begin();
+    const AttachmentIdList::const_iterator end = ids.end();
+    for (; iter != end; ++iter) {
+      scoped_ptr<Attachment> attachment;
+      attachment = ReadSingleAttachment(*iter);
+      if (attachment) {
+        result_map->insert(std::make_pair(*iter, *attachment));
+      } else {
+        unavailable_attachments->push_back(*iter);
+      }
     }
+    result_code =
+        unavailable_attachments->empty() ? SUCCESS : UNSPECIFIED_ERROR;
+  } else {
+    *unavailable_attachments = ids;
   }
 
-  Result result_code =
-      unavailable_attachments->empty() ? SUCCESS : UNSPECIFIED_ERROR;
   callback_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(callback,
@@ -120,14 +135,16 @@ void OnDiskAttachmentStore::Read(const AttachmentIdList& ids,
 void OnDiskAttachmentStore::Write(const AttachmentList& attachments,
                                   const WriteCallback& callback) {
   DCHECK(CalledOnValidThread());
-  DCHECK(db_);
-  Result result_code = SUCCESS;
+  Result result_code = STORE_INITIALIZATION_FAILED;
 
-  AttachmentList::const_iterator iter = attachments.begin();
-  const AttachmentList::const_iterator end = attachments.end();
-  for (; iter != end; ++iter) {
-    if (!WriteSingleAttachment(*iter))
-      result_code = UNSPECIFIED_ERROR;
+  if (db_) {
+    result_code = SUCCESS;
+    AttachmentList::const_iterator iter = attachments.begin();
+    const AttachmentList::const_iterator end = attachments.end();
+    for (; iter != end; ++iter) {
+      if (!WriteSingleAttachment(*iter))
+        result_code = UNSPECIFIED_ERROR;
+    }
   }
   callback_task_runner_->PostTask(FROM_HERE, base::Bind(callback, result_code));
 }
@@ -135,30 +152,43 @@ void OnDiskAttachmentStore::Write(const AttachmentList& attachments,
 void OnDiskAttachmentStore::Drop(const AttachmentIdList& ids,
                                  const DropCallback& callback) {
   DCHECK(CalledOnValidThread());
-  DCHECK(db_);
-  Result result_code = SUCCESS;
-  leveldb::WriteOptions write_options = MakeWriteOptions();
-  AttachmentIdList::const_iterator iter = ids.begin();
-  const AttachmentIdList::const_iterator end = ids.end();
-  for (; iter != end; ++iter) {
-    leveldb::WriteBatch write_batch;
-    write_batch.Delete(MakeDataKeyFromAttachmentId(*iter));
-    write_batch.Delete(MakeMetadataKeyFromAttachmentId(*iter));
+  Result result_code = STORE_INITIALIZATION_FAILED;
+  if (db_) {
+    result_code = SUCCESS;
+    leveldb::WriteOptions write_options = MakeWriteOptions();
+    AttachmentIdList::const_iterator iter = ids.begin();
+    const AttachmentIdList::const_iterator end = ids.end();
+    for (; iter != end; ++iter) {
+      leveldb::WriteBatch write_batch;
+      write_batch.Delete(MakeDataKeyFromAttachmentId(*iter));
+      write_batch.Delete(MakeMetadataKeyFromAttachmentId(*iter));
 
-    leveldb::Status status = db_->Write(write_options, &write_batch);
-    if (!status.ok()) {
-      // DB::Delete doesn't check if record exists, it returns ok just like
-      // AttachmentStore::Drop should.
-      DVLOG(1) << "DB::Write failed: status=" << status.ToString();
-      result_code = UNSPECIFIED_ERROR;
+      leveldb::Status status = db_->Write(write_options, &write_batch);
+      if (!status.ok()) {
+        // DB::Delete doesn't check if record exists, it returns ok just like
+        // AttachmentStore::Drop should.
+        DVLOG(1) << "DB::Write failed: status=" << status.ToString();
+        result_code = UNSPECIFIED_ERROR;
+      }
     }
   }
   callback_task_runner_->PostTask(FROM_HERE, base::Bind(callback, result_code));
 }
 
+void OnDiskAttachmentStore::ReadMetadata(const AttachmentIdList& ids,
+                                         const ReadMetadataCallback& callback) {
+  // TODO(stanisc): implement this.
+  NOTIMPLEMENTED();
+}
+
+void OnDiskAttachmentStore::ReadAllMetadata(
+    const ReadMetadataCallback& callback) {
+  // TODO(stanisc): implement this.
+  NOTIMPLEMENTED();
+}
+
 AttachmentStore::Result OnDiskAttachmentStore::OpenOrCreate(
     const base::FilePath& path) {
-  DCHECK(CalledOnValidThread());
   DCHECK(!db_);
   base::FilePath leveldb_path = path.Append(kLeveldbDirectory);
 
@@ -211,16 +241,35 @@ scoped_ptr<Attachment> OnDiskAttachmentStore::ReadSingleAttachment(
   scoped_ptr<Attachment> attachment;
 
   const std::string key = MakeDataKeyFromAttachmentId(attachment_id);
-  std::string data_str;
-  leveldb::Status status = db_->Get(MakeDataReadOptions(), key, &data_str);
-  if (status.ok()) {
-    scoped_refptr<base::RefCountedMemory> data =
-        base::RefCountedString::TakeString(&data_str);
-    attachment.reset(
-        new Attachment(Attachment::CreateWithId(attachment_id, data)));
-  } else {
-    DVLOG(1) << "DB::Get failed: status=" << status.ToString();
+  const std::string metadata_key =
+      MakeMetadataKeyFromAttachmentId(attachment_id);
+  leveldb::Status status;
+  std::string metadata_str;
+  status = db_->Get(MakeMetadataReadOptions(), metadata_key, &metadata_str);
+  if (!status.ok()) {
+    DVLOG(1) << "DB::Get for metadata failed: status=" << status.ToString();
+    return attachment.Pass();
   }
+  attachment_store_pb::RecordMetadata record_metadata;
+  if (!record_metadata.ParseFromString(metadata_str)) {
+    DVLOG(1) << "RecordMetadata::ParseFromString failed";
+    return attachment.Pass();
+  }
+  std::string data_str;
+  status = db_->Get(MakeDataReadOptions(), key, &data_str);
+  if (!status.ok()) {
+    DVLOG(1) << "DB::Get for data failed: status=" << status.ToString();
+    return attachment.Pass();
+  }
+  scoped_refptr<base::RefCountedMemory> data =
+      base::RefCountedString::TakeString(&data_str);
+  uint32_t crc32c = ComputeCrc32c(data);
+  if (record_metadata.has_crc32c() && record_metadata.crc32c() != crc32c) {
+    DVLOG(1) << "Attachment crc does not match";
+    return attachment.Pass();
+  }
+  attachment.reset(
+      new Attachment(Attachment::CreateFromParts(attachment_id, data, crc32c)));
   return attachment.Pass();
 }
 
@@ -247,6 +296,7 @@ bool OnDiskAttachmentStore::WriteSingleAttachment(
   // Write metadata.
   attachment_store_pb::RecordMetadata metadata;
   metadata.set_attachment_size(attachment.GetData()->size());
+  metadata.set_crc32c(attachment.GetCrc32c());
   metadata_str = metadata.SerializeAsString();
   write_batch.Put(metadata_key, metadata_str);
   // Write data.

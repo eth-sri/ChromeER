@@ -5,6 +5,7 @@
 #ifndef UI_OZONE_PUBLIC_GPU_PLATFORM_SUPPORT_H_
 #define UI_OZONE_PUBLIC_GPU_PLATFORM_SUPPORT_H_
 
+#include "base/callback.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "ui/ozone/ozone_base_export.h"
@@ -17,10 +18,12 @@ namespace ui {
 class OZONE_BASE_EXPORT GpuPlatformSupport : public IPC::Listener {
  public:
   GpuPlatformSupport();
-  virtual ~GpuPlatformSupport();
+  ~GpuPlatformSupport() override;
 
   // Called when the GPU process is spun up & channel established.
   virtual void OnChannelEstablished(IPC::Sender* sender) = 0;
+
+  virtual void RelinquishGpuResources(const base::Closure& callback) = 0;
 };
 
 // Create a stub implementation.

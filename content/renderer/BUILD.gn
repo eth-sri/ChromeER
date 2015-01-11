@@ -39,9 +39,9 @@ source_set("renderer") {
     "//jingle:jingle_glue",
     "//media",
     "//media/blink",
-    "//mojo/bindings/js",
+    "//mojo/edk/js",
     "//mojo/environment:chromium",
-    "//mojo/public/js/bindings",
+    "//mojo/public/js",
     "//mojo/public/interfaces/application",
     "//net",
     "//skia",
@@ -62,13 +62,6 @@ source_set("renderer") {
     "//webkit/common/gpu",
   ]
 
-  if (!enable_notifications) {
-    sources -= [
-      "notification_provider.cc",
-      "active_notification_tracker.cc",
-    ]
-  }
-
   if (is_mac) {
     sources -= [
       "webscrollbarbehavior_impl_gtkoraura.cc",
@@ -83,7 +76,6 @@ source_set("renderer") {
   if (is_android) {
     sources -= [
       "media/audio_decoder.cc",
-      "media/crypto/encrypted_media_player_support_impl.cc",
     ]
     sources += [
       "external_popup_menu.cc",
@@ -185,7 +177,7 @@ source_set("renderer") {
     ]
   }
 
-  if (printing_mode == 1) {
+  if (enable_print_preview) {
     deps += [ "//printing" ]
   }
 

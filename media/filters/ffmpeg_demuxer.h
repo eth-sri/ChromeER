@@ -48,9 +48,9 @@ struct AVStream;
 namespace media {
 
 class MediaLog;
+class FFmpegBitstreamConverter;
 class FFmpegDemuxer;
 class FFmpegGlue;
-class FFmpegH264ToAnnexBBitstreamConverter;
 
 typedef scoped_ptr<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
 
@@ -86,13 +86,16 @@ class FFmpegDemuxerStream : public DemuxerStream {
   }
 
   // DemuxerStream implementation.
-  Type type() override;
+  Type type() const override;
+  Liveness liveness() const override;
   void Read(const ReadCB& read_cb) override;
   void EnableBitstreamConverter() override;
   bool SupportsConfigChanges() override;
   AudioDecoderConfig audio_decoder_config() override;
   VideoDecoderConfig video_decoder_config() override;
   VideoRotation video_rotation() override;
+
+  void SetLiveness(Liveness liveness);
 
   // Returns the range of buffered data in this stream.
   Ranges<base::TimeDelta> GetBufferedRanges() const;
@@ -124,8 +127,11 @@ class FFmpegDemuxerStream : public DemuxerStream {
   static base::TimeDelta ConvertStreamTimestamp(const AVRational& time_base,
                                                 int64 timestamp);
 
-  // Resets any currently active bitstream converters.
+  // Resets any currently active bitstream converter.
   void ResetBitstreamConverter();
+
+  // Create new bitstream converter, destroying active converter if present.
+  void InitBitstreamConverter();
 
   FFmpegDemuxer* demuxer_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
@@ -133,6 +139,7 @@ class FFmpegDemuxerStream : public DemuxerStream {
   AudioDecoderConfig audio_config_;
   VideoDecoderConfig video_config_;
   Type type_;
+  Liveness liveness_;
   base::TimeDelta duration_;
   bool end_of_stream_;
   base::TimeDelta last_packet_timestamp_;
@@ -144,10 +151,8 @@ class FFmpegDemuxerStream : public DemuxerStream {
   ReadCB read_cb_;
 
 #if defined(USE_PROPRIETARY_CODECS)
-  scoped_ptr<FFmpegH264ToAnnexBBitstreamConverter> bitstream_converter_;
+  scoped_ptr<FFmpegBitstreamConverter> bitstream_converter_;
 #endif
-
-  bool bitstream_converter_enabled_;
 
   std::string encryption_key_id_;
   bool fixup_negative_ogg_timestamps_;
@@ -172,7 +177,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   base::Time GetTimelineOffset() const override;
   DemuxerStream* GetStream(DemuxerStream::Type type) override;
   base::TimeDelta GetStartTime() const override;
-  Liveness GetLiveness() const override;
 
   // Calls |need_key_cb_| with the initialization data encountered in the file.
   void FireNeedKey(const std::string& init_data_type,
@@ -223,6 +227,8 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // Called after the streams have been collected from the media, to allow
   // the text renderer to bind each text stream to the cue rendering engine.
   void AddTextStreams();
+
+  void SetLiveness(DemuxerStream::Liveness liveness);
 
   DemuxerHost* host_;
 
@@ -281,9 +287,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // The Time associated with timestamp 0. Set to a null
   // time if the file doesn't have an association to Time.
   base::Time timeline_offset_;
-
-  // Liveness of the stream.
-  Liveness liveness_;
 
   // Whether text streams have been enabled for this demuxer.
   bool text_enabled_;

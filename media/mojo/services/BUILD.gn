@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//mojo/public/mojo_application.gni")
+
 # Things needed by multiple targets, like renderer_impl and renderer_app.
 # GYP version: media/media.gyp:media_mojo_lib
 source_set("lib") {
@@ -10,8 +12,11 @@ source_set("lib") {
     "//media",
     "//media/mojo/interfaces",
     "//mojo/common",
+    "//mojo/converters/geometry",
     "//mojo/environment:chromium",
     "//mojo/public/c/system:for_component",
+    "//mojo/services/public/interfaces/geometry",
+    "//skia",
   ]
 
   sources = [
@@ -46,7 +51,7 @@ source_set("renderer_impl_lib") {
 
 # mojo media::Renderer application.
 # GYP version: media/media.gyp:mojo_media_renderer_app
-shared_library("renderer_app") {
+mojo_native_application("renderer_app") {
   output_name = "mojo_media_renderer_app"
 
   deps = [
@@ -61,6 +66,8 @@ shared_library("renderer_app") {
   ]
 
   sources = [
+    "demuxer_stream_provider_shim.cc",
+    "demuxer_stream_provider_shim.h",
     "mojo_renderer_service.cc",
     "mojo_renderer_service.h",
     "renderer_config.cc",
@@ -87,21 +94,26 @@ test("mojo_media_lib_unittests") {
   ]
 }
 
-# GYP version: media/media.gyp:mojo_media_renderer_apptest
 # Not a 'test' because this is loaded via mojo_shell as an app.
-shared_library("renderer_apptest") {
+# To run the test:
+#   out/Debug/mojo_shell mojo:mojo_media_renderer_apptest
+# You may need to get "mojo_shell" from a mojo checkout and symlink all required
+# libraries.
+# TODO(msw): Fix GYP build for ApplicationTestBase so that we can add a GYP
+# version of this test.
+mojo_native_application("media_renderer_apptest") {
   testonly = true
   output_name = "mojo_media_renderer_apptest"
 
   deps = [
     "//base",
-    "//base/test:test_support",
     "//media",
     "//media:shared_memory_support",
     "//media/mojo/interfaces",
-    "//mojo/common",
     "//mojo/application",
-    "//testing/gtest",
+    "//mojo/application:test_support",
+    "//mojo/common",
+    "//mojo/environment:chromium",
     ":renderer_impl_lib",
     ":renderer_app",
     ":lib",
@@ -109,7 +121,7 @@ shared_library("renderer_apptest") {
   ]
 
   sources = [
-    "renderer_unittest.cc",
+    "media_renderer_apptest.cc",
   ]
 }
 
@@ -125,6 +137,6 @@ group("tests") {
   testonly = true
   deps = [
     ":mojo_media_lib_unittests",
-    ":renderer_apptest",
+    ":media_renderer_apptest",
   ]
 }

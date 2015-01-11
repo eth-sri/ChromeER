@@ -26,6 +26,8 @@ const base::FilePath::CharType kTestName[] = FILE_PATH_LITERAL("heuristics");
 
 // Convert the |html| snippet to a data URI.
 GURL HTMLToDataURI(const std::string& html) {
+  // GURL requires data URLs to be UTF-8 and will fail below if it's not.
+  CHECK(base::IsStringUTF8(html)) << "Input file is not UTF-8.";
   return GURL(std::string("data:text/html;charset=utf-8,") + html);
 }
 
@@ -294,6 +296,15 @@ IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
     MAYBE_DataDrivenHeuristics(23)) {
   const base::FilePath::CharType kFileNamePattern[] =
       FILE_PATH_LITERAL("23_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(24)) {
+  const base::FilePath::CharType kFileNamePattern[] =
+      FILE_PATH_LITERAL("24_*.html");
   RunDataDrivenTest(GetInputDirectory(kTestName),
                     GetOutputDirectory(kTestName),
                     kFileNamePattern);

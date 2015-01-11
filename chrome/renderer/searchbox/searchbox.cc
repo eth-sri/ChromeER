@@ -177,6 +177,11 @@ void SearchBox::CheckIsUserSignedInToChromeAs(const base::string16& identity) {
       render_view()->GetRoutingID(), page_seq_no_, identity));
 }
 
+void SearchBox::CheckIsUserSyncingHistory() {
+  render_view()->Send(new ChromeViewHostMsg_HistorySyncCheck(
+      render_view()->GetRoutingID(), page_seq_no_));
+}
+
 void SearchBox::DeleteMostVisitedItem(
     InstantRestrictedID most_visited_item_id) {
   render_view()->Send(new ChromeViewHostMsg_SearchBoxDeleteMostVisitedItem(
@@ -237,6 +242,10 @@ const ThemeBackgroundInfo& SearchBox::GetThemeBackgroundInfo() {
   return theme_info_;
 }
 
+const EmbeddedSearchRequestParams& SearchBox::GetEmbeddedSearchRequestParams() {
+  return embedded_search_request_params_;
+}
+
 void SearchBox::Focus() {
   render_view()->Send(new ChromeViewHostMsg_FocusOmnibox(
       render_view()->GetRoutingID(), page_seq_no_, OMNIBOX_FOCUS_VISIBLE));
@@ -292,6 +301,8 @@ bool SearchBox::OnMessageReceived(const IPC::Message& message) {
                         OnChromeIdentityCheckResult)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_DetermineIfPageSupportsInstant,
                         OnDetermineIfPageSupportsInstant)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_HistorySyncCheckResult,
+                        OnHistorySyncCheckResult)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxFocusChanged, OnFocusChanged)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxMarginChange, OnMarginChange)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SearchBoxMostVisitedItemsChanged,
@@ -369,6 +380,13 @@ void SearchBox::OnFocusChanged(OmniboxFocusState new_focus_state,
   }
 }
 
+void SearchBox::OnHistorySyncCheckResult(bool sync_history) {
+  if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
+    extensions_v8::SearchBoxExtension::DispatchHistorySyncCheckResult(
+        render_view()->GetWebView()->mainFrame(), sync_history);
+  }
+}
+
 void SearchBox::OnMarginChange(int margin) {
   start_margin_ = margin;
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
@@ -426,8 +444,10 @@ void SearchBox::OnSetSuggestionToPrefetch(const InstantSuggestion& suggestion) {
   }
 }
 
-void SearchBox::OnSubmit(const base::string16& query) {
+void SearchBox::OnSubmit(const base::string16& query,
+                         const EmbeddedSearchRequestParams& params) {
   query_ = query;
+  embedded_search_request_params_ = params;
   if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
     DVLOG(1) << render_view() << " OnSubmit";
     extensions_v8::SearchBoxExtension::DispatchSubmit(
@@ -463,6 +483,7 @@ GURL SearchBox::GetURLForMostVisitedItem(InstantRestrictedID item_id) const {
 
 void SearchBox::Reset() {
   query_.clear();
+  embedded_search_request_params_ = EmbeddedSearchRequestParams();
   suggestion_ = InstantSuggestion();
   start_margin_ = 0;
   is_focused_ = false;

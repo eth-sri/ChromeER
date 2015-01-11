@@ -55,7 +55,7 @@ class ConsumerManagementServiceTest : public BrowserWithTestWindowTest {
                        MockFlushAndSignBootAttributes));
   }
 
-  virtual void SetUp() override {
+  void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
 
     testing_profile_manager_.reset(new TestingProfileManager(
@@ -65,7 +65,7 @@ class ConsumerManagementServiceTest : public BrowserWithTestWindowTest {
                                                  NULL));
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     testing_profile_manager_.reset();
     service_.reset();
 
@@ -225,7 +225,7 @@ TEST_F(ConsumerManagementServiceStatusTest,
   EXPECT_EQ(ConsumerManagementService::STATUS_UNKNOWN, service_.GetStatus());
   EXPECT_EQ("StatusUnknown", service_.GetStatusString());
 
-  SetManagementMode(em::PolicyData::NOT_MANAGED);
+  SetManagementMode(em::PolicyData::LOCAL_OWNER);
   SetEnrollmentStage(ConsumerManagementService::ENROLLMENT_STAGE_NONE);
 
   EXPECT_EQ(ConsumerManagementService::STATUS_UNENROLLED, service_.GetStatus());

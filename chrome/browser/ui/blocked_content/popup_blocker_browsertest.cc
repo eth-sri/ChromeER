@@ -5,7 +5,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -29,6 +28,7 @@
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/omnibox/autocomplete_match.h"
 #include "components/omnibox/autocomplete_result.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
@@ -138,6 +138,9 @@ class PopupBlockerBrowserTest : public InProcessBrowserTest {
                 chrome::GetBrowserCount(browser()->profile(),
                                         browser()->host_desktop_type()));
       ASSERT_EQ(2, browser()->tab_strip_model()->count());
+
+      // Check that we always create foreground tabs.
+      ASSERT_EQ(1, browser()->tab_strip_model()->active_index());
     }
 
     ASSERT_EQ(0, GetBlockedContentsCount());
@@ -202,6 +205,8 @@ class PopupBlockerBrowserTest : public InProcessBrowserTest {
     } else {
       new_browser = browser;
       EXPECT_EQ(2, browser->tab_strip_model()->count());
+      // Check that we always create foreground tabs.
+      EXPECT_EQ(1, browser->tab_strip_model()->active_index());
       web_contents = browser->tab_strip_model()->GetWebContentsAt(1);
     }
 
@@ -230,7 +235,7 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest,
   RunCheckTest(
       browser(),
       "/popup_blocker/popup-blocked-to-post-blank.html",
-      ExpectPopup,
+      ExpectTab,
       DontCheckTitle);
 }
 
@@ -245,7 +250,7 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest,
   RunCheckTest(
       CreateIncognitoBrowser(),
       "/popup_blocker/popup-blocked-to-post-blank.html",
-      ExpectPopup,
+      ExpectTab,
       DontCheckTitle);
 }
 
@@ -403,7 +408,7 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, MAYBE_WindowFeatures) {
 IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, CorrectReferrer) {
   RunCheckTest(browser(),
                "/popup_blocker/popup-referrer.html",
-               ExpectPopup,
+               ExpectTab,
                CheckTitle);
 }
 
@@ -417,14 +422,14 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, WindowFeaturesBarProps) {
 IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, SessionStorage) {
   RunCheckTest(browser(),
                "/popup_blocker/popup-sessionstorage.html",
-               ExpectPopup,
+               ExpectTab,
                CheckTitle);
 }
 
 IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, Opener) {
   RunCheckTest(browser(),
                "/popup_blocker/popup-opener.html",
-               ExpectPopup,
+               ExpectTab,
                CheckTitle);
 }
 
@@ -435,7 +440,7 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, ClosableAfterNavigation) {
   WebContents* popup =
       RunCheckTest(browser(),
                    "/popup_blocker/popup-opener.html",
-                   ExpectPopup,
+                   ExpectTab,
                    CheckTitle);
 
   // Navigate it elsewhere.
@@ -470,7 +475,7 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, WebUI) {
   WebContents* popup =
       RunCheckTest(browser(),
                    "/popup_blocker/popup-webui.html",
-                   ExpectPopup,
+                   ExpectTab,
                    DontCheckTitle);
 
   // Check that the new popup displays about:blank.
@@ -483,6 +488,28 @@ IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, DenialOfService) {
   GURL url(embedded_test_server()->GetURL("/popup_blocker/popup-dos.html"));
   ui_test_utils::NavigateToURL(browser(), url);
   ASSERT_EQ(25, GetBlockedContentsCount());
+}
+
+// Verify that an onunload popup does not show up for about:blank.
+IN_PROC_BROWSER_TEST_F(PopupBlockerBrowserTest, Regress427477) {
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
+
+  GURL url(
+      embedded_test_server()->GetURL("/popup_blocker/popup-on-unload.html"));
+  ui_test_utils::NavigateToURL(browser(), url);
+
+  WebContents* tab = browser()->tab_strip_model()->GetActiveWebContents();
+
+  tab->GetController().GoBack();
+  content::WaitForLoadStop(tab);
+
+  ASSERT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
+  ASSERT_EQ(1, browser()->tab_strip_model()->count());
+
+  // The popup from the unload event handler should not show up for about:blank.
+  ASSERT_EQ(0, GetBlockedContentsCount());
 }
 
 }  // namespace

@@ -35,7 +35,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe
   // The default options for |MojoCreateDataPipe()|. (Real uses should obtain
   // this via |ValidateCreateOptions()| with a null |in_options|; this is
   // exposed directly for testing convenience.)
-  static const MojoCreateDataPipeOptions kDefaultCreateOptions;
+  static MojoCreateDataPipeOptions GetDefaultCreateOptions();
 
   // Validates and/or sets default options for |MojoCreateDataPipeOptions|. If
   // non-null, |in_options| must point to a struct of at least
@@ -73,7 +73,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe
   // a multiple of |element_num_bytes_|.
   MojoResult ConsumerReadData(UserPointer<void> elements,
                               UserPointer<uint32_t> num_bytes,
-                              bool all_or_none);
+                              bool all_or_none,
+                              bool peek);
   MojoResult ConsumerDiscardData(UserPointer<uint32_t> num_bytes,
                                  bool all_or_none);
   MojoResult ConsumerQueryData(UserPointer<uint32_t> num_bytes);
@@ -116,11 +117,11 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe
 
   virtual void ConsumerCloseImplNoLock() = 0;
   // |*num_bytes| will be a nonzero multiple of |element_num_bytes_|.
-  virtual MojoResult ConsumerReadDataImplNoLock(
-      UserPointer<void> elements,
-      UserPointer<uint32_t> num_bytes,
-      uint32_t max_num_bytes_to_read,
-      uint32_t min_num_bytes_to_read) = 0;
+  virtual MojoResult ConsumerReadDataImplNoLock(UserPointer<void> elements,
+                                                UserPointer<uint32_t> num_bytes,
+                                                uint32_t max_num_bytes_to_read,
+                                                uint32_t min_num_bytes_to_read,
+                                                bool peek) = 0;
   virtual MojoResult ConsumerDiscardDataImplNoLock(
       UserPointer<uint32_t> num_bytes,
       uint32_t max_num_bytes_to_discard,

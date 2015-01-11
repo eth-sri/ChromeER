@@ -9,6 +9,7 @@
 #include "extensions/common/manifest_handler.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/csp_info.h"
+#include "extensions/common/manifest_handlers/default_locale_handler.h"
 #include "extensions/common/manifest_handlers/externally_connectable.h"
 #include "extensions/common/manifest_handlers/file_handler_info.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -27,11 +28,11 @@ namespace extensions {
 
 void RegisterCommonManifestHandlers() {
   DCHECK(!ManifestHandler::IsRegistrationFinalized());
-#if defined(ENABLE_EXTENSIONS)
   (new BackgroundManifestHandler)->Register();
   (new BluetoothManifestHandler)->Register();
   (new CSPHandler(false))->Register();
   (new CSPHandler(true))->Register();
+  (new DefaultLocaleHandler)->Register();
   (new ExternallyConnectableHandler)->Register();
   (new FileHandlersParser)->Register();
   (new IconsHandler)->Register();
@@ -48,7 +49,6 @@ void RegisterCommonManifestHandlers() {
   (new SocketsManifestHandler)->Register();
   (new WebAccessibleResourcesHandler)->Register();
   (new WebviewHandler)->Register();
-#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 }  // namespace extensions

@@ -59,22 +59,28 @@ const QuicByteCount kMaxPacketSize = 1452;
 // Default maximum packet size used in Linux TCP implementations.
 const QuicByteCount kDefaultTCPMSS = 1460;
 
-// Maximum size of the initial congestion window in packets.
-const size_t kDefaultInitialWindow = 10;
-const uint32 kMaxInitialWindow = 100;
+// We match SPDY's use of 32 when secure (since we'd compete with SPDY).
+const QuicPacketCount kInitialCongestionWindowSecure = 32;
+// Be conservative, and just use double a typical TCP ICWND for HTTP.
+const QuicPacketCount kInitialCongestionWindowInsecure = 20;
 
 // Default size of initial flow control window, for both stream and session.
 const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 
-// Maximum size of the congestion window, in packets, for TCP congestion control
-// algorithms.
-const size_t kMaxTcpCongestionWindow = 200;
+// Minimum size of the CWND, in packets, when doing bandwidth resumption.
+const QuicPacketCount kMinCongestionWindowForBandwidthResumption = 10;
+
+// Maximum size of the CWND, in packets, for TCP congestion control algorithms.
+const QuicPacketCount kMaxTcpCongestionWindow = 200;
 
 // Default size of the socket receive buffer in bytes.
 const QuicByteCount kDefaultSocketReceiveBuffer = 256 * 1024;
 // Minimum size of the socket receive buffer in bytes.
 // Smaller values are ignored.
 const QuicByteCount kMinSocketReceiveBuffer = 16 * 1024;
+
+// Don't allow a client to suggest an RTT shorter than 10ms.
+const uint32 kMinInitialRoundTripTimeUs = 10 * kNumMicrosPerMilli;
 
 // Don't allow a client to suggest an RTT longer than 15 seconds.
 const uint32 kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
@@ -132,6 +138,9 @@ const int kMinIntervalBetweenServerConfigUpdatesRTTs = 10;
 
 // Minimum time between Server Config Updates (SCUP) sent to client.
 const int kMinIntervalBetweenServerConfigUpdatesMs = 1000;
+
+// Minimum number of packets between Server Config Updates (SCUP).
+const int kMinPacketsBetweenServerConfigUpdates = 100;
 
 // The number of open streams that a server will accept is set to be slightly
 // larger than the negotiated limit. Immediately closing the connection if the
@@ -393,8 +402,9 @@ enum QuicRstStreamErrorCode {
   QUIC_STREAM_PEER_GOING_AWAY,
   // The stream has been cancelled.
   QUIC_STREAM_CANCELLED,
-  // Sending a RST to allow for proper flow control accounting.
-  QUIC_RST_FLOW_CONTROL_ACCOUNTING,
+  // Closing stream locally, sending a RST to allow for proper flow control
+  // accounting. Sent in response to a RST from the peer.
+  QUIC_RST_ACKNOWLEDGEMENT,
 
   // No error. Used as bound while iterating.
   QUIC_STREAM_LAST_ERROR,
@@ -1089,6 +1099,8 @@ struct NET_EXPORT_PRIVATE TransmissionInfo {
   bool in_flight;
   // True if the packet can never be acked, so it can be removed.
   bool is_unackable;
+  // True if the packet is an FEC packet.
+  bool is_fec_packet;
 };
 
 }  // namespace net

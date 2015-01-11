@@ -20,7 +20,6 @@ extern const char kEnableAppWindowControls[];
 extern const char kEnableEmbeddedExtensionOptions[];
 extern const char kEnableExperimentalExtensionApis[];
 extern const char kEnableExtensionActionRedesign[];
-extern const char kEnableMimeHandlerView[];
 extern const char kEnableMojoSerialService[];
 extern const char kEnableOverrideBookmarksUI[];
 extern const char kEnableRemoteAssistance[];
@@ -29,10 +28,11 @@ extern const char kExtensionActionRedesign[];
 extern const char kExtensionProcess[];
 extern const char kExtensionsOnChromeURLs[];
 extern const char kForceDevModeHighlighting[];
-extern const char kMimeHandlerView[];
+extern const char kLoadApps[];
 extern const char kScriptsRequireAction[];
 extern const char kEnableScriptsRequireAction[];
 extern const char kShowComponentExtensionOptions[];
+extern const char kTraceAppSource[];
 extern const char kWhitelistedExtensionID[];
 
 }  // namespace switches

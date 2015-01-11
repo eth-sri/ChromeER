@@ -92,12 +92,16 @@ class RootObserver : public ViewObserver {
 };
 
 ViewManagerClientImpl::ViewManagerClientImpl(ViewManagerDelegate* delegate,
-                                             Shell* shell)
-    : connected_(false), connection_id_(0), next_id_(1), delegate_(delegate) {
-  InterfacePtr<ServiceProvider> sp;
-  shell->ConnectToApplication("mojo:window_manager", GetProxy(&sp));
-  ConnectToService(sp.get(), &window_manager_);
-  window_manager_.set_client(this);
+                                             Shell* shell,
+                                             ScopedMessagePipeHandle handle,
+                                             bool delete_on_error)
+    : connected_(false),
+      connection_id_(0),
+      next_id_(1),
+      delegate_(delegate),
+      binding_(this, handle.Pass()),
+      service_(binding_.client()),
+      delete_on_error_(delete_on_error) {
 }
 
 ViewManagerClientImpl::~ViewManagerClientImpl() {
@@ -170,6 +174,9 @@ void ViewManagerClientImpl::SetSurfaceId(Id view_id, SurfaceIdPtr surface_id) {
 }
 
 void ViewManagerClientImpl::SetFocus(Id view_id) {
+  // In order for us to get here we had to have exposed a view, which implies we
+  // got a connection.
+  DCHECK(window_manager_.get());
   window_manager_->FocusWindow(view_id, ActionCompletedCallback());
 }
 
@@ -200,8 +207,9 @@ void ViewManagerClientImpl::Embed(
     Id view_id,
     ServiceProviderPtr service_provider) {
   DCHECK(connected_);
-  service_->Embed(url, view_id, service_provider.Pass(),
-                  ActionCompletedCallback());
+  service_->Embed(url, view_id,
+      MakeRequest<ServiceProvider>(service_provider.PassMessagePipe()),
+      ActionCompletedCallback());
 }
 
 void ViewManagerClientImpl::AddView(View* view) {
@@ -232,20 +240,14 @@ View* ViewManagerClientImpl::GetViewById(Id id) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// ViewManagerClientImpl, InterfaceImpl overrides:
-
-void ViewManagerClientImpl::OnConnectionEstablished() {
-  service_ = client();
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // ViewManagerClientImpl, ViewManagerClient implementation:
 
 void ViewManagerClientImpl::OnEmbed(
     ConnectionSpecificId connection_id,
     const String& creator_url,
     ViewDataPtr root_data,
-    InterfaceRequest<ServiceProvider> service_provider) {
+    InterfaceRequest<ServiceProvider> parent_services,
+    ScopedMessagePipeHandle window_manager_pipe) {
   if (!connected_) {
     connected_ = true;
     connection_id_ = connection_id;
@@ -264,13 +266,23 @@ void ViewManagerClientImpl::OnEmbed(
   ServiceProviderImpl* exported_services = nullptr;
   scoped_ptr<ServiceProvider> remote;
 
-  if (service_provider.is_pending()) {
+  if (parent_services.is_pending()) {
     // BindToRequest() binds the lifetime of |exported_services| to the pipe.
     exported_services = new ServiceProviderImpl;
-    BindToRequest(exported_services, &service_provider);
+    BindToRequest(exported_services, &parent_services);
     remote.reset(exported_services->CreateRemoteServiceProvider());
   }
+  window_manager_.Bind(window_manager_pipe.Pass());
+  window_manager_.set_client(this);
   delegate_->OnEmbed(this, root, exported_services, remote.Pass());
+}
+
+void ViewManagerClientImpl::OnEmbeddedAppDisconnected(Id view_id) {
+  View* view = GetViewById(view_id);
+  if (view) {
+    FOR_EACH_OBSERVER(ViewObserver, *ViewPrivate(view).observers(),
+                      OnViewEmbeddedAppDisconnected(view));
+  }
 }
 
 void ViewManagerClientImpl::OnViewBoundsChanged(Id view_id,
@@ -329,7 +341,7 @@ void ViewManagerClientImpl::OnViewDrawnStateChanged(Id view_id, bool drawn) {
     ViewPrivate(view).LocalSetDrawn(drawn);
 }
 
-void ViewManagerClientImpl::OnViewPropertyChanged(
+void ViewManagerClientImpl::OnViewSharedPropertyChanged(
     Id view_id,
     const String& name,
     Array<uint8_t> new_data) {
@@ -342,7 +354,7 @@ void ViewManagerClientImpl::OnViewPropertyChanged(
       data_ptr = &data;
     }
 
-    view->SetProperty(name, data_ptr);
+    view->SetSharedProperty(name, data_ptr);
   }
 }
 
@@ -360,9 +372,7 @@ void ViewManagerClientImpl::OnViewInputEvent(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// ViewManagerClientImpl, WindowManagerClient2 implementation:
-
-void ViewManagerClientImpl::OnWindowManagerReady() {}
+// ViewManagerClientImpl, WindowManagerClient implementation:
 
 void ViewManagerClientImpl::OnCaptureChanged(Id old_capture_view_id,
                                              Id new_capture_view_id) {}
@@ -385,6 +395,13 @@ void ViewManagerClientImpl::OnFocusChanged(Id old_focused_view_id,
 
 void ViewManagerClientImpl::OnActiveWindowChanged(Id old_focused_window,
                                                   Id new_focused_window) {}
+
+////////////////////////////////////////////////////////////////////////////////
+// OnConnectionError, private:
+void ViewManagerClientImpl::OnConnectionError() {
+  if (delete_on_error_)
+    delete this;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // ViewManagerClientImpl, private:

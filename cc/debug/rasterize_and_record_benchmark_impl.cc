@@ -56,10 +56,10 @@ class BenchmarkRasterTask : public Task {
         SkCanvas canvas(bitmap);
         RasterSource::SolidColorAnalysis analysis;
 
-        raster_source_->PerformSolidColorAnalysis(
-            content_rect_, contents_scale_, &analysis, nullptr);
-        raster_source_->PlaybackToCanvas(
-            &canvas, content_rect_, contents_scale_, nullptr);
+        raster_source_->PerformSolidColorAnalysis(content_rect_,
+                                                  contents_scale_, &analysis);
+        raster_source_->PlaybackToCanvas(&canvas, content_rect_,
+                                         contents_scale_);
 
         is_solid_color_ = analysis.is_solid_color;
 
@@ -99,10 +99,6 @@ class FixedInvalidationPictureLayerTilingClient
     return base_client_->CreateTile(tiling, content_rect);
   }
 
-  RasterSource* GetRasterSource() override {
-    return base_client_->GetRasterSource();
-  }
-
   gfx::Size CalculateTileSize(const gfx::Size& content_bounds) const override {
     return base_client_->CalculateTileSize(content_bounds);
   }
@@ -119,6 +115,10 @@ class FixedInvalidationPictureLayerTilingClient
   PictureLayerTiling* GetRecycledTwinTiling(
       const PictureLayerTiling* tiling) override {
     return base_client_->GetRecycledTwinTiling(tiling);
+  }
+
+  TilePriority::PriorityBin GetMaxTilePriorityBin() const override {
+    return base_client_->GetMaxTilePriorityBin();
   }
 
   size_t GetMaxTilesForInterestArea() const override {
@@ -196,7 +196,7 @@ void RasterizeAndRecordBenchmarkImpl::Run(LayerImpl* layer) {
 
 void RasterizeAndRecordBenchmarkImpl::RunOnLayer(PictureLayerImpl* layer) {
   rasterize_results_.total_picture_layers++;
-  if (!layer->DrawsContent()) {
+  if (!layer->CanHaveTilings()) {
     rasterize_results_.total_picture_layers_with_no_content++;
     return;
   }
@@ -213,10 +213,10 @@ void RasterizeAndRecordBenchmarkImpl::RunOnLayer(PictureLayerImpl* layer) {
 
   FixedInvalidationPictureLayerTilingClient client(
       layer, gfx::Rect(layer->content_bounds()));
-  PictureLayerTilingSet tiling_set(&client);
+  auto tiling_set = PictureLayerTilingSet::Create(&client);
 
   PictureLayerTiling* tiling =
-      tiling_set.AddTiling(layer->contents_scale_x(), layer->bounds());
+      tiling_set->AddTiling(layer->contents_scale_x(), layer->bounds());
   tiling->CreateAllTilesForTesting();
   for (PictureLayerTiling::CoverageIterator it(
            tiling, layer->contents_scale_x(), layer->visible_content_rect());

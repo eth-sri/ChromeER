@@ -12,12 +12,10 @@ import android.graphics.drawable.ColorDrawable;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.style.ForegroundColorSpan;
-import android.text.style.StrikethroughSpan;
 import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.View.MeasureSpec;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -35,6 +33,8 @@ import org.chromium.base.CalledByNative;
 import org.chromium.base.CommandLine;
 import org.chromium.chrome.ChromeSwitches;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.omnibox.OmniboxUrlEmphasizer;
+import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.toolbar.ToolbarModel;
 import org.chromium.chrome.browser.ui.toolbar.ToolbarModelSecurityLevel;
 import org.chromium.content.browser.WebContentsObserver;
@@ -77,6 +77,7 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
     private static final int MAX_TABLET_DIALOG_WIDTH_DP = 400;
 
     private final Context mContext;
+    private final Profile mProfile;
     private final WebContents mWebContents;
 
     // A pointer to the C++ object for this UI.
@@ -91,7 +92,9 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
     private final LinearLayout mPermissionsList;
     private final Button mCopyUrlButton;
     private final Button mSiteSettingsButton;
-    private final Button mDoneButton;
+
+    private final View mHorizontalSeparator;
+    private final View mLowerDialogArea;
 
     // The dialog the container is placed in.
     private final Dialog mDialog;
@@ -99,7 +102,6 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
     // The full URL from the URL bar, which is copied to the user's clipboard when they select 'Copy
     // URL'.
     private String mFullUrl;
-    private URI mUrl;
 
     /**
      * Creates the WebsiteSettingsPopup, but does not display it. Also initializes the corresponding
@@ -109,8 +111,9 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
      * @param webContents The WebContents for which to show Website information. This information is
      *                    retrieved for the visible entry.
      */
-    private WebsiteSettingsPopup(Context context, WebContents webContents) {
+    private WebsiteSettingsPopup(Context context, Profile profile, WebContents webContents) {
         mContext = context;
+        mProfile = profile;
         mWebContents = webContents;
 
         // Find the container and all it's important subviews.
@@ -131,11 +134,17 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
                 .findViewById(R.id.website_settings_site_settings_button);
         mSiteSettingsButton.setOnClickListener(this);
         // Hide the Site Settings button until there's a link to take it to.
-        // TODO(sashab,finnur): Make this button visible once Site Settings is working.
+        // TODO(sashab,finnur): Make this button visible for well-formed, non-internal URLs.
         mSiteSettingsButton.setVisibility(View.GONE);
 
-        mDoneButton = (Button) mContainer.findViewById(R.id.website_settings_done_button);
-        mDoneButton.setOnClickListener(this);
+        mHorizontalSeparator = mContainer
+                .findViewById(R.id.website_settings_horizontal_separator);
+        mLowerDialogArea = mContainer.findViewById(R.id.website_settings_lower_dialog_area);
+
+        // Hide the horizontal separator for sites with no permissions.
+        // TODO(sashab,finnur): Show this for all sites with either the site settings button or
+        // permissions (ie when the bottom area of the dialog is not empty).
+        setVisibilityOfLowerDialogArea(false);
 
         // Create the dialog.
         mDialog = new Dialog(mContext);
@@ -170,6 +179,17 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
     }
 
     /**
+     * Sets the visibility of the lower area of the dialog (containing the permissions and 'Site
+     * Settings' button).
+     *
+     * @param isVisible Whether to show or hide the dialog area.
+     */
+    private void setVisibilityOfLowerDialogArea(boolean isVisible) {
+        mHorizontalSeparator.setVisibility(isVisible ? View.VISIBLE : View.GONE);
+        mLowerDialogArea.setVisibility(isVisible ? View.VISIBLE : View.GONE);
+    }
+
+    /**
      * Finds the Image resource of the icon to use for the given permission.
      *
      * @param permission A valid ContentSettingsType that can be displayed in the PageInfo dialog to
@@ -186,7 +206,7 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
                 return R.drawable.permission_location;
             case ContentSettingsType.CONTENT_SETTINGS_TYPE_MEDIASTREAM:
                 return R.drawable.permission_media;
-            case ContentSettingsType.CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
+            case ContentSettingsType.CONTENT_SETTINGS_TYPE_PUSH_MESSAGING:
                 return R.drawable.permission_push_notification;
             case ContentSettingsType.CONTENT_SETTINGS_TYPE_POPUPS:
                 return R.drawable.permission_popups;
@@ -196,83 +216,74 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
         }
     }
 
+    /**
+     * Gets the message to display in the connection message box for the given security level. Does
+     * not apply to SECURITY_ERROR pages, since these have their own coloured/formatted message.
+     *
+     * @param toolbarModelSecurityLevel A valid ToolbarModelSecurityLevel, which is the security
+     *                                  level of the page.
+     * @return The ID of the message to display in the connection message box.
+     */
+    private int getConnectionMessageId(int toolbarModelSecurityLevel) {
+        switch (toolbarModelSecurityLevel) {
+            case ToolbarModelSecurityLevel.NONE:
+                return R.string.page_info_connection_http;
+            case ToolbarModelSecurityLevel.SECURE:
+            case ToolbarModelSecurityLevel.EV_SECURE:
+                return R.string.page_info_connection_https;
+            case ToolbarModelSecurityLevel.SECURITY_WARNING:
+            case ToolbarModelSecurityLevel.SECURITY_POLICY_WARNING:
+                return R.string.page_info_connection_mixed;
+            default:
+                assert false : "Invalid security level specified: " + toolbarModelSecurityLevel;
+                return R.string.page_info_connection_http;
+        }
+    }
+
+    /**
+     * Updates the details (URL title and connection message) displayed in the popup.
+     *
+     * @param isInternalPage Whether or not this page is an internal chrome page (e.g. the
+     *                       chrome://settings page).
+     */
     @CalledByNative
     private void updatePageDetails(boolean isInternalPage) {
         mFullUrl = mWebContents.getVisibleUrl();
         int securityLevel = ToolbarModel.getSecurityLevelForWebContents(mWebContents);
+        SpannableStringBuilder urlBuilder = new SpannableStringBuilder(mFullUrl);
+        OmniboxUrlEmphasizer.emphasizeUrl(urlBuilder, mContext.getResources(), mProfile,
+                securityLevel, isInternalPage, true);
+        mUrlTitle.setText(urlBuilder);
 
-        try {
-            mUrl = new URI(mFullUrl);
-        } catch (URISyntaxException e) {
-            assert false : "Invalid URL specified: " + mFullUrl;
-        }
-
-        int schemeColorId = -1;
-        if (securityLevel == ToolbarModelSecurityLevel.SECURITY_ERROR) {
-            schemeColorId = R.color.website_settings_popup_url_scheme_broken;
+        // Display the appropriate connection message.
+        SpannableStringBuilder messageBuilder = new SpannableStringBuilder();
+        if (securityLevel != ToolbarModelSecurityLevel.SECURITY_ERROR) {
+            messageBuilder.append(mContext.getResources().getString(
+                    getConnectionMessageId(securityLevel)));
+        } else {
+            String originToDisplay;
+            try {
+                URI parsedUrl = new URI(mFullUrl);
+                originToDisplay = UrlUtilities.getOriginForDisplay(parsedUrl, false);
+            } catch (URISyntaxException e) {
+                // The URL is invalid - just display the full URL.
+                originToDisplay = mFullUrl;
+            }
 
             String leadingText = mContext.getResources().getString(
                     R.string.page_info_connection_broken_leading_text);
             String followingText = mContext.getResources().getString(
-                    R.string.page_info_connection_broken_following_text,
-                    UrlUtilities.getOriginForDisplay(mUrl, false));
-            SpannableStringBuilder sb = new SpannableStringBuilder(leadingText + " "
-                    + followingText);
+                    R.string.page_info_connection_broken_following_text, originToDisplay);
+            messageBuilder.append(leadingText + " " + followingText);
             final ForegroundColorSpan redSpan = new ForegroundColorSpan(mContext.getResources()
-                    .getColor(R.color.website_settings_popup_url_scheme_broken));
+                    .getColor(R.color.website_settings_connection_broken_leading_text));
             final StyleSpan boldSpan = new StyleSpan(android.graphics.Typeface.BOLD);
-            sb.setSpan(redSpan, 0, leadingText.length(), Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
-            sb.setSpan(boldSpan, 0, leadingText.length(), Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
-            mUrlConnectionMessage.setText(sb);
-        } else {
-            int connectionMessageId = 0;
-            if (isInternalPage) {
-                schemeColorId = R.color.website_settings_popup_url_scheme_http;
-                connectionMessageId = R.string.page_info_connection_internal_page;
-            } else {
-                switch (securityLevel) {
-                    case ToolbarModelSecurityLevel.NONE:
-                        schemeColorId = R.color.website_settings_popup_url_scheme_http;
-                        connectionMessageId = R.string.page_info_connection_http;
-                        break;
-                    case ToolbarModelSecurityLevel.SECURE:
-                    case ToolbarModelSecurityLevel.EV_SECURE:
-                        schemeColorId = R.color.website_settings_popup_url_scheme_https;
-                        connectionMessageId = R.string.page_info_connection_https;
-                        break;
-                    case ToolbarModelSecurityLevel.SECURITY_WARNING:
-                    case ToolbarModelSecurityLevel.SECURITY_POLICY_WARNING:
-                        schemeColorId = R.color.website_settings_popup_url_scheme_mixed;
-                        connectionMessageId = R.string.page_info_connection_mixed;
-                        break;
-                    default:
-                        assert false : "Invalid security level specified: " + securityLevel;
-                        schemeColorId = R.color.website_settings_popup_url_scheme_http;
-                        connectionMessageId = R.string.page_info_connection_http;
-                }
-            }
-            mUrlConnectionMessage.setText(mContext.getResources().getString(connectionMessageId));
-        }
-
-        // Color the URI-parsed version of the URL.
-        SpannableStringBuilder sb = new SpannableStringBuilder(mUrl.toString());
-        final ForegroundColorSpan schemeColorSpan = new ForegroundColorSpan(mContext.getResources()
-                .getColor(schemeColorId));
-        sb.setSpan(schemeColorSpan, 0, mUrl.getScheme().length(),
-                Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
-        if (securityLevel == ToolbarModelSecurityLevel.SECURITY_ERROR) {
-            sb.setSpan(new StrikethroughSpan(), 0, mUrl.getScheme().length(),
+            messageBuilder.setSpan(redSpan, 0, leadingText.length(),
+                    Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
+            messageBuilder.setSpan(boldSpan, 0, leadingText.length(),
                     Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
         }
-
-        // The domain is everything after the scheme until the end of the
-        // origin.
-        final ForegroundColorSpan domainColorSpan = new ForegroundColorSpan(
-                mContext.getResources().getColor(R.color.website_settings_popup_url_domain));
-        sb.setSpan(domainColorSpan, mUrl.getScheme().length(),
-                UrlUtilities.getOriginForDisplay(mUrl, true).length(),
-                Spannable.SPAN_INCLUSIVE_EXCLUSIVE);
-        mUrlTitle.setText(sb);
+        mUrlConnectionMessage.setText(messageBuilder);
     }
 
     /**
@@ -284,6 +295,9 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
      */
     @CalledByNative
     private void addPermissionSection(String name, int type, int currentSetting) {
+        // We have at least one permission, so show the lower permissions area.
+        setVisibilityOfLowerDialogArea(true);
+
         LinearLayout permissionRow = (LinearLayout) LayoutInflater.from(mContext).inflate(
                 R.layout.website_settings_permission_row, null);
 
@@ -387,8 +401,6 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
             // TODO(sashab,finnur): Make this open the Website Settings dialog.
             assert false : "No Website Settings here!";
             mDialog.dismiss();
-        } else if (view == mDoneButton) {
-            mDialog.dismiss();
         }
     }
 
@@ -401,9 +413,9 @@ public class WebsiteSettingsPopup implements OnClickListener, OnItemSelectedList
      *                    retrieved for the visible entry.
      */
     @SuppressWarnings("unused")
-    public static void show(Context context, WebContents webContents) {
+    public static void show(Context context, Profile profile, WebContents webContents) {
         if (!CommandLine.getInstance().hasSwitch(ChromeSwitches.DISABLE_NEW_WEBSITE_SETTINGS)) {
-            new WebsiteSettingsPopup(context, webContents);
+            new WebsiteSettingsPopup(context, profile, webContents);
         } else {
             WebsiteSettingsPopupLegacy.show(context, webContents);
         }

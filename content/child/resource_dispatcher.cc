@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/files/file_path.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
@@ -115,8 +116,8 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
   request_.method = request_info.method;
   request_.url = request_info.url;
   request_.first_party_for_cookies = request_info.first_party_for_cookies;
-  request_.referrer = request_info.referrer;
-  request_.referrer_policy = request_info.referrer_policy;
+  request_.referrer = request_info.referrer.url;
+  request_.referrer_policy = request_info.referrer.policy;
   request_.headers = request_info.headers;
   request_.load_flags = request_info.load_flags;
   request_.origin_pid = request_info.requestor_pid;
@@ -127,12 +128,26 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
   request_.download_to_file = request_info.download_to_file;
   request_.has_user_gesture = request_info.has_user_gesture;
   request_.skip_service_worker = request_info.skip_service_worker;
+  request_.should_reset_appcache = request_info.should_reset_appcache;
   request_.fetch_request_mode = request_info.fetch_request_mode;
   request_.fetch_credentials_mode = request_info.fetch_credentials_mode;
   request_.fetch_request_context_type = request_info.fetch_request_context_type;
   request_.fetch_frame_type = request_info.fetch_frame_type;
   request_.enable_load_timing = request_info.enable_load_timing;
   request_.enable_upload_progress = request_info.enable_upload_progress;
+
+  if ((request_info.referrer.policy == blink::WebReferrerPolicyDefault ||
+       request_info.referrer.policy ==
+           blink::WebReferrerPolicyNoReferrerWhenDowngrade) &&
+      request_info.referrer.url.SchemeIsSecure() &&
+      !request_info.url.SchemeIsSecure()) {
+    // Debug code for crbug.com/422871
+    base::debug::DumpWithoutCrashing();
+    DLOG(FATAL) << "Trying to send secure referrer for insecure request "
+                << "without an appropriate referrer policy.\n"
+                << "URL = " << request_info.url << "\n"
+                << "Referrer = " << request_info.referrer.url;
+  }
 
   const RequestExtraData kEmptyData;
   const RequestExtraData* extra_data;
@@ -361,13 +376,6 @@ void ResourceDispatcher::OnReceivedResponse(
             request_info->peer, response_head.mime_type, request_info->url);
     if (new_peer)
       request_info->peer = new_peer;
-  }
-
-  // Updates the response_url if the response was fetched by a ServiceWorker,
-  // and it was not generated inside the ServiceWorker.
-  if (response_head.was_fetched_via_service_worker &&
-      !response_head.original_url_via_service_worker.is_empty()) {
-    request_info->response_url = response_head.original_url_via_service_worker;
   }
 
   ResourceResponseInfo renderer_response_info;

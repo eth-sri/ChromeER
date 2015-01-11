@@ -139,6 +139,7 @@ static ResourceHostMsg_Request CreateResourceRequest(const char* method,
   request.request_context = 0;
   request.appcache_host_id = kAppCacheNoHostId;
   request.download_to_file = false;
+  request.should_reset_appcache = false;
   request.is_main_frame = true;
   request.parent_is_main_frame = false;
   request.parent_render_frame_id = -1;
@@ -210,7 +211,7 @@ class TestFilter : public ResourceMessageFilter {
   explicit TestFilter(ResourceContext* resource_context)
       : ResourceMessageFilter(
             ChildProcessHostImpl::GenerateChildProcessUniqueId(),
-            PROCESS_TYPE_RENDERER, NULL, NULL, NULL, NULL,
+            PROCESS_TYPE_RENDERER, NULL, NULL, NULL, NULL, NULL,
             base::Bind(&TestFilter::GetContexts, base::Unretained(this))),
         resource_context_(resource_context),
         canceled_(false),
@@ -489,6 +490,15 @@ class TestURLRequestJobFactory : public net::URLRequestJobFactory {
 
   net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
       const std::string& scheme,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override;
+
+  net::URLRequestJob* MaybeInterceptRedirect(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const GURL& location) const override;
+
+  net::URLRequestJob* MaybeInterceptResponse(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate) const override;
 
@@ -2998,6 +3008,19 @@ net::URLRequestJob* TestURLRequestJobFactory::MaybeCreateJobWithProtocolHandler(
           false);
     }
   }
+}
+
+net::URLRequestJob* TestURLRequestJobFactory::MaybeInterceptRedirect(
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
+    const GURL& location) const {
+  return nullptr;
+}
+
+net::URLRequestJob* TestURLRequestJobFactory::MaybeInterceptResponse(
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate) const {
+  return nullptr;
 }
 
 }  // namespace content

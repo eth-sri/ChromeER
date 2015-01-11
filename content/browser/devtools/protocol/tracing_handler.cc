@@ -80,8 +80,7 @@ void TracingHandler::OnTraceDataCollected(const std::string& trace_fragment) {
 }
 
 void TracingHandler::OnTraceComplete() {
-  TracingCompleteParams params;
-  client_->TracingComplete(params);
+  client_->TracingComplete(TracingCompleteParams::Create());
 }
 
 scoped_refptr<DevToolsProtocol::Response> TracingHandler::Start(
@@ -140,23 +139,27 @@ scoped_refptr<DevToolsProtocol::Response> TracingHandler::GetCategories(
 
 void TracingHandler::OnRecordingEnabled(
     scoped_refptr<DevToolsProtocol::Command> command) {
-  StartResponse response;
-  client_->SendStartResponse(command, response);
+  client_->SendStartResponse(command, StartResponse::Create());
 }
 
-void TracingHandler::OnBufferUsage(float usage) {
-  BufferUsageParams params;
-  params.set_value(usage);
-  client_->BufferUsage(params);
+void TracingHandler::OnBufferUsage(float percent_full,
+                                   size_t approximate_event_count) {
+  // TODO(crbug426117): remove set_value once all clients have switched to
+  // the new interface of the event.
+  client_->BufferUsage(BufferUsageParams::Create()
+                           ->set_value(percent_full)
+                           ->set_percent_full(percent_full)
+                           ->set_event_count(approximate_event_count));
 }
 
 void TracingHandler::OnCategoriesReceived(
     scoped_refptr<DevToolsProtocol::Command> command,
     const std::set<std::string>& category_set) {
-  std::vector<std::string> categories(category_set.begin(), category_set.end());
-  GetCategoriesResponse response;
-  response.set_categories(categories);
-  client_->SendGetCategoriesResponse(command, response);
+  std::vector<std::string> categories;
+  for (const std::string& category : category_set)
+    categories.push_back(category);
+  client_->SendGetCategoriesResponse(command,
+      GetCategoriesResponse::Create()->set_categories(categories));
 }
 
 base::debug::TraceOptions TracingHandler::TraceOptionsFromString(
@@ -192,13 +195,11 @@ void TracingHandler::SetupTimer(double usage_reporting_interval) {
   base::TimeDelta interval = base::TimeDelta::FromMilliseconds(
       std::ceil(usage_reporting_interval));
   buffer_usage_poll_timer_.reset(new base::Timer(
-      FROM_HERE,
-      interval,
-      base::Bind(
-          base::IgnoreResult(&TracingController::GetTraceBufferPercentFull),
-          base::Unretained(TracingController::GetInstance()),
-          base::Bind(&TracingHandler::OnBufferUsage,
-                     weak_factory_.GetWeakPtr())),
+      FROM_HERE, interval,
+      base::Bind(base::IgnoreResult(&TracingController::GetTraceBufferUsage),
+                 base::Unretained(TracingController::GetInstance()),
+                 base::Bind(&TracingHandler::OnBufferUsage,
+                            weak_factory_.GetWeakPtr())),
       true));
   buffer_usage_poll_timer_->Reset();
 }

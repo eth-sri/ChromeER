@@ -9,6 +9,7 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/debug/trace_event.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -198,11 +199,11 @@ class BufferIdAllocator : public IdAllocator {
   DISALLOW_COPY_AND_ASSIGN(BufferIdAllocator);
 };
 
-// Generic fence implementation for query objects. Fence has passed when query
-// result is available.
-class QueryFence : public ResourceProvider::Fence {
+// Query object based fence implementation used to detect completion of copy
+// texture operations. Fence has passed when query result is available.
+class CopyTextureFence : public ResourceProvider::Fence {
  public:
-  QueryFence(gpu::gles2::GLES2Interface* gl, unsigned query_id)
+  CopyTextureFence(gpu::gles2::GLES2Interface* gl, unsigned query_id)
       : gl_(gl), query_id_(query_id) {}
 
   // Overridden from ResourceProvider::Fence:
@@ -211,20 +212,31 @@ class QueryFence : public ResourceProvider::Fence {
     unsigned available = 1;
     gl_->GetQueryObjectuivEXT(
         query_id_, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
-    return !!available;
+    if (!available)
+      return false;
+
+    ProcessResult();
+    return true;
   }
   void Wait() override {
-    unsigned result = 0;
-    gl_->GetQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &result);
+    // ProcessResult() will wait for result to become available.
+    ProcessResult();
   }
 
  private:
-  ~QueryFence() override {}
+  ~CopyTextureFence() override {}
+
+  void ProcessResult() {
+    unsigned time_elapsed_us = 0;
+    gl_->GetQueryObjectuivEXT(query_id_, GL_QUERY_RESULT_EXT, &time_elapsed_us);
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.CopyTextureLatency", time_elapsed_us,
+                                0, 256000, 50);
+  }
 
   gpu::gles2::GLES2Interface* gl_;
   unsigned query_id_;
 
-  DISALLOW_COPY_AND_ASSIGN(QueryFence);
+  DISALLOW_COPY_AND_ASSIGN(CopyTextureFence);
 };
 
 }  // namespace
@@ -782,9 +794,9 @@ void ResourceProvider::SetPixels(ResourceId id,
     image += source_offset.y() * image_row_bytes + source_offset.x() * 4;
 
     ScopedWriteLockSoftware lock(this, id);
-    SkCanvas* dest = lock.sk_canvas();
-    dest->writePixels(
-        source_info, image, image_row_bytes, dest_offset.x(), dest_offset.y());
+    SkCanvas dest(lock.sk_bitmap());
+    dest.writePixels(source_info, image, image_row_bytes, dest_offset.x(),
+                     dest_offset.y());
   }
 }
 
@@ -1026,7 +1038,6 @@ ResourceProvider::ScopedWriteLockSoftware::ScopedWriteLockSoftware(
       resource_(resource_provider->LockForWrite(resource_id)) {
   ResourceProvider::PopulateSkBitmapWithResource(&sk_bitmap_, resource_);
   DCHECK(valid());
-  sk_canvas_.reset(new SkCanvas(sk_bitmap_));
 }
 
 ResourceProvider::ScopedWriteLockSoftware::~ScopedWriteLockSoftware() {
@@ -1100,15 +1111,15 @@ ResourceProvider::ScopedWriteLockGr::~ScopedWriteLockGr() {
 }
 
 SkSurface* ResourceProvider::ScopedWriteLockGr::GetSkSurface(
-    bool use_distance_field_text) {
+    bool use_distance_field_text,
+    bool can_use_lcd_text) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(resource_->locked_for_write);
 
-  // If the surface doesn't exist, or doesn't have the correct dff setting,
-  // recreate the surface within the resource.
-  if (!resource_->sk_surface ||
-      use_distance_field_text !=
-          resource_->sk_surface->props().isUseDistanceFieldFonts()) {
+  bool create_surface =
+      !resource_->sk_surface.get() ||
+      !SurfaceHasMatchingProperties(use_distance_field_text, can_use_lcd_text);
+  if (create_surface) {
     class GrContext* gr_context = resource_provider_->GrContext();
     // TODO(alokp): Implement TestContextProvider::GrContext().
     if (!gr_context)
@@ -1125,13 +1136,34 @@ SkSurface* ResourceProvider::ScopedWriteLockGr::GetSkSurface(
     desc.fTextureHandle = resource_->gl_id;
     skia::RefPtr<GrTexture> gr_texture =
         skia::AdoptRef(gr_context->wrapBackendTexture(desc));
-    SkSurface::TextRenderMode text_render_mode =
-        use_distance_field_text ? SkSurface::kDistanceField_TextRenderMode
-                                : SkSurface::kStandard_TextRenderMode;
+    if (!gr_texture)
+      return nullptr;
+    uint32_t flags = use_distance_field_text
+                         ? SkSurfaceProps::kUseDistanceFieldFonts_Flag
+                         : 0;
+    // Use unknown pixel geometry to disable LCD text.
+    SkSurfaceProps surface_props(flags, kUnknown_SkPixelGeometry);
+    if (can_use_lcd_text) {
+      // LegacyFontHost will get LCD text and skia figures out what type to use.
+      surface_props =
+          SkSurfaceProps(flags, SkSurfaceProps::kLegacyFontHost_InitType);
+    }
     resource_->sk_surface = skia::AdoptRef(SkSurface::NewRenderTargetDirect(
-        gr_texture->asRenderTarget(), text_render_mode));
+        gr_texture->asRenderTarget(), &surface_props));
   }
   return resource_->sk_surface.get();
+}
+
+bool ResourceProvider::ScopedWriteLockGr::SurfaceHasMatchingProperties(
+    bool use_distance_field_text,
+    bool can_use_lcd_text) const {
+  const SkSurface* surface = resource_->sk_surface.get();
+  bool surface_uses_distance_field_text =
+      surface->props().isUseDistanceFieldFonts();
+  bool surface_can_use_lcd_text =
+      surface->props().pixelGeometry() != kUnknown_SkPixelGeometry;
+  return use_distance_field_text == surface_uses_distance_field_text &&
+         can_use_lcd_text == surface_can_use_lcd_text;
 }
 
 ResourceProvider::SynchronousFence::SynchronousFence(
@@ -2044,7 +2076,7 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
   DCHECK(dest_resource->origin == Resource::Internal);
   DCHECK_EQ(dest_resource->exported_count, 0);
   DCHECK_EQ(GLTexture, dest_resource->type);
-  LazyCreate(dest_resource);
+  LazyAllocate(dest_resource);
 
   DCHECK_EQ(source_resource->type, dest_resource->type);
   DCHECK_EQ(source_resource->format, dest_resource->format);
@@ -2075,7 +2107,7 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
     // source resource until CopyTextureCHROMIUM command has completed.
     gl->EndQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM);
     source_resource->read_lock_fence = make_scoped_refptr(
-        new QueryFence(gl, source_resource->gl_read_lock_query_id));
+        new CopyTextureFence(gl, source_resource->gl_read_lock_query_id));
   } else {
     // Create a SynchronousFence when CHROMIUM_sync_query extension is missing.
     // Try to use one synchronous fence for as many CopyResource operations as

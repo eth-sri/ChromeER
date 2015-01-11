@@ -9,6 +9,7 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/json/json_writer.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/scoped_ptr_algorithm.h"
@@ -569,11 +570,18 @@ void Layer::SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
   RecomputeDrawsContentAndUVRect();
 }
 
-void Layer::SetShowSurface(cc::SurfaceId id, gfx::Size frame_size_in_dip) {
+void Layer::SetShowSurface(
+    cc::SurfaceId surface_id,
+    const cc::SurfaceLayer::SatisfyCallback& satisfy_callback,
+    const cc::SurfaceLayer::RequireCallback& require_callback,
+    gfx::Size surface_size,
+    float scale,
+    gfx::Size frame_size_in_dip) {
   DCHECK(type_ == LAYER_TEXTURED || type_ == LAYER_SOLID_COLOR);
 
-  scoped_refptr<cc::SurfaceLayer> new_layer = cc::SurfaceLayer::Create();
-  new_layer->SetSurfaceId(id);
+  scoped_refptr<cc::SurfaceLayer> new_layer =
+      cc::SurfaceLayer::Create(satisfy_callback, require_callback);
+  new_layer->SetSurfaceId(surface_id, scale, surface_size);
   SwitchToLayer(new_layer);
   surface_layer_ = new_layer;
 
@@ -716,6 +724,13 @@ void Layer::PaintContents(SkCanvas* sk_canvas,
       sk_canvas, device_scale_factor_));
   if (delegate_)
     delegate_->OnPaintLayer(canvas.get());
+}
+
+scoped_refptr<cc::DisplayItemList> Layer::PaintContentsToDisplayList(
+    const gfx::Rect& clip,
+    ContentLayerClient::GraphicsContextStatus gc_status) {
+  NOTIMPLEMENTED();
+  return cc::DisplayItemList::Create();
 }
 
 bool Layer::FillsBoundsCompletely() const { return fills_bounds_completely_; }

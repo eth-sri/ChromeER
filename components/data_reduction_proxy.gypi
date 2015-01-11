@@ -21,6 +21,7 @@
         '../base/base.gyp:base',
         '../crypto/crypto.gyp:crypto',
         '../net/net.gyp:net',
+        '../url/url.gyp:url_lib',
         'data_reduction_proxy_core_common',
         'pref_registry',
       ],
@@ -36,6 +37,8 @@
         'data_reduction_proxy/core/browser/data_reduction_proxy_configurator.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_delegate.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_delegate.h',
+        'data_reduction_proxy/core/browser/data_reduction_proxy_interceptor.cc',
+        'data_reduction_proxy/core/browser/data_reduction_proxy_interceptor.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_metrics.cc',
         'data_reduction_proxy/core/browser/data_reduction_proxy_metrics.h',
         'data_reduction_proxy/core/browser/data_reduction_proxy_prefs.cc',
@@ -58,12 +61,15 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../url/url.gyp:url_lib',
       ],
       'include_dirs': [
         '..',
       ],
       'sources': [
         # Note: sources list duplicated in GN build.
+        'data_reduction_proxy/core/common/data_reduction_proxy_event_store.cc',
+        'data_reduction_proxy/core/common/data_reduction_proxy_event_store.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_headers.cc',
         'data_reduction_proxy/core/common/data_reduction_proxy_headers.h',
         'data_reduction_proxy/core/common/data_reduction_proxy_params.cc',

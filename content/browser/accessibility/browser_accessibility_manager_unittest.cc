@@ -73,6 +73,8 @@ class TestBrowserAccessibilityDelegate
   void AccessibilitySetTextSelection(int acc_obj_id,
                                      int start_offset,
                                      int end_offset) override {}
+  void AccessibilitySetValue(int acc_obj_id, const base::string16& value)
+      override {}
   bool AccessibilityViewHasFocus() const override { return false; }
   gfx::Rect AccessibilityGetViewBounds() const override { return gfx::Rect(); }
   gfx::Point AccessibilityOriginInScreen(
@@ -80,6 +82,7 @@ class TestBrowserAccessibilityDelegate
     return gfx::Point();
   }
   void AccessibilityHitTest(const gfx::Point& point) override {}
+  void AccessibilitySetAccessibilityFocus(int acc_obj_id) override {}
   void AccessibilityFatalError() override { got_fatal_error_ = true; }
   gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() override {
     return gfx::kNullAcceleratedWidget;

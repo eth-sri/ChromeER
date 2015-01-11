@@ -7,7 +7,6 @@
 
 #include <vector>
 
-#include "ash/ime/input_method_menu_manager.h"
 #include "ash/session/session_state_observer.h"
 #include "ash/system/chromeos/supervised/custodian_info_tray_observer.h"
 #include "ash/system/tray/system_tray.h"
@@ -27,7 +26,6 @@
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/session_manager_client.h"
-#include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/user_manager/user_manager.h"
@@ -36,6 +34,8 @@
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
 #include "extensions/browser/app_window/app_window_registry.h"
+#include "ui/base/ime/chromeos/input_method_manager.h"
+#include "ui/chromeos/ime/input_method_menu_manager.h"
 
 namespace user_manager {
 class User;
@@ -44,7 +44,7 @@ class User;
 namespace chromeos {
 
 class SystemTrayDelegateChromeOS
-    : public ash::ime::InputMethodMenuManager::Observer,
+    : public ui::ime::InputMethodMenuManager::Observer,
       public ash::SystemTrayDelegate,
       public SessionManagerClient::Observer,
       public content::NotificationObserver,
@@ -97,9 +97,6 @@ class SystemTrayDelegateChromeOS
   void ShowSupervisedUserInfo() override;
   void ShowEnterpriseInfo() override;
   void ShowUserLogin() override;
-  bool ShowSpringChargerReplacementDialog() override;
-  bool IsSpringChargerReplacementDialogVisible() override;
-  bool HasUserConfirmedSafeSpringCharger() override;
   void ShutDown() override;
   void SignOut() override;
   void RequestLockScreen() override;
@@ -204,7 +201,7 @@ class SystemTrayDelegateChromeOS
 
   // Overridden from InputMethodMenuManager::Observer.
   void InputMethodMenuItemChanged(
-      ash::ime::InputMethodMenuManager* manager) override;
+      ui::ime::InputMethodMenuManager* manager) override;
 
   // Overridden from CrasAudioHandler::AudioObserver.
   void OnOutputVolumeChanged() override;

@@ -1097,6 +1097,15 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="BadMessageTerminate_EOG">
+  <owner>kalman@chromium.org</owner>
+  <owner>fsamuel@chromium.org</owner>
+  <description>
+    Indicates that an ExtensionOptionsGuest was terminated due to a navigation
+    to an origin other than the extension it is embedding.
+  </description>
+</action>
+
 <action name="BadMessageTerminate_FAMF">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -2657,6 +2666,11 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Flash.PluginInstanceCreated">
+  <owner>thestig@chromium.org</owner>
+  <description>Count of Flash plugin instances.</description>
+</action>
+
 <action name="FocusAppMenu">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -2940,6 +2954,16 @@ should be able to be added at any place in this file.
 <action name="ForwardMenu_ShowFullHistory">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="FrameLoad">
+  <owner>thestig@chromium.org</owner>
+  <description>Count of successful frame loads to new pages.</description>
+</action>
+
+<action name="FrameLoadWithFlash">
+  <owner>thestig@chromium.org</owner>
+  <description>Count of frame loads that also load PPAPI Flash.</description>
 </action>
 
 <action name="Gesture_Overview">
@@ -8289,6 +8313,36 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_BluetoothConnectNewDevice">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Bluetooth: Add a device: Connect</description>
+</action>
+
+<action name="Options_BluetoothConnectPairedDevice">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Bluetooth: Connect</description>
+</action>
+
+<action name="Options_BluetoothEnabled_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Sets the Settings:Enable Bluetooth state to false.</description>
+</action>
+
+<action name="Options_BluetoothEnabled_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Sets the Settings:Enable Bluetooth state to true.</description>
+</action>
+
+<action name="Options_BluetoothRemoveDevice">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Bluetooth: remove a device from the list</description>
+</action>
+
+<action name="Options_BluetoothShowAddDevice">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Bluetooth: Add a device</description>
+</action>
+
 <action name="Options_ChangeDefaultZoomLevel">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8506,6 +8560,26 @@ should be able to be added at any place in this file.
 <action name="Options_DoNotTrackCheckbox_Enable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_EasyUnlockRequireProximity_Disable">
+  <owner>isherman@chromium.org</owner>
+  <owner>tengs@chromium.org</owner>
+  <description>
+    The user disabled the option to require their phone to be in very close
+    proximity to their Chromebook (roughly, within 1 foot), in order for Smart
+    Lock to unlock the Chromebook.
+  </description>
+</action>
+
+<action name="Options_EasyUnlockRequireProximity_Enable">
+  <owner>isherman@chromium.org</owner>
+  <owner>tengs@chromium.org</owner>
+  <description>
+    The user enabled the option to require their phone to be in very close
+    proximity to their Chromebook (roughly, within 1 foot), in order for Smart
+    Lock to unlock the Chromebook.
+  </description>
 </action>
 
 <action name="Options_EnableCloudPrintProxy">
@@ -11442,11 +11516,17 @@ should be able to be added at any place in this file.
 <action name="WebsiteSettings_CookiesDialogOpened">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Superseded by the WebsiteSettings.Action histogram on 2014-10-30.
+  </obsolete>
 </action>
 
 <action name="WebsiteSettings_Opened">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Superseded by the WebsiteSettings.Action histogram on 2014-10-30.
+  </obsolete>
 </action>
 
 <action name="Win7ASHRestart">

@@ -112,13 +112,24 @@ bool ConvertMonth(const base::string16& month,
 
 CreditCard::CreditCard(const std::string& guid, const std::string& origin)
     : AutofillDataModel(guid, origin),
+      record_type_(LOCAL_CARD),
       type_(kGenericCard),
       expiration_month_(0),
       expiration_year_(0) {
 }
 
+CreditCard::CreditCard(const base::string16& card_number,
+                       int expiration_month,
+                       int expiration_year)
+    : AutofillDataModel(std::string(), std::string()) {
+  SetNumber(card_number);
+  SetExpirationMonth(expiration_month);
+  SetExpirationYear(expiration_year);
+}
+
 CreditCard::CreditCard()
     : AutofillDataModel(base::GenerateGUID(), std::string()),
+      record_type_(LOCAL_CARD),
       type_(kGenericCard),
       expiration_month_(0),
       expiration_year_(0) {
@@ -161,6 +172,9 @@ base::string16 CreditCard::TypeForDisplay(const std::string& type) {
   return base::string16();
 }
 
+// This method is not compiled on iOS because the resources are not used and
+// should not be shipped.
+#if !defined(OS_IOS)
 // static
 int CreditCard::IconResourceId(const std::string& type) {
   if (type == kAmericanExpressCard)
@@ -183,6 +197,7 @@ int CreditCard::IconResourceId(const std::string& type) {
   DCHECK_EQ(kGenericCard, type);
   return IDR_AUTOFILL_CC_GENERIC;
 }
+#endif  // #if !defined(OS_IOS)
 
 // static
 const char* CreditCard::GetCreditCardType(const base::string16& number) {
@@ -452,8 +467,8 @@ void CreditCard::SetInfoForMonthInputType(const base::string16& value) {
 }
 
 base::string16 CreditCard::ObfuscatedNumber() const {
-  // If the number is shorter than four digits, there's no need to obfuscate it.
-  if (number_.size() < 4)
+  // If the number is four or less digits, there's no need to obfuscate it.
+  if (number_.size() <= 4)
     return number_;
 
   base::string16 number = StripSeparators(number_);
@@ -468,8 +483,8 @@ base::string16 CreditCard::LastFourDigits() const {
   static const size_t kNumLastDigits = 4;
 
   base::string16 number = StripSeparators(number_);
-  if (number.size() < kNumLastDigits)
-    return base::string16();
+  if (number.size() <= kNumLastDigits)
+    return number;
 
   return number.substr(number.size() - kNumLastDigits, kNumLastDigits);
 }
@@ -495,6 +510,7 @@ void CreditCard::operator=(const CreditCard& credit_card) {
   if (this == &credit_card)
     return;
 
+  record_type_ = credit_card.record_type_;
   number_ = credit_card.number_;
   name_on_card_ = credit_card.name_on_card_;
   type_ = credit_card.type_;

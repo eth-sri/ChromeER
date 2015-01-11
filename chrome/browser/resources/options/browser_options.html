@@ -164,14 +164,19 @@
                   pref="hotword.always_on_search_enabled" type="checkbox">
               <span i18n-content="hotwordSearchEnable"></span>
             </label>
-            <a target="_blank" class="hotword-learn-more-link"
+            <a target="_blank" class="hotword-link"
                 i18n-content="learnMore"
                 i18n-values="href:hotwordLearnMoreURL">
             </a>
+            <span id="hotword-always-on-search-setting-indicator"
+                pref="hotword.always_on_search_enabled" dialog-pref></span>
             <div>
               <span class="hotword-description"
                   i18n-content="hotwordAlwaysOnDesc">
               </span>
+              <a id="hotword-retrain-link" is="action-link"
+                  i18n-content="hotwordRetrainLink" hidden>
+              </a>
             </div>
           </div>
         </div>
@@ -182,10 +187,12 @@
                   pref="hotword.search_enabled_2" type="checkbox">
               <span i18n-content="hotwordSearchEnable"></span>
             </label>
-            <a target="_blank" class="hotword-learn-more-link"
+            <a target="_blank" class="hotword-link"
                 i18n-content="learnMore"
                 i18n-values="href:hotwordLearnMoreURL">
             </a>
+            <span id="hotword-no-dsp-search-setting-indicator"
+                pref="hotword.search_enabled_2" dialog-pref></span>
             <div>
               <span class="hotword-description"
                   i18n-content="hotwordNoDSPDesc">
@@ -193,12 +200,22 @@
             </div>
           </div>
         </div>
-        <div id="audio-logging" hidden>
-          <div class="checkbox controlled-setting-with-label">
-            <label>
-              <input pref="hotword.audio_logging_enabled" type="checkbox">
-              <span i18n-content="hotwordAudioHistoryEnable"></span>
+        <div id="audio-history" hidden>
+          <div class="settings-row">
+            <label class="hotword-audio-history">
+              <span id="audio-history-label"
+                    i18n-content="hotwordAudioHistoryEnabled">
+              </span>
             </label>
+            <a target="_blank" class="hotword-link"
+               i18n-content="hotwordAudioHistoryManage"
+               i18n-values="href:hotwordManageAudioHistoryURL">
+            </a>
+          </div>
+          <div class="settings-row" id="audio-history-always-on-description">
+            <span class="hotword-description"
+                  i18n-content="hotwordAlwaysOnAudioHistoryDescription">
+            </span>
           </div>
         </div>
       </div>
@@ -475,7 +492,8 @@
     <div id="bluetooth-options-div">
       <div class="checkbox">
         <label>
-          <input type="checkbox" id="enable-bluetooth">
+          <input type="checkbox" id="enable-bluetooth"
+                 metric="Options_BluetoothEnabled">
           <span i18n-content="enableBluetooth">
         </label>
       </div>
@@ -532,7 +550,7 @@
   <section id="easy-unlock-section" guest-visibility="hidden" hidden>
     <h3 i18n-content="easyUnlockSectionTitle"></h3>
     <!-- Options shown when the user has not set up Easy Unlock -->
-    <div id='easy-unlock-setup' hidden>
+    <div id="easy-unlock-setup" hidden>
       <div class="settings-row">
         <span i18n-content="easyUnlockSetupIntro"></span>
         <a target="_blank" i18n-content="learnMore"
@@ -542,11 +560,20 @@
           i18n-content="easyUnlockSetupButton"></button>
     </div>
     <!-- Options shown when the user has set up Easy Unlock -->
-    <div id='easy-unlock-enable' hidden>
+    <div id="easy-unlock-enable" hidden>
       <div class="settings-row">
         <span i18n-content="easyUnlockDescription"></span>
         <a target="_blank" i18n-content="learnMore"
             i18n-values="href:easyUnlockLearnMoreURL"></a>
+        <div id="easy-unlock-enable-proximity-detection" class="checkbox"
+            hidden>
+          <label>
+            <input type="checkbox"
+                metric="Options_EasyUnlockRequireProximity"
+                pref="easy_unlock.proximity_required">
+            <span i18n-content="easyUnlockRequireProximityLabel"></span>
+          </label>
+        </div>
       </div>
       <button id="easy-unlock-turn-off-button"
           i18n-content="easyUnlockTurnOffButton"></button>

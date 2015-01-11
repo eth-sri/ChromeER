@@ -326,7 +326,6 @@ void LocationBarView::Init() {
   AddChildView(generated_credit_card_view_);
 
   zoom_view_ = new ZoomView(delegate_);
-  zoom_view_->set_id(VIEW_ID_ZOOM_BUTTON);
   AddChildView(zoom_view_);
 
   open_pdf_in_reader_view_ = new OpenPDFInReaderView();
@@ -971,8 +970,6 @@ void LocationBarView::Update(const WebContents* contents) {
       browser_->search_model()->voice_search_supported());
   RefreshContentSettingViews();
   generated_credit_card_view_->Update();
-  ZoomBubbleView::CloseBubble();
-  TranslateBubbleView::CloseBubble();
   RefreshZoomView();
   RefreshPageActionViews();
   RefreshTranslateIcon();
@@ -990,6 +987,10 @@ void LocationBarView::Update(const WebContents* contents) {
     omnibox_view_->Update();
 
   OnChanged();  // NOTE: Calls Layout().
+}
+
+void LocationBarView::ResetTabState(WebContents* contents) {
+  omnibox_view_->ResetTabState(contents);
 }
 
 void LocationBarView::ShowURL() {
@@ -1138,6 +1139,8 @@ bool LocationBarView::RefreshZoomView() {
     return false;
   const bool was_visible = zoom_view_->visible();
   zoom_view_->Update(ZoomController::FromWebContents(web_contents));
+  if (!zoom_view_->visible())
+    ZoomBubbleView::CloseBubble();
   return was_visible != zoom_view_->visible();
 }
 
@@ -1154,6 +1157,8 @@ void LocationBarView::RefreshTranslateIcon() {
   command_updater()->UpdateCommandEnabled(IDC_TRANSLATE_PAGE, enabled);
   translate_icon_view_->SetVisible(enabled);
   translate_icon_view_->SetToggled(language_state.IsPageTranslated());
+  if (!enabled)
+    TranslateBubbleView::CloseBubble();
 }
 
 bool LocationBarView::RefreshManagePasswordsIconView() {
@@ -1313,7 +1318,7 @@ bool LocationBarView::ShowPageActionPopup(
           *extension);
   DCHECK(extension_action);
   return GetPageActionView(extension_action)->image_view()->view_controller()->
-      ExecuteAction(ExtensionPopup::SHOW, grant_tab_permissions);
+      ExecuteAction(grant_tab_permissions);
 }
 
 void LocationBarView::UpdateOpenPDFInReaderPrompt() {
@@ -1391,7 +1396,7 @@ void LocationBarView::TestPageActionPressed(size_t index) {
     if (page_action_views_[i]->visible()) {
       if (current == index) {
         page_action_views_[i]->image_view()->view_controller()->
-            ExecuteAction(ExtensionPopup::SHOW, true);
+            ExecuteAction(true);
         return;
       }
       ++current;

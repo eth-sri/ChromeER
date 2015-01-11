@@ -130,10 +130,8 @@ Authenticator.prototype = {
     window.addEventListener('message', this.onMessage.bind(this), false);
     this.initSupportChannel_();
 
-    var gaiaFrame = $('gaia-frame');
-    gaiaFrame.src = this.initialFrameUrl_;
-
     if (this.assumeLoadedOnLoadEvent_) {
+      var gaiaFrame = $('gaia-frame');
       var handler = function() {
         gaiaFrame.removeEventListener('load', handler);
         if (!this.gaiaLoaded_) {
@@ -150,6 +148,11 @@ Authenticator.prototype = {
     supportChannel.connect('authMain');
 
     supportChannel.registerMessage('channelConnected', function() {
+      // Load the gaia frame after the background page indicates that it is
+      // ready, so that the webRequest handlers are all setup first.
+      var gaiaFrame = $('gaia-frame');
+      gaiaFrame.src = this.initialFrameUrl_;
+
       if (this.supportChannel_) {
         console.error('Support channel is already initialized.');
         return;
@@ -161,8 +164,10 @@ Authenticator.prototype = {
           name: 'initDesktopFlow',
           gaiaUrl: this.gaiaUrl_,
           continueUrl: stripParams(this.continueUrl_),
-          isConstrainedWindow: this.isConstrainedWindow_
+          isConstrainedWindow: this.isConstrainedWindow_,
+          initialFrameUrlWithoutParams: this.initialFrameUrlWithoutParams_
         });
+
         this.supportChannel_.registerMessage(
             'switchToFullTab', this.switchToFullTab_.bind(this));
       }
@@ -351,9 +356,16 @@ Authenticator.prototype = {
    */
   onCompleteLogin_: function(msg) {
     if (!msg.email || !msg.gaiaId || !msg.sessionIndex) {
-      console.error('Missing fields to complete login.');
-      window.parent.postMessage({method: 'missingGaiaInfo'}, this.parentPage_);
-      return;
+      // On desktop, if the skipForNow message field is set, send it to handler.
+      // This does not require the email, gaiaid or session to be valid.
+      if (this.desktopMode_ && msg.skipForNow) {
+        this.completeLogin_(msg);
+      } else {
+        console.error('Missing fields to complete login.');
+        window.parent.postMessage({method: 'missingGaiaInfo'},
+                                  this.parentPage_);
+        return;
+      }
     }
 
     // Skip SAML extra steps for desktop flow and non-SAML flow.

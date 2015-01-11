@@ -151,9 +151,8 @@ NSDictionary* attributeToMethodNameMap = nil;
 }
 
 - (NSNumber*)ariaBusy {
-  bool boolValue = browserAccessibility_->GetBoolAttribute(
-      ui::AX_ATTR_LIVE_BUSY);
-  return [NSNumber numberWithBool:boolValue];
+  return [NSNumber numberWithBool:
+      GetState(browserAccessibility_, ui::AX_STATE_BUSY)];
 }
 
 - (NSString*)ariaLive {
@@ -584,16 +583,42 @@ NSDictionary* attributeToMethodNameMap = nil;
   case ui::AX_ROLE_ARTICLE:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_ARTICLE));
-    break;
   case ui::AX_ROLE_BANNER:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_BANNER));
+  case ui::AX_ROLE_COMPLEMENTARY:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_COMPLEMENTARY));
   case ui::AX_ROLE_CONTENT_INFO:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_ADDRESS));
+  case ui::AX_ROLE_DESCRIPTION_LIST:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_DESCRIPTION_LIST));
+  case ui::AX_ROLE_DESCRIPTION_LIST_DETAIL:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_DESCRIPTION_DETAIL));
+  case ui::AX_ROLE_DESCRIPTION_LIST_TERM:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_DESCRIPTION_TERM));
+  case ui::AX_ROLE_FIGURE:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_FIGURE));
   case ui::AX_ROLE_FOOTER:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_FOOTER));
+  case ui::AX_ROLE_FORM:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_FORM));
+  case ui::AX_ROLE_MAIN:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_MAIN_CONTENT));
+  case ui::AX_ROLE_MATH:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_MATH));
+  case ui::AX_ROLE_NAVIGATION:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_NAVIGATIONAL_LINK));
   case ui::AX_ROLE_REGION:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_REGION));
@@ -720,7 +745,7 @@ NSDictionary* attributeToMethodNameMap = nil;
   }
 
   if (browserAccessibilityRole == ui::AX_ROLE_DESCRIPTION_LIST)
-    return @"AXDescriptionList";
+    return @"AXDefinitionList";
 
   if (browserAccessibilityRole == ui::AX_ROLE_LIST)
     return @"AXContentList";
@@ -826,6 +851,7 @@ NSDictionary* attributeToMethodNameMap = nil;
     return [NSNumber numberWithInt:value];
   } else if ([role isEqualToString:NSAccessibilityProgressIndicatorRole] ||
              [role isEqualToString:NSAccessibilitySliderRole] ||
+             [role isEqualToString:NSAccessibilityIncrementorRole] ||
              [role isEqualToString:NSAccessibilityScrollBarRole]) {
     float floatValue;
     if (browserAccessibility_->GetFloatAttribute(
@@ -1182,7 +1208,6 @@ NSDictionary* attributeToMethodNameMap = nil;
       NSAccessibilityChildrenAttribute,
       NSAccessibilityDescriptionAttribute,
       NSAccessibilityEnabledAttribute,
-      NSAccessibilityExpandedAttribute,
       NSAccessibilityFocusedAttribute,
       NSAccessibilityHelpAttribute,
       NSAccessibilityLinkedUIElementsAttribute,
@@ -1247,6 +1272,7 @@ NSDictionary* attributeToMethodNameMap = nil;
     [ret addObject:NSAccessibilityTabsAttribute];
   } else if ([role isEqualToString:NSAccessibilityProgressIndicatorRole] ||
              [role isEqualToString:NSAccessibilitySliderRole] ||
+             [role isEqualToString:NSAccessibilityIncrementorRole] ||
              [role isEqualToString:NSAccessibilityScrollBarRole]) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         NSAccessibilityMaxValueAttribute,
@@ -1300,14 +1326,32 @@ NSDictionary* attributeToMethodNameMap = nil;
           ui::AX_ATTR_LIVE_STATUS)) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         @"AXARIALive",
-        @"AXARIARelevant",
         nil]];
   }
   if (browserAccessibility_->HasStringAttribute(
-          ui::AX_ATTR_CONTAINER_LIVE_STATUS)) {
+          ui::AX_ATTR_LIVE_RELEVANT)) {
+    [ret addObjectsFromArray:[NSArray arrayWithObjects:
+        @"AXARIARelevant",
+        nil]];
+  }
+  if (browserAccessibility_->HasBoolAttribute(
+          ui::AX_ATTR_LIVE_ATOMIC)) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         @"AXARIAAtomic",
+        nil]];
+  }
+  if (browserAccessibility_->HasBoolAttribute(
+          ui::AX_ATTR_LIVE_BUSY)) {
+    [ret addObjectsFromArray:[NSArray arrayWithObjects:
         @"AXARIABusy",
+        nil]];
+  }
+
+  //Add expanded attribute only if it has expanded or collapsed state.
+  if (GetState(browserAccessibility_, ui::AX_STATE_EXPANDED) ||
+        GetState(browserAccessibility_, ui::AX_STATE_COLLAPSED)) {
+    [ret addObjectsFromArray:[NSArray arrayWithObjects:
+        NSAccessibilityExpandedAttribute,
         nil]];
   }
 
@@ -1361,7 +1405,7 @@ NSDictionary* attributeToMethodNameMap = nil;
   return NO;
 }
 
-// Returns whether or not this object should be ignored in the accessibilty
+// Returns whether or not this object should be ignored in the accessibility
 // tree.
 - (BOOL)accessibilityIsIgnored {
   if (!browserAccessibility_)
@@ -1370,7 +1414,7 @@ NSDictionary* attributeToMethodNameMap = nil;
   return [self isIgnored];
 }
 
-// Performs the given accessibilty action on the webkit accessibility object
+// Performs the given accessibility action on the webkit accessibility object
 // that backs this object.
 - (void)accessibilityPerformAction:(NSString*)action {
   if (!browserAccessibility_)

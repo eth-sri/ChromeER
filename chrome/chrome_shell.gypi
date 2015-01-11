@@ -40,6 +40,11 @@
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator', ],
         }],
+        [ 'cld_version==0 or cld_version==2', {
+          'dependencies': [
+            # Chrome shell should always use the statically-linked CLD data.
+            '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld2_static', ],
+        }],
         ['OS=="android"', {
           'direct_dependent_settings': {
             'ldflags': [
@@ -64,6 +69,11 @@
       ],
       'dependencies': [
         'libchromeshell_base',
+      ],
+      'includes': [
+        # File 'protection' is based on non-trivial linker magic. TODO(pasko):
+        # remove it when crbug.com/424562 is fixed.
+        '../base/files/protect_file_posix.gypi',
       ],
     },
     {

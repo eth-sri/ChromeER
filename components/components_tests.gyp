@@ -72,6 +72,9 @@
             'bookmarks/browser/bookmark_index_unittest.cc',
             'bookmarks/browser/bookmark_model_unittest.cc',
             'bookmarks/browser/bookmark_utils_unittest.cc',
+            'browser_watcher/exit_code_watcher_win_unittest.cc',
+            'browser_watcher/watcher_client_win_unittest.cc',
+            'browser_watcher/watcher_metrics_provider_win_unittest.cc',
             'crash/app/crash_keys_win_unittest.cc',
             'captive_portal/captive_portal_detector_unittest.cc',
             'cloud_devices/common/cloud_devices_urls_unittest.cc',
@@ -92,6 +95,7 @@
             'crx_file/id_util_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_config_service_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_interceptor_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_metrics_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_prefs_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_protocol_unittest.cc',
@@ -99,6 +103,7 @@
             'data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_tamper_detection_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats_unittest.cc',
+            'data_reduction_proxy/core/common/data_reduction_proxy_event_store_unittest.cc',
             'data_reduction_proxy/core/common/data_reduction_proxy_headers_unittest.cc',
             'data_reduction_proxy/core/common/data_reduction_proxy_params_unittest.cc',
             'dom_distiller/core/article_entry_unittest.cc',
@@ -164,7 +169,7 @@
             'metrics/profiler/profiler_metrics_provider_unittest.cc',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
             'network_time/network_time_tracker_unittest.cc',
-            'omaha_query_params/omaha_query_params_unittest.cc',
+            'omaha_client/omaha_query_params_unittest.cc',
             'omnibox/answers_cache_unittest.cc',
             'omnibox/base_search_provider_unittest.cc',
             'omnibox/autocomplete_input_unittest.cc',
@@ -214,6 +219,7 @@
             'sessions/ios/ios_serialized_navigation_builder_unittest.cc',
             'sessions/ios/ios_serialized_navigation_driver_unittest.cc',
             'sessions/serialized_navigation_entry_unittest.cc',
+            'sessions/session_types_unittest.cc',
             'signin/core/browser/account_tracker_service_unittest.cc',
             'signin/core/browser/mutable_profile_oauth2_token_service_unittest.cc',
             'signin/core/browser/signin_error_controller_unittest.cc',
@@ -269,6 +275,8 @@
             'visitedlink/test/visitedlink_unittest.cc',
             'web_cache/browser/web_cache_manager_unittest.cc',
             'web_modal/web_contents_modal_dialog_manager_unittest.cc',
+            'web_resource/eula_accepted_notifier_unittest.cc',
+            'web_resource/resource_request_allowed_notifier_unittest.cc',
             'webdata/common/web_database_migration_unittest.cc',
           ],
           'include_dirs': [
@@ -283,6 +291,7 @@
             # TODO(blundell): Eliminate the need for this dependency in code
             # that iOS shares. crbug.com/325243
             '../content/content_shell_and_tests.gyp:test_support_content',
+            '../sql/sql.gyp:test_support_sql',
             '../sync/sync.gyp:sync',
             '../sync/sync.gyp:test_support_sync_api',
             '../testing/gmock.gyp:gmock',
@@ -323,6 +332,7 @@
             # Dependencies of content_settings
             'components.gyp:content_settings_core_browser',
             'components.gyp:content_settings_core_common',
+            'components.gyp:content_settings_core_test_support',
 
             # Dependencies of crash
             'components.gyp:crash_test_support',
@@ -397,8 +407,8 @@
             # Dependencies of network_time
             'components.gyp:network_time',
 
-            # Dependencies of omaha_query_params
-            'components.gyp:omaha_query_params',
+            # Dependencies of omaha_client
+            'components.gyp:omaha_client',
 
             # Dependencies of omnibox
             'components.gyp:omnibox',
@@ -464,6 +474,11 @@
             # Dependencies of variations
             'components.gyp:variations',
             'components.gyp:variations_http_provider',
+
+            # Dependencies of web_resource
+            'components.gyp:web_resource',
+            'components.gyp:web_resource_test_support',
+            '../base/base.gyp:base',
           ],
           'conditions': [
             ['toolkit_views == 1', {
@@ -476,9 +491,28 @@
                 'components.gyp:constrained_window',
               ]
             }],
+            ['OS=="win"', {
+              'dependencies': [
+                 # Dependencies of browser_watcher, windows only.
+                 'components.gyp:browser_watcher',
+                 'components.gyp:browser_watcher_client',
+              ]
+            }],
+            ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
+              'dependencies': [
+                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+              ],
+            }],
+            [ 'cld_version==0 or cld_version==2', {
+              'dependencies': [
+                # Unit tests should always use statically-linked CLD data.
+                '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld2_static', ],
+            }],
             ['OS != "ios"', {
               'sources': [
                 'autofill/content/renderer/renderer_save_password_progress_logger_unittest.cc',
+                'dns_prefetch/renderer/predictor_queue_unittest.cc',
+                'dns_prefetch/renderer/renderer_net_predictor_unittest.cc',
                 'dom_distiller/content/dom_distiller_viewer_source_unittest.cc',
                 'dom_distiller/content/web_contents_main_frame_observer_unittest.cc',
                 'error_page/renderer/net_error_helper_core_unittest.cc',
@@ -491,6 +525,9 @@
                 'components.gyp:autofill_content_browser',
                 'components.gyp:autofill_content_renderer',
                 'components.gyp:autofill_content_test_support',
+
+                # Dependencies of dns_prefetch
+                'components.gyp:dns_prefetch_renderer',
 
                 # Dependencies of dom_distiller
                 'components.gyp:dom_distiller_content',
@@ -537,6 +574,13 @@
                 'components.gyp:web_modal',
                 'components.gyp:web_modal_test_support',
               ],
+              'conditions': [
+                ['OS != "android"', {
+                  'sources': [
+                    'sessions/session_backend_unittest.cc',
+                   ],
+                }],
+              ],
             }, { # 'OS == "ios"'
               'includes': ['../chrome/chrome_ios_bundle_resources.gypi'],
               'sources/': [
@@ -564,6 +608,7 @@
                 ['include', '^network_time/'],
                 ['include', '^password_manager/'],
                 ['include', '^precache/core/'],
+                ['include', '^query_parser/'],
                 ['include', '^search/'],
                 ['include', '^search_engines/'],
                 ['include', '^search_provider_logos/'],
@@ -691,6 +736,8 @@
               'sources': [
                 'copresence/handlers/audio/audio_directive_handler_unittest.cc',
                 'copresence/handlers/audio/audio_directive_list_unittest.cc',
+                'copresence/handlers/directive_handler_unittest.cc',
+                'copresence/handlers/gcm_handler_unittest.cc',
                 'copresence/mediums/audio/audio_manager_unittest.cc',
                 'copresence/mediums/audio/audio_player_unittest.cc',
                 'copresence/mediums/audio/audio_recorder_unittest.cc',
@@ -778,6 +825,7 @@
                 'policy/core/browser/url_blacklist_policy_handler_unittest.cc',
                 'policy/core/common/async_policy_provider_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_client_unittest.cc',
+                'policy/core/common/cloud/cloud_policy_constants_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_core_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_manager_unittest.cc',
                 'policy/core/common/cloud/cloud_policy_refresh_scheduler_unittest.cc',
@@ -878,6 +926,11 @@
            ['OS == "android"', {
              'dependencies': [
                '../testing/android/native_test.gyp:native_test_native_code',
+             ],
+           }],
+           ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
+             'dependencies': [
+               '<(DEPTH)/base/allocator/allocator.gyp:allocator',
              ],
            }],
          ],

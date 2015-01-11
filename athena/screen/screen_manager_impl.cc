@@ -8,7 +8,6 @@
 #include "athena/screen/modal_window_controller.h"
 #include "athena/screen/screen_accelerator_handler.h"
 #include "athena/util/container_priorities.h"
-#include "athena/util/fill_layout_manager.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/client/aura_constants.h"
@@ -22,6 +21,7 @@
 #include "ui/gfx/screen.h"
 #include "ui/wm/core/base_focus_rules.h"
 #include "ui/wm/core/capture_controller.h"
+#include "ui/wm/core/default_screen_position_client.h"
 #include "ui/wm/core/focus_controller.h"
 #include "ui/wm/core/window_util.h"
 
@@ -50,7 +50,7 @@ struct HigherPriorityFinder {
 bool BlockEvents(aura::Window* container) {
   ScreenManager::ContainerParams* params =
       container->GetProperty(kContainerParamsKey);
-  return params && params->block_events;
+  return params && params->block_events && container->IsVisible();
 }
 
 bool DefaultContainer(aura::Window* container) {
@@ -108,11 +108,47 @@ class AthenaFocusRules : public wm::BaseFocusRules {
     return BaseFocusRules::CanActivateWindow(window);
   }
 
+  aura::Window* GetTopmostWindowToActivateInContainer(
+      aura::Window* container,
+      aura::Window* ignore) const {
+    for (aura::Window::Windows::const_reverse_iterator i =
+             container->children().rbegin();
+         i != container->children().rend();
+         ++i) {
+      if (*i != ignore && CanActivateWindow(*i))
+        return *i;
+    }
+    return NULL;
+  }
+
   virtual aura::Window* GetNextActivatableWindow(
       aura::Window* ignore) const override {
-    aura::Window* next = wm::BaseFocusRules::GetNextActivatableWindow(ignore);
-    // TODO(oshima): Search from activatable containers if |next| is nullptr.
-    // crbug.com/424750.
+    const aura::Window::Windows& containers =
+        ignore->GetRootWindow()->children();
+    auto starting_container_iter = containers.begin();
+    for (auto container_iter = containers.begin();
+         container_iter != containers.end();
+         container_iter++) {
+      if ((*container_iter)->Contains(ignore)) {
+        starting_container_iter = container_iter;
+        break;
+      }
+    }
+
+    // Find next window from the front containers.
+    aura::Window* next = nullptr;
+    for (auto container_iter = starting_container_iter;
+         !next && container_iter != containers.end();
+         container_iter++) {
+      next = GetTopmostWindowToActivateInContainer(*container_iter, ignore);
+    }
+
+    // Find next window from the back containers.
+    auto container_iter = starting_container_iter;
+    while (!next && container_iter != containers.begin()) {
+      container_iter--;
+      next = GetTopmostWindowToActivateInContainer(*container_iter, ignore);
+    }
     return next;
   }
 
@@ -120,7 +156,7 @@ class AthenaFocusRules : public wm::BaseFocusRules {
   DISALLOW_COPY_AND_ASSIGN(AthenaFocusRules);
 };
 
-class AthenaScreenPositionClient : public aura::client::ScreenPositionClient {
+class AthenaScreenPositionClient : public wm::DefaultScreenPositionClient {
  public:
   AthenaScreenPositionClient() {
   }
@@ -128,28 +164,10 @@ class AthenaScreenPositionClient : public aura::client::ScreenPositionClient {
 
  private:
   // aura::client::ScreenPositionClient:
-  virtual void ConvertPointToScreen(const aura::Window* window,
-                                    gfx::Point* point) override {
-    const aura::Window* root = window->GetRootWindow();
-    aura::Window::ConvertPointToTarget(window, root, point);
-  }
-
-  virtual void ConvertPointFromScreen(const aura::Window* window,
-                                      gfx::Point* point) override {
-    const aura::Window* root = window->GetRootWindow();
-    aura::Window::ConvertPointToTarget(root, window, point);
-  }
-
-  virtual void ConvertHostPointToScreen(aura::Window* window,
-                                        gfx::Point* point) override {
+  void ConvertHostPointToScreen(aura::Window* window,
+                                gfx::Point* point) override {
     // TODO(oshima): Implement this when adding multiple display support.
     NOTREACHED();
-  }
-
-  virtual void SetBounds(aura::Window* window,
-                         const gfx::Rect& bounds,
-                         const gfx::Display& display) override {
-    window->SetBounds(bounds);
   }
 
   DISALLOW_COPY_AND_ASSIGN(AthenaScreenPositionClient);
@@ -241,7 +259,6 @@ void ScreenManagerImpl::Init() {
   aura::client::SetActivationClient(root_window_, focus_controller);
   focus_client_.reset(focus_controller);
 
-  root_window_->SetLayoutManager(new FillLayoutManager(root_window_));
   capture_client_.reset(new ::wm::ScopedCaptureClient(root_window_));
   accelerator_handler_.reset(new ScreenAcceleratorHandler());
 

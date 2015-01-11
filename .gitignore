@@ -76,7 +76,6 @@ v8.log
 /chrome/browser/extensions/api/ledger/
 /chrome/browser/extensions/default_extensions/chromeos
 /chrome/browser/google/linkdoctor_internal
-/chrome/browser/intents/internal/
 /chrome/browser/internal
 /chrome/browser/performance_monitor/performance_monitor.xml
 /chrome/browser/protector/internal
@@ -266,6 +265,7 @@ v8.log
 /third_party/apache-win32/bin/iconv/*.so
 /third_party/apache-win32/modules/*.so
 /third_party/apache-win32/modules/*.dll
+/third_party/appurify-python/src
 /third_party/asan
 /third_party/bidichecker
 /third_party/bison
@@ -307,6 +307,7 @@ v8.log
 /third_party/jsoncpp/source
 /third_party/jsr-305/src
 /third_party/junit/src
+/third_party/khronos_glcts
 /third_party/leveldatabase/src
 /third_party/leveldb
 /third_party/libaddressinput/src

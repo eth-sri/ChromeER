@@ -59,8 +59,7 @@ class TestRasterTaskImpl : public RasterTask {
 
   // Overridden from Task:
   void RunOnWorkerThread() override {
-    raster_buffer_->Playback(
-        picture_pile_.get(), gfx::Rect(0, 0, 1, 1), 1.0, NULL);
+    raster_buffer_->Playback(picture_pile_.get(), gfx::Rect(0, 0, 1, 1), 1.0);
   }
 
   // Overridden from RasterizerTask:
@@ -122,7 +121,7 @@ class RasterWorkerPoolTest
 
   typedef std::vector<scoped_refptr<RasterTask>> RasterTaskVector;
 
-  enum NamedTaskSet { REQUIRED_FOR_ACTIVATION = 0, ALL = 1 };
+  enum NamedTaskSet { ALL, REQUIRED_FOR_ACTIVATION, REQUIRED_FOR_DRAW };
 
   RasterWorkerPoolTest()
       : context_provider_(TestContextProvider::Create()),
@@ -130,7 +129,7 @@ class RasterWorkerPoolTest
         timed_out_(false) {}
 
   // Overridden from testing::Test:
-  virtual void SetUp() override {
+  void SetUp() override {
     switch (GetParam()) {
       case RASTER_WORKER_POOL_TYPE_PIXEL_BUFFER:
         Create3dOutputSurfaceAndResourceProvider();
@@ -180,7 +179,7 @@ class RasterWorkerPoolTest
     raster_worker_pool_->AsRasterizer()->SetClient(this);
   }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     raster_worker_pool_->AsRasterizer()->Shutdown();
     raster_worker_pool_->AsRasterizer()->CheckForCompletedTasks();
   }

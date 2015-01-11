@@ -289,7 +289,7 @@ component("net") {
     }
     if (is_win) {
       sources -= [
-        "cert/cert/sha256_legacy_support_openssl_win.cc",
+        "cert/sha256_legacy_support_openssl_win.cc",
         "ssl/openssl_platform_key_win.cc",
       ]
     }
@@ -381,16 +381,6 @@ component("net") {
 
   if (!enable_websockets) {
     sources -= [
-      "socket_stream/socket_stream.cc",
-      "socket_stream/socket_stream.h",
-      "socket_stream/socket_stream_job.cc",
-      "socket_stream/socket_stream_job.h",
-      "socket_stream/socket_stream_job_manager.cc",
-      "socket_stream/socket_stream_job_manager.h",
-      "socket_stream/socket_stream_metrics.cc",
-      "socket_stream/socket_stream_metrics.h",
-      "spdy/spdy_websocket_stream.cc",
-      "spdy/spdy_websocket_stream.h",
       "websockets/websocket_basic_handshake_stream.cc",
       "websockets/websocket_basic_handshake_stream.h",
       "websockets/websocket_basic_stream.cc",
@@ -416,8 +406,8 @@ component("net") {
       "websockets/websocket_frame_parser.h",
       "websockets/websocket_handshake_constants.cc",
       "websockets/websocket_handshake_constants.h",
-      "websockets/websocket_handshake_handler.cc",
-      "websockets/websocket_handshake_handler.h",
+      "websockets/websocket_handshake_challenge.cc",
+      "websockets/websocket_handshake_challenge.h",
       "websockets/websocket_handshake_request_info.cc",
       "websockets/websocket_handshake_request_info.h",
       "websockets/websocket_handshake_response_info.cc",
@@ -427,15 +417,9 @@ component("net") {
       "websockets/websocket_handshake_stream_create_helper.h",
       "websockets/websocket_inflater.cc",
       "websockets/websocket_inflater.h",
-      "websockets/websocket_job.cc",
-      "websockets/websocket_job.h",
       "websockets/websocket_mux.h",
-      "websockets/websocket_net_log_params.cc",
-      "websockets/websocket_net_log_params.h",
       "websockets/websocket_stream.cc",
       "websockets/websocket_stream.h",
-      "websockets/websocket_throttle.cc",
-      "websockets/websocket_throttle.h",
     ]
   }
 
@@ -489,6 +473,8 @@ component("net") {
     # doesn't set USE_NSS but needs some of the files.
     set_sources_assignment_filter([])
     sources += [
+      "base/net_util_mac.cc",
+      "base/net_util_mac.h",
       "base/network_change_notifier_mac.cc",
       "base/network_config_watcher_mac.cc",
       "base/platform_mime_util_mac.mm",
@@ -522,6 +508,8 @@ component("net") {
       "base/platform_mime_util_linux.cc",
       "base/address_tracker_linux.cc",
       "base/address_tracker_linux.h",
+      "base/net_util_linux.cc",
+      "base/net_util_linux.h"
     ]
     set_sources_assignment_filter(sources_assignment_filter)
 
@@ -579,7 +567,10 @@ static_library("http_server") {
     "server/web_socket.cc",
     "server/web_socket.h",
   ]
-  configs += [ "//build/config/compiler:wexit_time_destructors" ]
+  configs += [
+    "//build/config/compiler:wexit_time_destructors",
+    ":net_win_size_truncation"
+  ]
   deps = [
     ":net",
     "//base",
@@ -614,8 +605,12 @@ executable("dump_cache") {
 source_set("test_support") {
   testonly = true
   sources = [
+    "base/captured_net_log_entry.cc",
+    "base/captured_net_log_entry.h",
     "base/capturing_net_log.cc",
     "base/capturing_net_log.h",
+    "base/capturing_net_log_observer.cc",
+    "base/capturing_net_log_observer.h",
     "base/load_timing_info_test_util.cc",
     "base/load_timing_info_test_util.h",
     "base/mock_file_stream.cc",
@@ -680,6 +675,10 @@ source_set("test_support") {
     "test/spawned_test_server/spawned_test_server.h",
     "test/spawned_test_server/spawner_communicator.cc",
     "test/spawned_test_server/spawner_communicator.h",
+    "test/url_request/url_request_failed_job.cc",
+    "test/url_request/url_request_failed_job.h",
+    "test/url_request/url_request_mock_http_job.cc",
+    "test/url_request/url_request_mock_http_job.h",
     "url_request/test_url_fetcher_factory.cc",
     "url_request/test_url_fetcher_factory.h",
     "url_request/test_url_request_interceptor.cc",
@@ -1077,7 +1076,8 @@ if (is_android || is_linux) {
 
 # TODO(GYP) make this compile on Android, we need some native test deps done.
 # TODO(GYP) Also doesn't work on Windows; dependency on boringssl is wrong.
-if (!is_android && !is_win) {
+# TODO(GYP) Also doesn't work on Mac, need to figure out why not.
+if (!is_android && !is_win && !is_mac) {
 
 source_set("quic_tools") {
   sources = [
@@ -1226,9 +1226,6 @@ test("net_unittests") {
 
   if (!enable_websockets) {
     sources -= [
-      "socket_stream/socket_stream_metrics_unittest.cc",
-      "socket_stream/socket_stream_unittest.cc",
-      "spdy/spdy_websocket_stream_unittest.cc",
       "websockets/websocket_basic_stream_test.cc",
       "websockets/websocket_channel_test.cc",
       "websockets/websocket_deflate_predictor_impl_test.cc",
@@ -1238,16 +1235,12 @@ test("net_unittests") {
       "websockets/websocket_extension_parser_test.cc",
       "websockets/websocket_frame_parser_test.cc",
       "websockets/websocket_frame_test.cc",
-      "websockets/websocket_handshake_handler_spdy_test.cc",
-      "websockets/websocket_handshake_handler_test.cc",
+      "websockets/websocket_handshake_challenge_test.cc",
       "websockets/websocket_handshake_stream_create_helper_test.cc",
       "websockets/websocket_inflater_test.cc",
-      "websockets/websocket_job_test.cc",
-      "websockets/websocket_net_log_params_test.cc",
       "websockets/websocket_stream_test.cc",
       "websockets/websocket_test_util.cc",
       "websockets/websocket_test_util.h",
-      "websockets/websocket_throttle_test.cc",
     ]
   }
 
@@ -1385,4 +1378,4 @@ executable("quic_server") {
   ]
 }
 
-}  # !is_android
+}  # !is_android && !is_win && !is_mac

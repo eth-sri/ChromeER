@@ -100,7 +100,7 @@ source_set("browser") {
       "//content/public/common:mojo_bindings",
       "//mojo/public/cpp/bindings",
       "//mojo/public/interfaces/application",
-      "//mojo/public/js/bindings",
+      "//mojo/public/js",
       "//net:http_server",
       "//storage/browser",
       "//storage/common",
@@ -141,7 +141,7 @@ source_set("browser") {
     sources += [ "gamepad/gamepad_platform_data_fetcher.cc" ]
   }
 
-  if (printing_mode != 0) {
+  if (enable_basic_printing || enable_print_preview) {
     deps += [ "//printing" ]
   }
 
@@ -220,7 +220,7 @@ source_set("browser") {
   }
 
   if (use_udev) {
-    configs += [ "//build/config/linux:udev" ]
+    deps += [ "//device/udev_linux" ]
   } else {
     # Remove udev-specific sources.
     sources -= [
@@ -297,7 +297,6 @@ source_set("browser") {
       "geolocation/network_location_provider.h",
       "geolocation/network_location_request.cc",
       "geolocation/network_location_request.h",
-      "renderer_host/native_web_keyboard_event.cc",
       "tracing/tracing_ui.cc",
       "tracing/tracing_ui.h",
 
@@ -381,6 +380,11 @@ source_set("browser") {
     ]
   }
 
+  if (use_aura || is_mac || is_android) {
+    sources += rebase_path(
+      content_browser_gypi_values.compositor_browser_surface_sources,
+      ".", "//content")
+  }
   if (use_aura || is_mac) {
     sources += rebase_path(
       content_browser_gypi_values.compositor_browser_sources,

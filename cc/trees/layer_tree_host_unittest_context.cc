@@ -140,7 +140,7 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
   void DidFailToInitializeOutputSurface() override { ++times_create_failed_; }
 
-  virtual void TearDown() override {
+  void TearDown() override {
     LayerTreeTest::TearDown();
     EXPECT_EQ(times_to_expect_create_failed_, times_create_failed_);
   }
@@ -1313,7 +1313,7 @@ class UIResourceLostTest : public LayerTreeHostContextTest {
  public:
   UIResourceLostTest() : time_step_(0) {}
   void InitializeSettings(LayerTreeSettings* settings) override {
-    settings->texture_id_allocation_chunk_size = 1;
+    settings->renderer_settings.texture_id_allocation_chunk_size = 1;
   }
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
   void AfterTest() override {}

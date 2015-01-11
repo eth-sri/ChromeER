@@ -9,7 +9,7 @@ from telemetry.core import browser_finder
 from telemetry.core import extension_to_load
 from telemetry.core import util
 from telemetry.core.platform import cros_interface
-from telemetry.unittest import options_for_unittests
+from telemetry.unittest_util import options_for_unittests
 
 
 class CrOSTestCase(unittest.TestCase):
@@ -39,7 +39,7 @@ class CrOSTestCase(unittest.TestCase):
 
     browser_to_create = browser_finder.FindBrowser(options)
     self.assertTrue(browser_to_create)
-    browser_options = browser_to_create.finder_options.browser_options
+    browser_options = options.browser_options
     browser_options.create_browser_with_oobe = True
     browser_options.auto_login = auto_login
     browser_options.gaia_login = gaia_login
@@ -48,7 +48,7 @@ class CrOSTestCase(unittest.TestCase):
     if password is not None:
       browser_options.password = password
 
-    return browser_to_create.Create()
+    return browser_to_create.Create(options)
 
   def _GetAutotestExtension(self, browser):
     """Returns the autotest extension instance"""

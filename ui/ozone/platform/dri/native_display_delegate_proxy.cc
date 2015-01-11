@@ -4,6 +4,8 @@
 
 #include "ui/ozone/platform/dri/native_display_delegate_proxy.h"
 
+#include <stdio.h>
+
 #include "base/logging.h"
 #include "ui/display/types/display_snapshot.h"
 #include "ui/display/types/native_display_observer.h"
@@ -12,14 +14,40 @@
 #include "ui/ozone/common/display_snapshot_proxy.h"
 #include "ui/ozone/common/display_util.h"
 #include "ui/ozone/common/gpu/ozone_gpu_messages.h"
+#include "ui/ozone/platform/dri/display_manager.h"
 #include "ui/ozone/platform/dri/dri_gpu_platform_support_host.h"
 
 namespace ui {
 
+namespace {
+
+class DriDisplaySnapshotProxy : public DisplaySnapshotProxy {
+ public:
+  DriDisplaySnapshotProxy(const DisplaySnapshot_Params& params,
+                          DisplayManager* display_manager)
+      : DisplaySnapshotProxy(params), display_manager_(display_manager) {
+    display_manager_->RegisterDisplay(this);
+  }
+
+  ~DriDisplaySnapshotProxy() override {
+    display_manager_->UnregisterDisplay(this);
+  }
+
+ private:
+  DisplayManager* display_manager_;  // Not owned.
+
+  DISALLOW_COPY_AND_ASSIGN(DriDisplaySnapshotProxy);
+};
+
+}  // namespace
+
 NativeDisplayDelegateProxy::NativeDisplayDelegateProxy(
     DriGpuPlatformSupportHost* proxy,
-    DeviceManager* device_manager)
-    : proxy_(proxy), device_manager_(device_manager) {
+    DeviceManager* device_manager,
+    DisplayManager* display_manager)
+    : proxy_(proxy),
+      device_manager_(device_manager),
+      display_manager_(display_manager) {
   proxy_->RegisterHandler(this);
 }
 
@@ -33,12 +61,29 @@ NativeDisplayDelegateProxy::~NativeDisplayDelegateProxy() {
 void NativeDisplayDelegateProxy::Initialize() {
   if (device_manager_)
     device_manager_->AddObserver(this);
+
+  if (!displays_.empty())
+    return;
+
+  DisplaySnapshot_Params params = CreateSnapshotFromCommandLine();
+  if (params.type != DISPLAY_CONNECTION_TYPE_NONE)
+    displays_.push_back(new DriDisplaySnapshotProxy(params, display_manager_));
 }
 
 void NativeDisplayDelegateProxy::GrabServer() {
 }
 
 void NativeDisplayDelegateProxy::UngrabServer() {
+}
+
+bool NativeDisplayDelegateProxy::TakeDisplayControl() {
+  proxy_->Send(new OzoneGpuMsg_TakeDisplayControl());
+  return true;
+}
+
+bool NativeDisplayDelegateProxy::RelinquishDisplayControl() {
+  proxy_->Send(new OzoneGpuMsg_RelinquishDisplayControl());
+  return true;
 }
 
 void NativeDisplayDelegateProxy::SyncWithServer() {
@@ -53,6 +98,9 @@ void NativeDisplayDelegateProxy::ForceDPMSOn() {
 }
 
 std::vector<DisplaySnapshot*> NativeDisplayDelegateProxy::GetDisplays() {
+  // GetDisplays() is supposed to force a refresh of the display list.
+  proxy_->Send(new OzoneGpuMsg_RefreshNativeDisplays(
+      std::vector<DisplaySnapshot_Params>()));
   return displays_.get();
 }
 
@@ -151,12 +199,29 @@ bool NativeDisplayDelegateProxy::OnMessageReceived(
 
 void NativeDisplayDelegateProxy::OnUpdateNativeDisplays(
     const std::vector<DisplaySnapshot_Params>& displays) {
+  bool has_new_displays = displays.size() != displays_.size();
+  if (!has_new_displays) {
+    for (DisplaySnapshot* display : displays_) {
+      auto it = std::find_if(displays.begin(), displays.end(),
+                             FindDisplayById(display->display_id()));
+      if (it == displays.end()) {
+        has_new_displays = true;
+        break;
+      }
+    }
+  }
+
+  // If the configuration hasn't changed do not update.
+  if (!has_new_displays)
+    return;
+
   displays_.clear();
   for (size_t i = 0; i < displays.size(); ++i)
-    displays_.push_back(new DisplaySnapshotProxy(displays[i]));
+    displays_.push_back(
+        new DriDisplaySnapshotProxy(displays[i], display_manager_));
 
-  FOR_EACH_OBSERVER(
-      NativeDisplayObserver, observers_, OnConfigurationChanged());
+  FOR_EACH_OBSERVER(NativeDisplayObserver, observers_,
+                    OnConfigurationChanged());
 }
 
 }  // namespace ui

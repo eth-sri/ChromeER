@@ -25,6 +25,7 @@ class SingleThreadTaskRunner;
 
 namespace cc {
 
+class BeginFrameSource;
 class ContextProvider;
 class InputHandlerClient;
 class LayerTreeHost;
@@ -40,7 +41,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
   ~ThreadProxy() override;
 
@@ -96,7 +98,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
     CompositorThreadOnly(
         ThreadProxy* proxy,
         int layer_tree_host_id,
-        RenderingStatsInstrumentation* rendering_stats_instrumentation);
+        RenderingStatsInstrumentation* rendering_stats_instrumentation,
+        scoped_ptr<BeginFrameSource> external_begin_frame_source);
     ~CompositorThreadOnly();
 
     const int layer_tree_host_id;
@@ -137,6 +140,8 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     ProxyTimingHistory timing_history;
 
+    scoped_ptr<BeginFrameSource> external_begin_frame_source;
+
     scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl;
     base::WeakPtrFactory<ThreadProxy> weak_factory;
   };
@@ -170,6 +175,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SetDebugState(const LayerTreeDebugState& debug_state) override;
   void AsValueInto(base::debug::TracedValue* value) const override;
   bool MainFrameWillHappenForTesting() override;
+  void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
 
   // LayerTreeHostImplClient implementation
   void UpdateRendererCapabilitiesOnImplThread() override;
@@ -182,6 +188,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void DidSwapBuffersCompleteOnImplThread() override;
   void OnCanDrawStateChanged(bool can_draw) override;
   void NotifyReadyToActivate() override;
+  void NotifyReadyToDraw() override;
   // Please call these 3 functions through
   // LayerTreeHostImpl's SetNeedsRedraw(), SetNeedsRedrawRect() and
   // SetNeedsAnimate().
@@ -189,7 +196,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void SetNeedsRedrawRectOnImplThread(const gfx::Rect& dirty_rect) override;
   void SetNeedsAnimateOnImplThread() override;
   void SetNeedsManageTilesOnImplThread() override;
-  void DidInitializeVisibleTileOnImplThread() override;
   void SetNeedsCommitOnImplThread() override;
   void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> queue) override;
@@ -203,14 +209,12 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void DidManageTiles() override;
 
   // SchedulerClient implementation
-  BeginFrameSource* ExternalBeginFrameSource() override;
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
   void ScheduledActionSendBeginMainFrame() override;
   DrawResult ScheduledActionDrawAndSwapIfPossible() override;
   DrawResult ScheduledActionDrawAndSwapForced() override;
   void ScheduledActionAnimate() override;
   void ScheduledActionCommit() override;
-  void ScheduledActionUpdateVisibleTiles() override;
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginOutputSurfaceCreation() override;
   void ScheduledActionManageTiles() override;
@@ -219,14 +223,17 @@ class CC_EXPORT ThreadProxy : public Proxy,
   base::TimeDelta BeginMainFrameToCommitDurationEstimate() override;
   base::TimeDelta CommitToActivateDurationEstimate() override;
   void DidBeginImplFrameDeadline() override;
+  void SendBeginFramesToChildren(const BeginFrameArgs& args) override;
 
   // ResourceUpdateControllerClient implementation
   void ReadyToFinalizeTextureUpdates() override;
 
  protected:
-  ThreadProxy(LayerTreeHost* layer_tree_host,
-              scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-              scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+  ThreadProxy(
+      LayerTreeHost* layer_tree_host,
+      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
+      scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
  private:
   // Called on main thread.
@@ -253,7 +260,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void InitializeImplOnImplThread(CompletionEvent* completion);
   void SetLayerTreeHostClientReadyOnImplThread();
   void SetVisibleOnImplThread(CompletionEvent* completion, bool visible);
-  void UpdateBackgroundAnimateTicking();
   void HasInitializedOutputSurfaceOnImplThread(
       CompletionEvent* completion,
       bool* has_initialized_output_surface);

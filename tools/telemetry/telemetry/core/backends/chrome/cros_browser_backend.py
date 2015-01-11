@@ -15,21 +15,18 @@ from telemetry.core.forwarders import cros_forwarder
 
 
 class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
-  def __init__(self, browser_options, cri, is_guest, extensions_to_load):
+  def __init__(self, cros_platform_backend, browser_options, cri, is_guest,
+               extensions_to_load):
     super(CrOSBrowserBackend, self).__init__(
-        supports_tab_control=True, supports_extensions=not is_guest,
+        cros_platform_backend, supports_tab_control=True,
+        supports_extensions=not is_guest,
         browser_options=browser_options,
         output_profile_path=None, extensions_to_load=extensions_to_load)
-
+    assert browser_options.IsCrosBrowserOptions()
     # Initialize fields so that an explosion during init doesn't break in Close.
     self._cri = cri
     self._is_guest = is_guest
     self._forwarder = None
-
-    from telemetry.core.backends.chrome import chrome_browser_options
-    assert isinstance(browser_options,
-                      chrome_browser_options.CrosBrowserOptions)
-
     self.wpr_port_pairs = forwarders.PortPairs(
         http=forwarders.PortPair(self.wpr_port_pairs.http.local_port,
                                  self.GetRemotePort(
@@ -79,11 +76,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             # Debug logging.
             '--vmodule=*/chromeos/net/*=2,*/chromeos/login/*=2'])
 
-    # Disables the start page, as well as other external apps that can
-    # steal focus or make measurements inconsistent.
-    if self.browser_options.disable_default_apps:
-      args.append('--disable-default-apps')
-
     # Disable GAIA services unless we're using GAIA login, or if there's an
     # explicit request for it.
     if (self.browser_options.disable_gaia_services and
@@ -91,11 +83,6 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       args.append('--disable-gaia-services')
 
     return args
-
-  @property
-  def _use_host_resolver_rules(self):
-    """Always use the --host-resolver-rules Chrome flag; even for netsim."""
-    return True
 
   @property
   def pid(self):

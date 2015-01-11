@@ -81,8 +81,11 @@ class CHROMEOS_EXPORT ManagedNetworkConfigurationHandlerImpl
       const std::string& guid,
       onc::ONCSource* onc_source) const override;
 
+  const GuidToPolicyMap* GetNetworkConfigsFromPolicy(
+      const std::string& userhash) const override;
+
   const base::DictionaryValue* GetGlobalConfigFromPolicy(
-      const std::string userhash) const override;
+      const std::string& userhash) const override;
 
   const base::DictionaryValue* FindPolicyByGuidAndProfile(
       const std::string& guid,
@@ -103,6 +106,7 @@ class CHROMEOS_EXPORT ManagedNetworkConfigurationHandlerImpl
   void OnPoliciesApplied(const NetworkProfile& profile) override;
 
  private:
+  friend class AutoConnectHandlerTest;
   friend class ClientCertResolverTest;
   friend class ManagedNetworkConfigurationHandlerTest;
   friend class NetworkConnectionHandlerTest;

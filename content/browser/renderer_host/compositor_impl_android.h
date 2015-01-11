@@ -13,7 +13,6 @@
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "content/browser/android/ui_resource_provider_impl.h"
-#include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/browser/android/compositor.h"
@@ -28,10 +27,12 @@ struct ANativeWindow;
 namespace cc {
 class Layer;
 class LayerTreeHost;
+class SurfaceIdAllocator;
 }
 
 namespace content {
 class CompositorClient;
+class OnscreenDisplayClient;
 class UIResourceProvider;
 
 // -----------------------------------------------------------------------------
@@ -41,7 +42,6 @@ class CONTENT_EXPORT CompositorImpl
     : public Compositor,
       public cc::LayerTreeHostClient,
       public cc::LayerTreeHostSingleThreadClient,
-      public ImageTransportFactoryAndroidObserver,
       public ui::WindowAndroidCompositor {
  public:
   CompositorImpl(CompositorClient* client, gfx::NativeWindow root_window);
@@ -89,9 +89,6 @@ class CONTENT_EXPORT CompositorImpl
   virtual void DidPostSwapBuffers() override;
   virtual void DidAbortSwapBuffers() override;
 
-  // ImageTransportFactoryAndroidObserver implementation.
-  virtual void OnLostResources() override;
-
   // WindowAndroidCompositor implementation.
   virtual void AttachLayerForReadback(scoped_refptr<cc::Layer> layer) override;
   virtual void RequestCopyOfOutputOnRootLayer(
@@ -122,7 +119,8 @@ class CONTENT_EXPORT CompositorImpl
   }
   bool WillComposite() const {
     return WillCompositeThisFrame() ||
-           composite_on_vsync_trigger_ != DO_NOT_COMPOSITE;
+           composite_on_vsync_trigger_ != DO_NOT_COMPOSITE ||
+           defer_composite_for_gpu_channel_;
   }
   void CancelComposite() {
     DCHECK(WillComposite());
@@ -141,6 +139,9 @@ class CONTENT_EXPORT CompositorImpl
 
   scoped_ptr<cc::LayerTreeHost> host_;
   content::UIResourceProviderImpl ui_resource_provider_;
+
+  scoped_ptr<OnscreenDisplayClient> display_client_;
+  scoped_ptr<cc::SurfaceIdAllocator> surface_id_allocator_;
 
   gfx::Size size_;
   bool has_transparent_background_;
@@ -179,6 +180,11 @@ class CONTENT_EXPORT CompositorImpl
   // The number of SwapBuffer calls that have not returned and ACK'd from
   // the GPU thread.
   unsigned int pending_swapbuffers_;
+
+  // Whether we are currently deferring a requested Composite operation until
+  // the GPU channel is established (it was either lost or not yet fully
+  // established the first time we tried to composite).
+  bool defer_composite_for_gpu_channel_;
 
   base::TimeDelta vsync_period_;
   base::TimeTicks last_vsync_;
