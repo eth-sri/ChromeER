@@ -34,12 +34,10 @@ typedef HttpServerPropertiesImplTest SpdyServerPropertiesTest;
 
 TEST_F(SpdyServerPropertiesTest, Initialize) {
   HostPortPair spdy_server_google("www.google.com", 443);
-  std::string spdy_server_g =
-      HttpServerPropertiesImpl::GetFlattenedSpdyServer(spdy_server_google);
+  std::string spdy_server_g = spdy_server_google.ToString();
 
   HostPortPair spdy_server_docs("docs.google.com", 443);
-  std::string spdy_server_d =
-      HttpServerPropertiesImpl::GetFlattenedSpdyServer(spdy_server_docs);
+  std::string spdy_server_d = spdy_server_docs.ToString();
 
   // Check by initializing NULL spdy servers.
   impl_.InitializeSpdyServers(NULL, true);
@@ -155,11 +153,9 @@ TEST_F(SpdyServerPropertiesTest, GetSpdyServerList) {
   std::string string_value_g;
   std::string string_value_m;
   HostPortPair spdy_server_google("www.google.com", 443);
-  std::string spdy_server_g =
-      HttpServerPropertiesImpl::GetFlattenedSpdyServer(spdy_server_google);
+  std::string spdy_server_g = spdy_server_google.ToString();
   HostPortPair spdy_server_mail("mail.google.com", 443);
-  std::string spdy_server_m =
-      HttpServerPropertiesImpl::GetFlattenedSpdyServer(spdy_server_mail);
+  std::string spdy_server_m = spdy_server_mail.ToString();
 
   // Add www.google.com:443 as not supporting SPDY.
   impl_.SetSupportsSpdy(spdy_server_google, false);
@@ -204,11 +200,9 @@ TEST_F(SpdyServerPropertiesTest, MRUOfGetSpdyServerList) {
   std::string string_value_g;
   std::string string_value_m;
   HostPortPair spdy_server_google("www.google.com", 443);
-  std::string spdy_server_g =
-      HttpServerPropertiesImpl::GetFlattenedSpdyServer(spdy_server_google);
+  std::string spdy_server_g = spdy_server_google.ToString();
   HostPortPair spdy_server_mail("mail.google.com", 443);
-  std::string spdy_server_m =
-      HttpServerPropertiesImpl::GetFlattenedSpdyServer(spdy_server_mail);
+  std::string spdy_server_m = spdy_server_mail.ToString();
 
   // Add www.google.com:443 as supporting SPDY.
   impl_.SetSupportsSpdy(spdy_server_google, true);
@@ -443,6 +437,36 @@ TEST_F(AlternateProtocolServerPropertiesTest, Canonical) {
   // Verify the canonical suffix.
   EXPECT_EQ(".c.youtube.com", impl_.GetCanonicalSuffix(test_host_port_pair));
   EXPECT_EQ(".c.youtube.com", impl_.GetCanonicalSuffix(canonical_port_pair));
+}
+
+TEST_F(AlternateProtocolServerPropertiesTest, CanonicalBelowThreshold) {
+  impl_.SetAlternateProtocolProbabilityThreshold(0.02);
+
+  HostPortPair test_host_port_pair("foo.c.youtube.com", 80);
+  HostPortPair canonical_port_pair("bar.c.youtube.com", 80);
+  AlternateProtocolInfo canonical_protocol(1234, QUIC, 0.01);
+
+  impl_.SetAlternateProtocol(canonical_port_pair,
+                             canonical_protocol.port,
+                             canonical_protocol.protocol,
+                             canonical_protocol.probability);
+  EXPECT_FALSE(impl_.HasAlternateProtocol(canonical_port_pair));
+  EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
+}
+
+TEST_F(AlternateProtocolServerPropertiesTest, CanonicalAboveThreshold) {
+  impl_.SetAlternateProtocolProbabilityThreshold(0.02);
+
+  HostPortPair test_host_port_pair("foo.c.youtube.com", 80);
+  HostPortPair canonical_port_pair("bar.c.youtube.com", 80);
+  AlternateProtocolInfo canonical_protocol(1234, QUIC, 0.03);
+
+  impl_.SetAlternateProtocol(canonical_port_pair,
+                             canonical_protocol.port,
+                             canonical_protocol.protocol,
+                             canonical_protocol.probability);
+  EXPECT_TRUE(impl_.HasAlternateProtocol(canonical_port_pair));
+  EXPECT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
 }
 
 TEST_F(AlternateProtocolServerPropertiesTest, ClearCanonical) {

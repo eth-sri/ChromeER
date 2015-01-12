@@ -59,6 +59,7 @@ component("compositor") {
     "//base/third_party/dynamic_annotations",
     "//cc",
     "//cc/surfaces",
+    "//cc/surfaces:surface_id",
     "//gpu/command_buffer/common",
     "//skia",
     "//ui/gfx",
@@ -132,7 +133,6 @@ source_set("test_support") {
     sources += [ "test/test_compositor_host_x11.cc" ]
   }
 }
-
 # TODO(GYP) enable this when all dependencies are complete and it links.
 #test("compositor_unittests") {
 #  sources = [

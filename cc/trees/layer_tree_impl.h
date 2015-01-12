@@ -14,6 +14,7 @@
 #include "base/values.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/base/swap_promise.h"
+#include "cc/base/synced_property.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/output/renderer.h"
 #include "cc/resources/ui_resource_client.h"
@@ -49,12 +50,16 @@ struct RendererCapabilities;
 struct SelectionHandle;
 
 typedef std::list<UIResourceRequest> UIResourceRequestQueue;
+typedef SyncedProperty<AdditionGroup<gfx::Vector2dF>> SyncedElasticOverscroll;
 
 class CC_EXPORT LayerTreeImpl {
  public:
   static scoped_ptr<LayerTreeImpl> create(
-      LayerTreeHostImpl* layer_tree_host_impl) {
-    return make_scoped_ptr(new LayerTreeImpl(layer_tree_host_impl));
+      LayerTreeHostImpl* layer_tree_host_impl,
+      scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor,
+      scoped_refptr<SyncedElasticOverscroll> elastic_overscroll) {
+    return make_scoped_ptr(new LayerTreeImpl(
+        layer_tree_host_impl, page_scale_factor, elastic_overscroll));
   }
   virtual ~LayerTreeImpl();
 
@@ -90,6 +95,7 @@ class CC_EXPORT LayerTreeImpl {
   void DidAnimateScrollOffset();
   void InputScrollAnimationFinished();
   bool use_gpu_rasterization() const;
+  GpuRasterizationStatus GetGpuRasterizationStatus() const;
   bool create_low_res_tiling() const;
   BlockingTaskRunner* BlockingMainThreadTaskRunner() const;
   bool RequiresHighResToDraw() const;
@@ -160,23 +166,27 @@ class CC_EXPORT LayerTreeImpl {
     has_transparent_background_ = transparent;
   }
 
-  void SetPageScaleFactorAndLimits(float page_scale_factor,
-      float min_page_scale_factor, float max_page_scale_factor);
-  void SetPageScaleDelta(float delta);
-  void SetPageScaleValues(float page_scale_factor,
-      float min_page_scale_factor, float max_page_scale_factor,
-      float page_scale_delta);
-  float total_page_scale_factor() const {
-    return page_scale_factor_ * page_scale_delta_;
+  void SetPageScaleOnActiveTree(float active_page_scale);
+  void PushPageScaleFromMainThread(float page_scale_factor,
+                                   float min_page_scale_factor,
+                                   float max_page_scale_factor);
+  float current_page_scale_factor() const {
+    return page_scale_factor()->Current(IsActiveTree());
   }
-  float page_scale_factor() const { return page_scale_factor_; }
   float min_page_scale_factor() const { return min_page_scale_factor_; }
   float max_page_scale_factor() const { return max_page_scale_factor_; }
-  float page_scale_delta() const  { return page_scale_delta_; }
-  void set_sent_page_scale_delta(float delta) {
-    sent_page_scale_delta_ = delta;
+
+  float page_scale_delta() const { return page_scale_factor()->Delta(); }
+
+  SyncedProperty<ScaleGroup>* page_scale_factor();
+  const SyncedProperty<ScaleGroup>* page_scale_factor() const;
+
+  SyncedElasticOverscroll* elastic_overscroll() {
+    return elastic_overscroll_.get();
   }
-  float sent_page_scale_delta() const { return sent_page_scale_delta_; }
+  const SyncedElasticOverscroll* elastic_overscroll() const {
+    return elastic_overscroll_.get();
+  }
 
   // Updates draw properties and render surface layer list, as well as tile
   // priorities. Returns false if it was unable to update.
@@ -286,9 +296,10 @@ class CC_EXPORT LayerTreeImpl {
   void RegisterPictureLayerImpl(PictureLayerImpl* layer);
   void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
 
-  void set_top_controls_layout_height(float height) {
-    top_controls_layout_height_ = height;
+  void set_top_controls_shrink_blink_size(bool shrink) {
+    top_controls_shrink_blink_size_ = shrink;
   }
+  void set_top_controls_height(float height) { top_controls_height_ = height; }
   void set_top_controls_content_offset(float offset) {
     top_controls_content_offset_ = offset;
   }
@@ -299,9 +310,10 @@ class CC_EXPORT LayerTreeImpl {
     sent_top_controls_delta_ = sent_delta;
   }
 
-  float top_controls_layout_height() const {
-    return top_controls_layout_height_;
+  bool top_controls_shrink_blink_size() const {
+    return top_controls_shrink_blink_size_;
   }
+  float top_controls_height() const { return top_controls_height_; }
   float top_controls_content_offset() const {
     return top_controls_content_offset_;
   }
@@ -320,8 +332,18 @@ class CC_EXPORT LayerTreeImpl {
   scoped_ptr<PendingPageScaleAnimation> TakePendingPageScaleAnimation();
 
  protected:
-  explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
+  explicit LayerTreeImpl(
+      LayerTreeHostImpl* layer_tree_host_impl,
+      scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor,
+      scoped_refptr<SyncedElasticOverscroll> elastic_overscroll);
   void ReleaseResourcesRecursive(LayerImpl* current);
+  float ClampPageScaleFactorToLimits(float page_scale_factor) const;
+  void PushPageScaleFactorAndLimits(const float* page_scale_factor,
+                                    float min_page_scale_factor,
+                                    float max_page_scale_factor);
+  bool SetPageScaleFactorLimits(float min_page_scale_factor,
+                                float max_page_scale_factor);
+  void DidUpdatePageScale();
 
   LayerTreeHostImpl* layer_tree_host_impl_;
   int source_frame_number_;
@@ -344,11 +366,11 @@ class CC_EXPORT LayerTreeImpl {
   LayerSelectionBound selection_start_;
   LayerSelectionBound selection_end_;
 
-  float page_scale_factor_;
-  float page_scale_delta_;
-  float sent_page_scale_delta_;
+  scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor_;
   float min_page_scale_factor_;
   float max_page_scale_factor_;
+
+  scoped_refptr<SyncedElasticOverscroll> elastic_overscroll_;
 
   typedef base::hash_map<int, LayerImpl*> LayerIdMap;
   LayerIdMap layer_id_map_;
@@ -379,10 +401,11 @@ class CC_EXPORT LayerTreeImpl {
 
   int render_surface_layer_list_id_;
 
-  // The top controls content offset at the time of the last layout (and thus,
-  // viewport resize) in Blink. i.e. How much the viewport was shrunk by the top
-  // controls.
-  float top_controls_layout_height_;
+  // Whether or not Blink's viewport size was shrunk by the height of the top
+  // controls at the time of the last layout.
+  bool top_controls_shrink_blink_size_;
+
+  float top_controls_height_;
 
   // The up-to-date content offset of the top controls, i.e. the amount that the
   // web contents have been shifted down from the top of the device viewport.

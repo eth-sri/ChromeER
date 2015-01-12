@@ -391,12 +391,6 @@ void InputMethodManagerImpl::StateImpl::ChangeInputMethod(
     return;
 
   bool notify_menu = false;
-  // For 3rd party IME, when the user just logged in, SetEnabledExtensionImes
-  // happens after activating the 3rd party IME.
-  // So here to record the 3rd party IME to be activated, and activate it
-  // when SetEnabledExtensionImes happens later.
-  if (MethodAwaitsExtensionLoad(input_method_id))
-    pending_input_method_id = input_method_id;
 
   // Always lookup input method, even if it is the same as
   // |current_input_method| because If it is no longer in
@@ -404,6 +398,20 @@ void InputMethodManagerImpl::StateImpl::ChangeInputMethod(
   // |active_input_method_ids|.
   const InputMethodDescriptor* descriptor =
       manager_->LookupInputMethod(input_method_id, this);
+  if (!descriptor) {
+    descriptor = manager_->LookupInputMethod(
+        manager_->util_.MigrateInputMethod(input_method_id), this);
+    if (!descriptor)
+      return;
+  }
+
+  // For 3rd party IME, when the user just logged in, SetEnabledExtensionImes
+  // happens after activating the 3rd party IME.
+  // So here to record the 3rd party IME to be activated, and activate it
+  // when SetEnabledExtensionImes happens later.
+  if (MethodAwaitsExtensionLoad(descriptor->id()))
+    pending_input_method_id = descriptor->id();
+
   if (descriptor->id() != current_input_method.id()) {
     previous_input_method = current_input_method;
     current_input_method = *descriptor;
@@ -632,7 +640,7 @@ void InputMethodManagerImpl::StateImpl::SetInputMethodLoginDefault() {
   }
 }
 
-bool InputMethodManagerImpl::StateImpl::SwitchToNextInputMethod() {
+bool InputMethodManagerImpl::StateImpl::CanCycleInputMethod() {
   // Sanity checks.
   if (active_input_method_ids.empty()) {
     DVLOG(1) << "active input method is empty";
@@ -646,34 +654,28 @@ bool InputMethodManagerImpl::StateImpl::SwitchToNextInputMethod() {
 
   // Do not consume key event if there is only one input method is enabled.
   // Ctrl+Space or Alt+Shift may be used by other application.
-  if (active_input_method_ids.size() == 1)
-    return false;
+  return active_input_method_ids.size() > 1;
+}
+
+void InputMethodManagerImpl::StateImpl::SwitchToNextInputMethod() {
+  DCHECK(CanCycleInputMethod());
+  if (!CanCycleInputMethod())
+    return;
 
   // Find the next input method and switch to it.
   SwitchToNextInputMethodInternal(active_input_method_ids,
                                   current_input_method.id());
-  return true;
 }
 
-bool InputMethodManagerImpl::StateImpl::SwitchToPreviousInputMethod(
-    const ui::Accelerator& accelerator) {
-  // Sanity check.
-  if (active_input_method_ids.empty()) {
-    DVLOG(1) << "active input method is empty";
-    return false;
-  }
-
-  // Do not consume key event if there is only one input method is enabled.
-  // Ctrl+Space or Alt+Shift may be used by other application.
-  if (active_input_method_ids.size() == 1)
-    return false;
-
-  if (accelerator.type() == ui::ET_KEY_RELEASED)
-    return true;
+void InputMethodManagerImpl::StateImpl::SwitchToPreviousInputMethod() {
+  DCHECK(CanCycleInputMethod());
+  if (!CanCycleInputMethod())
+    return;
 
   if (previous_input_method.id().empty() ||
       previous_input_method.id() == current_input_method.id()) {
-    return SwitchToNextInputMethod();
+    SwitchToNextInputMethod();
+    return;
   }
 
   std::vector<std::string>::const_iterator iter =
@@ -682,23 +684,54 @@ bool InputMethodManagerImpl::StateImpl::SwitchToPreviousInputMethod(
                 previous_input_method.id());
   if (iter == active_input_method_ids.end()) {
     // previous_input_method is not supported.
-    return SwitchToNextInputMethod();
+    SwitchToNextInputMethod();
+    return;
   }
   ChangeInputMethod(*iter, true);
-
-  return true;
 }
 
-bool InputMethodManagerImpl::StateImpl::SwitchInputMethod(
+bool InputMethodManagerImpl::StateImpl::CanSwitchInputMethod(
     const ui::Accelerator& accelerator) {
+  // If none of the input methods associated with |accelerator| are active, we
+  // should ignore the accelerator. For example, we should just ignore
+  // VKEY_HANGUL when mozc-hangul is not active.
+  std::vector<std::string> candidate_ids;
+  GetCandidateInputMethodsForAccelerator(accelerator, &candidate_ids);
+  return !candidate_ids.empty();
+}
+
+void InputMethodManagerImpl::StateImpl::SwitchInputMethod(
+    const ui::Accelerator& accelerator) {
+  std::vector<std::string> candidate_ids;
+  GetCandidateInputMethodsForAccelerator(accelerator, &candidate_ids);
+  DCHECK(!candidate_ids.empty());
+  if (!candidate_ids.empty())
+    SwitchToNextInputMethodInternal(candidate_ids, current_input_method.id());
+}
+
+void InputMethodManagerImpl::StateImpl::SwitchToNextInputMethodInternal(
+    const std::vector<std::string>& input_method_ids,
+    const std::string& current_input_methodid) {
+  std::vector<std::string>::const_iterator iter = std::find(
+      input_method_ids.begin(), input_method_ids.end(), current_input_methodid);
+  if (iter != input_method_ids.end())
+    ++iter;
+  if (iter == input_method_ids.end())
+    iter = input_method_ids.begin();
+  ChangeInputMethod(*iter, true);
+}
+
+void InputMethodManagerImpl::StateImpl::GetCandidateInputMethodsForAccelerator(
+    const ui::Accelerator& accelerator,
+    std::vector<std::string>* out_candidate_ids) {
+  out_candidate_ids->clear();
+
   // Sanity check.
   if (active_input_method_ids.empty()) {
     DVLOG(1) << "active input method is empty";
-    return false;
+    return;
   }
 
-  // Get the list of input method ids for the |accelerator|. For example, get
-  // { "mozc-hangul", "xkb:kr:kr104:kor" } for ui::VKEY_DBE_SBCSCHAR.
   std::vector<std::string> input_method_ids_to_switch;
   switch (accelerator.key_code()) {
     case ui::VKEY_CONVERT:  // Henkan key on JP106 keyboard
@@ -722,38 +755,16 @@ bool InputMethodManagerImpl::StateImpl::SwitchInputMethod(
   }
   if (input_method_ids_to_switch.empty()) {
     DVLOG(1) << "Unexpected VKEY: " << accelerator.key_code();
-    return false;
+    return;
   }
 
   // Obtain the intersection of input_method_ids_to_switch and
-  // active_input_method_ids. The order of IDs in active_input_method_ids is
-  // preserved.
-  std::vector<std::string> ids;
+  // active_input_method_ids.
   for (size_t i = 0; i < input_method_ids_to_switch.size(); ++i) {
     const std::string& id = input_method_ids_to_switch[i];
     if (Contains(active_input_method_ids, id))
-      ids.push_back(id);
+      out_candidate_ids->push_back(id);
   }
-  if (ids.empty()) {
-    // No input method for the accelerator is active. For example, we should
-    // just ignore VKEY_HANGUL when mozc-hangul is not active.
-    return false;
-  }
-
-  SwitchToNextInputMethodInternal(ids, current_input_method.id());
-  return true;  // consume the accelerator.
-}
-
-void InputMethodManagerImpl::StateImpl::SwitchToNextInputMethodInternal(
-    const std::vector<std::string>& input_method_ids,
-    const std::string& current_input_methodid) {
-  std::vector<std::string>::const_iterator iter = std::find(
-      input_method_ids.begin(), input_method_ids.end(), current_input_methodid);
-  if (iter != input_method_ids.end())
-    ++iter;
-  if (iter == input_method_ids.end())
-    iter = input_method_ids.begin();
-  ChangeInputMethod(*iter, true);
 }
 
 InputMethodDescriptor InputMethodManagerImpl::StateImpl::GetCurrentInputMethod()

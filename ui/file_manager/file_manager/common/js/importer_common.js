@@ -5,6 +5,26 @@
 // Shared cloud importer namespace
 var importer = importer || {};
 
+/** @enum {string} */
+importer.ScanEvent = {
+  FINALIZED: 'finalized'
+};
+
+/**
+ * @typedef {function(
+ *     !importer.ScanEvent, importer.ScanResult)}
+ */
+importer.ScanObserver;
+
+/**
+ * Volume types eligible for the affections of Cloud Import.
+ * @private @const {!Array.<!VolumeManagerCommon.VolumeType>}
+ */
+importer.ELIGIBLE_VOLUME_TYPES_ = [
+  VolumeManagerCommon.VolumeType.MTP,
+  VolumeManagerCommon.VolumeType.REMOVABLE
+];
+
 /**
  * @enum {string}
  */
@@ -13,21 +33,66 @@ importer.Destination = {
 };
 
 /**
- * Returns true if the entry is cloud import eligible.
+ * Returns true if the entry is a media file (and a descendant of a DCIM dir).
  *
  * @param {Entry} entry
- * @param  {!VolumeManagerCommon.VolumeInfoProvider} volumeInfoProvider
  * @return {boolean}
  */
-importer.isEligibleEntry = function(entry, volumeInfoProvider) {
-  // TODO(smckay): Check that entry is for media type.
-  if (entry && entry.isFile) {
-    var info = volumeInfoProvider.getVolumeInfo(entry);
-    if (info && info.volumeType == VolumeManagerCommon.VolumeType.REMOVABLE) {
-      return entry.fullPath.indexOf('/DCIM/') == 0;
-    }
+importer.isMediaEntry = function(entry) {
+  return !!entry &&
+      entry.isFile &&
+      FileType.isImageOrVideo(entry) &&
+      entry.fullPath.toUpperCase().indexOf('/DCIM/') === 0;
+};
+
+/**
+ * Returns true if the volume is eligible for Cloud Import.
+ *
+ * @param {VolumeInfo} volumeInfo
+ * @return {boolean}
+ */
+importer.isEligibleVolume = function(volumeInfo) {
+  return !!volumeInfo &&
+      importer.ELIGIBLE_VOLUME_TYPES_.indexOf(volumeInfo.volumeType) !== -1;
+};
+
+/**
+ * Returns true if the entry is cloud import eligible.
+ *
+ * @param {VolumeManagerCommon.VolumeInfoProvider} volumeInfoProvider
+ * @param {Entry} entry
+ * @return {boolean}
+ */
+importer.isEligibleEntry = function(volumeInfoProvider, entry) {
+  console.assert(volumeInfoProvider !== null);
+  if (importer.isMediaEntry(entry)) {
+    var volumeInfo = volumeInfoProvider.getVolumeInfo(entry);
+    return importer.isEligibleVolume(volumeInfo);
   }
   return false;
+};
+
+/**
+ * Returns true if the entry represents a media directory for the purposes
+ * of Cloud Import.
+ *
+ * @param {Entry} entry
+ * @param  {VolumeManagerCommon.VolumeInfoProvider} volumeInfoProvider
+ * @return {boolean}
+ */
+importer.isMediaDirectory = function(entry, volumeInfoProvider) {
+  if (!entry || !entry.isDirectory || !entry.fullPath) {
+    return false;
+  }
+
+  var fullPath = entry.fullPath.toUpperCase();
+  if (fullPath !== '/DCIM' && fullPath !== '/DCIM/') {
+    return false;
+  }
+
+  console.assert(volumeInfoProvider !== null);
+  var volumeInfo = volumeInfoProvider.getVolumeInfo(entry);
+  return importer.isEligibleVolume(volumeInfo);
 };
 
 /**
@@ -39,6 +104,9 @@ importer.importEnabled = function() {
       function(resolve, reject) {
         chrome.commandLinePrivate.hasSwitch(
             'enable-cloud-backup',
-            resolve);
+            /** @param {boolean} enabled */
+            function(enabled) {
+              resolve(enabled);
+            });
       });
 };

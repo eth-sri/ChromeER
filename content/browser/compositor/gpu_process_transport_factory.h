@@ -56,6 +56,8 @@ class GpuProcessTransportFactory
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
   base::MessageLoopProxy* GetCompositorMessageLoop() override;
   scoped_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator() override;
+  void ResizeDisplay(ui::Compositor* compositor,
+                     const gfx::Size& size) override;
 
   // ImageTransportFactory implementation.
   ui::ContextFactory* GetContextFactory() override;
@@ -66,6 +68,8 @@ class GpuProcessTransportFactory
   void RemoveObserver(ImageTransportFactoryObserver* observer) override;
 #if defined(OS_MACOSX)
   void OnSurfaceDisplayed(int surface_id) override;
+  void OnCompositorRecycled(ui::Compositor* compositor) override;
+  bool SurfaceShouldNotShowFramesAfterRecycle(int surface_id) const override;
 #endif
 
  private:

@@ -17,8 +17,8 @@ source_set("lib") {
     "blink_platform_impl.h",
     "blink_url_request_type_converters.cc",
     "blink_url_request_type_converters.h",
-    "html_document_view.cc",
-    "html_document_view.h",
+    "html_document.cc",
+    "html_document.h",
     "mojo_blink_platform_impl.cc",
     "mojo_blink_platform_impl.h",
     "webclipboard_impl.cc",
@@ -51,6 +51,7 @@ source_set("lib") {
     "//cc",
     "//cc/blink",
     "//cc/surfaces",
+    "//gin",
     "//media",
     "//media/blink",
     "//media/mojo",
@@ -62,16 +63,16 @@ source_set("lib") {
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/utility",
     "//mojo/public/interfaces/application",
-    "//mojo/services/public/cpp/network",
-    "//mojo/services/public/cpp/view_manager",
-    "//mojo/services/public/interfaces/accessibility",
-    "//mojo/services/public/interfaces/clipboard",
-    "//mojo/services/public/interfaces/content_handler",
-    "//mojo/services/public/interfaces/gpu",
-    "//mojo/services/public/interfaces/input_events:input_events",
-    "//mojo/services/public/interfaces/navigation",
-    "//mojo/services/public/interfaces/network",
-    "//mojo/services/public/interfaces/surfaces",
+    "//mojo/services/network/public/cpp",
+    "//mojo/services/view_manager/public/cpp",
+    "//mojo/services/accessibility/public/interfaces",
+    "//mojo/services/clipboard/public/interfaces",
+    "//mojo/services/content_handler/public/interfaces",
+    "//mojo/services/gpu/public/interfaces",
+    "//mojo/services/input_events/public/interfaces",
+    "//mojo/services/navigation/public/interfaces",
+    "//mojo/services/network/public/interfaces",
+    "//mojo/services/surfaces/public/interfaces",
     "//net",
     "//skia",
     "//ui/native_theme",
@@ -83,8 +84,7 @@ source_set("lib") {
   ]
 }
 
-# GYP version: mojo/mojo_services.gypi:html_viewer
-shared_library("html_viewer") {
+mojo_native_application("html_viewer") {
   sources = [
     "html_viewer.cc",
   ]

@@ -20,8 +20,8 @@
 #include "ui/base/ime/text_input_client.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/path.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
@@ -132,7 +132,7 @@ void ToggleTouchEventLogging(bool enable) {
 #if defined(OS_CHROMEOS)
   if (!base::SysInfo::IsRunningOnChromeOS())
     return;
-  CommandLine command(
+  base::CommandLine command(
       base::FilePath("/opt/google/touchscreen/toggle_touch_event_logging"));
   if (enable)
     command.AppendArg("1");

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/zoom/zoom_controller.h"
+#include "components/ui/zoom/zoom_controller.h"
 
 #include "base/prefs/pref_service.h"
 #include "base/process/kill.h"
@@ -10,8 +10,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
+#include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -19,6 +21,9 @@
 #include "content/public/common/page_type.h"
 #include "content/public/test/browser_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
+
+using ui_zoom::ZoomController;
+using ui_zoom::ZoomObserver;
 
 bool operator==(const ZoomController::ZoomChangedEventData& lhs,
                 const ZoomController::ZoomChangedEventData& rhs) {
@@ -57,16 +62,7 @@ class ZoomChangedWatcher : public ZoomObserver {
   DISALLOW_COPY_AND_ASSIGN(ZoomChangedWatcher);
 };
 
-class TestZoomObserver : public ZoomObserver {
- public:
-  MOCK_METHOD1(OnZoomChanged,
-               void(const ZoomController::ZoomChangedEventData&));
-};
-
-class ZoomControllerBrowserTest: public InProcessBrowserTest {
- protected:
-  TestZoomObserver zoom_observer_;
-};
+typedef InProcessBrowserTest ZoomControllerBrowserTest;
 
 #if defined(OS_ANDROID)
 #define MAYBE_CrashedTabsDoNotChangeZoom DISABLED_CrashedTabsDoNotChangeZoom
@@ -89,7 +85,7 @@ IN_PROC_BROWSER_TEST_F(ZoomControllerBrowserTest,
   {
     content::RenderProcessHostWatcher crash_observer(
         host, content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
-    base::KillProcess(host->GetHandle(), 0, false);
+    host->Shutdown(0, false);
     crash_observer.Wait();
   }
   EXPECT_FALSE(web_contents->GetRenderViewHost()->IsRenderViewLive());
@@ -145,9 +141,6 @@ IN_PROC_BROWSER_TEST_F(ZoomControllerBrowserTest, ErrorPagesCanZoom) {
 IN_PROC_BROWSER_TEST_F(ZoomControllerBrowserTest, Observe) {
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  ZoomController* zoom_controller =
-      ZoomController::FromWebContents(web_contents);
-  zoom_controller->AddObserver(&zoom_observer_);
 
   double new_zoom_level = 1.0;
   // When the event is initiated from HostZoomMap, the old zoom level is not
@@ -158,11 +151,78 @@ IN_PROC_BROWSER_TEST_F(ZoomControllerBrowserTest, Observe) {
       new_zoom_level,
       ZoomController::ZOOM_MODE_DEFAULT,
       true);  // We have a non-empty host, so this will be 'true'.
-  EXPECT_CALL(zoom_observer_, OnZoomChanged(zoom_change_data)).Times(1);
+  ZoomChangedWatcher zoom_change_watcher(web_contents, zoom_change_data);
 
   content::HostZoomMap* host_zoom_map =
       content::HostZoomMap::GetDefaultForBrowserContext(
           web_contents->GetBrowserContext());
 
   host_zoom_map->SetZoomLevelForHost("about:blank", new_zoom_level);
+  zoom_change_watcher.Wait();
+}
+
+// Regression test: crbug.com/438979.
+IN_PROC_BROWSER_TEST_F(ZoomControllerBrowserTest,
+                       SettingsZoomAfterSigninWorks) {
+  GURL signin_url(
+      std::string(chrome::kChromeUIChromeSigninURL).append("?source=0"));
+  // We open the signin page in a new tab so that the ZoomController is
+  // created against the HostZoomMap of the special StoragePartition that
+  // backs the signin page. When we subsequently navigate away from the
+  // signin page, the HostZoomMap changes, and we need to test that the
+  // ZoomController correctly detects this.
+  // TODO(wjmaclean): It would be nice if detecting when the signin page is
+  // fully loaded without needing a hard-coded value.
+  const int kLoadStopsBeforeSigninPageIsFullyLoaded = 3;
+  ui_test_utils::NavigateToURLWithDispositionBlockUntilNavigationsComplete(
+      browser(), signin_url, kLoadStopsBeforeSigninPageIsFullyLoaded,
+      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_NE(
+      content::PAGE_TYPE_ERROR,
+      web_contents->GetController().GetLastCommittedEntry()->GetPageType());
+
+  EXPECT_EQ(signin_url, web_contents->GetLastCommittedURL());
+  ZoomController* zoom_controller =
+      ZoomController::FromWebContents(web_contents);
+
+  content::HostZoomMap* host_zoom_map_signin =
+      content::HostZoomMap::GetForWebContents(web_contents);
+
+  GURL settings_url(chrome::kChromeUISettingsURL);
+  ui_test_utils::NavigateToURL(browser(), settings_url);
+  EXPECT_NE(
+      content::PAGE_TYPE_ERROR,
+      web_contents->GetController().GetLastCommittedEntry()->GetPageType());
+
+  // Verify new tab was created.
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+  // Verify that the settings page is using the same WebContents.
+  EXPECT_EQ(web_contents, browser()->tab_strip_model()->GetActiveWebContents());
+  // TODO(wjmaclean): figure out why this next line fails, i.e. why does this
+  // test not properly trigger a navigation to the settings page.
+  EXPECT_EQ(settings_url, web_contents->GetLastCommittedURL());
+  EXPECT_EQ(zoom_controller, ZoomController::FromWebContents(web_contents));
+
+  // We expect the navigation from the chrome sign in page to the settings
+  // page to invoke a storage partition switch, and thus a different HostZoomMap
+  // for the web_contents.
+  content::HostZoomMap* host_zoom_map_settings =
+      content::HostZoomMap::GetForWebContents(web_contents);
+  EXPECT_NE(host_zoom_map_signin, host_zoom_map_settings);
+
+  // If we zoom the new page, it should still generate a ZoomController event.
+  double old_zoom_level = zoom_controller->GetZoomLevel();
+  double new_zoom_level = old_zoom_level + 0.5;
+
+  ZoomController::ZoomChangedEventData zoom_change_data(
+      web_contents,
+      old_zoom_level,
+      new_zoom_level,
+      ZoomController::ZOOM_MODE_DEFAULT,
+      true);  // We have a non-empty host, so this will be 'true'.
+  ZoomChangedWatcher zoom_change_watcher(web_contents, zoom_change_data);
+  zoom_controller->SetZoomLevel(new_zoom_level);
+  zoom_change_watcher.Wait();
 }

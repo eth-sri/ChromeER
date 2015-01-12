@@ -56,6 +56,10 @@ const char kDisableGpuShaderDiskCache[]     = "disable-gpu-shader-disk-cache";
 const char kEnableShareGroupAsyncTextureUpload[] =
     "enable-share-group-async-texture-upload";
 
+// Enable WebGL subscribe uniform extension.
+const char kEnableSubscribeUniformExtension[] =
+    "enable-subscribe-uniform-extension";
+
 // Simulates shared textures when share groups are not available. Not available
 // everywhere.
 const char kEnableThreadedTextureMailboxes[] =
@@ -63,6 +67,14 @@ const char kEnableThreadedTextureMailboxes[] =
 
 // Enable OpenGL ES 3 APIs without proper service side validation.
 const char kEnableUnsafeES3APIs[] = "enable-unsafe-es3-apis";
+
+// Include ANGLE's intermediate representation (AST) output in shader
+// compilation info logs.
+const char kGLShaderIntermOutput[] = "gl-shader-interm-output";
+
+// Emulate ESSL lowp and mediump float precisions by mutating the shaders to
+// round intermediate values in ANGLE.
+const char kEmulateShaderPrecision[] = "emulate-shader-precision";
 
 const char* kGpuSwitches[] = {
   kCompileShaderAlwaysSucceeds,
@@ -81,6 +93,9 @@ const char* kGpuSwitches[] = {
   kDisableGpuShaderDiskCache,
   kEnableShareGroupAsyncTextureUpload,
   kEnableUnsafeES3APIs,
+  kEnableSubscribeUniformExtension,
+  kGLShaderIntermOutput,
+  kEmulateShaderPrecision,
 };
 
 const int kNumGpuSwitches = arraysize(kGpuSwitches);

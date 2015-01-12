@@ -127,16 +127,6 @@ void HttpServerPropertiesImpl::GetSpdyServerList(
   }
 }
 
-// static
-std::string HttpServerPropertiesImpl::GetFlattenedSpdyServer(
-    const net::HostPortPair& host_port_pair) {
-  std::string spdy_server;
-  spdy_server.append(host_port_pair.host());
-  spdy_server.append(":");
-  base::StringAppendF(&spdy_server, "%d", host_port_pair.port());
-  return spdy_server;
-}
-
 static const AlternateProtocolInfo* g_forced_alternate_protocol = NULL;
 
 // static
@@ -172,10 +162,9 @@ bool HttpServerPropertiesImpl::SupportsSpdy(
   DCHECK(CalledOnValidThread());
   if (host_port_pair.host().empty())
     return false;
-  std::string spdy_server = GetFlattenedSpdyServer(host_port_pair);
 
   SpdyServerHostPortMap::iterator spdy_host_port =
-      spdy_servers_map_.Get(spdy_server);
+      spdy_servers_map_.Get(host_port_pair.ToString());
   if (spdy_host_port != spdy_servers_map_.end())
     return spdy_host_port->second;
   return false;
@@ -187,16 +176,15 @@ void HttpServerPropertiesImpl::SetSupportsSpdy(
   DCHECK(CalledOnValidThread());
   if (host_port_pair.host().empty())
     return;
-  std::string spdy_server = GetFlattenedSpdyServer(host_port_pair);
 
   SpdyServerHostPortMap::iterator spdy_host_port =
-      spdy_servers_map_.Get(spdy_server);
+      spdy_servers_map_.Get(host_port_pair.ToString());
   if ((spdy_host_port != spdy_servers_map_.end()) &&
       (spdy_host_port->second == support_spdy)) {
     return;
   }
   // Cache the data.
-  spdy_servers_map_.Put(spdy_server, support_spdy);
+  spdy_servers_map_.Put(host_port_pair.ToString(), support_spdy);
 }
 
 bool HttpServerPropertiesImpl::HasAlternateProtocol(
@@ -204,12 +192,16 @@ bool HttpServerPropertiesImpl::HasAlternateProtocol(
   if (g_forced_alternate_protocol)
     return true;
   AlternateProtocolMap::const_iterator it = alternate_protocol_map_.Get(server);
-  if (it != alternate_protocol_map_.end() &&
-      it->second.probability >= alternate_protocol_probability_threshold_) {
-    return true;
+  if (it != alternate_protocol_map_.end())
+    return it->second.probability >= alternate_protocol_probability_threshold_;
+
+  auto canonical = GetCanonicalHost(server);
+  if (canonical == canonical_host_to_origin_map_.end() ||
+      canonical->second.Equals(server)) {
+    return false;
   }
 
-  return GetCanonicalHost(server) != canonical_host_to_origin_map_.end();
+  return HasAlternateProtocol(canonical->second);
 }
 
 std::string HttpServerPropertiesImpl::GetCanonicalSuffix(

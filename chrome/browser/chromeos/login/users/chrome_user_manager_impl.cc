@@ -764,7 +764,7 @@ void ChromeUserManagerImpl::KioskAppLoggedIn(const std::string& app_id) {
     NOTREACHED();
   }
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   command_line->AppendSwitch(::switches::kForceAppMode);
   command_line->AppendSwitchASCII(::switches::kAppId, kiosk_app_id);
 
@@ -787,27 +787,15 @@ void ChromeUserManagerImpl::DemoAccountLoggedIn() {
   WallpaperManager::Get()->SetUserWallpaperNow(DemoAppLauncher::kDemoUserName);
 #endif
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   command_line->AppendSwitch(::switches::kForceAppMode);
   command_line->AppendSwitchASCII(::switches::kAppId,
                                   DemoAppLauncher::kDemoAppId);
 
   // Disable window animation since the demo app runs in a single full screen
   // window and window animation causes start-up janks.
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       wm::switches::kWindowAnimationsDisabled);
-}
-
-void ChromeUserManagerImpl::RetailModeUserLoggedIn() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  SetIsCurrentUserNew(true);
-  active_user_ = user_manager::User::CreateRetailModeUser();
-  GetUserImageManager(chromeos::login::kRetailModeUserName)
-      ->UserLoggedIn(IsCurrentUserNew(), true);
-#if !defined(USE_ATHENA)
-  WallpaperManager::Get()->SetUserWallpaperNow(
-      chromeos::login::kRetailModeUserName);
-#endif
 }
 
 void ChromeUserManagerImpl::NotifyOnLogin() {

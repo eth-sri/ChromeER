@@ -56,6 +56,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/host_desktop.h"
@@ -85,6 +86,7 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/keyboard/keyboard_util.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "ui/wm/core/window_animations.h"
@@ -734,10 +736,9 @@ void ChromeLauncherController::LaunchApp(const std::string& app_id,
 #endif
 
   // The app will be created for the currently active profile.
-  AppLaunchParams params(profile_,
-                         extension,
-                         event_flags,
-                         chrome::HOST_DESKTOP_TYPE_ASH);
+  AppLaunchParams params(
+      profile_, extension, ui::DispositionFromEventFlags(event_flags),
+      chrome::HOST_DESKTOP_TYPE_ASH, extensions::SOURCE_APP_LAUNCHER);
   if (source != ash::LAUNCH_FROM_UNKNOWN &&
       app_id == extensions::kWebStoreAppId) {
     // Get the corresponding source string.
@@ -748,10 +749,6 @@ void ChromeLauncherController::LaunchApp(const std::string& app_id,
     params.override_url = net::AppendQueryParameter(
         extension_url, extension_urls::kWebstoreSourceField, source_value);
   }
-
-  params.source = (source == ash::LAUNCH_FROM_UNKNOWN)
-                      ? extensions::SOURCE_UNTRACKED
-                      : extensions::SOURCE_APP_LAUNCHER;
 
   OpenApplication(params);
 }
@@ -1104,7 +1101,7 @@ void ChromeLauncherController::ActivateWindowOrMinimizeIfActive(
   }
 
   if (window->IsActive() && allow_minimize) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kDisableMinimizeOnSecondLauncherItemClick)) {
       AnimateWindow(window->GetNativeWindow(),
                     wm::WINDOW_ANIMATION_TYPE_BOUNCE);
@@ -1849,6 +1846,7 @@ ash::ShelfID ChromeLauncherController::InsertAppLauncherItem(
   model_->AddAt(index, item);
 
   app_icon_loader_->FetchImage(app_id);
+  app_icon_loader_->UpdateImage(app_id);
 
   SetShelfItemDelegate(id, controller);
 

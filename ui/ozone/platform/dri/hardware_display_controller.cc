@@ -48,7 +48,7 @@ void HandlePageFlipEvent(int fd,
 HardwareDisplayController::HardwareDisplayController(
     scoped_ptr<CrtcController> controller)
     : is_disabled_(true) {
-  crtc_controllers_.push_back(controller.release());
+  AddCrtc(controller.Pass());
 }
 
 HardwareDisplayController::~HardwareDisplayController() {
@@ -74,11 +74,11 @@ bool HardwareDisplayController::Modeset(const OverlayPlane& primary,
 bool HardwareDisplayController::Enable() {
   TRACE_EVENT0("dri", "HDC::Enable");
   DCHECK(!current_planes_.empty());
-  OverlayPlane primary = OverlayPlane::GetPrimaryPlane(current_planes_);
-  DCHECK(primary.buffer.get());
+  const OverlayPlane* primary = OverlayPlane::GetPrimaryPlane(current_planes_);
+  DCHECK(primary->buffer.get());
   bool status = true;
   for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    status &= crtc_controllers_[i]->Modeset(primary, mode_);
+    status &= crtc_controllers_[i]->Modeset(*primary, mode_);
 
   return status;
 }
@@ -101,9 +101,23 @@ bool HardwareDisplayController::SchedulePageFlip() {
   if (is_disabled_)
     return true;
 
+  std::sort(pending_planes_.begin(), pending_planes_.end(),
+            [](const OverlayPlane& l, const OverlayPlane& r) {
+    return l.z_order < r.z_order;
+  });
+
   bool status = true;
-  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
-    status &= crtc_controllers_[i]->SchedulePageFlip(pending_planes_);
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i) {
+    status &= crtc_controllers_[i]->SchedulePageFlip(
+        owned_hardware_planes_.get(crtc_controllers_[i]->drm()),
+        pending_planes_);
+  }
+
+  for (const auto& planes : owned_hardware_planes_) {
+    if (!planes.first->plane_manager()->Commit(planes.second)) {
+      status = false;
+    }
+  }
 
   return status;
 }
@@ -169,6 +183,9 @@ bool HardwareDisplayController::MoveCursor(const gfx::Point& location) {
 }
 
 void HardwareDisplayController::AddCrtc(scoped_ptr<CrtcController> controller) {
+  owned_hardware_planes_.add(
+      controller->drm(),
+      scoped_ptr<HardwareDisplayPlaneList>(new HardwareDisplayPlaneList()));
   crtc_controllers_.push_back(controller.release());
 }
 
@@ -179,6 +196,18 @@ scoped_ptr<CrtcController> HardwareDisplayController::RemoveCrtc(
     if ((*it)->crtc() == crtc) {
       scoped_ptr<CrtcController> controller(*it);
       crtc_controllers_.weak_erase(it);
+      // Remove entry from |owned_hardware_planes_| iff no other crtcs share it.
+      bool found = false;
+      for (ScopedVector<CrtcController>::iterator it =
+               crtc_controllers_.begin();
+           it != crtc_controllers_.end(); ++it) {
+        if ((*it)->drm() == controller->drm()) {
+          found = true;
+          break;
+        }
+      }
+      if (!found)
+        owned_hardware_planes_.erase(controller->drm());
       return controller.Pass();
     }
   }

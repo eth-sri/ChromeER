@@ -32,6 +32,10 @@
 #include "third_party/WebKit/public/web/WebTransitionElementData.h"
 #include "ui/gfx/range/range.h"
 
+#if defined(ENABLE_PLUGINS)
+#include "content/renderer/pepper/plugin_power_saver_helper.h"
+#endif
+
 #if defined(OS_ANDROID)
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #endif
@@ -61,6 +65,10 @@ class Range;
 class Rect;
 }
 
+namespace media {
+class WebEncryptedMediaClientImpl;
+}
+
 namespace content {
 
 class ChildFrameCompositingHelper;
@@ -73,7 +81,6 @@ class MidiDispatcher;
 class NotificationPermissionDispatcher;
 class PageState;
 class PepperPluginInstanceImpl;
-class PluginPowerSaverHelper;
 class PushMessagingDispatcher;
 class RendererAccessibility;
 class RendererCdmManager;
@@ -88,6 +95,7 @@ class UserMediaClientImpl;
 struct CommitNavigationParams;
 struct CommonNavigationParams;
 struct CustomContextMenuContext;
+struct FrameReplicationState;
 struct RequestNavigationParams;
 struct ResourceResponseHead;
 
@@ -125,8 +133,10 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // Used by content_layouttest_support to hook into the creation of
   // RenderFrameImpls.
+  using CreateRenderFrameImplFunction = RenderFrameImpl* (*)(RenderViewImpl*,
+                                                             int32);
   static void InstallCreateHook(
-      RenderFrameImpl* (*create_render_frame_impl)(RenderViewImpl*, int32));
+      CreateRenderFrameImplFunction create_render_frame_impl);
 
   virtual ~RenderFrameImpl();
 
@@ -244,8 +254,6 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnImeConfirmComposition(const base::string16& text,
                                const gfx::Range& replacement_range,
                                bool keep_selection);
-
-  PluginPowerSaverHelper* plugin_power_saver_helper();
 #endif  // defined(ENABLE_PLUGINS)
 
   // May return NULL in some cases, especially if userMediaClient() returns
@@ -271,18 +279,30 @@ class CONTENT_EXPORT RenderFrameImpl
                       const ContextMenuParams& params) override;
   void CancelContextMenu(int request_id) override;
   blink::WebNode GetContextMenuNode() const override;
-  blink::WebPlugin* CreatePlugin(blink::WebFrame* frame,
-                                 const WebPluginInfo& info,
-                                 const blink::WebPluginParams& params,
-                                 CreatePluginGesture gesture) override;
+  blink::WebPlugin* CreatePlugin(
+      blink::WebFrame* frame,
+      const WebPluginInfo& info,
+      const blink::WebPluginParams& params,
+      PluginPowerSaverMode power_saver_mode) override;
   void LoadURLExternally(blink::WebLocalFrame* frame,
                          const blink::WebURLRequest& request,
                          blink::WebNavigationPolicy policy) override;
   void ExecuteJavaScript(const base::string16& javascript) override;
   bool IsHidden() override;
   ServiceRegistry* GetServiceRegistry() override;
+#if defined(ENABLE_PLUGINS)
+  void RegisterPeripheralPlugin(
+      const GURL& content_origin,
+      const base::Closure& unthrottle_callback) override;
+  bool ShouldThrottleContent(const blink::WebPluginParams& params,
+                             const GURL& page_frame_url,
+                             GURL* poster_image,
+                             bool* cross_origin_main_content) const override;
+  void WhitelistContentOrigin(const GURL& content_origin) override;
+#endif
   bool IsFTPDirectoryListing() override;
   void AttachGuest(int element_instance_id) override;
+  void DetachGuest(int element_instance_id) override;
   void SetSelectedText(const base::string16& selection_text,
                        size_t offset,
                        const gfx::Range& range) override;
@@ -305,6 +325,7 @@ class CONTENT_EXPORT RenderFrameImpl
       const blink::WebURL& url,
       blink::WebMediaPlayerClient* client,
       blink::WebContentDecryptionModule* initial_cdm);
+  // TODO(jrummell): remove once blink uses encryptedMediaClient().
   virtual blink::WebContentDecryptionModule* createContentDecryptionModule(
       blink::WebLocalFrame* frame,
       const blink::WebSecurityOrigin& security_origin,
@@ -355,7 +376,8 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didCreateDataSource(blink::WebLocalFrame* frame,
                                    blink::WebDataSource* datasource);
   virtual void didStartProvisionalLoad(blink::WebLocalFrame* frame,
-                                       bool is_transition_navigation);
+                                       bool is_transition_navigation,
+                                       double triggering_event_time);
   virtual void didReceiveServerRedirectForProvisionalLoad(
       blink::WebLocalFrame* frame);
   virtual void didFailProvisionalLoad(
@@ -447,6 +469,7 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebLocalFrame* frame,
       blink::WebRTCPeerConnectionHandler* handler);
   virtual blink::WebUserMediaClient* userMediaClient();
+  virtual blink::WebEncryptedMediaClient* encryptedMediaClient();
   virtual blink::WebMIDIClient* webMIDIClient();
   virtual bool willCheckAndDispatchMessageEvent(
       blink::WebLocalFrame* source_frame,
@@ -512,6 +535,7 @@ class CONTENT_EXPORT RenderFrameImpl
                            OnExtendSelectionAndDelete);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, ReloadWhileSwappedOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendSwapOutACK);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OriginReplicationForSwapOut);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            SetEditableSelectionAndComposition);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
@@ -535,7 +559,9 @@ class CONTENT_EXPORT RenderFrameImpl
   // The documentation for these functions should be in
   // content/common/*_messages.h for the message that the function is handling.
   void OnBeforeUnload();
-  void OnSwapOut(int proxy_routing_id);
+  void OnSwapOut(int proxy_routing_id,
+                 bool is_loading,
+                 const FrameReplicationState& replicated_frame_state);
   void OnStop();
   void OnShowContextMenu(const gfx::Point& location);
   void OnContextMenuClosed(const CustomContextMenuContext& custom_context);
@@ -565,6 +591,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnSetCompositionFromExistingText(
       int start, int end,
       const std::vector<blink::WebCompositionUnderline>& underlines);
+  void OnExecuteNoValueEditCommand(const std::string& name);
   void OnExtendSelectionAndDelete(int before, int after);
   void OnReload(bool ignore_cache);
   void OnTextSurroundingSelectionRequest(size_t max_length);
@@ -572,6 +599,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnSetupTransitionView(const std::string& markup);
   void OnBeginExitTransition(const std::string& css_selector,
                              bool exit_to_native_app);
+  void OnRevertExitTransition();
   void OnHideTransitionElements(const std::string& css_selector);
   void OnShowTransitionElements(const std::string& css_selector);
   void OnSetAccessibilityMode(AccessibilityMode new_mode);
@@ -653,14 +681,12 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual scoped_ptr<MediaStreamRendererFactory> CreateRendererFactory();
 
   // Checks that the RenderView is ready to display the navigation to |url|. If
-  // the return value is false, the navigation should be abandonned.
+  // the return value is false, the navigation should be abandoned.
   bool PrepareRenderViewForNavigation(
       const GURL& url,
-      FrameMsg_Navigate_Type::Value navigate_type,
-      const PageState& state,
-      bool check_history,
-      int pending_history_list_offset,
-      int32 page_id,
+      bool check_for_stale_navigation,
+      bool is_history_navigation,
+      int current_history_list_offset,
       bool* is_reload,
       blink::WebURLRequest::CachePolicy* cache_policy);
 
@@ -758,6 +784,9 @@ class CONTENT_EXPORT RenderFrameImpl
 
   // Destroyed via the RenderFrameObserver::OnDestruct() mechanism.
   UserMediaClientImpl* web_user_media_client_;
+
+  // EncryptedMediaClient attached to this frame; lazily initialized.
+  media::WebEncryptedMediaClientImpl* web_encrypted_media_client_;
 
   // MidiClient attached to this frame; lazily initialized.
   MidiDispatcher* midi_dispatcher_;

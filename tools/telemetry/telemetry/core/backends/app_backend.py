@@ -23,21 +23,29 @@ class AppBackend(object):
   def app_type(self):
     return self._app_type
 
-  def Start(self):
-    NotImplementedError()
-
-  def Close(self):
-    NotImplementedError()
-
   @property
   def pid(self):
-    NotImplementedError()
+    raise NotImplementedError
+
+  @property
+  def devtools_client(self):
+    """Returns the DevToolsClientBackend instance.
+
+    Implementation may return None if no DevTools server is expected.
+    """
+    raise NotImplementedError
+
+  def Start(self):
+    raise NotImplementedError
+
+  def Close(self):
+    raise NotImplementedError
 
   def IsAppRunning(self):
-    NotImplementedError()
+    raise NotImplementedError
 
   def GetStandardOutput(self):
-    NotImplementedError()
+    raise NotImplementedError
 
   def GetStackTrace(self):
-    NotImplementedError()
+    raise NotImplementedError

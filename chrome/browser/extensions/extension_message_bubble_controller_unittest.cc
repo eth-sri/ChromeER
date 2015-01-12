@@ -30,6 +30,7 @@
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/value_builder.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
@@ -390,11 +391,9 @@ class ExtensionMessageBubbleTest : public testing::Test {
     // service to work inside a unit test and access the extension prefs.
     thread_bundle_.reset(new content::TestBrowserThreadBundle);
     profile_.reset(new TestingProfile);
-    static_cast<TestExtensionSystem*>(
-        ExtensionSystem::Get(profile()))->CreateExtensionService(
-            CommandLine::ForCurrentProcess(),
-            base::FilePath(),
-            false);
+    static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile()))
+        ->CreateExtensionService(base::CommandLine::ForCurrentProcess(),
+                                 base::FilePath(), false);
     service_ = ExtensionSystem::Get(profile())->extension_service();
     service_->Init();
   }
@@ -405,7 +404,7 @@ class ExtensionMessageBubbleTest : public testing::Test {
   }
 
   void SetUp() override {
-    command_line_.reset(new CommandLine(CommandLine::NO_PROGRAM));
+    command_line_.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
   }
 
  protected:
@@ -426,7 +425,7 @@ class ExtensionMessageBubbleTest : public testing::Test {
   ExtensionService* service_;
 
  private:
-  scoped_ptr<CommandLine> command_line_;
+  scoped_ptr<base::CommandLine> command_line_;
   scoped_ptr<content::TestBrowserThreadBundle> thread_bundle_;
   scoped_ptr<TestingProfile> profile_;
 

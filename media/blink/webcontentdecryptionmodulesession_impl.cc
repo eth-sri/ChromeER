@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "media/blink/webcontentdecryptionmodulesession_impl.h"
+#include "webcontentdecryptionmodulesession_impl.h"
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -138,15 +138,6 @@ void WebContentDecryptionModuleSessionImpl::remove(
   adapter_->RemoveSession(web_session_id_,
                           scoped_ptr<SimpleCdmPromise>(
                               new CdmResultPromise<>(result, std::string())));
-}
-
-void WebContentDecryptionModuleSessionImpl::getUsableKeyIds(
-    blink::WebContentDecryptionModuleResult result) {
-  DCHECK(!web_session_id_.empty());
-  adapter_->GetUsableKeyIds(
-      web_session_id_,
-      scoped_ptr<KeyIdsPromise>(
-          new CdmResultPromise<KeyIdsVector>(result, std::string())));
 }
 
 void WebContentDecryptionModuleSessionImpl::release(

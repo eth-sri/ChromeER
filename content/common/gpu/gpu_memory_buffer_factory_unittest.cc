@@ -35,11 +35,8 @@ TEST_P(GpuMemoryBufferFactoryTest, CreateAndDestroy) {
 
   for (auto configuration : supported_configurations_) {
     gfx::GpuMemoryBufferHandle handle = factory_->CreateGpuMemoryBuffer(
-        kBufferId,
-        buffer_size,
-        configuration.format,
-        configuration.usage,
-        kClientId);
+        kBufferId, buffer_size, configuration.format, configuration.usage,
+        kClientId, gfx::kNullPluginWindow);
     EXPECT_EQ(handle.type, GetParam());
     factory_->DestroyGpuMemoryBuffer(kBufferId, kClientId);
   }

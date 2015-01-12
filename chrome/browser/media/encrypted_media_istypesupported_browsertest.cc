@@ -46,7 +46,7 @@
 // Note: Widevine is not available on platforms using components because
 // RegisterPepperCdm() cannot set the codecs.
 // TODO(ddorwin): Enable these tests after we have the ability to use the CUS
-// in these tests. See http://crbug.com/311724.
+// in these tests. See http://crbug.com/356833.
 #if defined(WIDEVINE_CDM_AVAILABLE) && !defined(WIDEVINE_CDM_IS_COMPONENT)
 #define EXPECT_WV EXPECT_TRUE
 #define EXPECT_WVMP4 EXPECT_TRUE
@@ -196,7 +196,7 @@ class EncryptedMediaIsTypeSupportedTest : public InProcessBrowserTest {
 
   // Update the command line to load |adapter_name| for
   // |pepper_type_for_key_system|.
-  void RegisterPepperCdm(CommandLine* command_line,
+  void RegisterPepperCdm(base::CommandLine* command_line,
                          const std::string& adapter_name,
                          const std::string& pepper_type_for_key_system,
                          bool expect_adapter_exists = true) {
@@ -326,7 +326,7 @@ class EncryptedMediaIsTypeSupportedExternalClearKeyTest
     : public EncryptedMediaIsTypeSupportedTest {
 #if defined(ENABLE_PEPPER_CDMS)
  protected:
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     // Platform-specific filename relative to the chrome executable.
     const char adapter_file_name[] =
 #if defined(OS_MACOSX)
@@ -343,28 +343,11 @@ class EncryptedMediaIsTypeSupportedExternalClearKeyTest
 #endif  // defined(ENABLE_PEPPER_CDMS)
 };
 
-// For Widevine tests, ensure that the Widevine adapter is loaded.
+// TODO(sandersd): Register the Widevine CDM if it is a component. A component
+// CDM registered using RegisterPepperCdm() declares support for audio codecs,
+// but not the other codecs we expect. http://crbug.com/356833.
 class EncryptedMediaIsTypeSupportedWidevineTest
     : public EncryptedMediaIsTypeSupportedTest {
-#if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS) && \
-    defined(WIDEVINE_CDM_IS_COMPONENT)
- protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) override {
-    // File name of the adapter on different platforms.
-    const char adapter_file_name[] =
-#if defined(OS_MACOSX)
-        "widevinecdmadapter.plugin";
-#elif defined(OS_WIN)
-        "widevinecdmadapter.dll";
-#else  // OS_LINUX, etc.
-        "libwidevinecdmadapter.so";
-#endif
-
-    const std::string pepper_name("application/x-ppapi-widevine-cdm");
-    RegisterPepperCdm(command_line, adapter_file_name, pepper_name);
-  }
-#endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS) &&
-        // defined(WIDEVINE_CDM_IS_COMPONENT)
 };
 
 #if defined(ENABLE_PEPPER_CDMS)
@@ -372,7 +355,7 @@ class EncryptedMediaIsTypeSupportedWidevineTest
 class EncryptedMediaIsTypeSupportedClearKeyCDMRegisteredWithWrongPathTest
     : public EncryptedMediaIsTypeSupportedTest {
  protected:
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
    RegisterPepperCdm(command_line,
                      "clearkeycdmadapterwrongname.dll",
                      "application/x-ppapi-clearkey-cdm",
@@ -384,7 +367,7 @@ class EncryptedMediaIsTypeSupportedClearKeyCDMRegisteredWithWrongPathTest
 class EncryptedMediaIsTypeSupportedWidevineCDMRegisteredWithWrongPathTest
     : public EncryptedMediaIsTypeSupportedTest {
  protected:
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
    RegisterPepperCdm(command_line,
                      "widevinecdmadapterwrongname.dll",
                      "application/x-ppapi-widevine-cdm",
@@ -849,11 +832,7 @@ IN_PROC_BROWSER_TEST_F(
 
 IN_PROC_BROWSER_TEST_F(EncryptedMediaIsTypeSupportedWidevineTest,
                        Widevine_Basic) {
-#if defined(WIDEVINE_CDM_AVAILABLE) && defined(WIDEVINE_CDM_IS_COMPONENT)
-  EXPECT_TRUE(IsConcreteSupportedKeySystem(kWidevineAlpha));
-#else
   EXPECT_WV(IsConcreteSupportedKeySystem(kWidevineAlpha));
-#endif
   EXPECT_WV(IsSupportedKeySystemWithMediaMimeType(
       "video/webm", no_codecs(), kWidevineAlpha));
 }

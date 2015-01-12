@@ -65,12 +65,6 @@ html[dir='rtl'] select {
 }
 
 input[type='checkbox'] {
-<if expr="chromeos">
-  bottom: 1px;
-</if>
-<if expr="not chromeos">
-  bottom: 2px;
-</if>
   height: 13px;
   position: relative;
   vertical-align: middle;
@@ -80,7 +74,6 @@ input[type='checkbox'] {
 input[type='radio'] {
   /* OVERRIDE */
   border-radius: 100%;
-  bottom: 1px;
   height: 15px;
   position: relative;
   vertical-align: middle;
@@ -254,7 +247,6 @@ input:disabled:-webkit-any([type='password'],
 [is='action-link'] {
   cursor: pointer;
   display: inline-block;
-  padding: 0 4px;
   text-decoration: none;
 }
 
@@ -270,7 +262,12 @@ input:disabled:-webkit-any([type='password'],
 [is='action-link'][disabled] {
   color: #999;
   cursor: default;
+  pointer-events: none;
   text-decoration: none;
+}
+
+[is='action-link'].no-outline {
+  outline: none;
 }
 
 /* Checkbox/radio helpers ******************************************************
@@ -288,9 +285,14 @@ input:disabled:-webkit-any([type='password'],
 
 :-webkit-any(.checkbox, .radio) label {
   /* Don't expand horizontally: <http://crbug.com/112091>. */
-  display: -webkit-inline-box;
+  align-items: center;
+  display: inline-flex;
   padding-bottom: 7px;
   padding-top: 7px;
+}
+
+:-webkit-any(.checkbox, .radio) label input {
+  flex-shrink: 0;
 }
 
 :-webkit-any(.checkbox, .radio) label input ~ span {

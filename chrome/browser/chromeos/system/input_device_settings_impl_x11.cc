@@ -48,14 +48,15 @@ void ExecuteScriptOnFileThread(const std::vector<std::string>& argv) {
   DCHECK(!argv.empty());
   const std::string& script(argv[0]);
 
-  // Script must exist on device.
+  // Script must exist on device and is of correct format.
+  DCHECK(script.compare(kInputControl) == 0);
   DCHECK(!base::SysInfo::IsRunningOnChromeOS() || ScriptExists(script));
 
   if (!ScriptExists(script))
     return;
 
   base::ProcessHandle handle;
-  base::LaunchProcess(CommandLine(argv), base::LaunchOptions(), &handle);
+  base::LaunchProcess(base::CommandLine(argv), base::LaunchOptions(), &handle);
   base::EnsureProcessGetsReaped(handle);
 }
 
@@ -65,8 +66,8 @@ void ExecuteScript(const std::vector<std::string>& argv) {
   if (argv.size() == 1)
     return;
 
-  VLOG(1) << "About to launch: \"" << CommandLine(argv).GetCommandLineString()
-          << "\"";
+  VLOG(1) << "About to launch: \""
+          << base::CommandLine(argv).GetCommandLineString() << "\"";
 
   // Control scripts can take long enough to cause SIGART during shutdown
   // (http://crbug.com/261426). Run the blocking pool task with
@@ -106,7 +107,7 @@ void DeviceExistsBlockingPool(const char* device_type,
   std::string output;
   // Output is empty if the device is not found.
   exists->data =
-      base::GetAppOutput(CommandLine(argv), &output) && !output.empty();
+      base::GetAppOutput(base::CommandLine(argv), &output) && !output.empty();
   DVLOG(1) << "DeviceExistsBlockingPool:" << device_type << "=" << exists->data;
 }
 
@@ -261,6 +262,7 @@ void InputDeviceSettingsImplX11::ReapplyMouseSettings() {
 
 void InputDeviceSettingsImplX11::GenerateTouchpadArguments(
     std::vector<std::string>* argv) {
+  argv->push_back(kInputControl);
   if (current_touchpad_settings_.IsSensitivitySet()) {
     AddSensitivityArguments(kDeviceTypeTouchpad,
                             current_touchpad_settings_.GetSensitivity(), argv);
@@ -286,6 +288,7 @@ void InputDeviceSettingsImplX11::GenerateTouchpadArguments(
 
 void InputDeviceSettingsImplX11::GenerateMouseArguments(
     std::vector<std::string>* argv) {
+  argv->push_back(kInputControl);
   if (current_mouse_settings_.IsSensitivitySet()) {
     AddSensitivityArguments(kDeviceTypeMouse,
                             current_mouse_settings_.GetSensitivity(), argv);

@@ -442,6 +442,15 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_SHARE_BUTTON_LABEL" desc="Menu item label, showing dialog to share the selected file.">
     Share
   </message>
+  <message name="IDS_FILE_BROWSER_CLOUD_IMPORT_BUTTON_LABEL" desc="Label for button that initiates media backup to the cloud.">
+    Import photos &amp; videos to Google Drive
+  </message>
+  <message name="IDS_FILE_BROWSER_CLOUD_IMPORT_INSUFFICIENT_SPACE_BUTTON_LABEL" desc="Label for button that tells user there is not enough space to perform a cloud import.">
+    Insufficient space on your device!
+  </message>
+  <message name="IDS_FILE_BROWSER_CLOUD_IMPORT_SCANNING_BUTTON_LABEL" desc="Label for button showing that scanning is in progress...prior to being enabled when scanning is complete.">
+    Scanning your media...
+  </message>
 
   <message name="IDS_FILE_BROWSER_COPY_FILE_NAME" desc="File Manager status message.">
     Copying <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>...
@@ -632,10 +641,10 @@ Press any key to continue exploring.
     You are offline
   </message>
   <message name="IDS_FILE_BROWSER_OFFLINE_MESSAGE" desc="Message informing the user how to make the selected file available offline.">
-    To save this file for offline use, get back online and&lt;br&gt;select the <ph name="OFFLINE_CHECKBOX_NAME">'$1'<ex>'Available offline'</ex></ph> checkbox for this file.
+    To save this file for offline use, get back online, right-click the file, and select the <ph name="OFFLINE_CHECKBOX_NAME">'$1'<ex>'Available offline'</ex></ph> option.
   </message>
   <message name="IDS_FILE_BROWSER_OFFLINE_MESSAGE_PLURAL" desc="Message informing the user how to make multiple selected files available offline.">
-    To save these files for offline use, get back online and&lt;br&gt;select the <ph name="OFFLINE_CHECKBOX_NAME">'$1'<ex>'Available offline'</ex></ph> checkbox for these files.
+    To save these files for offline use, get back online, right-click the files, and select the <ph name="OFFLINE_CHECKBOX_NAME">'$1'<ex>'Available offline'</ex></ph> option.
   </message>
   <message name="IDS_FILE_BROWSER_HOSTED_OFFLINE_MESSAGE" desc="Message informing the user that the selected file is only available online.">
     You must be online to access this file.
@@ -1108,6 +1117,12 @@ Press any key to continue exploring.
   <message name="IDS_FLAGS_DISABLE_DISPLAY_COLOR_CALIBRATION_DESCRIPTION" desc="Description for the flag to disable the color calibration of the display.">
     Disable calibrating the color of the display even if the display supports the feature.
   </message>
+  <message name="IDS_FLAGS_USE_MEMORY_PRESSURE_NAME" desc="Name for the flag to enable memory pressure handling on ChromeOS.">
+    Enable memory pressure handling 
+  </message>
+  <message name="IDS_FLAGS_USE_MEMORY_PRESSURE_DESCRIPTION" desc="Description for the flag to enable memory pressure handling on ChromeOS.">
+    Enables enhanced memory pressure handling on ChromeOS.
+  </message>
   <message name="IDS_FLAGS_WAKE_ON_PACKETS_NAME" desc="Name for the flag to enable wake on packets.">
     Wake On Packets
   </message>
@@ -1396,9 +1411,6 @@ Press any key to continue exploring.
   <message name="IDS_APP_START_BAILOUT_SHORTCUT_FORMAT" desc="Message displayed at the bottom of app launch splash screen to show user the shortcut key to bailout the launch.">
   Press Ctrl + Alt + S to switch to <ph name="IDS_SHORT_PRODUCT_OS_NAME">$1<ex>Chrome OS</ex></ph>
   </message>
-  <message name="IDS_KIOSK_MODE_LOGIN_MESSAGE">
-    Click to start
-  </message>
   <message name="IDS_LOGIN_CHANGE_PHOTO">
     Change picture
   </message>
@@ -1520,8 +1532,8 @@ Press any key to continue exploring.
   <message name="IDS_CREATE_SUPERVISED_USER_CREATION_RESTRICTED_TEXT" desc="Text shown when supervised user can be created, but owner of the device restricted supervised user creation or whitelist has been enabled for this device.">
     Creation of supervised users is restricted by the owner of this device.
   </message>
-  <message name="IDS_CREATE_SUPERVISED_USER_NO_MANAGER_EXCEPT_SUPERVISED_TEXT" desc="Text shown when supervised user can be created, but no users except regular supervised that can be manager exist.">
-    Sorry, you need to add at least one Google Account to this device before you can create a supervised user.
+  <message name="IDS_CREATE_SUPERVISED_USER_NO_MANAGER_EXCEPT_KIDS_TEXT" desc="Text shown when supervised user can be created, but no users except kids that can be manager exist.">
+    Sorry, you need to add at least one Google account to this device before you can create a supervised user. Google accounts for kids cannot be used to create a supervised user.
   </message>
   <message name="IDS_CREATE_SUPERVISED_INTRO_TEXT_TITLE" desc="Supervised user dialog, intro page, title">
     What is a supervised user?
@@ -1675,6 +1687,12 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_USER_IS_SUPERVISED_BY_NOTICE" desc="Text for notifications showing that this user is supervised">
     Usage and history of this user can be reviewed by the manager (<ph name="MANAGER_EMAIL">$1<ex>user@example.com</ex></ph>) on chrome.com.
+  </message>
+  <message name="IDS_CHILD_USER_IS_MANAGED_BY_ONE_PARENT_NOTICE" desc="Text for notifications showing that this child user is managed by parent's account.">
+    This is an account for kids managed by <ph name="MANAGER_EMAIL">$1<ex>user@example.com</ex></ph>
+  </message>
+  <message name="IDS_CHILD_USER_IS_MANAGED_BY_TWO_PARENTS_NOTICE" desc="Text for notifications showing that this child user is managed by two parents' accounts.">
+    This is an account for kids managed by <ph name="FIRST_PARENT_EMAIL">$1<ex>first@example.com</ex></ph> and <ph name="SECOND_PARENT_EMAIL">$2<ex>second@example.com</ex></ph>
   </message>
   <message name="IDS_SUPERVISED_USER_EXPIRED_TOKEN_WARNING" desc="Warning text that is shown on login screen trying to sign in as a supervised user that has expired token">
     This supervised user may have been deleted or disabled by the manager. Please contact the manager if you would like to continue signing in as this user.
@@ -1924,6 +1942,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_PRIMARY_MOUSE_RIGHT_DESCRIPTION" desc="In the settings tab, the text next to the checkbox to set the primary mouse button to the right button.">
     Swap primary mouse button
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_WAKE_ON_WIFI_DESCRIPTION" desc="In the settings tab, the text next to the checkbox for enabling quickly reconnecting to known Wi-Fi SSIDs.">
+    Keep Wi-Fi on during sleep
   </message>
   <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_DISABLE">
     Disable Bluetooth
@@ -2766,7 +2787,7 @@ Press any key to continue exploring.
     Enable
   </message>
   <message name="IDS_ENABLE_DEBUGGING_SETUP_MESSAGE" desc="Setup message in dialog for enabling debugging features.">
-   You are enabling Chrome OS debugging features which will setup sshd daemon and enable booting from USB drives.
+   You are enabling Chrome OS debugging features which will set up sshd daemon and enable booting from USB drives.
   </message>
   <message name="IDS_ENABLE_DEBUGGING_DONE_MESSAGE" desc="Completion message in dialog for enabling debugging features.">
     You have successfully enabled debugging features on this <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device.
@@ -3833,9 +3854,6 @@ Battery full
   <message name="IDS_CHROMEOS_ACC_LOGIN_SIGNIN_OFFRECORD" desc="Status when signing in incognito.">
     Entering as Guest.
   </message>
-  <message name="IDS_CHROMEOS_ACC_LOGIN_SIGNIN_DEMOUSER" desc="Status when signing in the demo user.">
-    Entering Demo.
-  </message>
   <message name="IDS_CHROMEOS_ACC_LOGIN_SIGNIN_PUBLIC_ACCOUNT" desc="Status when signing in into a public account.">
     Entering public session.
   </message>
@@ -4739,6 +4757,9 @@ Battery full
   </message>
   <message name="IDS_IME_NAME_KEYBOARD_MONGOLIAN" desc="The input method name shows in system tray menu, this shows [Mongolian keyboard].">
     Mongolian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_NETHERLANDS" desc="The input method name shows in system tray menu, this shows [Netherlands keyboard].">
+    Netherlands keyboard
   </message>
   <message name="IDS_IME_NAME_KEYBOARD_NORWEGIAN" desc="The input method name shows in system tray menu, this shows [Norwegian keyboard].">
     Norwegian keyboard
@@ -5648,9 +5669,6 @@ All users must sign out to continue.
   <message name="IDS_ENTERPRISE_ENROLLMENT_AUTH_INSECURE_URL_ERROR" desc="Error message to show when a redirect to an insecure URL was detected and blocked when authenticating for enrollment.">
     Oops!  Authentication failed because it was configured to use a non-secure URL (<ph name="BLOCKED_URL">$1<ex>http://www.example.com/login.html</ex></ph>).  Please contact your administrator.
   </message>
-  <message name="IDS_ENTERPRISE_AUTO_ENROLLMENT_BAD_MODE" desc="Error message to show when auto-enrollment is not supported for the enrollment mode supplied by the DMServer.">
-    Oops!  Something went wrong while auto-enrolling this device.  Please try again from the sign-in screen using the Ctrl-Alt-E key combination, or contact your support representative.
-  </message>
   <message name="IDS_ENTERPRISE_ENROLLMENT_FATAL_ENROLLMENT_ERROR" desc="Error message to show when there is an unrecoverable error while performing enrollment.">
     Oops!  Something went really wrong while enrolling this device.  Please try again or contact your support representative.
   </message>
@@ -5681,6 +5699,9 @@ All users must sign out to continue.
   <message name="IDS_ENTERPRISE_ENROLLMENT_CANCEL" desc="Label for the cancel button on the enterprise enrollment dialog.">
     Cancel
   </message>
+  <message name="IDS_ENTERPRISE_ENROLLMENT_BACK" desc="Label for the back button on the enterprise enrollment dialog.">
+    Back
+  </message>
   <message name="IDS_ENTERPRISE_ENROLLMENT_DONE" desc="Label for the done button on the success screen in the enterprise enrollment dialog.">
     Done
   </message>
@@ -5690,70 +5711,89 @@ All users must sign out to continue.
   <message name="IDS_ENTERPRISE_ENROLLMENT_WORKING" desc="Status message to show while enterprise enrollment is underway.">
     Enrolling the device. Please wait...
   </message>
-  <message name="IDS_ENTERPRISE_ENROLLMENT_RESUMING_LOGIN" desc="Status message to show after enterprise enrollment is complete and the first user sign-in is prepared.">
-    Preparing for first enterprise sign-in...
-  </message>
-  <message name="IDS_ENTERPRISE_ENROLLMENT_EXPLAIN" desc="Explanatory text describing what enterprise enrollment is and guiding the user to sign in with an account from the enterprise domain.">
-    Welcome to your managed Chromebook!
-
-    To complete the setup of this Chromebook, you must sign in with a username given to you by your organization.
-
-    Contact your system administrator for more information.
-
-    If this device does not belong to your organization, and is your personal device, you can press Ctrl+Alt+E now to cancel enrollment of the device and go back to the sign-in screen.
-  </message>
-  <message name="IDS_ENTERPRISE_ENROLLMENT_EXPLAIN_LINK" desc="Text on the link to the screen that explain what enterprise enrollment is.">
+  <message name="IDS_ENTERPRISE_ENROLLMENT_EXPLAIN_LINK" desc="Text on the link to the enterprise enrollment help article.">
     Learn more about Enterprise Enrollment
-  </message>
-  <message name="IDS_ENTERPRISE_ENROLLMENT_EXPLAIN_BUTTON" desc="Text on the button that closes the explanatory dialog and sends to user back to the sign-in screen.">
-    Sign in now
-  </message>
-  <message name="IDS_ENTERPRISE_ENROLLMENT_CANCEL_AUTO_REALLY" desc="Message asking the user to confirm if he really wants to cancel auto enrollment.">
-    Please confirm that this is not an enterprise device. Enterprise enrollment will be cancelled.
-  </message>
-  <message name="IDS_ENTERPRISE_ENROLLMENT_CANCEL_AUTO_CONFIRM" desc="Text on the button that confirms opting out of auto enrollment.">
-    Cancel enterprise enrollment
-  </message>
-  <message name="IDS_ENTERPRISE_ENROLLMENT_CANCEL_AUTO_GO_BACK" desc="Text on the button that goes back to enrollment from the confirmation dialog.">
-    Back
   </message>
 
   <!-- About network UI display strings -->
-  <message name="IDS_NETWORK_TITLE" desc="Title of the page">
+  <message name="IDS_NETWORK_UI_TITLE" desc="Title of the page">
     Network
   </message>
-  <message name="IDS_NETWORK_AUTO_REFRESH" desc="A instruction of how to auto-refresh the page">
+  <message name="IDS_NETWORK_UI_AUTO_REFRESH" desc="Instructions for how to auto-refresh the page">
     Add a query param in URL to auto-refresh the page: chrome://network/?refresh=&lt;sec&gt;
   </message>
-  <message name="IDS_NETWORK_LOG_REFRESH" desc="Button to refresh network log">
+  <message name="IDS_NETWORK_UI_REFRESH" desc="Button label for refreshing networks">
+    Refresh Networks
+  </message>
+  <message name="IDS_NETWORK_UI_EXPAND" desc="Button label for expanding network properties">
+    Click '+' to get network properties
+  </message>
+  <message name="IDS_NETWORK_UI_PROPERTY_FORMAT" desc="Drowpdown label for network property format">
+    Property format:
+  </message>
+  <message name="IDS_NETWORK_UI_FORMAT_NORMAL" desc="Label in network property format dropdown for unmanaged ONC properties">
+    ONC
+  </message>
+  <message name="IDS_NETWORK_UI_FORMAT_MANAGED" desc="Label in network property format dropdown for managed ONC properties">
+    Managed ONC
+  </message>
+  <message name="IDS_NETWORK_UI_FORMAT_SHILL" desc="Label in network property format dropdown for Shill properties">
+    Shill
+  </message>
+  <message name="IDS_NETWORK_UI_VISIBLE_NETWORKS" desc="Label for list of visible networks">
+    Visible Networks:
+  </message>
+  <message name="IDS_NETWORK_UI_FAVORITE_NETWORKS" desc="Label for list of favorite networks">
+    Favorite Networks:
+  </message>
+
+  <message name="IDS_DEVICE_LOG_LINK_TEXT" desc="Message preceeding link to chrome://device-log">
+    For network logs, see: <ph name="DEVICE_LOG_LINK">&lt;a href="chrome://device-log"&gt;chrome://device-log&lt;/a&gt;</ph>
+  </message>
+
+  <message name="IDS_DEVICE_LOG_TITLE" desc="Title of the chrome://device-log page">
+    Device Log
+  </message>
+  <message name="IDS_DEVICE_AUTO_REFRESH" desc="Instructions for how to auto-refresh the page">
+    Add a query param in URL to auto-refresh the page: chrome://device-log/?refresh=&lt;sec&gt;
+  </message>
+  <message name="IDS_DEVICE_LOG_REFRESH" desc="Button to refresh device log">
     Refresh
   </message>
-  <message name="IDS_NETWORK_LOG_LEVEL_SHOW" desc="'Show' label before logging level checkboxes">
+  <message name="IDS_DEVICE_LOG_LEVEL_SHOW" desc="'Show' label before logging level checkboxes">
     Show:
   </message>
-  <message name="IDS_NETWORK_LOG_LEVEL_ERROR" desc="Error logging level checkbox">
+  <message name="IDS_DEVICE_LOG_LEVEL_ERROR" desc="Error logging level checkbox">
     Error
   </message>
-  <message name="IDS_NETWORK_LOG_LEVEL_USER" desc="User logging level checkbox">
+  <message name="IDS_DEVICE_LOG_LEVEL_USER" desc="User logging level checkbox">
     User
   </message>
-  <message name="IDS_NETWORK_LOG_LEVEL_EVENT" desc="Event logging level checkbox">
+  <message name="IDS_DEVICE_LOG_LEVEL_EVENT" desc="Event logging level checkbox">
     Event
   </message>
-  <message name="IDS_NETWORK_LOG_LEVEL_DEBUG" desc="Debug logging level checkbox">
+  <message name="IDS_DEVICE_LOG_LEVEL_DEBUG" desc="Debug logging level checkbox">
     Debug
   </message>
-  <message name="IDS_NETWORK_LOG_LEVEL_FILEINFO" desc="File info checkbox in network event log">
+  <message name="IDS_DEVICE_LOG_TYPE_LOGIN" desc="Checkbox to enable showing events of type LOGIN">
+    Login
+  </message>
+  <message name="IDS_DEVICE_LOG_TYPE_NETWORK" desc="Checkbox to enable showing events of type NETWORK">
+    Network
+  </message>
+  <message name="IDS_DEVICE_LOG_TYPE_POWER" desc="Checkbox to enable showing events of type POWER">
+    Power
+  </message>
+  <message name="IDS_DEVICE_LOG_FILEINFO" desc="File info checkbox in device event log">
     File Info
   </message>
-  <message name="IDS_NETWORK_LOG_LEVEL_TIME_DETAIL" desc="Detailed timestamps checkbox in network event log">
+  <message name="IDS_DEVICE_LOG_TIME_DETAIL" desc="Detailed timestamps checkbox in device event log">
     Detailed Timestamps
   </message>
-  <message name="IDS_NETWORK_LOG_ENTRY" desc="The log entry displayed in network event log table.">
+  <message name="IDS_DEVICE_LOG_ENTRY" desc="Format string for lines in chrome://device-log.">
     [<ph name="TIMESTAMP">$1<ex>Timestamp</ex></ph>]
     <ph name="FILE_INFO">$2<ex>file:123</ex></ph>
-    <ph name="EVENT_NAME">$3<ex>Event Name</ex></ph>
-    <ph name="DESCRIPTION">$4<ex>Description</ex></ph>
+    <ph name="EVENT_NAME">$3<ex>Event Description</ex></ph>
   </message>
 
   <!-- About NFC Debug UI display strings. They aren't being internationalized bacause this page is meant for debugging only. -->

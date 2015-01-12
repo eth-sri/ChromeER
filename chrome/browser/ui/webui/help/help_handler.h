@@ -17,7 +17,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/chromeos/version_loader.h"
+#include "chromeos/system/version_loader.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace base {
@@ -91,8 +91,8 @@ class HelpHandler : public content::WebUIMessageHandler,
   void OnCurrentChannel(const std::string& channel);
   void OnTargetChannel(const std::string& channel);
 
-  // Callback for loading FCC label alt text.
-  void LoadFCCLabelText();
+  // Callback for setting the FCC label alt text.
+  void OnFCCLabelTextRead(const std::string& text);
 #endif
 
   // Specialized instance of the VersionUpdater used to update the browser.
@@ -100,14 +100,6 @@ class HelpHandler : public content::WebUIMessageHandler,
 
   // Used to observe notifications.
   content::NotificationRegistrar registrar_;
-
-#if defined(OS_CHROMEOS)
-  // Handles asynchronously loading the CrOS version info.
-  chromeos::VersionLoader loader_;
-
-  // Used to request the version.
-  base::CancelableTaskTracker tracker_;
-#endif  // defined(OS_CHROMEOS)
 
   // Used for callbacks.
   base::WeakPtrFactory<HelpHandler> weak_factory_;

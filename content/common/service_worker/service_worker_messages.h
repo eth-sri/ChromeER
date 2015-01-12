@@ -8,8 +8,10 @@
 #include <vector>
 
 #include "base/strings/string16.h"
+#include "content/common/navigator_connect_types.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/platform_notification_data.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
 #include "third_party/WebKit/public/platform/WebCircularGeofencingRegion.h"
@@ -69,6 +71,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerCacheQueryParams)
   IPC_STRUCT_TRAITS_MEMBER(ignore_method)
   IPC_STRUCT_TRAITS_MEMBER(ignore_vary)
   IPC_STRUCT_TRAITS_MEMBER(prefix_match)
+  IPC_STRUCT_TRAITS_MEMBER(cache_name)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS_MAX_VALUE(content::ServiceWorkerCacheOperationType,
@@ -99,6 +102,14 @@ IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerVersionAttributes)
   IPC_STRUCT_TRAITS_MEMBER(installing)
   IPC_STRUCT_TRAITS_MEMBER(waiting)
   IPC_STRUCT_TRAITS_MEMBER(active)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::ServiceWorkerClientInfo)
+  IPC_STRUCT_TRAITS_MEMBER(client_id)
+  IPC_STRUCT_TRAITS_MEMBER(visibility_state)
+  IPC_STRUCT_TRAITS_MEMBER(is_focused)
+  IPC_STRUCT_TRAITS_MEMBER(url)
+  IPC_STRUCT_TRAITS_MEMBER(frame_type)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS_MAX_VALUE(
@@ -138,8 +149,11 @@ IPC_MESSAGE_CONTROL3(ServiceWorkerHostMsg_PostMessageToWorker,
 
 // Informs the browser of a new ServiceWorkerProvider in the child process,
 // |provider_id| is unique within its child process.
-IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderCreated,
-                     int /* provider_id */)
+// |render_frame_id| identifies the frame associated with the provider, it will
+// it will be MSG_ROUTING_NONE if the context is a worker instead of a document.
+IPC_MESSAGE_CONTROL2(ServiceWorkerHostMsg_ProviderCreated,
+                     int /* provider_id */,
+                     int /* render_frame_id */)
 
 // Informs the browser of a ServiceWorkerProvider being destroyed.
 IPC_MESSAGE_CONTROL1(ServiceWorkerHostMsg_ProviderDestroyed,
@@ -194,6 +208,9 @@ IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_PushEventFinished,
                     blink::WebServiceWorkerEventResult)
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_GeofencingEventFinished,
                     int /* request_id */)
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_CrossOriginConnectEventFinished,
+                    int /* request_id */,
+                    bool /* accept_connection */)
 
 // Asks the browser to retrieve documents controlled by the sender
 // ServiceWorker.
@@ -205,6 +222,24 @@ IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_PostMessageToDocument,
                     int /* client_id */,
                     base::string16 /* message */,
                     std::vector<int> /* sent_message_port_ids */)
+
+// Ask the browser to focus a client (renderer->browser).
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_FocusClient,
+                    int /* request_id */,
+                    int /* client_id */)
+
+// Response to ServiceWorkerMsg_GetClientInfo.
+IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_GetClientInfoSuccess,
+                    int /* request_id */,
+                    content::ServiceWorkerClientInfo)
+
+// Response to ServiceWorkerMsg_GetClientInfo.
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_GetClientInfoError,
+                    int /* request_id */)
+
+// Asks the browser to force this worker to become activated.
+IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_SkipWaiting,
+                    int /* request_id */)
 
 // CacheStorage operations in the browser.
 IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_CacheStorageHas,
@@ -221,6 +256,11 @@ IPC_MESSAGE_ROUTED2(ServiceWorkerHostMsg_CacheStorageDelete,
 
 IPC_MESSAGE_ROUTED1(ServiceWorkerHostMsg_CacheStorageKeys,
                     int /* request_id */)
+
+IPC_MESSAGE_ROUTED3(ServiceWorkerHostMsg_CacheStorageMatch,
+                    int /* request_id */,
+                    content::ServiceWorkerFetchRequest,
+                    content::ServiceWorkerCacheQueryParams)
 
 // Cache operations in the browser.
 IPC_MESSAGE_ROUTED4(ServiceWorkerHostMsg_CacheMatch,
@@ -337,10 +377,11 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_UpdateFound,
 
 // Tells the child process to set the controller ServiceWorker for the given
 // provider.
-IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_SetControllerServiceWorker,
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_SetControllerServiceWorker,
                      int /* thread_id */,
                      int /* provider_id */,
-                     content::ServiceWorkerObjectInfo)
+                     content::ServiceWorkerObjectInfo,
+                     bool /* should_notify_controllerchange */)
 
 // Sends a 'message' event to a client document (browser->renderer).
 IPC_MESSAGE_CONTROL5(ServiceWorkerMsg_MessageToDocument,
@@ -349,6 +390,13 @@ IPC_MESSAGE_CONTROL5(ServiceWorkerMsg_MessageToDocument,
                      base::string16 /* message */,
                      std::vector<int> /* sent_message_port_ids */,
                      std::vector<int> /* new_routing_ids */)
+
+// Sent to client documents to request document properties.
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_GetClientInfo,
+                     int /* thread_id */,
+                     int /* embedded_worker_id */,
+                     int /* request_id */,
+                     int /* provider_id */)
 
 // Sent via EmbeddedWorker to dispatch events.
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_InstallEvent,
@@ -361,9 +409,10 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_FetchEvent,
                      content::ServiceWorkerFetchRequest)
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_SyncEvent,
                      int /* request_id */)
-IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_NotificationClickEvent,
+IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_NotificationClickEvent,
                      int /* request_id */,
-                     std::string /* notification_id */);
+                     std::string /* notification_id */,
+                     content::PlatformNotificationData /* notification_data */)
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_PushEvent,
                      int /* request_id */,
                      std::string /* data */)
@@ -372,15 +421,30 @@ IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_GeofencingEvent,
                      blink::WebGeofencingEventType /* event_type */,
                      std::string /* region_id */,
                      blink::WebCircularGeofencingRegion /* region */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CrossOriginConnectEvent,
+                     int /* request_id */,
+                     content::CrossOriginServiceWorkerClient /* client */)
 IPC_MESSAGE_CONTROL3(ServiceWorkerMsg_MessageToWorker,
                      base::string16 /* message */,
                      std::vector<int> /* sent_message_port_ids */,
                      std::vector<int> /* new_routing_ids */)
+IPC_MESSAGE_CONTROL4(ServiceWorkerMsg_CrossOriginMessageToWorker,
+                     content::CrossOriginServiceWorkerClient /* client */,
+                     base::string16 /* message */,
+                     std::vector<int> /* sent_message_port_ids */,
+                     std::vector<int> /* new_routing_ids */)
+IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_DidSkipWaiting,
+                     int /* request_id */)
 
 // Sent via EmbeddedWorker as a response of GetClientDocuments.
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_DidGetClientDocuments,
                      int /* request_id */,
-                     std::vector<int> /* client_ids */)
+                     std::vector<content::ServiceWorkerClientInfo>)
+
+// Sent via EmbeddedWorker as a response of FocusClient.
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_FocusClientResponse,
+                     int /* request_id */,
+                     bool /* result */)
 
 // Sent via EmbeddedWorker at successful completion of CacheStorage operations.
 IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_CacheStorageHasSuccess,
@@ -393,6 +457,9 @@ IPC_MESSAGE_CONTROL1(ServiceWorkerMsg_CacheStorageDeleteSuccess,
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageKeysSuccess,
                      int /* request_id */,
                      std::vector<base::string16> /* keys */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageMatchSuccess,
+                     int /* request_id */,
+                     content::ServiceWorkerResponse)
 
 // Sent via EmbeddedWorker at erroneous completion of CacheStorage operations.
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageHasError,
@@ -407,6 +474,9 @@ IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageDeleteError,
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageKeysError,
                      int /* request_id */,
                      blink::WebServiceWorkerCacheError /* reason */)
+IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheStorageMatchError,
+                     int /* request_id */,
+                     blink::WebServiceWorkerCacheError)
 
 // Sent via EmbeddedWorker at successful completion of Cache operations.
 IPC_MESSAGE_CONTROL2(ServiceWorkerMsg_CacheMatchSuccess,

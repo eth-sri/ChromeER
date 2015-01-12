@@ -111,7 +111,7 @@ GLES2Implementation::GLES2Implementation(
   this_in_hex_ = ss.str();
 
   GPU_CLIENT_LOG_CODE_BLOCK({
-    debug_ = CommandLine::ForCurrentProcess()->HasSwitch(
+    debug_ = base::CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kEnableGPUClientLogging);
   });
 
@@ -871,6 +871,13 @@ void GLES2Implementation::SwapBuffers() {
     helper_->WaitForToken(swap_buffers_tokens_.front());
     swap_buffers_tokens_.pop();
   }
+}
+
+void GLES2Implementation::SwapInterval(int interval) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glSwapInterval("
+      << interval << ")");
+  helper_->SwapInterval(interval);
 }
 
 void GLES2Implementation::BindAttribLocation(
@@ -2307,6 +2314,14 @@ void GLES2Implementation::GenValuebuffersCHROMIUMHelper(
     const GLuint* /* valuebuffers */) {
 }
 
+void GLES2Implementation::GenSamplersHelper(
+    GLsizei /* n */, const GLuint* /* samplers */) {
+}
+
+void GLES2Implementation::GenTransformFeedbacksHelper(
+    GLsizei /* n */, const GLuint* /* transformfeedbacks */) {
+}
+
 // NOTE #1: On old versions of OpenGL, calling glBindXXX with an unused id
 // generates a new resource. On newer versions of OpenGL they don't. The code
 // related to binding below will need to change if we switch to the new OpenGL
@@ -2314,7 +2329,7 @@ void GLES2Implementation::GenValuebuffersCHROMIUMHelper(
 // the old model but possibly not true in the new model if another context has
 // deleted the resource.
 
-bool GLES2Implementation::BindBufferHelper(
+void GLES2Implementation::BindBufferHelper(
     GLenum target, GLuint buffer_id) {
   // TODO(gman): See note #1 above.
   bool changed = false;
@@ -2340,11 +2355,19 @@ bool GLES2Implementation::BindBufferHelper(
   }
   // TODO(gman): There's a bug here. If the target is invalid the ID will not be
   // used even though it's marked it as used here.
-  GetIdHandler(id_namespaces::kBuffers)->MarkAsUsedForBind(buffer_id);
-  return changed;
+  if (changed) {
+    GetIdHandler(id_namespaces::kBuffers)->MarkAsUsedForBind(
+        this, target, buffer_id, &GLES2Implementation::BindBufferStub);
+  }
 }
 
-bool GLES2Implementation::BindFramebufferHelper(
+void GLES2Implementation::BindBufferStub(GLenum target, GLuint buffer) {
+  helper_->BindBuffer(target, buffer);
+  if (share_group_->bind_generates_resource())
+    helper_->CommandBufferHelper::Flush();
+}
+
+void GLES2Implementation::BindFramebufferHelper(
     GLenum target, GLuint framebuffer) {
   // TODO(gman): See note #1 above.
   bool changed = false;
@@ -2360,7 +2383,7 @@ bool GLES2Implementation::BindFramebufferHelper(
     case GL_READ_FRAMEBUFFER:
       if (!IsChromiumFramebufferMultisampleAvailable()) {
         SetGLErrorInvalidEnum("glBindFramebuffer", target, "target");
-        return false;
+        return;
       }
       if (bound_read_framebuffer_ != framebuffer) {
         bound_read_framebuffer_ = framebuffer;
@@ -2370,7 +2393,7 @@ bool GLES2Implementation::BindFramebufferHelper(
     case GL_DRAW_FRAMEBUFFER:
       if (!IsChromiumFramebufferMultisampleAvailable()) {
         SetGLErrorInvalidEnum("glBindFramebuffer", target, "target");
-        return false;
+        return;
       }
       if (bound_framebuffer_ != framebuffer) {
         bound_framebuffer_ = framebuffer;
@@ -2379,13 +2402,23 @@ bool GLES2Implementation::BindFramebufferHelper(
       break;
     default:
       SetGLErrorInvalidEnum("glBindFramebuffer", target, "target");
-      return false;
+      return;
   }
-  GetIdHandler(id_namespaces::kFramebuffers)->MarkAsUsedForBind(framebuffer);
-  return changed;
+
+  if (changed) {
+    GetIdHandler(id_namespaces::kFramebuffers)->MarkAsUsedForBind(
+        this, target, framebuffer, &GLES2Implementation::BindFramebufferStub);
+  }
 }
 
-bool GLES2Implementation::BindRenderbufferHelper(
+void GLES2Implementation::BindFramebufferStub(GLenum target,
+                                              GLuint framebuffer) {
+  helper_->BindFramebuffer(target, framebuffer);
+  if (share_group_->bind_generates_resource())
+    helper_->CommandBufferHelper::Flush();
+}
+
+void GLES2Implementation::BindRenderbufferHelper(
     GLenum target, GLuint renderbuffer) {
   // TODO(gman): See note #1 above.
   bool changed = false;
@@ -2402,11 +2435,21 @@ bool GLES2Implementation::BindRenderbufferHelper(
   }
   // TODO(gman): There's a bug here. If the target is invalid the ID will not be
   // used even though it's marked it as used here.
-  GetIdHandler(id_namespaces::kRenderbuffers)->MarkAsUsedForBind(renderbuffer);
-  return changed;
+  if (changed) {
+    GetIdHandler(id_namespaces::kRenderbuffers)->MarkAsUsedForBind(
+        this, target, renderbuffer,
+        &GLES2Implementation::BindRenderbufferStub);
+  }
 }
 
-bool GLES2Implementation::BindTextureHelper(GLenum target, GLuint texture) {
+void GLES2Implementation::BindRenderbufferStub(GLenum target,
+                                               GLuint renderbuffer) {
+  helper_->BindRenderbuffer(target, renderbuffer);
+  if (share_group_->bind_generates_resource())
+    helper_->CommandBufferHelper::Flush();
+}
+
+void GLES2Implementation::BindTextureHelper(GLenum target, GLuint texture) {
   // TODO(gman): See note #1 above.
   // TODO(gman): Change this to false once we figure out why it's failing
   //     on daisy.
@@ -2437,26 +2480,37 @@ bool GLES2Implementation::BindTextureHelper(GLenum target, GLuint texture) {
   }
   // TODO(gman): There's a bug here. If the target is invalid the ID will not be
   // used. even though it's marked it as used here.
-  GetIdHandler(id_namespaces::kTextures)->MarkAsUsedForBind(texture);
-  return changed;
+  if (changed) {
+    GetIdHandler(id_namespaces::kTextures)->MarkAsUsedForBind(
+        this, target, texture, &GLES2Implementation::BindTextureStub);
+  }
 }
 
-bool GLES2Implementation::BindVertexArrayOESHelper(GLuint array) {
+void GLES2Implementation::BindTextureStub(GLenum target, GLuint texture) {
+  helper_->BindTexture(target, texture);
+  if (share_group_->bind_generates_resource())
+    helper_->CommandBufferHelper::Flush();
+}
+
+void GLES2Implementation::BindVertexArrayOESHelper(GLuint array) {
   // TODO(gman): See note #1 above.
   bool changed = false;
-  if (!vertex_array_object_manager_->BindVertexArray(array, &changed)) {
+  if (vertex_array_object_manager_->BindVertexArray(array, &changed)) {
+    if (changed) {
+      // Unlike other BindXXXHelpers we don't call MarkAsUsedForBind
+      // because unlike other resources VertexArrayObject ids must
+      // be generated by GenVertexArrays. A random id to Bind will not
+      // generate a new object.
+      helper_->BindVertexArrayOES(array);
+    }
+  } else {
     SetGLError(
         GL_INVALID_OPERATION, "glBindVertexArrayOES",
         "id was not generated with glGenVertexArrayOES");
   }
-  // Unlike other BindXXXHelpers we don't call MarkAsUsedForBind
-  // because unlike other resources VertexArrayObject ids must
-  // be generated by GenVertexArrays. A random id to Bind will not
-  // generate a new object.
-  return changed;
 }
 
-bool GLES2Implementation::BindValuebufferCHROMIUMHelper(GLenum target,
+void GLES2Implementation::BindValuebufferCHROMIUMHelper(GLenum target,
                                                         GLuint valuebuffer) {
   bool changed = false;
   switch (target) {
@@ -2472,17 +2526,25 @@ bool GLES2Implementation::BindValuebufferCHROMIUMHelper(GLenum target,
   }
   // TODO(gman): There's a bug here. If the target is invalid the ID will not be
   // used even though it's marked it as used here.
-  GetIdHandler(id_namespaces::kValuebuffers)->MarkAsUsedForBind(valuebuffer);
-  return changed;
+  if (changed) {
+    GetIdHandler(id_namespaces::kValuebuffers)->MarkAsUsedForBind(
+        this, target, valuebuffer,
+        &GLES2Implementation::BindValuebufferCHROMIUMStub);
+  }
 }
 
-bool GLES2Implementation::UseProgramHelper(GLuint program) {
-  bool changed = false;
+void GLES2Implementation::BindValuebufferCHROMIUMStub(GLenum target,
+                                                      GLuint valuebuffer) {
+  helper_->BindValuebufferCHROMIUM(target, valuebuffer);
+  if (share_group_->bind_generates_resource())
+    helper_->CommandBufferHelper::Flush();
+}
+
+void GLES2Implementation::UseProgramHelper(GLuint program) {
   if (current_program_ != program) {
     current_program_ = program;
-    changed = true;
+    helper_->UseProgram(program);
   }
-  return changed;
 }
 
 bool GLES2Implementation::IsBufferReservedId(GLuint id) {
@@ -2627,6 +2689,39 @@ void GLES2Implementation::DeleteValuebuffersCHROMIUMHelper(
     if (valuebuffers[ii] == bound_valuebuffer_) {
       bound_valuebuffer_ = 0;
     }
+  }
+}
+
+void GLES2Implementation::DeleteSamplersStub(
+    GLsizei n, const GLuint* samplers) {
+  helper_->DeleteSamplersImmediate(n, samplers);
+}
+
+void GLES2Implementation::DeleteSamplersHelper(
+    GLsizei n, const GLuint* samplers) {
+  if (!GetIdHandler(id_namespaces::kSamplers)->FreeIds(
+      this, n, samplers, &GLES2Implementation::DeleteSamplersStub)) {
+    SetGLError(
+        GL_INVALID_VALUE,
+        "glDeleteSamplers", "id not created by this context.");
+    return;
+  }
+}
+
+void GLES2Implementation::DeleteTransformFeedbacksStub(
+    GLsizei n, const GLuint* transformfeedbacks) {
+  helper_->DeleteTransformFeedbacksImmediate(n, transformfeedbacks);
+}
+
+void GLES2Implementation::DeleteTransformFeedbacksHelper(
+    GLsizei n, const GLuint* transformfeedbacks) {
+  if (!GetIdHandler(id_namespaces::kTransformFeedbacks)->FreeIds(
+      this, n, transformfeedbacks,
+      &GLES2Implementation::DeleteTransformFeedbacksStub)) {
+    SetGLError(
+        GL_INVALID_VALUE,
+        "glDeleteTransformFeedbacks", "id not created by this context.");
+    return;
   }
 }
 
@@ -3430,32 +3525,38 @@ void GLES2Implementation::PopGroupMarkerEXT() {
   debug_marker_manager_.PopGroup();
 }
 
-void GLES2Implementation::TraceBeginCHROMIUM(const char* name) {
+void GLES2Implementation::TraceBeginCHROMIUM(
+    const char* category_name, const char* trace_name) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glTraceBeginCHROMIUM("
-                 << name << ")");
-  if (current_trace_name_.get()) {
+                 << category_name << ", " << trace_name << ")");
+  if (current_trace_category_.get() || current_trace_name_.get()) {
     SetGLError(GL_INVALID_OPERATION, "glTraceBeginCHROMIUM",
                "trace already running");
     return;
   }
-  TRACE_EVENT_COPY_ASYNC_BEGIN0("gpu", name, this);
-  SetBucketAsCString(kResultBucketId, name);
-  helper_->TraceBeginCHROMIUM(kResultBucketId);
+  TRACE_EVENT_COPY_ASYNC_BEGIN0(category_name, trace_name, this);
+  SetBucketAsCString(kResultBucketId, category_name);
+  SetBucketAsCString(kResultBucketId + 1, category_name);
+  helper_->TraceBeginCHROMIUM(kResultBucketId, kResultBucketId + 1);
   helper_->SetBucketSize(kResultBucketId, 0);
-  current_trace_name_.reset(new std::string(name));
+  helper_->SetBucketSize(kResultBucketId + 1, 0);
+  current_trace_category_.reset(new std::string(category_name));
+  current_trace_name_.reset(new std::string(trace_name));
 }
 
 void GLES2Implementation::TraceEndCHROMIUM() {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glTraceEndCHROMIUM(" << ")");
-  if (!current_trace_name_.get()) {
+  if (!current_trace_category_.get() || !current_trace_name_.get()) {
     SetGLError(GL_INVALID_OPERATION, "glTraceEndCHROMIUM",
                "missing begin trace");
     return;
   }
   helper_->TraceEndCHROMIUM();
-  TRACE_EVENT_COPY_ASYNC_END0("gpu", current_trace_name_->c_str(), this);
+  TRACE_EVENT_COPY_ASYNC_END0(current_trace_category_->c_str(),
+                              current_trace_name_->c_str(), this);
+  current_trace_category_.reset();
   current_trace_name_.reset();
 }
 
@@ -3923,6 +4024,18 @@ bool GLES2Implementation::ValidateOffset(const char* func, GLintptr offset) {
     return false;
   }
   return true;
+}
+
+bool GLES2Implementation::GetSamplerParameterfvHelper(
+    GLuint /* sampler */, GLenum /* pname */, GLfloat* /* params */) {
+  // TODO(zmo): Implement client side caching.
+  return false;
+}
+
+bool GLES2Implementation::GetSamplerParameterivHelper(
+    GLuint /* sampler */, GLenum /* pname */, GLint* /* params */) {
+  // TODO(zmo): Implement client side caching.
+  return false;
 }
 
 // Include the auto-generated part of this file. We split this because it means

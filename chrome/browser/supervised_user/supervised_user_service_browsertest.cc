@@ -29,7 +29,7 @@ void TestAuthErrorCallback(const GoogleServiceAuthError& error) {}
 class SupervisedUserServiceTestSupervised : public InProcessBrowserTest {
  public:
   // content::BrowserTestBase:
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(switches::kSupervisedUserId, "asdf");
   }
 };
@@ -137,7 +137,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserServiceTestSupervised, ProfileName) {
 
   // Remove the setting.
   settings->SetLocalSetting(supervised_users::kUserName,
-                                      scoped_ptr<base::Value>());
+                            scoped_ptr<base::Value>());
   EXPECT_EQ(original_name, prefs->GetString(prefs::kProfileName));
   profile_index = cache.GetIndexOfProfileWithPath(profile->GetPath());
   EXPECT_EQ(original_name,

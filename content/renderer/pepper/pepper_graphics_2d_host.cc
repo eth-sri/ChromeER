@@ -31,15 +31,14 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/blit.h"
-#include "ui/gfx/point_conversions.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 
 #if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #endif
 
@@ -384,10 +383,8 @@ void PepperGraphics2DHost::Paint(blink::WebCanvas* canvas,
   canvas->drawBitmap(image, pixel_origin.x(), pixel_origin.y(), &paint);
 }
 
-void PepperGraphics2DHost::ViewInitiatedPaint() {}
-
-void PepperGraphics2DHost::ViewFlushedPaint() {
-  TRACE_EVENT0("pepper", "PepperGraphics2DHost::ViewFlushedPaint");
+void PepperGraphics2DHost::ViewInitiatedPaint() {
+  TRACE_EVENT0("pepper", "PepperGraphics2DHost::ViewInitiatedPaint");
   if (need_flush_ack_) {
     SendFlushAck();
     need_flush_ack_ = false;
@@ -592,7 +589,7 @@ bool PepperGraphics2DHost::PrepareTextureMailbox(
          cc::SharedBitmap::CheckedSizeInBytes(pixel_image_size));
   image_data_->Unmap();
 
-  *mailbox = cc::TextureMailbox(shared_bitmap->memory(), pixel_image_size);
+  *mailbox = cc::TextureMailbox(shared_bitmap.get(), pixel_image_size);
   *release_callback = cc::SingleReleaseCallback::Create(
       base::Bind(&PepperGraphics2DHost::ReleaseCallback,
                  this->AsWeakPtr(),

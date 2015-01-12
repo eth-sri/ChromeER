@@ -15,8 +15,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/default_clock.h"
+#include "base/timer/timer.h"
 #include "components/gcm_driver/gcm_backoff_policy.h"
-#include "components/timers/alarm_timer.h"
 #include "google_apis/gcm/base/encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
@@ -193,17 +193,8 @@ scoped_ptr<MCSClient> GCMInternalsBuilder::BuildMCSClient(
     ConnectionFactory* connection_factory,
     GCMStore* gcm_store,
     GCMStatsRecorder* recorder) {
-#if defined(OS_CHROMEOS)
   return scoped_ptr<MCSClient>(new MCSClient(
-      version, clock, connection_factory, gcm_store, recorder,
-      make_scoped_ptr(new timers::AlarmTimer(true, /* retain user task */
-                                             false /* non-repeating */))));
-#else
-  return scoped_ptr<MCSClient>(new MCSClient(
-      version, clock, connection_factory, gcm_store, recorder,
-      make_scoped_ptr(new base::Timer(true, /* retain user task */
-                                      false /* non-repeating */))));
-#endif  // defined(OS_CHROMEOS)
+      version, clock, connection_factory, gcm_store, recorder));
 }
 
 scoped_ptr<ConnectionFactory> GCMInternalsBuilder::BuildConnectionFactory(
@@ -478,6 +469,11 @@ void GCMClientImpl::SetLastTokenFetchTime(const base::Time& time) {
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
+void GCMClientImpl::UpdateHeartbeatTimer(scoped_ptr<base::Timer> timer) {
+  DCHECK(mcs_client_);
+  mcs_client_->UpdateHeartbeatTimer(timer.Pass());
+}
+
 void GCMClientImpl::StartCheckin() {
   // Make sure no checkin is in progress.
   if (checkin_request_.get())
@@ -603,18 +599,19 @@ void GCMClientImpl::IgnoreWriteResultCallback(bool success) {
 }
 
 void GCMClientImpl::Stop() {
+  // TODO(fgorski): Perhaps we should make a distinction between a Stop and a
+  // Shutdown.
   DVLOG(1) << "Stopping the GCM Client";
   weak_ptr_factory_.InvalidateWeakPtrs();
+  periodic_checkin_ptr_factory_.InvalidateWeakPtrs();
   device_checkin_info_.Reset();
   connection_factory_.reset();
   delegate_->OnDisconnected();
   mcs_client_.reset();
   checkin_request_.reset();
-  // Delete all of the pending registration requests, whithout telling the
-  // consumers.
-  // TODO(fgorski): Perhaps we should make a distinction between a Stop and a
-  // Shutdown.
+  // Delete all of the pending registration and unregistration requests.
   STLDeleteValues(&pending_registration_requests_);
+  STLDeleteValues(&pending_unregistration_requests_);
   state_ = INITIALIZED;
   gcm_store_->Close();
 }

@@ -29,7 +29,6 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/error_screens_histogram_helper.h"
 #include "chrome/browser/chromeos/login/hwid_checker.h"
 #include "chrome/browser/chromeos/login/lock/screen_locker.h"
@@ -41,6 +40,7 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/consumer_management_service.h"
+#include "chrome/browser/chromeos/policy/consumer_management_stage.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -287,8 +287,7 @@ SigninScreenHandler::SigninScreenHandler(
           GetConsumerManagementService();
   is_enrolling_consumer_management_ =
       consumer_management &&
-      consumer_management->GetEnrollmentStage() ==
-          policy::ConsumerManagementService::ENROLLMENT_STAGE_REQUESTED;
+      consumer_management->GetStage().IsEnrollmentRequested();
 }
 
 SigninScreenHandler::~SigninScreenHandler() {
@@ -309,6 +308,54 @@ SigninScreenHandler::~SigninScreenHandler() {
   }
   ScreenlockBridge::Get()->SetLockHandler(NULL);
   ScreenlockBridge::Get()->SetFocusedUser("");
+}
+
+// static
+std::string SigninScreenHandler::GetUserLRUInputMethod(
+    const std::string& username) {
+  PrefService* const local_state = g_browser_process->local_state();
+  const base::DictionaryValue* users_lru_input_methods =
+      local_state->GetDictionary(prefs::kUsersLRUInputMethod);
+
+  if (!users_lru_input_methods) {
+    DLOG(WARNING) << "GetUserLRUInputMethod('" << username
+                  << "'): no kUsersLRUInputMethod";
+    return std::string();
+  }
+
+  std::string input_method;
+
+  if (!users_lru_input_methods->GetStringWithoutPathExpansion(username,
+                                                              &input_method)) {
+    DVLOG(0) << "GetUserLRUInputMethod('" << username
+             << "'): no input method for this user";
+    return std::string();
+  }
+
+  return input_method;
+}
+
+// static
+// Update keyboard layout to least recently used by the user.
+void SigninScreenHandler::SetUserInputMethod(
+    const std::string& username,
+    input_method::InputMethodManager::State* ime_state) {
+  bool succeed = false;
+
+  const std::string input_method = GetUserLRUInputMethod(username);
+
+  if (!input_method.empty())
+    succeed = SetUserInputMethodImpl(username, input_method, ime_state);
+
+  // This is also a case when LRU layout is set only for a few local users,
+  // thus others need to be switched to default locale.
+  // Otherwise they will end up using another user's locale to log in.
+  if (!succeed) {
+    DVLOG(0) << "SetUserInputMethod('" << username
+             << "'): failed to set user layout. Switching to default.";
+
+    ime_state->SetInputMethodLoginDefault();
+  }
 }
 
 void SigninScreenHandler::DeclareLocalizedValues(
@@ -409,9 +456,61 @@ void SigninScreenHandler::DeclareLocalizedValues(
                IDS_ENTERPRISE_ENROLLMENT_AUTH_FATAL_ERROR);
   builder->Add("insecureURLEnrollmentError",
                IDS_ENTERPRISE_ENROLLMENT_AUTH_INSECURE_URL_ERROR);
+}
 
-  if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
-    builder->Add("demoLoginMessage", IDS_KIOSK_MODE_LOGIN_MESSAGE);
+void SigninScreenHandler::RegisterMessages() {
+  AddCallback("authenticateUser", &SigninScreenHandler::HandleAuthenticateUser);
+  AddCallback("launchIncognito", &SigninScreenHandler::HandleLaunchIncognito);
+  AddCallback("showSupervisedUserCreationScreen",
+              &SigninScreenHandler::HandleShowSupervisedUserCreationScreen);
+  AddCallback("launchPublicSession",
+              &SigninScreenHandler::HandleLaunchPublicSession);
+  AddRawCallback("offlineLogin", &SigninScreenHandler::HandleOfflineLogin);
+  AddCallback("rebootSystem", &SigninScreenHandler::HandleRebootSystem);
+  AddRawCallback("showAddUser", &SigninScreenHandler::HandleShowAddUser);
+  AddCallback("shutdownSystem", &SigninScreenHandler::HandleShutdownSystem);
+  AddCallback("loadWallpaper", &SigninScreenHandler::HandleLoadWallpaper);
+  AddCallback("removeUser", &SigninScreenHandler::HandleRemoveUser);
+  AddCallback("toggleEnrollmentScreen",
+              &SigninScreenHandler::HandleToggleEnrollmentScreen);
+  AddCallback("toggleEnableDebuggingScreen",
+              &SigninScreenHandler::HandleToggleEnableDebuggingScreen);
+  AddCallback("switchToEmbeddedSignin",
+              &SigninScreenHandler::HandleSwitchToEmbeddedSignin);
+  AddCallback("toggleKioskEnableScreen",
+              &SigninScreenHandler::HandleToggleKioskEnableScreen);
+  AddCallback("createAccount", &SigninScreenHandler::HandleCreateAccount);
+  AddCallback("accountPickerReady",
+              &SigninScreenHandler::HandleAccountPickerReady);
+  AddCallback("wallpaperReady", &SigninScreenHandler::HandleWallpaperReady);
+  AddCallback("signOutUser", &SigninScreenHandler::HandleSignOutUser);
+  AddCallback("openProxySettings",
+              &SigninScreenHandler::HandleOpenProxySettings);
+  AddCallback("loginVisible", &SigninScreenHandler::HandleLoginVisible);
+  AddCallback("cancelPasswordChangedFlow",
+              &SigninScreenHandler::HandleCancelPasswordChangedFlow);
+  AddCallback("cancelUserAdding", &SigninScreenHandler::HandleCancelUserAdding);
+  AddCallback("migrateUserData", &SigninScreenHandler::HandleMigrateUserData);
+  AddCallback("resyncUserData", &SigninScreenHandler::HandleResyncUserData);
+  AddCallback("loginUIStateChanged",
+              &SigninScreenHandler::HandleLoginUIStateChanged);
+  AddCallback("unlockOnLoginSuccess",
+              &SigninScreenHandler::HandleUnlockOnLoginSuccess);
+  AddCallback("showLoadingTimeoutError",
+              &SigninScreenHandler::HandleShowLoadingTimeoutError);
+  AddCallback("updateOfflineLogin",
+              &SigninScreenHandler::HandleUpdateOfflineLogin);
+  AddCallback("focusPod", &SigninScreenHandler::HandleFocusPod);
+  AddCallback("getPublicSessionKeyboardLayouts",
+              &SigninScreenHandler::HandleGetPublicSessionKeyboardLayouts);
+  AddCallback("cancelConsumerManagementEnrollment",
+              &SigninScreenHandler::HandleCancelConsumerManagementEnrollment);
+  AddCallback("getTouchViewState",
+              &SigninScreenHandler::HandleGetTouchViewState);
+
+  // This message is sent by the kiosk app menu, but is handled here
+  // so we can tell the delegate to launch the app.
+  AddCallback("launchKioskApp", &SigninScreenHandler::HandleLaunchKioskApp);
 }
 
 void SigninScreenHandler::Show(const LoginScreenContext& context) {
@@ -434,16 +533,10 @@ void SigninScreenHandler::Show(const LoginScreenContext& context) {
   histogram_helper_->OnScreenShow();
 }
 
-void SigninScreenHandler::ShowRetailModeLoginSpinner() {
-  CallJS("showLoginSpinner");
-}
-
 void SigninScreenHandler::SetDelegate(SigninScreenHandlerDelegate* delegate) {
   delegate_ = delegate;
   if (delegate_)
     delegate_->SetWebUIHandler(this);
-  else
-    auto_enrollment_progress_subscription_.reset();
 }
 
 void SigninScreenHandler::SetNativeWindowDelegate(
@@ -731,67 +824,6 @@ gfx::NativeWindow SigninScreenHandler::GetNativeWindow() {
   return NULL;
 }
 
-void SigninScreenHandler::RegisterMessages() {
-  AddCallback("authenticateUser", &SigninScreenHandler::HandleAuthenticateUser);
-  AddCallback("attemptUnlock", &SigninScreenHandler::HandleAttemptUnlock);
-  AddCallback("getUsers", &SigninScreenHandler::HandleGetUsers);
-  AddCallback("launchDemoUser", &SigninScreenHandler::HandleLaunchDemoUser);
-  AddCallback("launchIncognito", &SigninScreenHandler::HandleLaunchIncognito);
-  AddCallback("showSupervisedUserCreationScreen",
-              &SigninScreenHandler::HandleShowSupervisedUserCreationScreen);
-  AddCallback("launchPublicSession",
-              &SigninScreenHandler::HandleLaunchPublicSession);
-  AddRawCallback("offlineLogin", &SigninScreenHandler::HandleOfflineLogin);
-  AddCallback("rebootSystem", &SigninScreenHandler::HandleRebootSystem);
-  AddRawCallback("showAddUser", &SigninScreenHandler::HandleShowAddUser);
-  AddCallback("shutdownSystem", &SigninScreenHandler::HandleShutdownSystem);
-  AddCallback("loadWallpaper", &SigninScreenHandler::HandleLoadWallpaper);
-  AddCallback("removeUser", &SigninScreenHandler::HandleRemoveUser);
-  AddCallback("toggleEnrollmentScreen",
-              &SigninScreenHandler::HandleToggleEnrollmentScreen);
-  AddCallback("toggleEnableDebuggingScreen",
-              &SigninScreenHandler::HandleToggleEnableDebuggingScreen);
-  AddCallback("switchToEmbeddedSignin",
-              &SigninScreenHandler::HandleSwitchToEmbeddedSignin);
-  AddCallback("toggleKioskEnableScreen",
-              &SigninScreenHandler::HandleToggleKioskEnableScreen);
-  AddCallback("createAccount", &SigninScreenHandler::HandleCreateAccount);
-  AddCallback("accountPickerReady",
-              &SigninScreenHandler::HandleAccountPickerReady);
-  AddCallback("wallpaperReady", &SigninScreenHandler::HandleWallpaperReady);
-  AddCallback("signOutUser", &SigninScreenHandler::HandleSignOutUser);
-  AddCallback("openProxySettings",
-              &SigninScreenHandler::HandleOpenProxySettings);
-  AddCallback("loginVisible", &SigninScreenHandler::HandleLoginVisible);
-  AddCallback("cancelPasswordChangedFlow",
-              &SigninScreenHandler::HandleCancelPasswordChangedFlow);
-  AddCallback("cancelUserAdding",
-              &SigninScreenHandler::HandleCancelUserAdding);
-  AddCallback("migrateUserData", &SigninScreenHandler::HandleMigrateUserData);
-  AddCallback("resyncUserData", &SigninScreenHandler::HandleResyncUserData);
-  AddCallback("loginUIStateChanged",
-              &SigninScreenHandler::HandleLoginUIStateChanged);
-  AddCallback("unlockOnLoginSuccess",
-              &SigninScreenHandler::HandleUnlockOnLoginSuccess);
-  AddCallback("showLoadingTimeoutError",
-              &SigninScreenHandler::HandleShowLoadingTimeoutError);
-  AddCallback("updateOfflineLogin",
-              &SigninScreenHandler::HandleUpdateOfflineLogin);
-  AddCallback("focusPod", &SigninScreenHandler::HandleFocusPod);
-  AddCallback("hardlockPod", &SigninScreenHandler::HandleHardlockPod);
-  AddCallback("getPublicSessionKeyboardLayouts",
-              &SigninScreenHandler::HandleGetPublicSessionKeyboardLayouts);
-  AddCallback("cancelConsumerManagementEnrollment",
-              &SigninScreenHandler::HandleCancelConsumerManagementEnrollment);
-  AddCallback("getTouchViewState",
-              &SigninScreenHandler::HandleGetTouchViewState);
-
-
-  // This message is sent by the kiosk app menu, but is handled here
-  // so we can tell the delegate to launch the app.
-  AddCallback("launchKioskApp", &SigninScreenHandler::HandleLaunchKioskApp);
-}
-
 void SigninScreenHandler::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(prefs::kUsersLRUInputMethod);
 }
@@ -802,35 +834,6 @@ void SigninScreenHandler::OnCurrentScreenChanged(OobeUI::Screen current_screen,
     // Restore active IME state if returning to user pod row screen.
     input_method::InputMethodManager::Get()->SetState(ime_state_);
   }
-}
-
-std::string SigninScreenHandler::GetUserLRUInputMethod(
-    const std::string& username) const {
-  PrefService* const local_state = g_browser_process->local_state();
-  const base::DictionaryValue* users_lru_input_methods =
-      local_state->GetDictionary(prefs::kUsersLRUInputMethod);
-
-  if (users_lru_input_methods == NULL) {
-    DLOG(WARNING) << "GetUserLRUInputMethod('" << username
-                  << "'): no kUsersLRUInputMethod";
-    return std::string();
-  }
-
-  std::string input_method;
-
-  if (!users_lru_input_methods->GetStringWithoutPathExpansion(username,
-                                                              &input_method)) {
-    DVLOG(0) << "GetUserLRUInputMethod('" << username
-             << "'): no input method for this user";
-    return std::string();
-  }
-
-  return input_method;
-}
-
-void SigninScreenHandler::HandleGetUsers() {
-  if (delegate_)
-    delegate_->HandleGetUsers();
 }
 
 void SigninScreenHandler::ClearAndEnablePassword() {
@@ -922,26 +925,6 @@ void SigninScreenHandler::ShowSigninScreenForCreds(
   gaia_screen_handler_->ShowSigninScreenForCreds(username, password);
 }
 
-void SigninScreenHandler::SetPublicSessionDisplayName(
-      const std::string& user_id,
-      const std::string& display_name) {
-  CallJS("login.AccountPickerScreen.setPublicSessionDisplayName",
-         user_id,
-         display_name);
-}
-
-void SigninScreenHandler::SetPublicSessionLocales(
-    const std::string& user_id,
-    scoped_ptr<base::ListValue> locales,
-    const std::string& default_locale,
-    bool multipleRecommendedLocales) {
-  CallJS("login.AccountPickerScreen.setPublicSessionLocales",
-         user_id,
-         *locales,
-         default_locale,
-         multipleRecommendedLocales);
-}
-
 void SigninScreenHandler::Observe(int type,
                                   const content::NotificationSource& source,
                                   const content::NotificationDetails& details) {
@@ -968,30 +951,6 @@ void SigninScreenHandler::Observe(int type,
   }
 }
 
-void SigninScreenHandler::ShowBannerMessage(const base::string16& message) {
-  CallJS("login.AccountPickerScreen.showBannerMessage", message);
-}
-
-void SigninScreenHandler::ShowUserPodCustomIcon(
-    const std::string& username,
-    const base::DictionaryValue& icon) {
-  CallJS("login.AccountPickerScreen.showUserPodCustomIcon", username, icon);
-}
-
-void SigninScreenHandler::HideUserPodCustomIcon(const std::string& username) {
-  CallJS("login.AccountPickerScreen.hideUserPodCustomIcon", username);
-}
-
-void SigninScreenHandler::SetAuthType(
-    const std::string& username,
-    ScreenlockBridge::LockHandler::AuthType auth_type,
-    const base::string16& initial_value) {
-  CallJS("login.AccountPickerScreen.setAuthType",
-         username,
-         static_cast<int>(auth_type),
-         base::StringValue(initial_value));
-}
-
 void SigninScreenHandler::OnMaximizeModeStarted() {
   CallJS("login.AccountPickerScreen.setTouchViewState", true);
 }
@@ -1007,29 +966,6 @@ bool SigninScreenHandler::ShouldLoadGaia() const {
   return !ScreenLocker::default_screen_locker() &&
          is_account_picker_showing_first_time_;
 }
-
-// Update keyboard layout to least recently used by the user.
-void SigninScreenHandler::SetUserInputMethod(
-    const std::string& username,
-    input_method::InputMethodManager::State* ime_state) {
-  bool succeed = false;
-
-  const std::string input_method = GetUserLRUInputMethod(username);
-
-  if (!input_method.empty())
-    succeed = SetUserInputMethodImpl(username, input_method, ime_state);
-
-  // This is also a case when LRU layout is set only for a few local users,
-  // thus others need to be switched to default locale.
-  // Otherwise they will end up using another user's locale to log in.
-  if (!succeed) {
-    DVLOG(0) << "SetUserInputMethod('" << username
-               << "'): failed to set user layout. Switching to default.";
-
-    ime_state->SetInputMethodLoginDefault();
-  }
-}
-
 
 void SigninScreenHandler::UserSettingsChanged() {
   DCHECK(gaia_screen_handler_);
@@ -1054,19 +990,6 @@ void SigninScreenHandler::HandleAuthenticateUser(const std::string& username,
   delegate_->Login(user_context, SigninSpecifics());
 }
 
-void SigninScreenHandler::HandleAttemptUnlock(const std::string& username) {
-  EasyUnlockService* service = GetEasyUnlockServiceForUser(username);
-  if (!service)
-    return;
-  service->AttemptAuth(username);
-}
-
-void SigninScreenHandler::HandleLaunchDemoUser() {
-  UserContext context(user_manager::USER_TYPE_RETAIL_MODE, std::string());
-  if (delegate_)
-    delegate_->Login(context, SigninSpecifics());
-}
-
 void SigninScreenHandler::HandleLaunchIncognito() {
   UserContext context(user_manager::USER_TYPE_GUEST, std::string());
   if (delegate_)
@@ -1078,10 +1001,8 @@ void SigninScreenHandler::HandleShowSupervisedUserCreationScreen() {
     LOG(ERROR) << "Managed users not allowed.";
     return;
   }
-  scoped_ptr<base::DictionaryValue> params(new base::DictionaryValue());
   LoginDisplayHostImpl::default_host()->
-      StartWizard(WizardController::kSupervisedUserCreationScreenName,
-      params.Pass());
+      StartWizard(WizardController::kSupervisedUserCreationScreenName);
 }
 
 void SigninScreenHandler::HandleLaunchPublicSession(
@@ -1117,7 +1038,8 @@ void SigninScreenHandler::HandleShutdownSystem() {
   chromeos::DBusThreadManager::Get()->
       GetPowerManagerClient()->RequestShutdown();
 #else
-  ash::Shell::GetInstance()->lock_state_controller()->RequestShutdown();
+  ash::Shell::GetInstance()->lock_state_controller()->RequestShutdown(
+      ash::LockStateController::POWER_OFF);
 #endif
 }
 
@@ -1163,17 +1085,9 @@ void SigninScreenHandler::HandleToggleEnableDebuggingScreen() {
 void SigninScreenHandler::HandleToggleKioskEnableScreen() {
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  if (delegate_ &&
-      !auto_enrollment_progress_subscription_ &&
-      !connector->IsEnterpriseManaged() &&
+  if (delegate_ && !connector->IsEnterpriseManaged() &&
       LoginDisplayHostImpl::default_host()) {
-    AutoEnrollmentController* auto_enrollment_controller =
-        LoginDisplayHostImpl::default_host()->GetAutoEnrollmentController();
-    auto_enrollment_progress_subscription_ =
-        auto_enrollment_controller->RegisterProgressCallback(
-            base::Bind(&SigninScreenHandler::ContinueKioskEnableFlow,
-                       weak_factory_.GetWeakPtr()));
-    ContinueKioskEnableFlow(auto_enrollment_controller->state());
+    delegate_->ShowKioskEnableScreen();
   }
 }
 
@@ -1335,16 +1249,6 @@ void SigninScreenHandler::HandleFocusPod(const std::string& user_id) {
     test_focus_pod_callback_.Run();
 }
 
-void SigninScreenHandler::HandleHardlockPod(const std::string& user_id) {
-  SetAuthType(user_id,
-              ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
-              base::string16());
-  EasyUnlockService* service = GetEasyUnlockServiceForUser(user_id);
-  if (!service)
-    return;
-  service->SetHardlockState(EasyUnlockScreenlockStateHandler::USER_HARDLOCK);
-}
-
 void SigninScreenHandler::HandleGetPublicSessionKeyboardLayouts(
     const std::string& user_id,
     const std::string& locale) {
@@ -1380,8 +1284,8 @@ void SigninScreenHandler::HandleCancelConsumerManagementEnrollment() {
       g_browser_process->platform_part()->browser_policy_connector_chromeos()->
           GetConsumerManagementService();
   CHECK(consumer_management);
-  consumer_management->SetEnrollmentStage(
-      policy::ConsumerManagementService::ENROLLMENT_STAGE_CANCELED);
+  consumer_management->SetStage(
+      policy::ConsumerManagementStage::EnrollmentCanceled());
   is_enrolling_consumer_management_ = false;
   ShowImpl();
 }
@@ -1438,37 +1342,6 @@ OobeUI* SigninScreenHandler::GetOobeUI() const {
   return static_cast<OobeUI*>(web_ui()->GetController());
 }
 
-EasyUnlockService* SigninScreenHandler::GetEasyUnlockServiceForUser(
-      const std::string& username) const {
-  if (!ScreenLocker::default_screen_locker() &&
-      GetOobeUI()->display_type() != OobeUI::kLoginDisplay)
-    return NULL;
-
-  const user_manager::User* unlock_user = NULL;
-  const user_manager::UserList& users = delegate_->GetUsers();
-  for (user_manager::UserList::const_iterator it = users.begin();
-       it != users.end();
-       ++it) {
-    if ((*it)->email() == username) {
-      unlock_user = *it;
-      break;
-    }
-  }
-  if (!unlock_user)
-    return NULL;
-
-  ProfileHelper* profile_helper = ProfileHelper::Get();
-  Profile* profile = profile_helper->GetProfileByUser(unlock_user);
-
-  // The user profile should exists if and only if this is lock screen.
-  DCHECK_NE(!profile, !ScreenLocker::default_screen_locker());
-
-  if (!profile)
-    profile = profile_helper->GetSigninProfile();
-
-  return EasyUnlockService::Get(profile);
-}
-
 OobeUI::Screen SigninScreenHandler::GetCurrentScreen() const {
   OobeUI::Screen screen = OobeUI::SCREEN_UNKNOWN;
   OobeUI* oobe_ui = GetOobeUI();
@@ -1510,33 +1383,6 @@ bool SigninScreenHandler::IsOfflineLoginAllowed() const {
   bool show_pods;
   cros_settings->GetBoolean(kAccountsPrefShowUserNamesOnSignIn, &show_pods);
   return !show_pods;
-}
-
-void SigninScreenHandler::ContinueKioskEnableFlow(
-    policy::AutoEnrollmentState state) {
-  // Do not proceed with kiosk enable when auto enroll will be enforced.
-  // TODO(xiyuan): Add an error UI feedkback so user knows what happens.
-  switch (state) {
-    case policy::AUTO_ENROLLMENT_STATE_IDLE:
-    case policy::AUTO_ENROLLMENT_STATE_PENDING:
-    case policy::AUTO_ENROLLMENT_STATE_CONNECTION_ERROR:
-      // Wait for the next callback.
-      return;
-    case policy::AUTO_ENROLLMENT_STATE_TRIGGER_ENROLLMENT:
-      // Auto-enrollment is on.
-      LOG(WARNING) << "Kiosk enable flow aborted because auto enrollment is "
-                      "going to be enforced.";
-      if (!kiosk_enable_flow_aborted_callback_for_test_.is_null())
-        kiosk_enable_flow_aborted_callback_for_test_.Run();
-      break;
-    case policy::AUTO_ENROLLMENT_STATE_SERVER_ERROR:
-    case policy::AUTO_ENROLLMENT_STATE_NO_ENROLLMENT:
-      // Auto-enrollment not applicable.
-      if (delegate_)
-        delegate_->ShowKioskEnableScreen();
-      break;
-  }
-  auto_enrollment_progress_subscription_.reset();
 }
 
 void SigninScreenHandler::OnShowAddUser() {

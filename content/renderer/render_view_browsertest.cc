@@ -19,6 +19,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_ui_controller_factory.h"
 #include "content/public/common/bindings_policy.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
@@ -268,6 +269,19 @@ class RenderViewImplTest : public RenderViewTest {
 #endif
   }
 
+  void EnablePreferredSizeMode() {
+    view()->OnEnablePreferredSizeChangedMode();
+  }
+
+  const gfx::Size& GetPreferredSize() {
+    view()->CheckPreferredSize();
+    return view()->preferred_size_;
+  }
+
+  void SetZoomLevel(double level) {
+    view()->OnSetZoomLevelForView(false, level);
+  }
+
  private:
   scoped_ptr<MockKeyboard> mock_keyboard_;
 };
@@ -289,8 +303,8 @@ TEST_F(RenderViewImplTest, SaveImageFromDataURL) {
 
   ViewHostMsg_SaveImageFromDataURL::Param param1;
   ViewHostMsg_SaveImageFromDataURL::Read(msg2, &param1);
-  EXPECT_EQ(param1.b.length(), image_data_url.length());
-  EXPECT_EQ(param1.b, image_data_url);
+  EXPECT_EQ(get<1>(param1).length(), image_data_url.length());
+  EXPECT_EQ(get<1>(param1), image_data_url);
 
   ProcessPendingMessages();
   render_thread_->sink().ClearMessages();
@@ -305,8 +319,8 @@ TEST_F(RenderViewImplTest, SaveImageFromDataURL) {
 
   ViewHostMsg_SaveImageFromDataURL::Param param2;
   ViewHostMsg_SaveImageFromDataURL::Read(msg3, &param2);
-  EXPECT_EQ(param2.b.length(), large_data_url.length());
-  EXPECT_EQ(param2.b, large_data_url);
+  EXPECT_EQ(get<1>(param2).length(), large_data_url.length());
+  EXPECT_EQ(get<1>(param2), large_data_url);
 
   ProcessPendingMessages();
   render_thread_->sink().ClearMessages();
@@ -372,12 +386,12 @@ TEST_F(RenderViewImplTest, OnNavigationHttpPost) {
   FrameHostMsg_DidCommitProvisionalLoad::Param host_nav_params;
   FrameHostMsg_DidCommitProvisionalLoad::Read(frame_navigate_msg,
                                               &host_nav_params);
-  EXPECT_TRUE(host_nav_params.a.is_post);
+  EXPECT_TRUE(get<0>(host_nav_params).is_post);
 
   // Check post data sent to browser matches
-  EXPECT_TRUE(host_nav_params.a.page_state.IsValid());
+  EXPECT_TRUE(get<0>(host_nav_params).page_state.IsValid());
   scoped_ptr<HistoryEntry> entry =
-      PageStateToHistoryEntry(host_nav_params.a.page_state);
+      PageStateToHistoryEntry(get<0>(host_nav_params).page_state);
   blink::WebHTTPBody body = entry->root().httpBody();
   blink::WebHTTPBody::Element element;
   bool successful = body.elementAt(0, element);
@@ -531,7 +545,8 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   RenderProcess::current()->AddRefProcess();
 
   // Respond to a swap out request.
-  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId);
+  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId, true,
+                                          content::FrameReplicationState());
 
   // Ensure the swap out commits synchronously.
   EXPECT_NE(initial_page_id, view_page_id());
@@ -544,7 +559,8 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   // It is possible to get another swap out request.  Ensure that we send
   // an ACK, even if we don't have to do anything else.
   render_thread_->sink().ClearMessages();
-  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId);
+  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId, false,
+                                          content::FrameReplicationState());
   const IPC::Message* msg2 = render_thread_->sink().GetUniqueMessageMatching(
       FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg2);
@@ -584,8 +600,8 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   ASSERT_TRUE(msg_A);
   ViewHostMsg_UpdateState::Param params;
   ViewHostMsg_UpdateState::Read(msg_A, &params);
-  int page_id_A = params.a;
-  PageState state_A = params.b;
+  int page_id_A = get<0>(params);
+  PageState state_A = get<1>(params);
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -604,7 +620,8 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   ProcessPendingMessages();
 
   // Respond to a swap out request.
-  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId);
+  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId, true,
+                                          content::FrameReplicationState());
 
   // Check for a OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
@@ -640,9 +657,48 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   FrameHostMsg_DidCommitProvisionalLoad::Param commit_params;
   FrameHostMsg_DidCommitProvisionalLoad::Read(frame_navigate_msg,
                                               &commit_params);
-  EXPECT_NE(GURL("swappedout://"), commit_params.a.url);
+  EXPECT_NE(GURL("swappedout://"), get<0>(commit_params).url);
 }
 
+// Verify that security origins are replicated properly to RenderFrameProxies
+// when swapping out.
+TEST_F(RenderViewImplTest, OriginReplicationForSwapOut) {
+  // This test should only run with --site-per-process, since origin
+  // replication only happens in that mode.
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess))
+    return;
+
+  LoadHTML(
+      "Hello <iframe src='data:text/html,frame 1'></iframe>"
+      "<iframe src='data:text/html,frame 2'></iframe>");
+  WebFrame* web_frame = frame()->GetWebFrame();
+  RenderFrameImpl* child_frame = static_cast<RenderFrameImpl*>(
+      RenderFrame::FromWebFrame(web_frame->firstChild()));
+
+  // Swap the child frame out and pass a serialized origin to be set for
+  // WebRemoteFrame.
+  content::FrameReplicationState replication_state;
+  replication_state.origin = url::Origin("http://foo.com");
+  child_frame->OnSwapOut(kProxyRoutingId, true, replication_state);
+
+  // The child frame should now be a WebRemoteFrame.
+  EXPECT_TRUE(web_frame->firstChild()->isWebRemoteFrame());
+
+  // Expect the origin to be updated properly.
+  blink::WebSecurityOrigin origin = web_frame->firstChild()->securityOrigin();
+  EXPECT_EQ(origin.toString(),
+            WebString::fromUTF8(replication_state.origin.string()));
+
+  // Now, swap out the second frame using a unique origin and verify that it is
+  // replicated correctly.
+  replication_state.origin = url::Origin();
+  RenderFrameImpl* child_frame2 = static_cast<RenderFrameImpl*>(
+      RenderFrame::FromWebFrame(web_frame->lastChild()));
+  child_frame2->OnSwapOut(kProxyRoutingId + 1, true, replication_state);
+  EXPECT_TRUE(web_frame->lastChild()->isWebRemoteFrame());
+  EXPECT_TRUE(web_frame->lastChild()->securityOrigin().isUnique());
+}
 
 // Test that we get the correct UpdateState message when we go back twice
 // quickly without committing.  Regression test for http://crbug.com/58082.
@@ -661,8 +717,8 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   ASSERT_TRUE(msg_A);
   ViewHostMsg_UpdateState::Param param;
   ViewHostMsg_UpdateState::Read(msg_A, &param);
-  int page_id_A = param.a;
-  PageState state_A = param.b;
+  int page_id_A = get<0>(param);
+  PageState state_A = get<1>(param);
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -675,8 +731,8 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_B);
   ViewHostMsg_UpdateState::Read(msg_B, &param);
-  int page_id_B = param.a;
-  PageState state_B = param.b;
+  int page_id_B = get<0>(param);
+  PageState state_B = get<1>(param);
   EXPECT_EQ(2, page_id_B);
   EXPECT_NE(state_A, state_B);
   render_thread_->sink().ClearMessages();
@@ -690,8 +746,8 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_C);
   ViewHostMsg_UpdateState::Read(msg_C, &param);
-  int page_id_C = param.a;
-  PageState state_C = param.b;
+  int page_id_C = get<0>(param);
+  PageState state_C = get<1>(param);
   EXPECT_EQ(3, page_id_C);
   EXPECT_NE(state_B, state_C);
   render_thread_->sink().ClearMessages();
@@ -748,29 +804,26 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg);
   ViewHostMsg_UpdateState::Read(msg, &param);
-  int page_id = param.a;
-  PageState state = param.b;
+  int page_id = get<0>(param);
+  PageState state = get<1>(param);
   EXPECT_EQ(page_id_C, page_id);
   EXPECT_NE(state_A, state);
   EXPECT_NE(state_B, state);
   EXPECT_EQ(state_C, state);
 }
 
-// Test that the history_page_ids_ list can reveal when a stale back/forward
-// navigation arrives from the browser and can be ignored.  See
-// http://crbug.com/86758.
+// Test that stale back/forward navigations arriving from the browser are
+// ignored.  See http://crbug.com/86758.
 TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   // Load page A.
   LoadHTML("<div>Page A</div>");
   EXPECT_EQ(1, view()->history_list_length_);
   EXPECT_EQ(0, view()->history_list_offset_);
-  EXPECT_EQ(1, view()->history_page_ids_[0]);
 
   // Load page B, which will trigger an UpdateState message for page A.
   LoadHTML("<div>Page B</div>");
   EXPECT_EQ(2, view()->history_list_length_);
   EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(2, view()->history_page_ids_[1]);
 
   // Check for a valid UpdateState message for page A.
   ProcessPendingMessages();
@@ -779,8 +832,8 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   ASSERT_TRUE(msg_A);
   ViewHostMsg_UpdateState::Param param;
   ViewHostMsg_UpdateState::Read(msg_A, &param);
-  int page_id_A = param.a;
-  PageState state_A = param.b;
+  int page_id_A = get<0>(param);
+  PageState state_A = get<1>(param);
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -802,7 +855,7 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   LoadHTML("<div>Page C</div>");
   EXPECT_EQ(2, view()->history_list_length_);
   EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(3, view()->history_page_ids_[1]);
+  EXPECT_EQ(3, view()->page_id_); // page C is now page id 3
 
   // The browser then sends a stale navigation to B, which should be ignored.
   FrameMsg_Navigate_Params params_B;
@@ -821,76 +874,14 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   // State should be unchanged.
   EXPECT_EQ(2, view()->history_list_length_);
   EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(3, view()->history_page_ids_[1]);
-}
+  EXPECT_EQ(3, view()->page_id_); // page C, not page B
 
-// Test that we do not ignore navigations after the entry limit is reached,
-// in which case the browser starts dropping entries from the front.  In this
-// case, we'll see a page_id mismatch but the RenderView's id will be older,
-// not newer, than params.page_id.  Use this as a cue that we should update the
-// state and not treat it like a navigation to a cropped forward history item.
-// See http://crbug.com/89798.
-TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
-  // Load page A.
-  LoadHTML("<div>Page A</div>");
-  EXPECT_EQ(1, view()->history_list_length_);
-  EXPECT_EQ(0, view()->history_list_offset_);
-  EXPECT_EQ(1, view()->history_page_ids_[0]);
-
-  // Load page B, which will trigger an UpdateState message for page A.
-  LoadHTML("<div>Page B</div>");
-  EXPECT_EQ(2, view()->history_list_length_);
-  EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(2, view()->history_page_ids_[1]);
-
-  // Check for a valid UpdateState message for page A.
+  // Check for a valid DidDropNavigation message.
   ProcessPendingMessages();
-  const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_UpdateState::ID);
-  ASSERT_TRUE(msg_A);
-  ViewHostMsg_UpdateState::Param param;
-  ViewHostMsg_UpdateState::Read(msg_A, &param);
-  int page_id_A = param.a;
-  PageState state_A = param.b;
-  EXPECT_EQ(1, page_id_A);
+  const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
+      FrameHostMsg_DidDropNavigation::ID);
+  ASSERT_TRUE(msg);
   render_thread_->sink().ClearMessages();
-
-  // Load page C, which will trigger an UpdateState message for page B.
-  LoadHTML("<div>Page C</div>");
-  EXPECT_EQ(3, view()->history_list_length_);
-  EXPECT_EQ(2, view()->history_list_offset_);
-  EXPECT_EQ(3, view()->history_page_ids_[2]);
-
-  // Check for a valid UpdateState message for page B.
-  ProcessPendingMessages();
-  const IPC::Message* msg_B = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_UpdateState::ID);
-  ASSERT_TRUE(msg_B);
-  ViewHostMsg_UpdateState::Read(msg_B, &param);
-  int page_id_B = param.a;
-  PageState state_B = param.b;
-  EXPECT_EQ(2, page_id_B);
-  render_thread_->sink().ClearMessages();
-
-  // Suppose the browser has limited the number of NavigationEntries to 2.
-  // It has now dropped the first entry, but the renderer isn't notified.
-  // Ensure that going back to page B (page_id 2) at offset 0 is successful.
-  FrameMsg_Navigate_Params params_B;
-  params_B.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params_B.common_params.transition = ui::PAGE_TRANSITION_FORWARD_BACK;
-  params_B.current_history_list_length = 2;
-  params_B.current_history_list_offset = 1;
-  params_B.pending_history_list_offset = 0;
-  params_B.page_id = 2;
-  params_B.commit_params.page_state = state_B;
-  params_B.commit_params.browser_navigation_start =
-      base::TimeTicks::FromInternalValue(1);
-  frame()->OnNavigate(params_B);
-  ProcessPendingMessages();
-
-  EXPECT_EQ(2, view()->history_list_length_);
-  EXPECT_EQ(0, view()->history_list_offset_);
-  EXPECT_EQ(2, view()->history_page_ids_[0]);
 }
 
 // Test that our IME backend sends a notification message when the input focus
@@ -963,9 +954,9 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
     EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
     ViewHostMsg_TextInputTypeChanged::Param params;
     ViewHostMsg_TextInputTypeChanged::Read(msg, &params);
-    ui::TextInputType type = params.a;
-    ui::TextInputMode input_mode = params.b;
-    bool can_compose_inline = params.c;
+    ui::TextInputType type = get<0>(params);
+    ui::TextInputMode input_mode = get<1>(params);
+    bool can_compose_inline = get<2>(params);
     EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, type);
     EXPECT_EQ(true, can_compose_inline);
 
@@ -982,8 +973,8 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
     EXPECT_TRUE(msg != NULL);
     EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
     ViewHostMsg_TextInputTypeChanged::Read(msg, & params);
-    type = params.a;
-    input_mode = params.b;
+    type = get<0>(params);
+    input_mode = get<1>(params);
     EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, type);
 
     for (size_t i = 0; i < arraysize(kInputModeTestCases); i++) {
@@ -1004,8 +995,8 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
       EXPECT_TRUE(msg != NULL);
       EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
       ViewHostMsg_TextInputTypeChanged::Read(msg, & params);
-      type = params.a;
-      input_mode = params.b;
+      type = get<0>(params);
+      input_mode = get<1>(params);
       EXPECT_EQ(test_case->expected_mode, input_mode);
     }
   }
@@ -1635,203 +1626,16 @@ TEST_F(RenderViewImplTest, UpdateTargetURLWithInvalidURL) {
   EXPECT_EQ(invalid_gurl, view()->target_url_);
 }
 
-TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
-  int expected_page_id = -1;
-
-  // No history to merge and no committed pages.
-  view()->OnSetHistoryLengthAndPrune(0, -1);
-  EXPECT_EQ(0, view()->history_list_length_);
-  EXPECT_EQ(-1, view()->history_list_offset_);
-
-  // History to merge and no committed pages.
-  view()->OnSetHistoryLengthAndPrune(2, -1);
-  EXPECT_EQ(2, view()->history_list_length_);
-  EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(-1, view()->history_page_ids_[0]);
-  EXPECT_EQ(-1, view()->history_page_ids_[1]);
-  ClearHistory();
-
-  blink::WebHistoryItem item;
-  item.initialize();
-
-  // No history to merge and a committed page to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  view()->OnSetHistoryLengthAndPrune(0, expected_page_id);
+TEST_F(RenderViewImplTest, SetHistoryLengthAndOffset) {
+  // No history to merge; one committed page.
+  view()->OnSetHistoryOffsetAndLength(0, 1);
   EXPECT_EQ(1, view()->history_list_length_);
   EXPECT_EQ(0, view()->history_list_offset_);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
-  ClearHistory();
 
-  // No history to merge and a committed page to be pruned.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  view()->OnSetHistoryLengthAndPrune(0, expected_page_id + 1);
-  EXPECT_EQ(0, view()->history_list_length_);
-  EXPECT_EQ(-1, view()->history_list_offset_);
-  ClearHistory();
-
-  // No history to merge and a committed page that the browser was unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  view()->OnSetHistoryLengthAndPrune(0, -1);
-  EXPECT_EQ(1, view()->history_list_length_);
-  EXPECT_EQ(0, view()->history_list_offset_);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
-  ClearHistory();
-
-  // History to merge and a committed page to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  view()->OnSetHistoryLengthAndPrune(2, expected_page_id);
-  EXPECT_EQ(3, view()->history_list_length_);
-  EXPECT_EQ(2, view()->history_list_offset_);
-  EXPECT_EQ(-1, view()->history_page_ids_[0]);
-  EXPECT_EQ(-1, view()->history_page_ids_[1]);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
-  ClearHistory();
-
-  // History to merge and a committed page to be pruned.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  view()->OnSetHistoryLengthAndPrune(2, expected_page_id + 1);
+  // History of length 1 to merge; one committed page.
+  view()->OnSetHistoryOffsetAndLength(1, 2);
   EXPECT_EQ(2, view()->history_list_length_);
   EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(-1, view()->history_page_ids_[0]);
-  EXPECT_EQ(-1, view()->history_page_ids_[1]);
-  ClearHistory();
-
-  // History to merge and a committed page that the browser was unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  view()->OnSetHistoryLengthAndPrune(2, -1);
-  EXPECT_EQ(3, view()->history_list_length_);
-  EXPECT_EQ(2, view()->history_list_offset_);
-  EXPECT_EQ(-1, view()->history_page_ids_[0]);
-  EXPECT_EQ(-1, view()->history_page_ids_[1]);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
-  ClearHistory();
-
-  int expected_page_id_2 = -1;
-
-  // No history to merge and two committed pages, both to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id_2 = view()->page_id_;
-  EXPECT_GT(expected_page_id_2, expected_page_id);
-  view()->OnSetHistoryLengthAndPrune(0, expected_page_id);
-  EXPECT_EQ(2, view()->history_list_length_);
-  EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
-  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[1]);
-  ClearHistory();
-
-  // No history to merge and two committed pages, and only the second is kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id_2 = view()->page_id_;
-  EXPECT_GT(expected_page_id_2, expected_page_id);
-  view()->OnSetHistoryLengthAndPrune(0, expected_page_id_2);
-  EXPECT_EQ(1, view()->history_list_length_);
-  EXPECT_EQ(0, view()->history_list_offset_);
-  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[0]);
-  ClearHistory();
-
-  // No history to merge and two committed pages, both of which the browser was
-  // unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id_2 = view()->page_id_;
-  EXPECT_GT(expected_page_id_2, expected_page_id);
-  view()->OnSetHistoryLengthAndPrune(0, -1);
-  EXPECT_EQ(2, view()->history_list_length_);
-  EXPECT_EQ(1, view()->history_list_offset_);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
-  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[1]);
-  ClearHistory();
-
-  // History to merge and two committed pages, both to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id_2 = view()->page_id_;
-  EXPECT_GT(expected_page_id_2, expected_page_id);
-  view()->OnSetHistoryLengthAndPrune(2, expected_page_id);
-  EXPECT_EQ(4, view()->history_list_length_);
-  EXPECT_EQ(3, view()->history_list_offset_);
-  EXPECT_EQ(-1, view()->history_page_ids_[0]);
-  EXPECT_EQ(-1, view()->history_page_ids_[1]);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
-  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[3]);
-  ClearHistory();
-
-  // History to merge and two committed pages, and only the second is kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id_2 = view()->page_id_;
-  EXPECT_GT(expected_page_id_2, expected_page_id);
-  view()->OnSetHistoryLengthAndPrune(2, expected_page_id_2);
-  EXPECT_EQ(3, view()->history_list_length_);
-  EXPECT_EQ(2, view()->history_list_offset_);
-  EXPECT_EQ(-1, view()->history_page_ids_[0]);
-  EXPECT_EQ(-1, view()->history_page_ids_[1]);
-  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[2]);
-  ClearHistory();
-
-  // History to merge and two committed pages, both of which the browser was
-  // unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(),
-                                    item,
-                                    blink::WebStandardCommit);
-  expected_page_id_2 = view()->page_id_;
-  EXPECT_GT(expected_page_id_2, expected_page_id);
-  view()->OnSetHistoryLengthAndPrune(2, -1);
-  EXPECT_EQ(4, view()->history_list_length_);
-  EXPECT_EQ(3, view()->history_list_offset_);
-  EXPECT_EQ(-1, view()->history_page_ids_[0]);
-  EXPECT_EQ(-1, view()->history_page_ids_[1]);
-  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
-  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[3]);
 }
 
 TEST_F(RenderViewImplTest, ContextMenu) {
@@ -2321,7 +2125,7 @@ TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {
 
   ViewHostMsg_FocusedNodeChanged::Param params;
   ViewHostMsg_FocusedNodeChanged::Read(msg1, &params);
-  EXPECT_TRUE(params.a);
+  EXPECT_TRUE(get<0>(params));
   render_thread_->sink().ClearMessages();
 
   ExecuteJavaScript("document.getElementById('test2').focus();");
@@ -2329,7 +2133,7 @@ TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {
         ViewHostMsg_FocusedNodeChanged::ID);
   EXPECT_TRUE(msg2);
   ViewHostMsg_FocusedNodeChanged::Read(msg2, &params);
-  EXPECT_TRUE(params.a);
+  EXPECT_TRUE(get<0>(params));
   render_thread_->sink().ClearMessages();
 
   view()->webview()->clearFocusedElement();
@@ -2337,7 +2141,7 @@ TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {
         ViewHostMsg_FocusedNodeChanged::ID);
   EXPECT_TRUE(msg3);
   ViewHostMsg_FocusedNodeChanged::Read(msg3, &params);
-  EXPECT_FALSE(params.a);
+  EXPECT_FALSE(get<0>(params));
   render_thread_->sink().ClearMessages();
 }
 
@@ -2485,7 +2289,7 @@ class RenderViewImplInitialSizeTest : public RenderViewImplTest {
       : RenderViewImplTest(), initial_size_(200, 100) {}
 
  protected:
-  virtual scoped_ptr<ViewMsg_Resize_Params> InitialSizeParams() override {
+  scoped_ptr<ViewMsg_Resize_Params> InitialSizeParams() override {
     scoped_ptr<ViewMsg_Resize_Params> initial_size_params(
         new ViewMsg_Resize_Params());
     initial_size_params->new_size = initial_size_;
@@ -2498,6 +2302,20 @@ class RenderViewImplInitialSizeTest : public RenderViewImplTest {
 TEST_F(RenderViewImplInitialSizeTest, InitialSize) {
   ASSERT_EQ(initial_size_, view_->GetSize());
   ASSERT_EQ(initial_size_, gfx::Size(view_->GetWebView()->size()));
+}
+
+TEST_F(RenderViewImplTest, PreferredSizeZoomed) {
+  LoadHTML("<body style='margin:0;'><div style='display:inline-block; "
+           "width:400px; height:400px;'/></body>");
+  view()->webview()->mainFrame()->setCanHaveScrollbars(false);
+  EnablePreferredSizeMode();
+
+  gfx::Size size = GetPreferredSize();
+  EXPECT_EQ(gfx::Size(400, 400), size);
+
+  SetZoomLevel(ZoomFactorToZoomLevel(2.0));
+  size = GetPreferredSize();
+  EXPECT_EQ(gfx::Size(800, 800), size);
 }
 
 }  // namespace content

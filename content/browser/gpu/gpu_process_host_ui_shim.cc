@@ -25,7 +25,7 @@
 #include "content/public/browser/browser_thread.h"
 
 #if defined(OS_MACOSX)
-#include "content/browser/compositor/browser_compositor_ca_layer_tree_mac.h"
+#include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #endif
 
 #if defined(USE_OZONE)
@@ -230,6 +230,8 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
                         OnVideoMemoryUsageStatsReceived);
     IPC_MESSAGE_HANDLER(GpuHostMsg_ResourcesRelinquished,
                         OnResourcesRelinquished)
+    IPC_MESSAGE_HANDLER(GpuHostMsg_AddSubscription, OnAddSubscription);
+    IPC_MESSAGE_HANDLER(GpuHostMsg_RemoveSubscription, OnRemoveSubscription);
 
     IPC_MESSAGE_UNHANDLED_ERROR()
   IPC_END_MESSAGE_MAP()
@@ -277,17 +279,25 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
   // associated with a RenderWidgetHostViewBase.
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
   DCHECK(IsDelegatedRendererEnabled());
-  gfx::AcceleratedWidget native_widget =
-      content::GpuSurfaceTracker::Get()->AcquireNativeWidget(params.surface_id);
-  AcceleratedWidgetMacGotAcceleratedFrame(
-      native_widget,
-      params.surface_handle,
-      params.latency_info,
-      params.size,
-      params.scale_factor,
-      base::Bind(&OnSurfaceDisplayedCallback, params.surface_id),
-      &ack_params.disable_throttling,
-      &ack_params.renderer_id);
+
+  // If the frame was intended for an NSView that the gfx::AcceleratedWidget is
+  // no longer attached to, do not pass the frame along to the widget. Just ack
+  // it to the GPU process immediately, so we can proceed to the next frame.
+  bool should_not_show_frame =
+      content::ImageTransportFactory::GetInstance()
+          ->SurfaceShouldNotShowFramesAfterRecycle(params.surface_id);
+  if (should_not_show_frame) {
+    OnSurfaceDisplayedCallback(params.surface_id);
+  } else {
+    gfx::AcceleratedWidget native_widget =
+        content::GpuSurfaceTracker::Get()->AcquireNativeWidget(
+            params.surface_id);
+    ui::AcceleratedWidgetMacGotAcceleratedFrame(
+        native_widget, params.surface_handle, params.latency_info, params.size,
+        params.scale_factor,
+        base::Bind(&OnSurfaceDisplayedCallback, params.surface_id),
+        &ack_params.disable_throttling, &ack_params.renderer_id);
+  }
   Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id, ack_params));
 #else
   NOTREACHED();
@@ -303,6 +313,22 @@ void GpuProcessHostUIShim::OnVideoMemoryUsageStatsReceived(
 void GpuProcessHostUIShim::OnResourcesRelinquished() {
   if (!relinquish_callback_.is_null()) {
     base::ResetAndReturn(&relinquish_callback_).Run();
+  }
+}
+
+void GpuProcessHostUIShim::OnAddSubscription(
+    int32 process_id, unsigned int target) {
+  RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
+  if (rph) {
+    rph->OnAddSubscription(target);
+  }
+}
+
+void GpuProcessHostUIShim::OnRemoveSubscription(
+    int32 process_id, unsigned int target) {
+  RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
+  if (rph) {
+    rph->OnRemoveSubscription(target);
   }
 }
 

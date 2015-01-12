@@ -198,12 +198,12 @@ class GLES2DecoderImpl;
 // a few others) are 32bits. If they are not 32bits the code will have to change
 // to call those GL functions with service side memory and then copy the results
 // to shared memory, converting the sizes.
-COMPILE_ASSERT(sizeof(GLint) == sizeof(uint32),  // NOLINT
-               GLint_not_same_size_as_uint32);
-COMPILE_ASSERT(sizeof(GLsizei) == sizeof(uint32),  // NOLINT
-               GLint_not_same_size_as_uint32);
-COMPILE_ASSERT(sizeof(GLfloat) == sizeof(float),  // NOLINT
-               GLfloat_not_same_size_as_float);
+static_assert(sizeof(GLint) == sizeof(uint32),  // NOLINT
+              "GLint should be the same size as uint32");
+static_assert(sizeof(GLsizei) == sizeof(uint32),  // NOLINT
+              "GLsizei should be the same size as uint32");
+static_assert(sizeof(GLfloat) == sizeof(float),  // NOLINT
+              "GLfloat should be the same size as float");
 
 // TODO(kbr): the use of this anonymous namespace core dumps the
 // linker on Mac OS X 10.6 when the symbol ordering file is used
@@ -630,7 +630,13 @@ class GLES2DecoderImpl : public GLES2Decoder,
     return vertex_array_manager_.get();
   }
   ImageManager* GetImageManager() override { return image_manager_.get(); }
+
+  ValuebufferManager* GetValuebufferManager() override {
+    return valuebuffer_manager();
+  }
+
   bool ProcessPendingQueries(bool did_finish) override;
+
   bool HasMoreIdleWork() override;
   void PerformIdleWork() override;
 
@@ -873,6 +879,9 @@ class GLES2DecoderImpl : public GLES2Decoder,
 
   // Wrapper for SwapBuffers.
   void DoSwapBuffers();
+
+  // Wrapper for SwapInterval.
+  void DoSwapInterval(int interval);
 
   // Wrapper for CopyTexSubImage2D.
   void DoCopyTexSubImage2D(
@@ -1464,6 +1473,11 @@ class GLES2DecoderImpl : public GLES2Decoder,
   // Wrapper for glReleaseShaderCompiler.
   void DoReleaseShaderCompiler() { }
 
+  // Wrappers for glSamplerParameter*v functions.
+  void DoSamplerParameterfv(
+      GLuint sampler, GLenum pname, const GLfloat* params);
+  void DoSamplerParameteriv(GLuint sampler, GLenum pname, const GLint* params);
+
   // Wrappers for glTexParameter functions.
   void DoTexParameterf(GLenum target, GLenum pname, GLfloat param);
   void DoTexParameteri(GLenum target, GLenum pname, GLint param);
@@ -1863,6 +1877,8 @@ class GLES2DecoderImpl : public GLES2Decoder,
   scoped_ptr<GPUTracer> gpu_tracer_;
   scoped_ptr<GPUStateTracer> gpu_state_tracer_;
   const unsigned char* cb_command_trace_category_;
+  const unsigned char* gpu_decoder_category_;
+  const unsigned char* gpu_group_marker_category_;
   int gpu_trace_level_;
   bool gpu_trace_commands_;
   bool gpu_debug_commands_;
@@ -2369,7 +2385,7 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
       shader_texture_lod_explicitly_enabled_(false),
       compile_shader_always_succeeds_(false),
       lose_context_when_out_of_memory_(false),
-      service_logging_(CommandLine::ForCurrentProcess()->HasSwitch(
+      service_logging_(base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableGPUServiceLoggingGPU)),
       viewport_max_width_(0),
       viewport_max_height_(0),
@@ -2378,6 +2394,10 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
                          .texsubimage2d_faster_than_teximage2d),
       cb_command_trace_category_(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
           TRACE_DISABLED_BY_DEFAULT("cb_command"))),
+      gpu_decoder_category_(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+          TRACE_DISABLED_BY_DEFAULT("gpu_decoder"))),
+      gpu_group_marker_category_(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+          TRACE_DISABLED_BY_DEFAULT("gpu_group_marker"))),
       gpu_trace_level_(2),
       gpu_trace_commands_(false),
       gpu_debug_commands_(false),
@@ -2397,7 +2417,7 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
   // tests because GLES2DecoderWithShaderTest.GetShaderInfoLogValidArgs passes
   // the empty string to CompileShader and this is not a valid shader.
   if (gfx::GetGLImplementation() == gfx::kGLImplementationMockGL ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGLSLTranslator)) {
     use_shader_translator_ = false;
   }
@@ -2423,23 +2443,24 @@ bool GLES2DecoderImpl::Initialize(
   gpu_tracer_.reset(new GPUTracer(this));
   gpu_state_tracer_ = GPUStateTracer::Create(&state_);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableGPUDebugging)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGPUDebugging)) {
     set_debug(true);
   }
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableGPUCommandLogging)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGPUCommandLogging)) {
     set_log_commands(true);
   }
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableUnsafeES3APIs)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableUnsafeES3APIs)) {
     set_unsafe_es3_apis_enabled(true);
   }
 
-  compile_shader_always_succeeds_ = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kCompileShaderAlwaysSucceeds);
+  compile_shader_always_succeeds_ =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kCompileShaderAlwaysSucceeds);
 
   // Take ownership of the context and surface. The surface can be replaced with
   // SetSurface.
@@ -2849,6 +2870,7 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
       feature_info_->feature_flags().blend_equation_advanced;
   caps.blend_equation_advanced_coherent =
       feature_info_->feature_flags().blend_equation_advanced_coherent;
+  caps.texture_rg = feature_info_->feature_flags().ext_texture_rg;
   return caps;
 }
 
@@ -2938,6 +2960,10 @@ bool GLES2DecoderImpl::InitializeShaderTranslator() {
     driver_bug_workarounds |= SH_SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS;
   if (workarounds().regenerate_struct_names)
     driver_bug_workarounds |= SH_REGENERATE_STRUCT_NAMES;
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEmulateShaderPrecision))
+    resources.WEBGL_debug_shader_precision = true;
 
   vertex_translator_ = shader_translator_cache()->GetTranslator(
       GL_VERTEX_SHADER,
@@ -3474,7 +3500,7 @@ Logger* GLES2DecoderImpl::GetLogger() {
 
 void GLES2DecoderImpl::BeginDecoding() {
   gpu_tracer_->BeginDecoding();
-  gpu_trace_commands_ = gpu_tracer_->IsTracing();
+  gpu_trace_commands_ = gpu_tracer_->IsTracing() && *gpu_decoder_category_;
   gpu_debug_commands_ = log_commands() || debug() || gpu_trace_commands_ ||
                         (*cb_command_trace_category_ != 0);
 }
@@ -3951,7 +3977,9 @@ error::Error GLES2DecoderImpl::DoCommandsImpl(unsigned int num_commands,
         if (DebugImpl && gpu_trace_commands_) {
           if (CMD_FLAG_GET_TRACE_LEVEL(info.cmd_flags) <= gpu_trace_level_) {
             doing_gpu_trace = true;
-            gpu_tracer_->Begin(GetCommandName(command), kTraceDecoder);
+            gpu_tracer_->Begin(TRACE_DISABLED_BY_DEFAULT("gpu_decoder"),
+                               GetCommandName(command),
+                               kTraceDecoder);
           }
         }
 
@@ -4251,6 +4279,14 @@ void GLES2DecoderImpl::SetIgnoreCachedStateForTest(bool ignore) {
 void GLES2DecoderImpl::OnFboChanged() const {
   if (workarounds().restore_scissor_on_fbo_change)
     state_.fbo_binding_for_scissor_workaround_dirty_ = true;
+
+  if (workarounds().gl_begin_gl_end_on_fbo_change_to_backbuffer) {
+    GLint bound_fbo_unsigned = -1;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &bound_fbo_unsigned);
+    GLuint bound_fbo = static_cast<GLuint>(bound_fbo_unsigned);
+    if (surface_ && surface_->GetBackingFrameBufferObject() == bound_fbo)
+      surface_->NotifyWasBound();
+  }
 }
 
 // Called after the FBO is checked for completeness.
@@ -4487,7 +4523,13 @@ void GLES2DecoderImpl::DoDiscardFramebufferEXT(GLenum target,
   }
 
   ScopedRenderTo do_render(framebuffer);
-  glDiscardFramebufferEXT(target, numAttachments, translated_attachments.get());
+  if (feature_info_->gl_version_info().is_es3) {
+    glInvalidateFramebuffer(
+        target, numAttachments, translated_attachments.get());
+  } else {
+    glDiscardFramebufferEXT(
+        target, numAttachments, translated_attachments.get());
+  }
 }
 
 void GLES2DecoderImpl::DoEnableVertexAttribArray(GLuint index) {
@@ -5488,7 +5530,7 @@ void GLES2DecoderImpl::RenderbufferStorageMultisampleHelper(
     GLsizei height) {
   // TODO(sievers): This could be resolved at the GL binding level, but the
   // binding process is currently a bit too 'brute force'.
-  if (feature_info->feature_flags().is_angle) {
+  if (feature_info->gl_version_info().is_angle) {
     glRenderbufferStorageMultisampleANGLE(
         target, samples, internal_format, width, height);
   } else if (feature_info->feature_flags().use_core_framebuffer_multisample) {
@@ -5512,7 +5554,7 @@ void GLES2DecoderImpl::BlitFramebufferHelper(GLint srcX0,
                                              GLenum filter) {
   // TODO(sievers): This could be resolved at the GL binding level, but the
   // binding process is currently a bit too 'brute force'.
-  if (feature_info_->feature_flags().is_angle) {
+  if (feature_info_->gl_version_info().is_angle) {
     glBlitFramebufferANGLE(
         srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
   } else if (feature_info_->feature_flags().use_core_framebuffer_multisample) {
@@ -5833,6 +5875,18 @@ void GLES2DecoderImpl::DoLinkProgram(GLuint program_id) {
   // context preemption and GPU watchdog checks.
   ExitCommandProcessingEarly();
 };
+
+void GLES2DecoderImpl::DoSamplerParameterfv(
+    GLuint sampler, GLenum pname, const GLfloat* params) {
+  DCHECK(params);
+  glSamplerParameterf(sampler, pname, params[0]);
+}
+
+void GLES2DecoderImpl::DoSamplerParameteriv(
+    GLuint sampler, GLenum pname, const GLint* params) {
+  DCHECK(params);
+  glSamplerParameteri(sampler, pname, params[0]);
+}
 
 void GLES2DecoderImpl::DoTexParameterf(
     GLenum target, GLenum pname, GLfloat param) {
@@ -7858,8 +7912,8 @@ error::Error GLES2DecoderImpl::HandleReadPixels(uint32 immediate_data_size,
       glGenBuffersARB(1, &buffer);
       glBindBuffer(GL_PIXEL_PACK_BUFFER_ARB, buffer);
       // For ANGLE client version 2, GL_STREAM_READ is not available.
-      const GLenum usage_hint =
-          features().is_angle ? GL_STATIC_DRAW : GL_STREAM_READ;
+      const GLenum usage_hint = feature_info_->gl_version_info().is_angle ?
+          GL_STATIC_DRAW : GL_STREAM_READ;
       glBufferData(GL_PIXEL_PACK_BUFFER_ARB, pixels_size, NULL, usage_hint);
       GLenum error = glGetError();
       if (error == GL_NO_ERROR) {
@@ -9696,7 +9750,7 @@ void GLES2DecoderImpl::DoSwapBuffers() {
       // Ensure the side effects of the copy are visible to the parent
       // context. There is no need to do this for ANGLE because it uses a
       // single D3D device for all contexts.
-      if (!feature_info_->feature_flags().is_angle)
+      if (!feature_info_->gl_version_info().is_angle)
         glFlush();
     }
   } else {
@@ -9709,6 +9763,11 @@ void GLES2DecoderImpl::DoSwapBuffers() {
   // This may be a slow command.  Exit command processing to allow for
   // context preemption and GPU watchdog checks.
   ExitCommandProcessingEarly();
+}
+
+void GLES2DecoderImpl::DoSwapInterval(int interval)
+{
+  context_->SetSwapInterval(interval);
 }
 
 error::Error GLES2DecoderImpl::HandleEnableFeatureCHROMIUM(
@@ -10947,12 +11006,17 @@ void GLES2DecoderImpl::DoPushGroupMarkerEXT(
   }
   std::string name = length ? std::string(marker, length) : std::string(marker);
   debug_marker_manager_.PushGroup(name);
-  gpu_tracer_->Begin(name, kTraceGroupMarker);
+  if (*gpu_group_marker_category_) {
+    gpu_tracer_->Begin(TRACE_DISABLED_BY_DEFAULT("gpu_group_marker"), name,
+                       kTraceGroupMarker);
+  }
 }
 
 void GLES2DecoderImpl::DoPopGroupMarkerEXT(void) {
   debug_marker_manager_.PopGroup();
-  gpu_tracer_->End(kTraceGroupMarker);
+  if (*gpu_group_marker_category_) {
+    gpu_tracer_->End(kTraceGroupMarker);
+  }
 }
 
 void GLES2DecoderImpl::DoBindTexImage2DCHROMIUM(
@@ -11046,16 +11110,23 @@ error::Error GLES2DecoderImpl::HandleTraceBeginCHROMIUM(
     const void* cmd_data) {
   const gles2::cmds::TraceBeginCHROMIUM& c =
       *static_cast<const gles2::cmds::TraceBeginCHROMIUM*>(cmd_data);
-  Bucket* bucket = GetBucket(c.bucket_id);
-  if (!bucket || bucket->size() == 0) {
+  Bucket* category_bucket = GetBucket(c.category_bucket_id);
+  Bucket* name_bucket = GetBucket(c.name_bucket_id);
+  if (!category_bucket || category_bucket->size() == 0 ||
+      !name_bucket || name_bucket->size() == 0) {
     return error::kInvalidArguments;
   }
-  std::string command_name;
-  if (!bucket->GetAsString(&command_name)) {
+
+  std::string category_name;
+  std::string trace_name;
+  if (!category_bucket->GetAsString(&category_name) ||
+      !name_bucket->GetAsString(&trace_name)) {
     return error::kInvalidArguments;
   }
-  TRACE_EVENT_COPY_ASYNC_BEGIN0("gpu", command_name.c_str(), this);
-  if (!gpu_tracer_->Begin(command_name, kTraceCHROMIUM)) {
+
+  TRACE_EVENT_COPY_ASYNC_BEGIN0(category_name.c_str(), trace_name.c_str(),
+                                this);
+  if (!gpu_tracer_->Begin(category_name, trace_name, kTraceCHROMIUM)) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
         "glTraceBeginCHROMIUM", "unable to create begin trace");
@@ -11065,13 +11136,15 @@ error::Error GLES2DecoderImpl::HandleTraceBeginCHROMIUM(
 }
 
 void GLES2DecoderImpl::DoTraceEndCHROMIUM() {
-  if (gpu_tracer_->CurrentName().empty()) {
+  if (gpu_tracer_->CurrentCategory().empty() ||
+      gpu_tracer_->CurrentName().empty()) {
     LOCAL_SET_GL_ERROR(
         GL_INVALID_OPERATION,
         "glTraceEndCHROMIUM", "no trace begin found");
     return;
   }
-  TRACE_EVENT_COPY_ASYNC_END0("gpu", gpu_tracer_->CurrentName().c_str(), this);
+  TRACE_EVENT_COPY_ASYNC_END0(gpu_tracer_->CurrentCategory().c_str(),
+                              gpu_tracer_->CurrentName().c_str(), this);
   gpu_tracer_->End(kTraceCHROMIUM);
 }
 

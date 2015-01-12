@@ -44,7 +44,6 @@ class AutofillExternalDelegate;
 class AutofillField;
 class AutofillClient;
 class AutofillManagerTestDelegate;
-class AutofillMetrics;
 class AutofillProfile;
 class AutofillType;
 class CreditCard;
@@ -54,7 +53,7 @@ struct FormData;
 struct FormFieldData;
 
 // Manages saving and restoring the user's personal information entered into web
-// forms.
+// forms. One per frame; owned by the AutofillDriver.
 class AutofillManager : public AutofillDownloadManager::Observer {
  public:
   enum AutofillDownloadManagerState {
@@ -100,8 +99,8 @@ class AutofillManager : public AutofillDownloadManager::Observer {
 #endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
   // Whether the |field| should show an entry to scan a credit card.
-  bool ShouldShowScanCreditCard(const FormData& form,
-                                const FormFieldData& field);
+  virtual bool ShouldShowScanCreditCard(const FormData& form,
+                                        const FormFieldData& field);
 
   // Called from our external delegate so they cannot be private.
   virtual void FillOrPreviewForm(AutofillDriver::RendererFormDataAction action,
@@ -197,21 +196,19 @@ class AutofillManager : public AutofillDownloadManager::Observer {
       const base::TimeTicks& interaction_time,
       const base::TimeTicks& submission_time);
 
-  // Maps GUIDs to and from IDs that are used to identify profiles and credit
-  // cards sent to and from the renderer process.
-  virtual int GUIDToID(const PersonalDataManager::GUIDPair& guid) const;
-  virtual const PersonalDataManager::GUIDPair IDToGUID(int id) const;
+  // Maps SuggestionBackendID to and from an integer identifying it. Two of
+  // these intermediate integers are packed by MakeFrontendID to make the IDs
+  // that this class generates for the UI and for IPC.
+  virtual int BackendIDToInt(const SuggestionBackendID& backend_id) const;
+  virtual SuggestionBackendID IntToBackendID(int int_id) const;
 
   // Methods for packing and unpacking credit card and profile IDs for sending
   // and receiving to and from the renderer process.
-  int PackGUIDs(const PersonalDataManager::GUIDPair& cc_guid,
-                const PersonalDataManager::GUIDPair& profile_guid) const;
-  void UnpackGUIDs(int id,
-                   PersonalDataManager::GUIDPair* cc_guid,
-                   PersonalDataManager::GUIDPair* profile_guid) const;
-
-  const AutofillMetrics* metric_logger() const { return metric_logger_.get(); }
-  void set_metric_logger(const AutofillMetrics* metric_logger);
+  int MakeFrontendID(const SuggestionBackendID& cc_backend_id,
+                     const SuggestionBackendID& profile_backend_id) const;
+  void SplitFrontendID(int frontend_id,
+                       SuggestionBackendID* cc_backend_id,
+                       SuggestionBackendID* profile_backend_id) const;
 
   ScopedVector<FormStructure>* form_structures() { return &form_structures_; }
 
@@ -277,22 +274,16 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // Returns a list of values from the stored profiles that match |type| and the
   // value of |field| and returns the labels of the matching profiles. |labels|
   // is filled with the Profile label.
-  void GetProfileSuggestions(const FormStructure& form,
-                             const FormFieldData& field,
-                             const AutofillField& autofill_field,
-                             std::vector<base::string16>* values,
-                             std::vector<base::string16>* labels,
-                             std::vector<base::string16>* icons,
-                             std::vector<int>* unique_ids) const;
+  std::vector<Suggestion> GetProfileSuggestions(
+      const FormStructure& form,
+      const FormFieldData& field,
+      const AutofillField& autofill_field) const;
 
   // Returns a list of values from the stored credit cards that match |type| and
   // the value of |field| and returns the labels of the matching credit cards.
-  void GetCreditCardSuggestions(const FormFieldData& field,
-                                const AutofillType& type,
-                                std::vector<base::string16>* values,
-                                std::vector<base::string16>* labels,
-                                std::vector<base::string16>* icons,
-                                std::vector<int>* unique_ids) const;
+  std::vector<Suggestion> GetCreditCardSuggestions(
+      const FormFieldData& field,
+      const AutofillType& type) const;
 
   // Parses the forms using heuristic matching and querying the Autofill server.
   void ParseForms(const std::vector<FormData>& forms);
@@ -332,8 +323,6 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // Handles single-field autocomplete form data.
   scoped_ptr<AutocompleteHistoryManager> autocomplete_history_manager_;
 
-  // For logging UMA metrics. Overridden by metrics tests.
-  scoped_ptr<const AutofillMetrics> metric_logger_;
   // Have we logged whether Autofill is enabled for this page load?
   bool has_logged_autofill_enabled_;
   // Have we logged an address suggestions count metric for this page?
@@ -356,9 +345,11 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // Our copy of the form data.
   ScopedVector<FormStructure> form_structures_;
 
-  // GUID to ID mapping.  We keep two maps to convert back and forth.
-  mutable std::map<PersonalDataManager::GUIDPair, int> guid_id_map_;
-  mutable std::map<int, PersonalDataManager::GUIDPair> id_guid_map_;
+  // SuggestionBackendID to ID mapping. We keep two maps to convert back and
+  // forth. These should be used only by BackendIDToInt and IntToBackendID.
+  // Note that the integers are not frontend IDs.
+  mutable std::map<SuggestionBackendID, int> backend_to_int_map_;
+  mutable std::map<int, SuggestionBackendID> int_to_backend_map_;
 
   // Delegate to perform external processing (display, selection) on
   // our behalf.  Weak.

@@ -51,7 +51,7 @@ class LayerTreeHostNoMessageLoopTest
         did_commit_and_draw_frame_(false),
         size_(100, 100),
         no_loop_thread_(this, "LayerTreeHostNoMessageLoopTest") {}
-  virtual ~LayerTreeHostNoMessageLoopTest() {}
+  ~LayerTreeHostNoMessageLoopTest() override {}
 
   // LayerTreeHostClient overrides.
   void WillBeginMainFrame(int frame_id) override {}
@@ -60,18 +60,20 @@ class LayerTreeHostNoMessageLoopTest
   void Layout() override {}
   void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
                            const gfx::Vector2d& outer_delta,
+                           const gfx::Vector2dF& elastic_overscroll_delta,
                            float page_scale,
                            float top_controls_delta) override {}
   void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
                            float page_scale,
                            float top_controls_delta) override {}
-  void RequestNewOutputSurface(bool fallback) override {
+  void RequestNewOutputSurface() override {
     layer_tree_host_->SetOutputSurface(
         make_scoped_ptr<OutputSurface>(new NoMessageLoopOutputSurface));
   }
   void DidInitializeOutputSurface() override {
     did_initialize_output_surface_ = true;
   }
+  void DidFailToInitializeOutputSurface() override {}
   void WillCommit() override {}
   void DidCommit() override { did_commit_ = true; }
   void DidCommitAndDrawFrame() override { did_commit_and_draw_frame_ = true; }
@@ -99,6 +101,7 @@ class LayerTreeHostNoMessageLoopTest
   void SetupLayerTreeHost() {
     LayerTreeSettings settings;
     settings.single_thread_proxy_scheduler = false;
+    settings.verify_property_trees = true;
     layer_tree_host_ = LayerTreeHost::CreateSingleThreaded(
         this, this, nullptr, nullptr, settings, nullptr, nullptr);
     layer_tree_host_->SetViewportSize(size_);

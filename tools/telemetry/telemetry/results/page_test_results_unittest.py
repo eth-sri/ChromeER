@@ -4,10 +4,11 @@
 
 import os
 
+from telemetry import page as page_module
 from telemetry.page import page_set
 from telemetry.results import base_test_results_unittest
 from telemetry.results import page_test_results
-from telemetry.timeline import tracing_timeline_data
+from telemetry.timeline import trace_data
 from telemetry.value import failure
 from telemetry.value import histogram
 from telemetry.value import scalar
@@ -17,10 +18,11 @@ from telemetry.value import trace
 
 class PageTestResultsTest(base_test_results_unittest.BaseTestResultsUnittest):
   def setUp(self):
-    self.page_set = page_set.PageSet(file_path=os.path.dirname(__file__))
-    self.page_set.AddPageWithDefaultRunNavigate("http://www.bar.com/")
-    self.page_set.AddPageWithDefaultRunNavigate("http://www.baz.com/")
-    self.page_set.AddPageWithDefaultRunNavigate("http://www.foo.com/")
+    ps = page_set.PageSet(file_path=os.path.dirname(__file__))
+    ps.AddUserStory(page_module.Page("http://www.bar.com/", ps, ps.base_dir))
+    ps.AddUserStory(page_module.Page("http://www.baz.com/", ps, ps.base_dir))
+    ps.AddUserStory(page_module.Page("http://www.foo.com/", ps, ps.base_dir))
+    self.page_set = ps
 
   @property
   def pages(self):
@@ -188,13 +190,11 @@ class PageTestResultsTest(base_test_results_unittest.BaseTestResultsUnittest):
   def testTraceValue(self):
     results = page_test_results.PageTestResults()
     results.WillRunPage(self.pages[0])
-    results.AddValue(trace.TraceValue(
-        None, tracing_timeline_data.TracingTimelineData({'test' : 1})))
+    results.AddValue(trace.TraceValue(None, trace_data.TraceData({'test' : 1})))
     results.DidRunPage(self.pages[0])
 
     results.WillRunPage(self.pages[1])
-    results.AddValue(trace.TraceValue(
-        None, tracing_timeline_data.TracingTimelineData({'test' : 2})))
+    results.AddValue(trace.TraceValue(None, trace_data.TraceData({'test' : 2})))
     results.DidRunPage(self.pages[1])
 
     results.PrintSummary()

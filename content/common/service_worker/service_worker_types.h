@@ -22,6 +22,10 @@
 
 namespace content {
 
+// Indicates the document main thread ID in the child process. This is used for
+// messaging between the browser process and the child process.
+static const int kDocumentMainThreadId = 0;
+
 // Indicates invalid request ID (i.e. the sender does not expect it gets
 // response for the message) for messaging between browser process
 // and embedded worker.
@@ -124,6 +128,7 @@ struct CONTENT_EXPORT ServiceWorkerCacheQueryParams {
   bool ignore_method;
   bool ignore_vary;
   bool prefix_match;
+  base::string16 cache_name;
 };
 
 // The type of a single batch operation in the Cache API.
@@ -190,6 +195,14 @@ class ChangedVersionAttributesMask {
 
  private:
   int changed_;
+};
+
+struct ServiceWorkerClientInfo {
+  int client_id;
+  std::string visibility_state;
+  bool is_focused;
+  GURL url;
+  RequestContextFrameType frame_type;
 };
 
 }  // namespace content

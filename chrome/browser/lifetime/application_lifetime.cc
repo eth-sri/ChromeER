@@ -11,7 +11,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/field_trial.h"
 #include "base/prefs/pref_service.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
@@ -32,6 +31,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/user_manager.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_shutdown.h"
@@ -49,6 +49,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
+#include "components/browser_watcher/exit_funnel_win.h"
 #endif
 
 namespace chrome {
@@ -176,7 +177,8 @@ void AttemptUserExit() {
 }
 
 void StartShutdownTracing() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kTraceShutdown)) {
     base::debug::CategoryFilter category_filter(
         command_line.GetSwitchValueASCII(switches::kTraceShutdown));
@@ -251,17 +253,13 @@ void ExitCleanly() {
 }
 #endif
 
-namespace {
-
-bool ExperimentUseBrokenSynchronization() {
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("WindowsLogoffRace");
-  return group_name == "BrokenSynchronization";
-}
-
-}  // namespace
-
 void SessionEnding() {
+#if defined(OS_WIN)
+  browser_watcher::ExitFunnel funnel;
+
+  funnel.Init(kBrowserExitCodesRegistryPath, base::GetCurrentProcessHandle());
+  funnel.RecordEvent(L"SessionEnding");
+#endif
   // This is a time-limited shutdown where we need to write as much to
   // disk as we can as soon as we can, and where we must kill the
   // process within a hang timeout to avoid user prompts.
@@ -287,6 +285,9 @@ void SessionEnding() {
       content::NotificationService::AllSources(),
       content::NotificationService::NoDetails());
 
+#if defined(OS_WIN)
+  funnel.RecordEvent(L"EndSession");
+#endif
   // Write important data first.
   g_browser_process->EndSession();
 
@@ -294,25 +295,17 @@ void SessionEnding() {
   base::win::SetShouldCrashOnProcessDetach(false);
 #endif
 
-  if (ExperimentUseBrokenSynchronization()) {
-    CloseAllBrowsers();
+#if defined(OS_WIN)
+  // KillProcess ought to terminate the process without further ado, so if
+  // execution gets to this point, presumably this is normal exit.
+  funnel.RecordEvent(L"KillProcess");
+#endif
 
-    // Send out notification. This is used during testing so that the test
-    // harness can properly shutdown before we exit.
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_SESSION_END,
-        content::NotificationService::AllSources(),
-        content::NotificationService::NoDetails());
-
-    // This will end by terminating the process.
-    content::ImmediateShutdownAndExitProcess();
-  } else {
-    // On Windows 7 and later, the system will consider the process ripe for
-    // termination as soon as it hides or destroys its windows. Since any
-    // execution past that point will be non-deterministically cut short, we
-    // might as well put ourselves out of that misery deterministically.
-    base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
-  }
+  // On Windows 7 and later, the system will consider the process ripe for
+  // termination as soon as it hides or destroys its windows. Since any
+  // execution past that point will be non-deterministically cut short, we
+  // might as well put ourselves out of that misery deterministically.
+  base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
 }
 
 void IncrementKeepAliveCount() {

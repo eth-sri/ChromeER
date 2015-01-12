@@ -88,7 +88,7 @@ const char kPolicyVerificationKeyHash[] = "1:356l7w";
 std::string GetPolicyVerificationKey() {
   // Disable key verification by default until production servers generate
   // the proper signatures.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kDisablePolicyKeyVerification)) {
     return std::string();
   } else {
@@ -99,11 +99,28 @@ std::string GetPolicyVerificationKey() {
 
 const char* GetChromeUserPolicyType() {
 #if defined(OS_ANDROID) || defined(OS_IOS)
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kFakeCloudPolicyType))
     return "google/chrome/user";
 #endif
   return dm_protocol::kChromeUserPolicyType;
+}
+
+void SetManagementMode(em::PolicyData& policy_data, ManagementMode mode) {
+  switch (mode) {
+    case MANAGEMENT_MODE_LOCAL_OWNER:
+      policy_data.set_management_mode(em::PolicyData::LOCAL_OWNER);
+      return;
+
+    case MANAGEMENT_MODE_ENTERPRISE_MANAGED:
+      policy_data.set_management_mode(em::PolicyData::ENTERPRISE_MANAGED);
+      return;
+
+    case MANAGEMENT_MODE_CONSUMER_MANAGED:
+      policy_data.set_management_mode(em::PolicyData::CONSUMER_MANAGED);
+      return;
+  }
+  NOTREACHED();
 }
 
 ManagementMode GetManagementMode(const em::PolicyData& policy_data) {

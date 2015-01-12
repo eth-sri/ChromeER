@@ -81,11 +81,6 @@ class OutputSurfaceWithoutParent : public cc::OutputSurface {
   }
 
   virtual void SwapBuffers(cc::CompositorFrame* frame) override {
-    for (size_t i = 0; i < frame->metadata.latency_info.size(); i++) {
-      frame->metadata.latency_info[i].AddLatencyNumber(
-          ui::INPUT_EVENT_BROWSER_SWAP_BUFFER_COMPONENT, 0, 0);
-    }
-
     GetCommandBufferProxy()->SetLatencyInfo(frame->metadata.latency_info);
     DCHECK(frame->gl_frame_data->sub_buffer_rect ==
            gfx::Rect(frame->gl_frame_data->size));
@@ -170,8 +165,9 @@ bool CompositorImpl::IsInitialized() {
 CompositorImpl::CompositorImpl(CompositorClient* client,
                                gfx::NativeWindow root_window)
     : root_layer_(cc::Layer::Create()),
+      resource_manager_(&ui_resource_provider_),
       surface_id_allocator_(
-        new cc::SurfaceIdAllocator(++g_surface_id_namespace)),
+          new cc::SurfaceIdAllocator(++g_surface_id_namespace)),
       has_transparent_background_(false),
       device_scale_factor_(1),
       window_(NULL),
@@ -323,12 +319,12 @@ void CompositorImpl::Composite(CompositingTrigger trigger) {
   root_window_->RequestVSyncUpdate();
 }
 
-UIResourceProvider& CompositorImpl::GetUIResourceProvider() {
+ui::UIResourceProvider& CompositorImpl::GetUIResourceProvider() {
   return ui_resource_provider_;
 }
 
-ui::SystemUIResourceManager& CompositorImpl::GetSystemUIResourceManager() {
-  return ui_resource_provider_.GetSystemUIResourceManager();
+ui::ResourceManager& CompositorImpl::GetResourceManager() {
+  return resource_manager_;
 }
 
 void CompositorImpl::SetRootLayer(scoped_refptr<cc::Layer> root_layer) {
@@ -389,6 +385,47 @@ void CompositorImpl::SetSurface(jobject surface) {
   }
 }
 
+void CompositorImpl::CreateLayerTreeHost() {
+  DCHECK(!host_);
+  DCHECK(!WillCompositeThisFrame());
+  needs_composite_ = false;
+  defer_composite_for_gpu_channel_ = false;
+  pending_swapbuffers_ = 0;
+  cc::LayerTreeSettings settings;
+  settings.renderer_settings.refresh_rate = 60.0;
+  settings.renderer_settings.allow_antialiasing = false;
+  settings.renderer_settings.highp_threshold_min = 2048;
+  settings.impl_side_painting = false;
+  settings.calculate_top_controls_position = false;
+
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  settings.initial_debug_state.SetRecordRenderingStats(
+      command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
+  settings.initial_debug_state.show_fps_counter =
+      command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
+  // TODO(enne): Update this this compositor to use the scheduler.
+  settings.single_thread_proxy_scheduler = false;
+
+  host_ = cc::LayerTreeHost::CreateSingleThreaded(
+      this,
+      this,
+      HostSharedBitmapManager::current(),
+      BrowserGpuMemoryBufferManager::current(),
+      settings,
+      base::MessageLoopProxy::current(),
+      nullptr);
+  host_->SetRootLayer(root_layer_);
+
+  host_->SetVisible(true);
+  host_->SetLayerTreeHostClientReady();
+  host_->SetViewportSize(size_);
+  host_->set_has_transparent_background(has_transparent_background_);
+  host_->SetDeviceScaleFactor(device_scale_factor_);
+
+  if (needs_animate_)
+    host_->SetNeedsAnimate();
+}
+
 void CompositorImpl::SetVisible(bool visible) {
   if (!visible) {
     DCHECK(host_);
@@ -416,41 +453,7 @@ void CompositorImpl::SetVisible(bool visible) {
       current_composite_task_.reset();
     }
   } else if (!host_) {
-    DCHECK(!WillComposite());
-    needs_composite_ = false;
-    defer_composite_for_gpu_channel_ = false;
-    pending_swapbuffers_ = 0;
-    cc::LayerTreeSettings settings;
-    settings.renderer_settings.refresh_rate = 60.0;
-    settings.renderer_settings.allow_antialiasing = false;
-    settings.renderer_settings.highp_threshold_min = 2048;
-    settings.impl_side_painting = false;
-    settings.calculate_top_controls_position = false;
-    settings.top_controls_height = 0.f;
-
-    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-    settings.initial_debug_state.SetRecordRenderingStats(
-        command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
-    settings.initial_debug_state.show_fps_counter =
-        command_line->HasSwitch(cc::switches::kUIShowFPSCounter);
-    // TODO(enne): Update this this compositor to use the scheduler.
-    settings.single_thread_proxy_scheduler = false;
-
-    host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this,
-        this,
-        HostSharedBitmapManager::current(),
-        BrowserGpuMemoryBufferManager::current(),
-        settings,
-        base::MessageLoopProxy::current(),
-        nullptr);
-    host_->SetRootLayer(root_layer_);
-
-    host_->SetVisible(true);
-    host_->SetLayerTreeHostClientReady();
-    host_->SetViewportSize(size_);
-    host_->set_has_transparent_background(has_transparent_background_);
-    host_->SetDeviceScaleFactor(device_scale_factor_);
+    CreateLayerTreeHost();
     ui_resource_provider_.SetLayerTreeHost(host_.get());
   }
 }
@@ -524,7 +527,13 @@ void CompositorImpl::Layout() {
   ignore_schedule_composite_ = false;
 }
 
-void CompositorImpl::RequestNewOutputSurface(bool fallback) {
+void CompositorImpl::RequestNewOutputSurface() {
+  // SetVisible(false) can happen (destroying the host_) between when this
+  // function is posted and when it is handled.  An output surface will get
+  // re-requested when the host is recreated.
+  if (!host_.get())
+    return;
+
   BrowserGpuChannelHostFactory* factory =
       BrowserGpuChannelHostFactory::instance();
   if (!factory->GetGpuChannel() || factory->GetGpuChannel()->IsLost()) {
@@ -533,15 +542,22 @@ void CompositorImpl::RequestNewOutputSurface(bool fallback) {
     factory->EstablishGpuChannel(
         cause,
         base::Bind(&CompositorImpl::CreateOutputSurface,
-                   weak_factory_.GetWeakPtr(),
-                   fallback));
+                   weak_factory_.GetWeakPtr()));
     return;
   }
 
-  CreateOutputSurface(fallback);
+  CreateOutputSurface();
 }
 
-void CompositorImpl::CreateOutputSurface(bool fallback) {
+void CompositorImpl::DidFailToInitializeOutputSurface() {
+  RequestNewOutputSurface();
+}
+
+void CompositorImpl::CreateOutputSurface() {
+  // This function will get called again when the compositor becomes visible.
+  if (!host_.get())
+    return;
+
   blink::WebGraphicsContext3D::Attributes attrs;
   attrs.shareResources = true;
   attrs.noAutomaticFlushes = true;
@@ -561,7 +577,9 @@ void CompositorImpl::CreateOutputSurface(bool fallback) {
   }
   if (!context_provider.get()) {
     LOG(ERROR) << "Failed to create 3D context for compositor.";
-    host_->SetOutputSurface(scoped_ptr<cc::OutputSurface>());
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(&CompositorImpl::RequestNewOutputSurface,
+                              weak_factory_.GetWeakPtr()));
     return;
   }
 
@@ -676,6 +694,7 @@ void CompositorImpl::OnVSync(base::TimeTicks frame_time,
 }
 
 void CompositorImpl::SetNeedsAnimate() {
+  needs_animate_ = true;
   if (!host_)
     return;
 

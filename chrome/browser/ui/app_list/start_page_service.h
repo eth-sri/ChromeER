@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_APP_LIST_START_PAGE_SERVICE_H_
 
 #include <stdint.h>
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -15,10 +16,15 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
+#include "base/time/default_clock.h"
 #include "chrome/browser/ui/app_list/speech_recognizer_delegate.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/app_list/speech_ui_model_observer.h"
+
+namespace content {
+struct SpeechRecognitionSessionPreamble;
+}
 
 namespace extensions {
 class Extension;
@@ -29,6 +35,7 @@ class Profile;
 namespace app_list {
 
 class RecommendedApps;
+class SpeechAuthHelper;
 class SpeechRecognizer;
 class StartPageObserver;
 
@@ -47,7 +54,8 @@ class StartPageService : public KeyedService,
 
   void AppListShown();
   void AppListHidden();
-  void ToggleSpeechRecognition();
+  void ToggleSpeechRecognition(
+      const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble);
 
   // Called when the WebUI has finished loading.
   void WebUILoaded();
@@ -69,7 +77,8 @@ class StartPageService : public KeyedService,
   void OnSpeechSoundLevelChanged(int16_t level) override;
   void OnSpeechRecognitionStateChanged(
       SpeechRecognitionState new_state) override;
-  content::WebContents* GetSpeechContents() override;
+  void GetSpeechAuthParameters(std::string* auth_scope,
+                               std::string* auth_token) override;
 
  protected:
   // Protected for testing.
@@ -87,6 +96,12 @@ class StartPageService : public KeyedService,
   // The WebContentsDelegate implementation for the start page. This allows
   // getUserMedia() request from the web contents.
   class StartPageWebContentsDelegate;
+
+#if defined(OS_CHROMEOS)
+  // This class observes the change of audio input device availability and
+  // checks if currently the system has valid audio input.
+  class AudioStatus;
+#endif
 
   void LoadContents();
   void UnloadContents();
@@ -107,7 +122,13 @@ class StartPageService : public KeyedService,
   bool webui_finished_loading_;
   std::vector<base::Closure> pending_webui_callbacks_;
 
+  base::DefaultClock clock_;
   scoped_ptr<SpeechRecognizer> speech_recognizer_;
+  scoped_ptr<SpeechAuthHelper> speech_auth_helper_;
+
+#if defined(OS_CHROMEOS)
+  scoped_ptr<AudioStatus> audio_status_;
+#endif
 
   base::WeakPtrFactory<StartPageService> weak_factory_;
 

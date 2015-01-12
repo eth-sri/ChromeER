@@ -23,12 +23,35 @@ function FileManager() {
    */
   this.volumeManager_ = null;
 
+  /** @private {importer.HistoryLoader} */
+  this.historyLoader_ = null;
+
   /**
-   * History loader. Gimme summa 'dat history!
-   * @type {importer.HistoryLoader}
+   * ImportHistory. Non-null only once history observer is added in
+   * {@code addHistoryObserver}.
+   *
+   * @type {importer.ImportHistory}
    * @private
    */
-  this.historyLoader_ = null;
+  this.importHistory_ = null;
+
+  /**
+   * Bound observer for use with {@code importer.ImportHistory.Observer}.
+   * The instance is bound once here as {@code ImportHistory.removeObserver}
+   * uses object equivilency to remove observers.
+   *
+   * @private {function(!importer.ImportHistory.ChangedEvent)}
+   */
+  this.onHistoryChangedBound_ = this.onHistoryChanged_.bind(this);
+
+  /** @private {importer.MediaScanner} */
+  this.mediaScanner_ = null;
+
+  /** @private {importer.ImportController} */
+  this.importController_ = null;
+
+  /** @private {importer.MediaImportHandler} */
+  this.mediaImportHandler_ = null;
 
   /**
    * Metadata cache.
@@ -188,6 +211,12 @@ function FileManager() {
    */
   this.mainWindowComponent_ = null;
 
+  /**
+   * @type {TaskController}
+   * @private
+   */
+  this.taskController_ = null;
+
   // --------------------------------------------------------------------------
   // DOM elements.
 
@@ -212,20 +241,6 @@ function FileManager() {
    */
   this.document_ = null;
 
-  /**
-   * The menu item for doing an action.
-   * @type {HTMLMenuItemElement}
-   * @private
-   */
-  this.actionMenuItem_ = null;
-
-  /**
-   * Open-with command in the context menu.
-   * @type {cr.ui.Command}
-   * @private
-   */
-  this.openWithCommand_ = null;
-
   // --------------------------------------------------------------------------
   // Miscellaneous FileManager's states.
 
@@ -235,13 +250,6 @@ function FileManager() {
    * @private
    */
   this.initializeQueue_ = new AsyncUtil.Group();
-
-  /**
-   * Count of the SourceNotFound error.
-   * @type {number}
-   * @private
-   */
-  this.sourceNotFoundErrorCount_ = 0;
 
   // Object.seal() has big performance/memory overhead for now, so we use
   // Object.preventExtensions() here. crbug.com/412239.
@@ -287,6 +295,12 @@ FileManager.prototype = /** @struct */ {
     return this.namingController_;
   },
   /**
+   * @return {TaskController}
+   */
+  get taskController() {
+    return this.taskController_;
+  },
+  /**
    * @return {FileOperationManager}
    */
   get fileOperationManager() {
@@ -305,10 +319,28 @@ FileManager.prototype = /** @struct */ {
     return this.volumeManager_;
   },
   /**
+   * @return {importer.ImportController}
+   */
+  get importController() {
+    return this.importController_;
+  },
+  /**
    * @return {importer.HistoryLoader}
    */
   get historyLoader() {
     return this.historyLoader_;
+  },
+  /**
+   * @return {importer.MediaImportHandler}
+   */
+  get mediaImportHandler() {
+    return this.mediaImportHandler_;
+  },
+  /**
+   * @return {MetadataCache}
+   */
+  get metadataCache() {
+    return this.metadataCache_;
   },
   /**
    * @return {FileManagerUI}
@@ -317,67 +349,6 @@ FileManager.prototype = /** @struct */ {
     return this.ui_;
   }
 };
-
-/**
- * List of dialog types.
- *
- * Keep this in sync with FileManagerDialog::GetDialogTypeAsString, except
- * FULL_PAGE which is specific to this code.
- *
- * @enum {string}
- * @const
- */
-var DialogType = {
-  SELECT_FOLDER: 'folder',
-  SELECT_UPLOAD_FOLDER: 'upload-folder',
-  SELECT_SAVEAS_FILE: 'saveas-file',
-  SELECT_OPEN_FILE: 'open-file',
-  SELECT_OPEN_MULTI_FILE: 'open-multi-file',
-  FULL_PAGE: 'full-page'
-};
-
-/**
- * @param {DialogType} type Dialog type.
- * @return {boolean} Whether the type is modal.
- */
-DialogType.isModal = function(type) {
-  return type == DialogType.SELECT_FOLDER ||
-      type == DialogType.SELECT_UPLOAD_FOLDER ||
-      type == DialogType.SELECT_SAVEAS_FILE ||
-      type == DialogType.SELECT_OPEN_FILE ||
-      type == DialogType.SELECT_OPEN_MULTI_FILE;
-};
-
-/**
- * @param {DialogType} type Dialog type.
- * @return {boolean} Whether the type is open dialog.
- */
-DialogType.isOpenDialog = function(type) {
-  return type == DialogType.SELECT_OPEN_FILE ||
-         type == DialogType.SELECT_OPEN_MULTI_FILE ||
-         type == DialogType.SELECT_FOLDER ||
-         type == DialogType.SELECT_UPLOAD_FOLDER;
-};
-
-/**
- * @param {DialogType} type Dialog type.
- * @return {boolean} Whether the type is open dialog for file(s).
- */
-DialogType.isOpenFileDialog = function(type) {
-  return type == DialogType.SELECT_OPEN_FILE ||
-         type == DialogType.SELECT_OPEN_MULTI_FILE;
-};
-
-/**
- * @param {DialogType} type Dialog type.
- * @return {boolean} Whether the type is folder selection dialog.
- */
-DialogType.isFolderDialog = function(type) {
-  return type == DialogType.SELECT_FOLDER ||
-         type == DialogType.SELECT_UPLOAD_FOLDER;
-};
-
-Object.freeze(DialogType);
 
 // Anonymous "namespace".
 (function() {
@@ -454,6 +425,7 @@ Object.freeze(DialogType);
     assert(this.fileFilter_);
     assert(this.namingController_);
     assert(this.appStateController_);
+    assert(this.taskController_);
     this.mainWindowComponent_ = new MainWindowComponent(
         this.dialogType,
         this.ui_,
@@ -463,7 +435,7 @@ Object.freeze(DialogType);
         this.selectionHandler_,
         this.namingController_,
         this.appStateController_,
-        {dispatchSelectionAction: this.dispatchSelectionAction_.bind(this)});
+        this.taskController_);
 
     this.initDataTransferOperations_();
 
@@ -482,43 +454,17 @@ Object.freeze(DialogType);
     if (this.dialogType != DialogType.FULL_PAGE)
       return;
 
-    var controller = this.fileTransferController_ =
-        new FileTransferController(
-                this.document_,
-                this.fileOperationManager_,
-                this.metadataCache_,
-                this.directoryModel_,
-                this.volumeManager_,
-                this.ui_.multiProfileShareDialog,
-                this.backgroundPage_.background.progressCenter);
-    controller.attachDragSource(this.ui_.listContainer.table.list);
-    controller.attachFileListDropTarget(this.ui_.listContainer.table.list);
-    controller.attachDragSource(this.ui_.listContainer.grid);
-    controller.attachFileListDropTarget(this.ui_.listContainer.grid);
-    controller.attachTreeDropTarget(this.ui_.directoryTree);
-    controller.attachCopyPasteHandlers();
-    controller.addEventListener('selection-copied',
-        this.blinkSelection.bind(this));
-    controller.addEventListener('selection-cut',
-        this.blinkSelection.bind(this));
-    controller.addEventListener('source-not-found',
-        this.onSourceNotFound_.bind(this));
-  };
-
-  /**
-   * Handles an error that the source entry of file operation is not found.
-   * @private
-   */
-  FileManager.prototype.onSourceNotFound_ = function(event) {
-    var item = new ProgressCenterItem();
-    item.id = 'source-not-found-' + this.sourceNotFoundErrorCount_;
-    if (event.progressType === ProgressItemType.COPY)
-      item.message = strf('COPY_SOURCE_NOT_FOUND_ERROR', event.fileName);
-    else if (event.progressType === ProgressItemType.MOVE)
-      item.message = strf('MOVE_SOURCE_NOT_FOUND_ERROR', event.fileName);
-    item.state = ProgressItemState.ERROR;
-    this.backgroundPage_.background.progressCenter.updateItem(item);
-    this.sourceNotFoundErrorCount_++;
+    this.fileTransferController_ = new FileTransferController(
+        assert(this.document_),
+        assert(this.ui_.listContainer),
+        assert(this.ui_.directoryTree),
+        this.ui_.multiProfileShareDialog,
+        assert(this.backgroundPage_.background.progressCenter),
+        assert(this.fileOperationManager_),
+        assert(this.metadataCache_),
+        assert(this.directoryModel_),
+        assert(this.volumeManager_),
+        assert(this.selectionHandler_));
   };
 
   /**
@@ -529,6 +475,23 @@ Object.freeze(DialogType);
     assert(this.ui_.textContextMenu);
 
     this.commandHandler = new CommandHandler(this);
+
+    // Kick the import enabled promise to be sure it is loaded
+    // (and cached) for use by code that requires synchronous
+    // access (e.g. Commands).
+    importer.importEnabled().then(
+        function(enabled) {
+          if (enabled) {
+            this.importController_ = new importer.ImportController(
+                new importer.RuntimeControllerEnvironment(this),
+                /** @type {!importer.MediaScanner} */ (
+                    this.mediaScanner_),
+                /** @type {!importer.ImportRunner} */ (
+                    this.mediaImportHandler_),
+                this.commandHandler.updateAvailability.bind(
+                    this.commandHandler));
+          }
+        }.bind(this));
 
     // TODO(hirono): Move the following block to the UI part.
     var commandButtons = this.dialogDom_.querySelectorAll('button[command]');
@@ -637,6 +600,7 @@ Object.freeze(DialogType);
 
     // Initialize the member variables that depend this.launchParams_.
     this.dialogType = this.launchParams_.type;
+
     callback();
   };
 
@@ -657,15 +621,12 @@ Object.freeze(DialogType);
               this.backgroundPage_.registerDialog(window);
             this.fileOperationManager_ =
                 this.backgroundPage_.background.fileOperationManager;
-            this.backgroundPage_.background.historyLoaderPromise.then(
-                /**
-                 * @param {!importer.HistoryLoader} loader
-                 * @this {FileManager}
-                 */
-                function(loader) {
-                  this.historyLoader_ = loader;
-                  callback();
-                }.bind(this));
+            this.mediaImportHandler_ =
+                this.backgroundPage_.background.mediaImportHandler;
+            this.mediaScanner_ =
+                this.backgroundPage_.background.mediaScanner;
+            this.historyLoader_ = this.backgroundPage_.background.historyLoader;
+            callback();
           }.bind(this));
         }.bind(this)));
   };
@@ -769,6 +730,8 @@ Object.freeze(DialogType);
         this.volumeManager_,
         this.historyLoader_);
 
+    this.addHistoryObserver_();
+
     this.ui_.initAdditionalUI(
         assertInstanceof(table, FileTable),
         assertInstanceof(grid, FileGrid),
@@ -779,7 +742,8 @@ Object.freeze(DialogType);
                 PreviewPanel.VisibilityType.AUTO,
             this.metadataCache_,
             this.volumeManager_,
-            this.historyLoader_),
+            this.historyLoader_,
+            this.isCommandEnabled_.bind(this)),
         new LocationLine(
             queryRequiredElement(dom, '#location-breadcrumbs'),
             queryRequiredElement(dom, '#location-volume-icon'),
@@ -789,17 +753,6 @@ Object.freeze(DialogType);
     // Handle UI events.
     this.backgroundPage_.background.progressCenter.addPanel(
         this.ui_.progressCenterPanel);
-    this.ui_.taskMenuButton.addEventListener('select',
-        this.onTaskItemClicked_.bind(this));
-
-    this.actionMenuItem_ = /** @type {!HTMLMenuItemElement} */
-        (queryRequiredElement(this.dialogDom_, '#default-action'));
-
-    this.openWithCommand_ = /** @type {cr.ui.Command} */
-        (this.dialogDom_.querySelector('#open-with'));
-
-    this.actionMenuItem_.addEventListener('activate',
-        this.onActionMenuItemActivated_.bind(this));
 
     util.addIsFocusedMethod();
 
@@ -811,6 +764,52 @@ Object.freeze(DialogType);
     this.ui_.listContainer.table.redraw();
 
     callback();
+  };
+
+  /**
+   * One-time initialization of import history observer. Provides
+   * the glue that updates the UI when history changes.
+   *
+   * @private
+   */
+  FileManager.prototype.addHistoryObserver_ = function() {
+    // Monitor changes to history so that when it changes we update
+    // metadata... which results in badges being updated.
+    this.historyLoader_.getHistory()
+        .then(
+            /**
+             * @param {!importer.ImportHistory} history
+             * @this {FileManager}
+             */
+            function(history) {
+              this.importHistory_ = history;
+              history.addObserver(this.onHistoryChangedBound_);
+            }.bind(this));
+  };
+
+  /**
+   * Handles events when import history changed.
+   *
+   * @param {!importer.ImportHistory.ChangedEvent} event
+   * @private
+   */
+  FileManager.prototype.onHistoryChanged_ = function(event) {
+    // Ignore any entry that isn't an immediate child of the
+    // current directory.
+    util.isChildEntry(event.entry, this.getCurrentDirectoryEntry())
+        .then(
+            /**
+             * @param {boolean} isChild
+             * @this {FileManager}
+             */
+            function(isChild) {
+              if (isChild) {
+                // TODO(smckay): Update listview when that view is visible.
+                this.ui_.listContainer.grid.updateListItemsMetadata(
+                    'import-history',
+                    [event.entry]);
+              }
+            }.bind(this));
   };
 
   /**
@@ -826,7 +825,6 @@ Object.freeze(DialogType);
 
     assert(this.metadataCache_);
     this.fileFilter_ = new FileFilter(
-        this.metadataCache_,
         false  /* Don't show dot files and *.crdownload by default. */);
     this.fileWatcher_ = new FileWatcher(this.metadataCache_);
 
@@ -859,16 +857,31 @@ Object.freeze(DialogType);
 
     this.appStateController_.initialize(this.ui_, this.directoryModel_);
 
+    // Create metadata update controller.
+    this.metadataUpdateController_ = new MetadataUpdateController(
+        this.ui_.listContainer,
+        this.directoryModel_,
+        this.volumeManager_,
+        this.metadataCache_,
+        this.fileWatcher_,
+        this.fileOperationManager_);
+
+    // Create task controller.
+    this.taskController_ = new TaskController(
+        this.dialogType,
+        this.ui_,
+        this.metadataCache_,
+        this.selectionHandler_,
+        this.metadataUpdateController_,
+        function() { return new FileTasks(this); }.bind(this));
+
     // Create search controller.
     this.searchController_ = new SearchController(
         this.ui_.searchBox,
-        this.ui_.locationLine,
+        assert(this.ui_.locationLine),
         this.directoryModel_,
         this.volumeManager_,
-        {
-          // TODO (hirono): Make the real task controller and pass it here.
-          doAction: this.doEntryAction_.bind(this)
-        });
+        assert(this.taskController_));
 
     // Create naming controller.
     assert(this.ui_.alertDialog);
@@ -898,15 +911,6 @@ Object.freeze(DialogType);
         this.namingController_,
         this.selectionHandler_,
         this.launchParams_);
-
-    // Create metadata update controller.
-    this.metadataUpdateController_ = new MetadataUpdateController(
-        this.ui_.listContainer,
-        this.directoryModel_,
-        this.volumeManager_,
-        this.metadataCache_,
-        this.fileWatcher_,
-        this.fileOperationManager_);
   };
 
   /**
@@ -1187,69 +1191,6 @@ Object.freeze(DialogType);
   };
 
   /**
-   * Task combobox handler.
-   *
-   * @param {Object} event Event containing task which was clicked.
-   * @private
-   */
-  FileManager.prototype.onTaskItemClicked_ = function(event) {
-    var selection = this.getSelection();
-    if (!selection.tasks) return;
-
-    if (event.item.task) {
-      // Task field doesn't exist on change-default dropdown item.
-      selection.tasks.execute(event.item.task.taskId);
-    } else {
-      var extensions = [];
-
-      for (var i = 0; i < selection.entries.length; i++) {
-        var match = /\.(\w+)$/g.exec(selection.entries[i].toURL());
-        if (match) {
-          var ext = match[1].toUpperCase();
-          if (extensions.indexOf(ext) == -1) {
-            extensions.push(ext);
-          }
-        }
-      }
-
-      var format = '';
-
-      if (extensions.length == 1) {
-        format = extensions[0];
-      }
-
-      // Change default was clicked. We should open "change default" dialog.
-      selection.tasks.showTaskPicker(this.ui_.defaultTaskPicker,
-          loadTimeData.getString('CHANGE_DEFAULT_MENU_ITEM'),
-          strf('CHANGE_DEFAULT_CAPTION', format),
-          this.onDefaultTaskDone_.bind(this),
-          true);
-    }
-  };
-
-  /**
-   * Sets the given task as default, when this task is applicable.
-   *
-   * @param {Object} task Task to set as default.
-   * @private
-   */
-  FileManager.prototype.onDefaultTaskDone_ = function(task) {
-    // TODO(dgozman): move this method closer to tasks.
-    var selection = this.getSelection();
-    // TODO(mtomasz): Move conversion from entry to url to custom bindings.
-    // crbug.com/345527.
-    chrome.fileManagerPrivate.setDefaultTask(
-        task.taskId,
-        util.entriesToURLs(selection.entries),
-        selection.mimeTypes);
-    selection.tasks = new FileTasks(this);
-    selection.tasks.init(selection.entries, selection.mimeTypes);
-    selection.tasks.display(this.ui_.taskMenuButton);
-    this.metadataUpdateController_.refreshCurrentDirectoryMetadata();
-    this.selectionHandler_.onFileSelectionChanged();
-  };
-
-  /**
    * Tells whether the current directory is read only.
    * TODO(mtomasz): Remove and use EntryLocation directly.
    * @return {boolean} True if read only, false otherwise.
@@ -1269,125 +1210,12 @@ Object.freeze(DialogType);
   };
 
   /**
-   * Blinks the selection. Used to give feedback when copying or cutting the
-   * selection.
-   */
-  FileManager.prototype.blinkSelection = function() {
-    var selection = this.getSelection();
-    if (!selection || selection.totalCount == 0)
-      return;
-
-    for (var i = 0; i < selection.entries.length; i++) {
-      var selectedIndex = selection.indexes[i];
-      var listItem =
-          this.ui.listContainer.currentList.getListItemByIndex(selectedIndex);
-      if (listItem)
-        this.blinkListItem_(listItem);
-    }
-  };
-
-  /**
-   * @param {Element} listItem List item element.
-   * @private
-   */
-  FileManager.prototype.blinkListItem_ = function(listItem) {
-    listItem.classList.add('blink');
-    setTimeout(function() {
-      listItem.classList.remove('blink');
-    }, 100);
-  };
-
-  /**
-   * @private
-   */
-  FileManager.prototype.dispatchSelectionAction_ = function() {
-    if (this.dialogType == DialogType.FULL_PAGE) {
-      var selection = this.getSelection();
-      var tasks = selection.tasks;
-      var mimeTypes = selection.mimeTypes;
-      if (tasks)
-        tasks.executeDefault();
-      return true;
-    }
-    if (!this.ui_.dialogFooter.okButton.disabled) {
-      this.ui_.dialogFooter.okButton.click();
-      return true;
-    }
-    return false;
-  };
-
-  /**
-   * Handles activate event of action menu item.
-   *
-   * @private
-   */
-  FileManager.prototype.onActionMenuItemActivated_ = function() {
-    var tasks = this.getSelection().tasks;
-    if (tasks)
-      tasks.execute(this.actionMenuItem_.taskId);
-  };
-
-  /**
-   * Opens the suggest file dialog.
-   *
-   * @param {Entry} entry Entry of the file.
-   * @param {function()} onSuccess Success callback.
-   * @param {function()} onCancelled User-cancelled callback.
-   * @param {function()} onFailure Failure callback.
-   * @private
-   */
-  FileManager.prototype.openSuggestAppsDialog =
-      function(entry, onSuccess, onCancelled, onFailure) {
-    if (!url) {
-      onFailure();
-      return;
-    }
-
-    this.metadataCache_.getOne(entry, 'external', function(prop) {
-      if (!prop || !prop.contentMimeType) {
-        onFailure();
-        return;
-      }
-
-      var basename = entry.name;
-      var splitted = util.splitExtension(basename);
-      var filename = splitted[0];
-      var extension = splitted[1];
-      var mime = prop.contentMimeType;
-
-      // Returns with failure if the file has neither extension nor mime.
-      if (!extension || !mime) {
-        onFailure();
-        return;
-      }
-
-      var onDialogClosed = function(result) {
-        switch (result) {
-          case SuggestAppsDialog.Result.INSTALL_SUCCESSFUL:
-            onSuccess();
-            break;
-          case SuggestAppsDialog.Result.FAILED:
-            onFailure();
-            break;
-          default:
-            onCancelled();
-        }
-      };
-
-      if (FileTasks.EXECUTABLE_EXTENSIONS.indexOf(extension) !== -1) {
-        this.ui_.suggestAppsDialog.showByFilename(filename, onDialogClosed);
-      } else {
-        this.ui_.suggestAppsDialog.showByExtensionAndMime(
-            extension, mime, onDialogClosed);
-      }
-    }.bind(this));
-  };
-
-  /**
    * Unload handler for the page.
    * @private
    */
   FileManager.prototype.onUnload_ = function() {
+    if (this.importHistory_)
+      this.importHistory_.removeObserver(this.onHistoryChangedBound_);
     if (this.directoryModel_)
       this.directoryModel_.dispose();
     if (this.volumeManager_)
@@ -1412,49 +1240,6 @@ Object.freeze(DialogType);
   };
 
   /**
-   * Updates action menu item to match passed task items.
-   *
-   * @param {Array.<Object>=} opt_items List of items.
-   */
-  FileManager.prototype.updateContextMenuActionItems = function(opt_items) {
-    var items = opt_items || [];
-
-    // When only one task is available, show it as default item.
-    if (items.length === 1) {
-      var actionItem = items[0];
-
-      if (actionItem.iconType) {
-        this.actionMenuItem_.style.backgroundImage = '';
-        this.actionMenuItem_.setAttribute('file-type-icon',
-                                          actionItem.iconType);
-      } else if (actionItem.iconUrl) {
-        this.actionMenuItem_.style.backgroundImage =
-            'url(' + actionItem.iconUrl + ')';
-      } else {
-        this.actionMenuItem_.style.backgroundImage = '';
-      }
-
-      this.actionMenuItem_.label =
-          actionItem.taskId === FileTasks.ZIP_UNPACKER_TASK_ID ?
-          str('ACTION_OPEN') : actionItem.title;
-      this.actionMenuItem_.disabled = !!actionItem.disabled;
-      this.actionMenuItem_.taskId = actionItem.taskId;
-    }
-
-    this.actionMenuItem_.hidden = items.length !== 1;
-
-    // When multiple tasks are available, show them in open with.
-    this.openWithCommand_.canExecuteChange();
-    this.openWithCommand_.setHidden(items.length < 2);
-    this.openWithCommand_.disabled = items.length < 2;
-
-    // Hide default action separator when there does not exist available task.
-    var defaultActionSeparator =
-        this.dialogDom_.querySelector('#default-action-separator');
-    defaultActionSeparator.hidden = items.length === 0;
-  };
-
-  /**
    * @return {FileSelection} Selection object.
    */
   FileManager.prototype.getSelection = function() {
@@ -1469,30 +1254,31 @@ Object.freeze(DialogType);
   };
 
   /**
+   * Returns true if the command is known to be enabled according
+   * to the command handler.
+   *
+   * <p>NOTE: This delegating method is necessary as the consumer
+   * (PreviewPanel) is initialized prior to the CommandHandler.
+   * This allows us to inject a "command enabled" check function
+   * into PreviewPanel.
+   * TODO(mtomasz): Refactor to initialize PreviewPanel after CommandHandler,
+   *     then directly inject the check using CommandHandler.isCommandEnabled.
+   *     See crbug.com/436957.
+   *
+   * @param {string} id Command id.
+   * @return {boolean} True if the command is known to be enabled (very
+   *     recently).
+   * @private
+   */
+  FileManager.prototype.isCommandEnabled_ = function(id) {
+    return !!this.commandHandler && this.commandHandler.isCommandEnabled(id);
+  };
+
+  /**
    * @return {!cr.ui.List} Current list object.
    */
   FileManager.prototype.getCurrentList = function() {
     return this.ui.listContainer.currentList;
-  };
-
-  /**
-   * @param {FileEntry} entry
-   * @private
-   */
-  FileManager.prototype.doEntryAction_ = function(entry) {
-    if (this.dialogType == DialogType.FULL_PAGE) {
-      this.metadataCache_.get([entry], 'external', function(props) {
-        var tasks = new FileTasks(this);
-        tasks.init([entry], [props[0].contentMimeType || '']);
-        tasks.executeDefault_();
-      }.bind(this));
-    } else {
-      var selection = this.getSelection();
-      if (selection.entries.length === 1 &&
-          util.isSameEntry(selection.entries[0], entry)) {
-        this.ui_.dialogFooter.okButton.click();
-      }
-    }
   };
 
   /**

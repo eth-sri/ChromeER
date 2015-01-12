@@ -32,6 +32,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/user_manager.h"
@@ -44,12 +45,17 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "grit/chrome_unscaled_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+#if defined(OS_WIN)
+#include "components/browser_watcher/exit_funnel_win.h"
+#endif
 
 using base::UserMetricsAction;
 using extensions::Extension;
@@ -197,9 +203,8 @@ bool BackgroundModeManager::BackgroundModeData::BackgroundModeDataCompare(
 
 ///////////////////////////////////////////////////////////////////////////////
 //  BackgroundModeManager, public
-BackgroundModeManager::BackgroundModeManager(
-    CommandLine* command_line,
-    ProfileInfoCache* profile_cache)
+BackgroundModeManager::BackgroundModeManager(base::CommandLine* command_line,
+                                             ProfileInfoCache* profile_cache)
     : profile_cache_(profile_cache),
       status_tray_(NULL),
       status_icon_(NULL),
@@ -318,7 +323,8 @@ void BackgroundModeManager::RegisterProfile(Profile* profile) {
 void BackgroundModeManager::LaunchBackgroundApplication(
     Profile* profile,
     const Extension* extension) {
-  OpenApplication(AppLaunchParams(profile, extension, NEW_FOREGROUND_TAB));
+  OpenApplication(AppLaunchParams(profile, extension, NEW_FOREGROUND_TAB,
+                                  extensions::SOURCE_BACKGROUND));
 }
 
 bool BackgroundModeManager::IsBackgroundModeActive() {
@@ -529,6 +535,10 @@ void BackgroundModeManager::ExecuteCommand(int command_id, int event_flags) {
       }
       break;
     case IDC_EXIT:
+#if defined(OS_WIN)
+      browser_watcher::ExitFunnel::RecordSingleEvent(
+            chrome::kBrowserExitCodesRegistryPath, L"TraybarExit");
+#endif
       content::RecordAction(UserMetricsAction("Exit"));
       chrome::CloseAllBrowsers();
       break;
@@ -635,6 +645,11 @@ void BackgroundModeManager::UpdateKeepAliveAndTrayIcon() {
     if (!keeping_alive_) {
       keeping_alive_ = true;
       chrome::IncrementKeepAliveCount();
+
+#if defined(OS_WIN)
+      browser_watcher::ExitFunnel::RecordSingleEvent(
+            chrome::kBrowserExitCodesRegistryPath, L"BackgroundOn");
+#endif
     }
     CreateStatusTrayIcon();
     return;
@@ -644,6 +659,11 @@ void BackgroundModeManager::UpdateKeepAliveAndTrayIcon() {
   if (keeping_alive_) {
     keeping_alive_ = false;
     chrome::DecrementKeepAliveCount();
+
+#if defined(OS_WIN)
+    browser_watcher::ExitFunnel::RecordSingleEvent(
+          chrome::kBrowserExitCodesRegistryPath, L"BackgroundOff");
+#endif
   }
 }
 

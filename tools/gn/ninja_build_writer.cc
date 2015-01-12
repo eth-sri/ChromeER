@@ -35,7 +35,7 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
   base::FilePath executable;
   PathService::Get(base::FILE_EXE, &executable);
 
-  CommandLine cmdline(executable.NormalizePathSeparatorsTo('/'));
+  base::CommandLine cmdline(executable.NormalizePathSeparatorsTo('/'));
   cmdline.AppendArg("gen");
   cmdline.AppendArg(build_settings->build_dir().value());
   cmdline.AppendSwitchPath(std::string("--") + switches::kRoot,
@@ -52,9 +52,10 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
   escape_shell.inhibit_quoting = true;
 #endif
 
-  const CommandLine& our_cmdline = *CommandLine::ForCurrentProcess();
-  const CommandLine::SwitchMap& switches = our_cmdline.GetSwitches();
-  for (CommandLine::SwitchMap::const_iterator i = switches.begin();
+  const base::CommandLine& our_cmdline =
+      *base::CommandLine::ForCurrentProcess();
+  const base::CommandLine::SwitchMap& switches = our_cmdline.GetSwitches();
+  for (base::CommandLine::SwitchMap::const_iterator i = switches.begin();
        i != switches.end(); ++i) {
     // Only write arguments we haven't already written. Always skip "args"
     // since those will have been written to the file and will be used
@@ -64,7 +65,7 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
         i->first != switches::kRoot &&
         i->first != switches::kArgs) {
       std::string escaped_value =
-          EscapeString(FilePathToUTF8(i->second), escape_shell, NULL);
+          EscapeString(FilePathToUTF8(i->second), escape_shell, nullptr);
       cmdline.AppendSwitchASCII(i->first, escaped_value);
     }
   }
@@ -256,10 +257,26 @@ bool NinjaBuildWriter::WritePhonyAndAllRules(Err* err) {
     }
   }
 
+  // Figure out if the BUILD file wants to declare a custom "default"
+  // target (rather than building 'all' by default). By convention
+  // we use group("default") but it doesn't have to be a group.
+  bool default_target_exists = false;
+  for (size_t i = 0; i < default_toolchain_targets_.size(); i++) {
+    const Label& label = default_toolchain_targets_[i]->label();
+    if (label.dir().value() == "//" && label.name() == "default")
+      default_target_exists = true;
+  }
+
   if (!all_rules.empty()) {
     out_ << "\nbuild all: phony " << all_rules << std::endl;
+  }
+
+  if (default_target_exists) {
+    out_ << "default default" << std::endl;
+  } else if (!all_rules.empty()) {
     out_ << "default all" << std::endl;
   }
+
   return true;
 }
 
@@ -273,7 +290,7 @@ void NinjaBuildWriter::WritePhonyRule(const Target* target,
   ninja_escape.mode = ESCAPE_NINJA;
 
   // Escape for special chars Ninja will handle.
-  std::string escaped = EscapeString(phony_name, ninja_escape, NULL);
+  std::string escaped = EscapeString(phony_name, ninja_escape, nullptr);
 
   out_ << "build " << escaped << ": phony ";
   path_output_.WriteFile(out_, target_file);

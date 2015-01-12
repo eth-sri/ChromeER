@@ -13,6 +13,10 @@
 
 class SkBitmap;
 
+namespace base {
+class FilePath;
+}
+
 namespace gfx {
 class Point;
 class Rect;
@@ -60,14 +64,15 @@ class DriGpuPlatformSupport : public GpuPlatformSupport {
 
   // Display related IPC handlers.
   void OnForceDPMSOn();
-  void OnRefreshNativeDisplays(
-      const std::vector<DisplaySnapshot_Params>& cached_displays);
+  void OnRefreshNativeDisplays();
   void OnConfigureNativeDisplay(int64_t id,
                                 const DisplayMode_Params& mode,
                                 const gfx::Point& origin);
   void OnDisableNativeDisplay(int64_t id);
   void OnTakeDisplayControl();
   void OnRelinquishDisplayControl();
+  void OnAddGraphicsDevice(const base::FilePath& path);
+  void OnRemoveGraphicsDevice(const base::FilePath& path);
 
   IPC::Sender* sender_;                       // Not owned.
   DriWrapper* drm_;                           // Not owned.

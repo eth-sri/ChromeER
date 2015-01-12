@@ -18,7 +18,7 @@
 #include "grit/chrome_unscaled_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/native_widget.h"
 #include "ui/views/widget/widget.h"
@@ -228,6 +228,10 @@ void ChromeViewsDelegate::NotifyMenuItemFocused(
 #if defined(OS_WIN)
 HICON ChromeViewsDelegate::GetDefaultWindowIcon() const {
   return GetAppIcon();
+}
+
+HICON ChromeViewsDelegate::GetSmallWindowIcon() const {
+  return GetSmallAppIcon();
 }
 
 bool ChromeViewsDelegate::IsWindowInMetro(gfx::NativeWindow window) const {

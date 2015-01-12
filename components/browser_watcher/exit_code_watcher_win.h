@@ -5,7 +5,7 @@
 #define COMPONENTS_BROWSER_WATCHER_EXIT_CODE_WATCHER_WIN_H_
 
 #include "base/macros.h"
-#include "base/process/process_handle.h"
+#include "base/process/process.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "base/win/scoped_handle.h"
@@ -40,7 +40,8 @@ class ExitCodeWatcher {
   // This is a blocking call.
   void WaitForExit();
 
-  base::ProcessHandle process() const { return process_.Get(); }
+  const base::Process& process() const { return process_; }
+  int exit_code() const { return exit_code_; }
 
  private:
   // Writes |exit_code| to registry, returns true on success.
@@ -49,10 +50,12 @@ class ExitCodeWatcher {
   // The registry path the exit codes are written to.
   base::string16 registry_path_;
 
-  // Handle, PID, and creation time of the watched process.
-  base::win::ScopedHandle process_;
-  base::ProcessId process_pid_;
+  // Watched process and its creation time.
+  base::Process process_;
   base::Time process_creation_time_;
+
+  // The exit code of the watched process. Valid after WaitForExit.
+  int exit_code_;
 
   DISALLOW_COPY_AND_ASSIGN(ExitCodeWatcher);
 };

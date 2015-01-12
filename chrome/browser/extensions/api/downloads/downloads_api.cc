@@ -178,8 +178,8 @@ const char* const kDangerStrings[] = {
   kDangerHost,
   kDangerUnwanted
 };
-COMPILE_ASSERT(arraysize(kDangerStrings) == content::DOWNLOAD_DANGER_TYPE_MAX,
-               download_danger_type_enum_changed);
+static_assert(arraysize(kDangerStrings) == content::DOWNLOAD_DANGER_TYPE_MAX,
+              "kDangerStrings should have DOWNLOAD_DANGER_TYPE_MAX elements");
 
 // Note: Any change to the state strings, should be accompanied by a
 // corresponding change to downloads.json.
@@ -189,8 +189,8 @@ const char* const kStateStrings[] = {
   kStateInterrupted,
   kStateInterrupted,
 };
-COMPILE_ASSERT(arraysize(kStateStrings) == DownloadItem::MAX_DOWNLOAD_STATE,
-               download_item_state_enum_changed);
+static_assert(arraysize(kStateStrings) == DownloadItem::MAX_DOWNLOAD_STATE,
+              "kStateStrings should have MAX_DOWNLOAD_STATE elements");
 
 const char* DangerString(content::DownloadDangerType danger) {
   DCHECK(danger >= 0);
@@ -923,7 +923,7 @@ class ManagerDestructionObserver : public DownloadManager::Observer {
 std::map<DownloadManager*, ManagerDestructionObserver*>*
   ManagerDestructionObserver::manager_file_existence_last_checked_ = NULL;
 
-void OnDeterminingFilenameWillDispatchCallback(
+bool OnDeterminingFilenameWillDispatchCallback(
     bool* any_determiners,
     ExtensionDownloadsEventRouterData* data,
     content::BrowserContext* context,
@@ -933,6 +933,7 @@ void OnDeterminingFilenameWillDispatchCallback(
   base::Time installed =
       ExtensionPrefs::Get(context)->GetInstallTime(extension->id());
   data->AddPendingDeterminer(extension->id(), installed);
+  return true;
 }
 
 bool Fault(bool error,

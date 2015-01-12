@@ -48,6 +48,31 @@ SurfaceAggregator::SurfaceAggregator(SurfaceManager* manager,
 
 SurfaceAggregator::~SurfaceAggregator() {}
 
+// Create a clip rect for an aggregated quad from the original clip rect and
+// the clip rect from the surface it's on.
+SurfaceAggregator::ClipData SurfaceAggregator::CalculateClipRect(
+    const ClipData& surface_clip,
+    const ClipData& quad_clip,
+    const gfx::Transform& content_to_target_transform) {
+  ClipData out_clip;
+  if (surface_clip.is_clipped)
+    out_clip = surface_clip;
+
+  if (quad_clip.is_clipped) {
+    // TODO(jamesr): This only works if content_to_target_transform maps integer
+    // rects to integer rects.
+    gfx::Rect final_clip = MathUtil::MapEnclosingClippedRect(
+        content_to_target_transform, quad_clip.rect);
+    if (out_clip.is_clipped)
+      out_clip.rect.Intersect(final_clip);
+    else
+      out_clip.rect = final_clip;
+    out_clip.is_clipped = true;
+  }
+
+  return out_clip;
+}
+
 class SurfaceAggregator::RenderPassIdAllocator {
  public:
   explicit RenderPassIdAllocator(int* next_index) : next_index_(next_index) {}
@@ -128,9 +153,9 @@ bool SurfaceAggregator::TakeResources(Surface* surface,
     return false;
 
   int child_id = ChildIdForSurface(surface);
-  provider_->ReceiveFromChild(child_id, frame_data->resource_list);
   if (surface->factory())
     surface->factory()->RefResources(frame_data->resource_list);
+  provider_->ReceiveFromChild(child_id, frame_data->resource_list);
 
   typedef ResourceProvider::ResourceIdArray IdArray;
   IdArray referenced_resources;
@@ -163,9 +188,11 @@ gfx::Rect SurfaceAggregator::DamageRectForSurface(const Surface* surface,
   return full_rect;
 }
 
-void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
-                                          float opacity,
-                                          RenderPass* dest_pass) {
+void SurfaceAggregator::HandleSurfaceQuad(
+    const SurfaceDrawQuad* surface_quad,
+    const gfx::Transform& content_to_target_transform,
+    const ClipData& clip_rect,
+    RenderPass* dest_pass) {
   SurfaceId surface_id = surface_quad->surface_id;
   // If this surface's id is already in our referenced set then it creates
   // a cycle in the graph and should be dropped.
@@ -199,7 +226,7 @@ void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
 
   SurfaceSet::iterator it = referenced_surfaces_.insert(surface_id).first;
 
-  bool merge_pass = copy_requests.empty();
+  bool merge_pass = surface_quad->opacity() == 1.f && copy_requests.empty();
 
   const RenderPassList& referenced_passes = render_pass_list;
   size_t passes_to_copy =
@@ -228,9 +255,11 @@ void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
     // levels deep and add tests.
     copy_pass->transform_to_root_target.ConcatTransform(
         surface_quad->quadTransform());
+    copy_pass->transform_to_root_target.ConcatTransform(
+        content_to_target_transform);
 
     CopyQuadsToPass(source.quad_list, source.shared_quad_state_list,
-                    gfx::Transform(), 1.f, copy_pass.get(), surface_id);
+                    gfx::Transform(), ClipData(), copy_pass.get(), surface_id);
 
     dest_pass_list_->push_back(copy_pass.Pass());
   }
@@ -240,17 +269,30 @@ void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
     // TODO(jamesr): Clean up last pass special casing.
     const QuadList& quads = last_pass.quad_list;
 
-    // TODO(jamesr): Make sure clipping is enforced.
-    CopyQuadsToPass(quads, last_pass.shared_quad_state_list,
-                    surface_quad->quadTransform(),
-                    surface_quad->opacity() * opacity, dest_pass, surface_id);
+    gfx::Transform surface_transform = surface_quad->quadTransform();
+    surface_transform.ConcatTransform(content_to_target_transform);
+
+    // Intersect the transformed visible rect and the clip rect to create a
+    // smaller cliprect for the quad.
+    ClipData surface_quad_clip_rect(
+        true, MathUtil::MapEnclosingClippedRect(surface_quad->quadTransform(),
+                                                surface_quad->visible_rect));
+    if (surface_quad->isClipped())
+      surface_quad_clip_rect.rect.Intersect(surface_quad->clipRect());
+
+    ClipData quads_clip = CalculateClipRect(clip_rect, surface_quad_clip_rect,
+                                            content_to_target_transform);
+
+    CopyQuadsToPass(quads, last_pass.shared_quad_state_list, surface_transform,
+                    quads_clip, dest_pass, surface_id);
   } else {
     RenderPassId remapped_pass_id = RemapPassId(last_pass.id, surface_id);
 
+    CopySharedQuadState(surface_quad->shared_quad_state,
+                        content_to_target_transform, clip_rect, dest_pass);
+
     SharedQuadState* shared_quad_state =
-        dest_pass->CreateAndAppendSharedQuadState();
-    shared_quad_state->CopyFrom(surface_quad->shared_quad_state);
-    shared_quad_state->opacity *= opacity;
+        dest_pass->shared_quad_state_list.back();
     RenderPassDrawQuad* quad =
         dest_pass->CreateAndAppendDrawQuad<RenderPassDrawQuad>();
     quad->SetNew(shared_quad_state,
@@ -277,6 +319,7 @@ void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
 void SurfaceAggregator::CopySharedQuadState(
     const SharedQuadState* source_sqs,
     const gfx::Transform& content_to_target_transform,
+    const ClipData& clip_rect,
     RenderPass* dest_render_pass) {
   SharedQuadState* copy_shared_quad_state =
       dest_render_pass->CreateAndAppendSharedQuadState();
@@ -289,17 +332,19 @@ void SurfaceAggregator::CopySharedQuadState(
   // transform is not identity.
   copy_shared_quad_state->content_to_target_transform.ConcatTransform(
       content_to_target_transform);
-  if (copy_shared_quad_state->is_clipped) {
-    copy_shared_quad_state->clip_rect = MathUtil::MapEnclosingClippedRect(
-        content_to_target_transform, copy_shared_quad_state->clip_rect);
-  }
+
+  ClipData new_clip_rect = CalculateClipRect(
+      clip_rect, ClipData(source_sqs->is_clipped, source_sqs->clip_rect),
+      content_to_target_transform);
+  copy_shared_quad_state->is_clipped = new_clip_rect.is_clipped;
+  copy_shared_quad_state->clip_rect = new_clip_rect.rect;
 }
 
 void SurfaceAggregator::CopyQuadsToPass(
     const QuadList& source_quad_list,
     const SharedQuadStateList& source_shared_quad_state_list,
     const gfx::Transform& content_to_target_transform,
-    float opacity,
+    const ClipData& clip_rect,
     RenderPass* dest_pass,
     SurfaceId surface_id) {
   const SharedQuadState* last_copied_source_shared_quad_state = NULL;
@@ -315,12 +360,12 @@ void SurfaceAggregator::CopyQuadsToPass(
 
     if (quad->material == DrawQuad::SURFACE_CONTENT) {
       const SurfaceDrawQuad* surface_quad = SurfaceDrawQuad::MaterialCast(quad);
-      HandleSurfaceQuad(surface_quad, opacity, dest_pass);
+      HandleSurfaceQuad(surface_quad, content_to_target_transform, clip_rect,
+                        dest_pass);
     } else {
       if (quad->shared_quad_state != last_copied_source_shared_quad_state) {
-        CopySharedQuadState(
-            quad->shared_quad_state, content_to_target_transform, dest_pass);
-        dest_pass->shared_quad_state_list.back()->opacity *= opacity;
+        CopySharedQuadState(quad->shared_quad_state,
+                            content_to_target_transform, clip_rect, dest_pass);
         last_copied_source_shared_quad_state = quad->shared_quad_state;
       }
       if (quad->material == DrawQuad::RENDER_PASS) {
@@ -372,7 +417,7 @@ void SurfaceAggregator::CopyPasses(const DelegatedFrameData* frame_data,
                       source.has_transparent_background);
 
     CopyQuadsToPass(source.quad_list, source.shared_quad_state_list,
-                    gfx::Transform(), 1.f, copy_pass.get(),
+                    gfx::Transform(), ClipData(), copy_pass.get(),
                     surface->surface_id());
 
     dest_pass_list_->push_back(copy_pass.Pass());
@@ -416,6 +461,9 @@ scoped_ptr<CompositorFrame> SurfaceAggregator::Aggregate(SurfaceId surface_id) {
   referenced_surfaces_.erase(it);
   DCHECK(referenced_surfaces_.empty());
 
+  if (dest_pass_list_->empty())
+    return nullptr;
+
   dest_pass_list_ = NULL;
   RemoveUnreferencedChildren();
   contained_surfaces_.swap(previous_contained_surfaces_);
@@ -433,6 +481,15 @@ scoped_ptr<CompositorFrame> SurfaceAggregator::Aggregate(SurfaceId surface_id) {
   // resource list.
 
   return frame.Pass();
+}
+
+void SurfaceAggregator::ReleaseResources(SurfaceId surface_id) {
+  SurfaceToResourceChildIdMap::iterator it =
+      surface_id_to_resource_child_id_.find(surface_id);
+  if (it != surface_id_to_resource_child_id_.end()) {
+    provider_->DestroyChild(it->second);
+    surface_id_to_resource_child_id_.erase(it);
+  }
 }
 
 }  // namespace cc

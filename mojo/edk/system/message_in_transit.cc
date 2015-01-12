@@ -15,21 +15,19 @@ namespace mojo {
 namespace system {
 
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Type
-    MessageInTransit::kTypeMessagePipeEndpoint;
-STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Type
-    MessageInTransit::kTypeMessagePipe;
+    MessageInTransit::kTypeEndpoint;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Type
     MessageInTransit::kTypeChannel;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Type
     MessageInTransit::kTypeRawChannel;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
-    MessageInTransit::kSubtypeMessagePipeEndpointData;
+    MessageInTransit::kSubtypeEndpointData;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
     MessageInTransit::kSubtypeChannelAttachAndRunEndpoint;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
-    MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpoint;
+    MessageInTransit::kSubtypeChannelRemoveEndpoint;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
-    MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpointAck;
+    MessageInTransit::kSubtypeChannelRemoveEndpointAck;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
     MessageInTransit::kSubtypeRawChannelPosixExtraPlatformHandles;
 STATIC_CONST_MEMBER_DEFINITION const size_t MessageInTransit::kMessageAlignment;
@@ -110,6 +108,8 @@ MessageInTransit::MessageInTransit(Type type,
           base::AlignedAlloc(main_buffer_size_, kMessageAlignment))) {
   ConstructorHelper(type, subtype, num_bytes);
   bytes.GetArray(MessageInTransit::bytes(), num_bytes);
+  memset(static_cast<char*>(MessageInTransit::bytes()) + num_bytes, 0,
+         main_buffer_size_ - sizeof(Header) - num_bytes);
 }
 
 MessageInTransit::MessageInTransit(const View& message_view)
@@ -127,7 +127,7 @@ MessageInTransit::MessageInTransit(const View& message_view)
 MessageInTransit::~MessageInTransit() {
   if (dispatchers_) {
     for (size_t i = 0; i < dispatchers_->size(); i++) {
-      if (!(*dispatchers_)[i].get())
+      if (!(*dispatchers_)[i])
         continue;
 
       DCHECK((*dispatchers_)[i]->HasOneRef());
@@ -166,7 +166,7 @@ void MessageInTransit::SetDispatchers(
   dispatchers_ = dispatchers.Pass();
 #ifndef NDEBUG
   for (size_t i = 0; i < dispatchers_->size(); i++)
-    DCHECK(!(*dispatchers_)[i].get() || (*dispatchers_)[i]->HasOneRef());
+    DCHECK(!(*dispatchers_)[i] || (*dispatchers_)[i]->HasOneRef());
 #endif
 }
 
@@ -177,6 +177,7 @@ void MessageInTransit::SetTransportData(
   DCHECK(!dispatchers_);
 
   transport_data_ = transport_data.Pass();
+  UpdateTotalSize();
 }
 
 void MessageInTransit::SerializeAndCloseDispatchers(Channel* channel) {

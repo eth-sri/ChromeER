@@ -130,7 +130,7 @@ class ManagementSetEnabledFunctionInstallPromptDelegate
         new ExtensionInstallPrompt(details_.GetAssociatedWebContents()));
     install_prompt_->ConfirmReEnable(this, extension);
   }
-  virtual ~ManagementSetEnabledFunctionInstallPromptDelegate() {}
+  ~ManagementSetEnabledFunctionInstallPromptDelegate() override {}
 
  protected:
   // ExtensionInstallPrompt::Delegate.
@@ -200,7 +200,7 @@ class ChromeAppForLinkDelegate : public extensions::AppForLinkDelegate {
       const GURL& launch_url,
       const favicon_base::FaviconImageResult& image_result) {
     WebApplicationInfo web_app;
-    web_app.title = base::UTF8ToUTF16(std::string(title));
+    web_app.title = base::UTF8ToUTF16(title);
     web_app.app_url = launch_url;
 
     if (!image_result.image.IsEmpty()) {
@@ -242,9 +242,9 @@ bool ChromeManagementAPIDelegate::LaunchAppFunctionDelegate(
   // returned.
   extensions::LaunchContainer launch_container =
       GetLaunchContainer(extensions::ExtensionPrefs::Get(context), extension);
-  OpenApplication(AppLaunchParams(Profile::FromBrowserContext(context),
-                                  extension, launch_container,
-                                  NEW_FOREGROUND_TAB));
+  OpenApplication(AppLaunchParams(
+      Profile::FromBrowserContext(context), extension, launch_container,
+      NEW_FOREGROUND_TAB, extensions::SOURCE_MANAGEMENT_API));
   extensions::RecordAppLaunchType(extension_misc::APP_LAUNCH_EXTENSION_API,
                                   extension->GetType());
 

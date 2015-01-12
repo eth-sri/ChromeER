@@ -48,6 +48,7 @@ void PermissionServiceImpl::OnConnectionError() {
 void PermissionServiceImpl::RequestPermission(
     PermissionName permission,
     const mojo::String& origin,
+    bool user_gesture,
     const mojo::Callback<void(PermissionStatus)>& callback) {
   // This condition is valid if the call is coming from a ChildThread instead of
   // a RenderFrame. Some consumers of the service run in Workers and some in
@@ -72,7 +73,7 @@ void PermissionServiceImpl::RequestPermission(
       context_->web_contents(),
       request_id,
       GURL(origin),
-      true, // TODO(mlamouri): should be removed, see http://crbug.com/423770
+      user_gesture, // TODO(mlamouri): should be removed (crbug.com/423770)
       base::Bind(&PermissionServiceImpl::OnRequestPermissionResponse,
                  weak_factory_.GetWeakPtr(),
                  callback,
@@ -109,7 +110,16 @@ void PermissionServiceImpl::HasPermission(
     PermissionName permission,
     const mojo::String& origin,
     const mojo::Callback<void(PermissionStatus)>& callback) {
-  NOTIMPLEMENTED();
+  DCHECK(context_->GetBrowserContext());
+
+  // If the embedding_origin is empty we'll use |origin| instead.
+  GURL embedding_origin = context_->GetEmbeddingOrigin();
+
+  callback.Run(GetContentClient()->browser()->GetPermissionStatus(
+      PermissionNameToPermissionType(permission),
+      context_->GetBrowserContext(),
+      GURL(origin),
+      embedding_origin.is_empty() ? GURL(origin) : embedding_origin));
 }
 
 }  // namespace content

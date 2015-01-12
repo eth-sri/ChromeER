@@ -40,6 +40,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_ui_prefs.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
@@ -84,6 +85,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/uninstall_reason.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "net/dns/mock_host_resolver.h"
@@ -92,7 +94,6 @@
 #include "ui/base/page_transition_types.h"
 
 #if defined(OS_MACOSX)
-#include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "chrome/browser/ui/cocoa/run_loop_testing.h"
 #endif
@@ -355,7 +356,8 @@ class BrowserTest : public ExtensionBrowserTest {
 IN_PROC_BROWSER_TEST_F(BrowserTest, NoTitle) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -375,7 +377,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, NoTitle) {
 IN_PROC_BROWSER_TEST_F(BrowserTest, Title) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -496,7 +499,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ClearPendingOnFailUnlessNTP) {
 
 // Test for crbug.com/297289.  Ensure that modal dialogs are closed when a
 // cross-process navigation is ready to commit.
-IN_PROC_BROWSER_TEST_F(BrowserTest, CrossProcessNavCancelsDialogs) {
+// Flaky test, see https://crbug.com/445155.
+IN_PROC_BROWSER_TEST_F(BrowserTest, DISABLED_CrossProcessNavCancelsDialogs) {
   ASSERT_TRUE(test_server()->Start());
   host_resolver()->AddRule("www.example.com", "127.0.0.1");
   GURL url(test_server()->GetURL("empty.html"));
@@ -544,7 +548,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, SadTabCancelsDialogs) {
   content::RenderProcessHostWatcher crash_observer(
       child_process,
       content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
-  base::KillProcess(child_process->GetHandle(), 0, false);
+  child_process->Shutdown(0, false);
   crash_observer.Wait();
   EXPECT_FALSE(dialog_queue->HasActiveDialog());
 
@@ -571,7 +575,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, SadTabCancelsSubframeDialogs) {
   content::RenderProcessHostWatcher crash_observer(
       child_process,
       content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
-  base::KillProcess(child_process->GetHandle(), 0, false);
+  child_process->Shutdown(0, false);
   crash_observer.Wait();
   EXPECT_FALSE(dialog_queue->HasActiveDialog());
 
@@ -897,7 +901,7 @@ IN_PROC_BROWSER_TEST_F(BeforeUnloadAtQuitWithTwoWindows,
 // it to a cross-site URL.  It should also work for meta-refreshes.
 // See http://crbug.com/93517.
 IN_PROC_BROWSER_TEST_F(BrowserTest, NullOpenerRedirectForksProcess) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisablePopupBlocking);
 
   // Create http and https servers for a cross-site transition.
@@ -986,7 +990,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, NullOpenerRedirectForksProcess) {
 // http://www.google.com/chrome/intl/en/webmasters-faq.html#newtab will not
 // fork a new renderer process.
 IN_PROC_BROWSER_TEST_F(BrowserTest, OtherRedirectsDontForkProcess) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisablePopupBlocking);
 
   // Create http and https servers for a cross-site transition.
@@ -1294,41 +1298,33 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, MAYBE_TabClosingWhenRemovingExtension) {
 }
 
 #if !defined(OS_MACOSX)
-// Open with --app-id=<id>, and see that an app window opens.
+// Open with --app-id=<id>, and see that an application tab opens by default.
 IN_PROC_BROWSER_TEST_F(BrowserTest, AppIdSwitch) {
   ASSERT_TRUE(test_server()->Start());
+
+  // There should be one tab to start with.
+  ASSERT_EQ(1, browser()->tab_strip_model()->count());
 
   // Load an app.
   host_resolver()->AddRule("www.example.com", "127.0.0.1");
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("app/")));
   const Extension* extension_app = GetExtension();
 
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitchASCII(switches::kAppId, extension_app->id());
 
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), command_line, first_run);
-  ASSERT_TRUE(launch.OpenApplicationWindow(browser()->profile(), NULL));
+  EXPECT_FALSE(launch.OpenApplicationWindow(browser()->profile(), NULL));
+  EXPECT_TRUE(launch.OpenApplicationTab(browser()->profile()));
 
-  // Check that the new browser has an app name.
-  // The launch should have created a new browser.
-  ASSERT_EQ(2u, chrome::GetBrowserCount(browser()->profile(),
+  // Check that a new browser wasn't opened.
+  EXPECT_EQ(1u, chrome::GetBrowserCount(browser()->profile(),
                                         browser()->host_desktop_type()));
 
-  // Find the new browser.
-  Browser* new_browser = NULL;
-  for (chrome::BrowserIterator it; !it.done() && !new_browser; it.Next()) {
-    if (*it != browser())
-      new_browser = *it;
-  }
-  ASSERT_TRUE(new_browser);
-  ASSERT_TRUE(new_browser != browser());
-
-  // The browser's app_name should include the app's ID.
-  ASSERT_NE(
-      new_browser->app_name_.find(extension_app->id()),
-      std::string::npos) << new_browser->app_name_;
+  // Check that a new tab was opened.
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
 }
 
 // Open an app window and the dev tools window and ensure that the location
@@ -1342,11 +1338,9 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ShouldShowLocationBar) {
   const Extension* extension_app = GetExtension();
 
   // Launch it in a window, as AppLauncherHandler::HandleLaunchApp() would.
-  WebContents* app_window =
-      OpenApplication(AppLaunchParams(browser()->profile(),
-                                      extension_app,
-                                      extensions::LAUNCH_CONTAINER_WINDOW,
-                                      NEW_WINDOW));
+  WebContents* app_window = OpenApplication(AppLaunchParams(
+      browser()->profile(), extension_app, extensions::LAUNCH_CONTAINER_WINDOW,
+      NEW_WINDOW, extensions::SOURCE_TEST));
   ASSERT_TRUE(app_window);
 
   DevToolsWindow* devtools_window =
@@ -1381,6 +1375,85 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, ShouldShowLocationBar) {
   DevToolsWindowTesting::CloseDevToolsWindowSync(devtools_window);
 }
 #endif
+
+// Open a normal browser window, a hosted app window, a legacy packaged app
+// window and a dev tools window, and check that the web app frame feature is
+// supported correctly.
+IN_PROC_BROWSER_TEST_F(BrowserTest, ShouldUseWebAppFrame) {
+  ASSERT_TRUE(test_server()->Start());
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableWebAppFrame);
+
+  // Load a hosted app.
+  host_resolver()->AddRule("www.example.com", "127.0.0.1");
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("app/")));
+  const Extension* hosted_app = GetExtension();
+
+  // Launch it in a window, as AppLauncherHandler::HandleLaunchApp() would.
+  WebContents* hosted_app_window = OpenApplication(AppLaunchParams(
+      browser()->profile(), hosted_app, extensions::LAUNCH_CONTAINER_WINDOW,
+      NEW_WINDOW, extensions::SOURCE_UNTRACKED));
+  ASSERT_TRUE(hosted_app_window);
+
+  //  Load a packaged app.
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("packaged_app/")));
+  const Extension* packaged_app = nullptr;
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(browser()->profile());
+  for (const scoped_refptr<const extensions::Extension>& extension :
+       registry->enabled_extensions()) {
+    if (extension->name() == "Packaged App Test")
+      packaged_app = extension.get();
+  }
+  ASSERT_TRUE(packaged_app);
+
+  // Launch it in a window, as AppLauncherHandler::HandleLaunchApp() would.
+  WebContents* packaged_app_window = OpenApplication(AppLaunchParams(
+      browser()->profile(), packaged_app, extensions::LAUNCH_CONTAINER_WINDOW,
+      NEW_WINDOW, extensions::SOURCE_UNTRACKED));
+  ASSERT_TRUE(packaged_app_window);
+
+  DevToolsWindow* devtools_window =
+      DevToolsWindowTesting::OpenDevToolsWindowSync(browser(), false);
+
+  // The launch should have created a new app browser and a dev tools browser.
+  ASSERT_EQ(4u, chrome::GetBrowserCount(browser()->profile(),
+                                        browser()->host_desktop_type()));
+
+  // Find the new browsers.
+  Browser* hosted_app_browser = NULL;
+  Browser* packaged_app_browser = NULL;
+  Browser* dev_tools_browser = NULL;
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
+    if (*it == browser()) {
+      continue;
+    } else if ((*it)->app_name() == DevToolsWindow::kDevToolsApp) {
+      dev_tools_browser = *it;
+    } else if ((*it)->tab_strip_model()->GetActiveWebContents() ==
+               hosted_app_window) {
+      hosted_app_browser = *it;
+    } else {
+      packaged_app_browser = *it;
+    }
+  }
+  ASSERT_TRUE(dev_tools_browser);
+  ASSERT_TRUE(hosted_app_browser);
+  ASSERT_TRUE(hosted_app_browser != browser());
+  ASSERT_TRUE(packaged_app_browser);
+  ASSERT_TRUE(packaged_app_browser != browser());
+  ASSERT_TRUE(packaged_app_browser != hosted_app_browser);
+
+  EXPECT_FALSE(browser()->SupportsWindowFeature(Browser::FEATURE_WEBAPPFRAME));
+  EXPECT_FALSE(
+      dev_tools_browser->SupportsWindowFeature(Browser::FEATURE_WEBAPPFRAME));
+  EXPECT_EQ(
+      browser()->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH,
+      hosted_app_browser->SupportsWindowFeature(Browser::FEATURE_WEBAPPFRAME));
+  EXPECT_FALSE(packaged_app_browser->SupportsWindowFeature(
+      Browser::FEATURE_WEBAPPFRAME));
+
+  DevToolsWindowTesting::CloseDevToolsWindowSync(devtools_window);
+}
 
 // Tests that the CLD (Compact Language Detection) works properly.
 IN_PROC_BROWSER_TEST_F(BrowserTest, PageLanguageDetection) {
@@ -1471,7 +1544,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, RestorePinnedTabs) {
   PinnedTabCodec::WritePinnedTabs(browser()->profile());
 
   // Simulate launching again.
-  CommandLine dummy(CommandLine::NO_PROGRAM);
+  base::CommandLine dummy(base::CommandLine::NO_PROGRAM);
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
   StartupBrowserCreatorImpl launch(base::FilePath(), dummy, first_run);
@@ -1536,9 +1609,9 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, OpenAppWindowLikeNtp) {
   const Extension* extension_app = GetExtension();
 
   // Launch it in a window, as AppLauncherHandler::HandleLaunchApp() would.
-  WebContents* app_window = OpenApplication(
-      AppLaunchParams(browser()->profile(), extension_app,
-                      extensions::LAUNCH_CONTAINER_WINDOW, NEW_WINDOW));
+  WebContents* app_window = OpenApplication(AppLaunchParams(
+      browser()->profile(), extension_app, extensions::LAUNCH_CONTAINER_WINDOW,
+      NEW_WINDOW, extensions::SOURCE_TEST));
   ASSERT_TRUE(app_window);
 
   // Apps launched in a window from the NTP have an extensions tab helper but
@@ -1791,7 +1864,8 @@ namespace {
 int GetZoomPercent(const content::WebContents* contents,
                    bool* enable_plus,
                    bool* enable_minus) {
-  int percent = ZoomController::FromWebContents(contents)->GetZoomPercent();
+  int percent =
+      ui_zoom::ZoomController::FromWebContents(contents)->GetZoomPercent();
   *enable_plus = percent < contents->GetMaximumZoomPercent();
   *enable_minus = percent > contents->GetMinimumZoomPercent();
   return percent;
@@ -2070,7 +2144,7 @@ IN_PROC_BROWSER_TEST_F(BrowserTest2, NoTabsInPopups) {
 #endif
 
 IN_PROC_BROWSER_TEST_F(BrowserTest, WindowOpenClose) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisablePopupBlocking);
   GURL url = ui_test_utils::GetTestUrl(
       base::FilePath(), base::FilePath().AppendASCII("window.close.html"));
@@ -2089,7 +2163,8 @@ IN_PROC_BROWSER_TEST_F(BrowserTest, WindowOpenClose) {
 IN_PROC_BROWSER_TEST_F(BrowserTest, FullscreenBookmarkBar) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -2126,7 +2201,7 @@ class KioskModeTest : public BrowserTest {
  public:
   KioskModeTest() {}
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kKioskMode);
   }
 };
@@ -2151,7 +2226,7 @@ class LaunchBrowserWithNonAsciiUserDatadir : public BrowserTest {
  public:
   LaunchBrowserWithNonAsciiUserDatadir() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) override {
+  virtual void SetUpCommandLine(base::CommandLine* command_line) override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     base::FilePath tmp_profile = temp_dir_.path().AppendASCII("tmp_profile");
     tmp_profile = tmp_profile.Append(L"Test Chrome G\u00E9raldine");
@@ -2176,7 +2251,7 @@ class RunInBackgroundTest : public BrowserTest {
  public:
   RunInBackgroundTest() {}
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kKeepAliveForTest);
   }
 };
@@ -2206,7 +2281,7 @@ class NoStartupWindowTest : public BrowserTest {
  public:
   NoStartupWindowTest() {}
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kNoStartupWindow);
     command_line->AppendSwitch(switches::kKeepAliveForTest);
   }
@@ -2222,7 +2297,8 @@ class NoStartupWindowTest : public BrowserTest {
 IN_PROC_BROWSER_TEST_F(NoStartupWindowTest, NoStartupWindowBasicTest) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // kNoStartupWindow doesn't make sense in Metro+Ash.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -2243,7 +2319,8 @@ IN_PROC_BROWSER_TEST_F(NoStartupWindowTest, NoStartupWindowBasicTest) {
 IN_PROC_BROWSER_TEST_F(NoStartupWindowTest, DontInitSessionServiceForApps) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // kNoStartupWindow doesn't make sense in Metro+Ash.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 
@@ -2269,7 +2346,7 @@ class AppModeTest : public BrowserTest {
  public:
   AppModeTest() {}
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     GURL url = ui_test_utils::GetTestUrl(
        base::FilePath(), base::FilePath().AppendASCII("title1.html"));
     command_line->AppendSwitchASCII(switches::kApp, url.spec());
@@ -2279,7 +2356,8 @@ class AppModeTest : public BrowserTest {
 IN_PROC_BROWSER_TEST_F(AppModeTest, EnableAppModeTest) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshBrowserTests))
     return;
 #endif
 

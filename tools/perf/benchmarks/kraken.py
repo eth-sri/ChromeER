@@ -8,6 +8,7 @@ import os
 
 from metrics import power
 from telemetry import benchmark
+from telemetry import page as page_module
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.value import list_of_scalar_values
@@ -111,7 +112,10 @@ class _KrakenMeasurement(page_test.PageTest):
 
 
 class Kraken(benchmark.Benchmark):
-  """Mozilla's Kraken JavaScript benchmark."""
+  """Mozilla's Kraken JavaScript benchmark.
+
+  http://krakenbenchmark.mozilla.org/
+  """
   test = _KrakenMeasurement
 
   def CreatePageSet(self, options):
@@ -119,6 +123,7 @@ class Kraken(benchmark.Benchmark):
       archive_data_file='../page_sets/data/kraken.json',
       file_path=os.path.abspath(__file__),
       bucket=page_set.PARTNER_BUCKET)
-    ps.AddPageWithDefaultRunNavigate(
-      'http://krakenbenchmark.mozilla.org/kraken-1.1/driver.html')
+    ps.AddUserStory(page_module.Page(
+        'http://krakenbenchmark.mozilla.org/kraken-1.1/driver.html',
+        ps, ps.base_dir))
     return ps

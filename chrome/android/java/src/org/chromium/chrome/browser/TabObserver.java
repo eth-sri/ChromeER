@@ -79,6 +79,14 @@ public interface TabObserver {
     void onContextMenuShown(Tab tab, ContextMenu menu);
 
     /**
+     * Called when the contextual action bar's visibility has changed (i.e. the widget shown
+     * when you can copy/paste text after long press).
+     * @param tab The notifying {@link Tab}.
+     * @param visible Whether the contextual action bar is now visible.
+     */
+    void onContextualActionBarVisibilityChanged(Tab tab, boolean visible);
+
+    /**
      * Called when the WebContents Instant support is disabled.
      */
     void onWebContentsInstantSupportDisabled();
@@ -182,6 +190,25 @@ public interface TabObserver {
      * @param color the new color in ARGB format.
      */
     public void onDidChangeThemeColor(int color);
+
+    /**
+     * Called when an interstitial page gets attached to the tab content.
+     * @param tab The notifying {@link Tab}.
+     */
+    public void onDidAttachInterstitialPage(Tab tab);
+
+    /**
+     * Called when an interstitial page gets detached from the tab content.
+     * @param tab The notifying {@link Tab}.
+     */
+    public void onDidDetachInterstitialPage(Tab tab);
+
+    /**
+     * Called when the background color for the tab has changed.
+     * @param tab The notifying {@link Tab}.
+     * @param color The current background color.
+     */
+    public void onBackgroundColorChanged(Tab tab, int color);
 
     public void webContentsCreated(Tab tab, long sourceWebContents, long openerRenderFrameId,
             String frameName, String targetUrl, long newWebContents);

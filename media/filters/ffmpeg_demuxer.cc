@@ -165,7 +165,7 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
       return;
 
     encryption_key_id_.assign(enc_key_id);
-    demuxer_->FireNeedKey(kWebMInitDataType, enc_key_id);
+    demuxer_->OnEncryptedMediaInitData(kWebMInitDataType, enc_key_id);
   }
 }
 
@@ -570,7 +570,7 @@ base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
 FFmpegDemuxer::FFmpegDemuxer(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     DataSource* data_source,
-    const NeedKeyCB& need_key_cb,
+    const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
     const scoped_refptr<MediaLog>& media_log)
     : host_(NULL),
       task_runner_(task_runner),
@@ -585,7 +585,7 @@ FFmpegDemuxer::FFmpegDemuxer(
       fallback_stream_for_seeking_(-1, kNoTimestamp()),
       text_enabled_(false),
       duration_known_(false),
-      need_key_cb_(need_key_cb),
+      encrypted_media_init_data_cb_(encrypted_media_init_data_cb),
       weak_factory_(this) {
   DCHECK(task_runner_.get());
   DCHECK(data_source_);
@@ -686,6 +686,12 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
   // don't use.  FFmpeg will only read ID3v1 tags if no other metadata is
   // available, so add a metadata entry to ensure some is always present.
   av_dict_set(&format_context->metadata, "skip_id3v1_tags", "", 0);
+
+  // Ensure ffmpeg doesn't give up too early while looking for stream params;
+  // this does not increase the amount of data downloaded.  The default value
+  // is 5 AV_TIME_BASE units (1 second each), which prevents some oddly muxed
+  // streams from being detected properly; this value was chosen arbitrarily.
+  format_context->max_analyze_duration2 = 60 * AV_TIME_BASE;
 
   // Open the AVFormatContext using our glue layer.
   CHECK(blocking_thread_.Start());
@@ -1251,11 +1257,12 @@ void FFmpegDemuxer::StreamHasEnded() {
   }
 }
 
-void FFmpegDemuxer::FireNeedKey(const std::string& init_data_type,
-                                const std::string& encryption_key_id) {
+void FFmpegDemuxer::OnEncryptedMediaInitData(
+    const std::string& init_data_type,
+    const std::string& encryption_key_id) {
   std::vector<uint8> key_id_local(encryption_key_id.begin(),
                                   encryption_key_id.end());
-  need_key_cb_.Run(init_data_type, key_id_local);
+  encrypted_media_init_data_cb_.Run(init_data_type, key_id_local);
 }
 
 void FFmpegDemuxer::NotifyCapacityAvailable() {

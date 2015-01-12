@@ -105,7 +105,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
                                                // disabled to prevent activity.
     DISABLE_EXTERNAL_EXTENSION = 1 << 13,  // External extensions might be
                                            // disabled for user prompting.
-    DISABLE_REASON_LAST = 1 << 14,  // This should always be the last value
+    DISABLE_UPDATE_REQUIRED_BY_POLICY = 1 << 14,  // Doesn't meet minimum
+                                                  // version requirement.
+    DISABLE_REASON_LAST = 1 << 15,  // This should always be the last value
   };
 
   // A base class for parsed manifest data that APIs want to store on
@@ -294,6 +296,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   const ExtensionId& id() const;
   const base::Version* version() const { return version_.get(); }
   const std::string VersionString() const;
+  const std::string GetVersionForDisplay() const;
   const std::string& name() const { return name_; }
   const std::string& short_name() const { return short_name_; }
   const std::string& non_localized_name() const { return non_localized_name_; }
@@ -448,6 +451,9 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
 
   // The extension's version.
   scoped_ptr<base::Version> version_;
+
+  // The extension's user visible version name.
+  std::string version_name_;
 
   // An optional longer description of the extension.
   std::string description_;

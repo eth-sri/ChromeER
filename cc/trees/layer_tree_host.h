@@ -66,6 +66,7 @@ class UIResourceRequest;
 struct PendingPageScaleAnimation;
 struct RenderingStats;
 struct ScrollAndScaleSet;
+enum class GpuRasterizationStatus;
 
 // Provides information on an Impl's rendering capabilities back to the
 // LayerTreeHost.
@@ -124,11 +125,12 @@ class CC_EXPORT LayerTreeHost {
   void CommitComplete();
   void SetOutputSurface(scoped_ptr<OutputSurface> output_surface);
   void RequestNewOutputSurface();
+  void DidInitializeOutputSurface();
+  void DidFailToInitializeOutputSurface();
   virtual scoped_ptr<LayerTreeHostImpl> CreateLayerTreeHostImpl(
       LayerTreeHostImplClient* client);
   void DidLoseOutputSurface();
   bool output_surface_lost() const { return output_surface_lost_; }
-  virtual void OnCreateAndInitializeOutputSurfaceAttempted(bool success);
   void DidCommitAndDrawFrame() { client_->DidCommitAndDrawFrame(); }
   void DidCompleteSwapBuffers() { client_->DidCompleteSwapBuffers(); }
   void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
@@ -208,9 +210,11 @@ class CC_EXPORT LayerTreeHost {
   }
   void SetHasGpuRasterizationTrigger(bool has_trigger);
   bool UseGpuRasterization() const;
+  GpuRasterizationStatus GetGpuRasterizationStatus() const;
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
-  void SetTopControlsLayoutHeight(float height);
+  void SetTopControlsShrinkBlinkSize(bool shrink);
+  void SetTopControlsHeight(float height);
   void SetTopControlsContentOffset(float offset);
 
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
@@ -220,6 +224,7 @@ class CC_EXPORT LayerTreeHost {
                                    float min_page_scale_factor,
                                    float max_page_scale_factor);
   float page_scale_factor() const { return page_scale_factor_; }
+  gfx::Vector2dF elastic_overscroll() const { return elastic_overscroll_; }
 
   SkColor background_color() const { return background_color_; }
   void set_background_color(SkColor color) { background_color_ = color; }
@@ -398,7 +403,6 @@ class CC_EXPORT LayerTreeHost {
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
 
   bool output_surface_lost_;
-  int num_failed_recreate_attempts_;
 
   scoped_refptr<Layer> root_layer_;
   scoped_refptr<HeadsUpDisplayLayer> hud_layer_;
@@ -413,7 +417,8 @@ class CC_EXPORT LayerTreeHost {
   LayerTreeDebugState debug_state_;
 
   gfx::Size device_viewport_size_;
-  float top_controls_layout_height_;
+  bool top_controls_shrink_blink_size_;
+  float top_controls_height_;
   float top_controls_content_offset_;
   float device_scale_factor_;
 
@@ -424,6 +429,7 @@ class CC_EXPORT LayerTreeHost {
   float page_scale_factor_;
   float min_page_scale_factor_;
   float max_page_scale_factor_;
+  gfx::Vector2dF elastic_overscroll_;
   bool has_gpu_rasterization_trigger_;
   bool content_is_suitable_for_gpu_rasterization_;
   bool gpu_rasterization_histogram_recorded_;

@@ -157,8 +157,9 @@ bool InRememberCertificateErrorDecisionsGroup() {
           kRememberCertificateErrorDecisionsFieldTrialDefaultGroup) != 0 &&
       group_name.compare(
           kRememberCertificateErrorDecisionsFieldTrialDisableGroup) != 0;
-  bool has_command_line_switch = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kRememberCertErrorDecisions);
+  bool has_command_line_switch =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kRememberCertErrorDecisions);
   return in_experimental_group || has_command_line_switch;
 }
 
@@ -231,7 +232,23 @@ void WebsiteSettings::OnSitePermissionChanged(ContentSettingsType type,
                                               ContentSetting setting) {
   // Count how often a permission for a specific content type is changed using
   // the Website Settings UI.
-  UMA_HISTOGRAM_COUNTS("WebsiteSettings.PermissionChanged", type);
+  ContentSettingsTypeHistogram histogram_value =
+      ContentSettingTypeToHistogramValue(type);
+  DCHECK_NE(histogram_value, CONTENT_SETTINGS_TYPE_HISTOGRAM_INVALID)
+      << "Invalid content setting type specified.";
+  UMA_HISTOGRAM_ENUMERATION("WebsiteSettings.OriginInfo.PermissionChanged",
+                            histogram_value,
+                            CONTENT_SETTINGS_HISTOGRAM_NUM_TYPES);
+
+  if (setting == ContentSetting::CONTENT_SETTING_ALLOW) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "WebsiteSettings.OriginInfo.PermissionChanged.Allowed", histogram_value,
+        CONTENT_SETTINGS_HISTOGRAM_NUM_TYPES);
+  } else if (setting == ContentSetting::CONTENT_SETTING_BLOCK) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "WebsiteSettings.OriginInfo.PermissionChanged.Blocked", histogram_value,
+        CONTENT_SETTINGS_HISTOGRAM_NUM_TYPES);
+  }
 
   // This is technically redundant given the histogram above, but putting the
   // total count of permission changes in another histogram makes it easier to
@@ -672,7 +689,8 @@ void WebsiteSettings::PresentSitePermissions() {
   for (size_t i = 0; i < arraysize(kPermissionType); ++i) {
     permission_info.type = kPermissionType[i];
     if (permission_info.type == CONTENT_SETTINGS_TYPE_MIDI_SYSEX) {
-      const CommandLine* command_line = CommandLine::ForCurrentProcess();
+      const base::CommandLine* command_line =
+          base::CommandLine::ForCurrentProcess();
       if (!command_line->HasSwitch(switches::kEnableWebMIDI))
         continue;
     }

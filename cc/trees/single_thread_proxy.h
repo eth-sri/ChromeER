@@ -70,7 +70,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void ScheduledActionAnimate() override;
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginOutputSurfaceCreation() override;
-  void ScheduledActionManageTiles() override;
+  void ScheduledActionPrepareTiles() override;
   void DidAnticipatedDrawTimeChange(base::TimeTicks time) override;
   base::TimeDelta DrawDurationEstimate() override;
   base::TimeDelta BeginMainFrameToCommitDurationEstimate() override;
@@ -82,7 +82,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void UpdateRendererCapabilitiesOnImplThread() override;
   void DidLoseOutputSurfaceOnImplThread() override;
   void CommitVSyncParameters(base::TimeTicks timebase,
-                             base::TimeDelta interval) override {}
+                             base::TimeDelta interval) override;
   void SetEstimatedParentDrawTime(base::TimeDelta draw_time) override {}
   void SetMaxSwapsPendingOnImplThread(int max) override {}
   void DidSwapBuffersOnImplThread() override;
@@ -93,7 +93,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void SetNeedsRedrawOnImplThread() override;
   void SetNeedsRedrawRectOnImplThread(const gfx::Rect& dirty_rect) override;
   void SetNeedsAnimateOnImplThread() override;
-  void SetNeedsManageTilesOnImplThread() override;
+  void SetNeedsPrepareTilesOnImplThread() override;
   void SetNeedsCommitOnImplThread() override;
   void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> events) override;
@@ -104,7 +104,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void PostDelayedScrollbarFadeOnImplThread(const base::Closure& start_fade,
                                             base::TimeDelta delay) override {}
   void DidActivateSyncTree() override;
-  void DidManageTiles() override;
+  void DidPrepareTiles() override;
   void SetDebugState(const LayerTreeDebugState& debug_state) override {}
 
   void RequestNewOutputSurface();
@@ -120,7 +120,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
       scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
   void BeginMainFrame();
-  void BeginMainFrameAbortedOnImplThread();
+  void BeginMainFrameAbortedOnImplThread(CommitEarlyOutReason reason);
   void DoAnimate();
   void DoBeginMainFrame(const BeginFrameArgs& begin_frame_args);
   void DoCommit();

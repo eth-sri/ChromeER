@@ -85,6 +85,7 @@
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "content/browser/bootstrap_sandbox_mac.h"
 #include "content/browser/cocoa/system_hotkey_helper_mac.h"
+#include "content/browser/compositor/browser_compositor_view_mac.h"
 #include "content/browser/theme_helper_mac.h"
 #endif
 
@@ -97,6 +98,11 @@
 #include "content/common/sandbox_win.h"
 #include "net/base/winsock_init.h"
 #include "ui/base/l10n/l10n_util_win.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "base/chromeos/memory_pressure_observer_chromeos.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 #if defined(USE_GLIB)
@@ -238,33 +244,47 @@ MSVC_DISABLE_OPTIMIZE()
 MSVC_PUSH_DISABLE_WARNING(4748)
 
 NOINLINE void ResetThread_DB(scoped_ptr<BrowserProcessSubThread> thread) {
+  volatile int inhibit_comdat = __LINE__;
+  ALLOW_UNUSED_LOCAL(inhibit_comdat);
   thread.reset();
 }
 
 NOINLINE void ResetThread_FILE(scoped_ptr<BrowserProcessSubThread> thread) {
+  volatile int inhibit_comdat = __LINE__;
+  ALLOW_UNUSED_LOCAL(inhibit_comdat);
   thread.reset();
 }
 
 NOINLINE void ResetThread_FILE_USER_BLOCKING(
     scoped_ptr<BrowserProcessSubThread> thread) {
+  volatile int inhibit_comdat = __LINE__;
+  ALLOW_UNUSED_LOCAL(inhibit_comdat);
   thread.reset();
 }
 
 NOINLINE void ResetThread_PROCESS_LAUNCHER(
     scoped_ptr<BrowserProcessSubThread> thread) {
+  volatile int inhibit_comdat = __LINE__;
+  ALLOW_UNUSED_LOCAL(inhibit_comdat);
   thread.reset();
 }
 
 NOINLINE void ResetThread_CACHE(scoped_ptr<BrowserProcessSubThread> thread) {
+  volatile int inhibit_comdat = __LINE__;
+  ALLOW_UNUSED_LOCAL(inhibit_comdat);
   thread.reset();
 }
 
 NOINLINE void ResetThread_IO(scoped_ptr<BrowserProcessSubThread> thread) {
+  volatile int inhibit_comdat = __LINE__;
+  ALLOW_UNUSED_LOCAL(inhibit_comdat);
   thread.reset();
 }
 
 #if !defined(OS_IOS)
 NOINLINE void ResetThread_IndexedDb(scoped_ptr<base::Thread> thread) {
+  volatile int inhibit_comdat = __LINE__;
+  ALLOW_UNUSED_LOCAL(inhibit_comdat);
   thread.reset();
 }
 #endif
@@ -466,6 +486,13 @@ void BrowserMainLoop::MainMessageLoopStart() {
     main_message_loop_.reset(new base::MessageLoopForUI);
 
   InitializeMainThread();
+
+#if defined(OS_CHROMEOS)
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kUseMemoryPressureSystemChromeOS)) {
+    memory_pressure_observer_.reset(new base::MemoryPressureObserverChromeOS);
+  }
+#endif
 
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:SystemMonitor");
@@ -808,6 +835,14 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     resource_dispatcher_host_.get()->Shutdown();
   }
 
+#if defined(OS_CHROMEOS)
+  memory_pressure_observer_.reset();
+#endif
+
+#if defined(OS_MACOSX)
+  BrowserCompositorMac::DisableRecyclingForShutdown();
+#endif
+
 #if defined(USE_AURA) || defined(OS_MACOSX)
   {
     TRACE_EVENT0("shutdown",
@@ -1018,7 +1053,8 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   }
 #endif
 #elif defined(OS_ANDROID)
-  established_gpu_channel = true;
+  // TODO(crbug.com/439322): This should be set to |true|.
+  established_gpu_channel = false;
   BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
 #endif
 

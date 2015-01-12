@@ -24,8 +24,7 @@
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/customization_document.h"
-#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
+#include "chrome/browser/chromeos/customization/customization_document.h"
 #include "chrome/browser/chromeos/login/auth/chrome_login_performer.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
@@ -43,6 +42,7 @@
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/device_disabling_manager.h"
 #include "chrome/browser/signin/easy_unlock_service.h"
+#include "chrome/browser/ui/ash/accessibility/automation_manager_ash.h"
 #include "chrome/browser/ui/webui/chromeos/login/l10n_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
@@ -119,15 +119,6 @@ void TransferContextAuthenticationsOnIOThread(
                                    base::Bind(&RefreshPoliciesOnUIThread));
 }
 
-// Record UMA for Easy sign-in outcome.
-void RecordEasySignInOutcome(const std::string& user_id, bool success) {
-  EasyUnlockService* easy_unlock_service =
-      EasyUnlockService::Get(ProfileHelper::GetSigninProfile());
-  if (!easy_unlock_service)
-    return;
-  easy_unlock_service->RecordEasySignInOutcome(user_id, success);
-}
-
 // Record UMA for password login of regular user when Easy sign-in is enabled.
 void RecordPasswordLoginEvent(const UserContext& user_context) {
   EasyUnlockService* easy_unlock_service =
@@ -141,9 +132,9 @@ void RecordPasswordLoginEvent(const UserContext& user_context) {
 
 bool CanShowDebuggingFeatures() {
   // We need to be on the login screen and in dev mode to show this menu item.
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
              chromeos::switches::kSystemDevMode) &&
-         CommandLine::ForCurrentProcess()->HasSwitch(
+         base::CommandLine::ForCurrentProcess()->HasSwitch(
              chromeos::switches::kLoginManager) &&
          !user_manager::UserManager::Get()->IsSessionStarted();
 }
@@ -158,7 +149,6 @@ ExistingUserController* ExistingUserController::current_controller_ = NULL;
 
 ExistingUserController::ExistingUserController(LoginDisplayHost* host)
     : auth_status_consumer_(NULL),
-      last_login_attempt_auth_flow_(UserContext::AUTH_FLOW_OFFLINE),
       host_(host),
       login_display_(host_->CreateLoginDisplay(this)),
       num_login_attempts_(0),
@@ -167,7 +157,6 @@ ExistingUserController::ExistingUserController(LoginDisplayHost* host)
       is_login_in_progress_(false),
       password_changed_(false),
       auth_mode_(LoginPerformer::AUTH_MODE_EXTENSION),
-      do_auto_enrollment_(false),
       signin_screen_ready_(false),
       network_state_helper_(new login::NetworkStateHelper),
       weak_factory_(this) {
@@ -261,17 +250,6 @@ void ExistingUserController::UpdateLoginDisplay(
   login_display_->Init(
       filtered_users, show_guest, show_users_on_signin, show_new_user);
   host_->OnPreferencesChanged();
-}
-
-void ExistingUserController::DoAutoEnrollment() {
-  do_auto_enrollment_ = true;
-}
-
-void ExistingUserController::ResumeLogin() {
-  // This means the user signed-in, then auto-enrollment used his credentials
-  // to enroll and succeeded.
-  resume_login_callback_.Run();
-  resume_login_callback_.Reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -368,40 +346,7 @@ void ExistingUserController::CompleteLogin(const UserContext& user_context) {
   }
 
   host_->OnCompleteLogin();
-
-  // Do an ownership check now to avoid auto-enrolling if the device has
-  // already been owned.
-  DeviceSettingsService::Get()->GetOwnershipStatusAsync(
-      base::Bind(&ExistingUserController::CompleteLoginInternal,
-                 weak_factory_.GetWeakPtr(),
-                 user_context));
-}
-
-void ExistingUserController::CompleteLoginInternal(
-    const UserContext& user_context,
-    DeviceSettingsService::OwnershipStatus ownership_status) {
-  // Auto-enrollment must have made a decision by now. It's too late to enroll
-  // if the protocol isn't done at this point.
-  if (do_auto_enrollment_ &&
-      ownership_status == DeviceSettingsService::OWNERSHIP_NONE) {
-    VLOG(1) << "Forcing auto-enrollment before completing login";
-    // The only way to get out of the enrollment screen from now on is to either
-    // complete enrollment, or opt-out of it. So this controller shouldn't force
-    // enrollment again if it is reused for another sign-in.
-    do_auto_enrollment_ = false;
-    auto_enrollment_username_ = user_context.GetUserID();
-    resume_login_callback_ = base::Bind(
-        &ExistingUserController::PerformLogin,
-        weak_factory_.GetWeakPtr(),
-        user_context, LoginPerformer::AUTH_MODE_EXTENSION);
-    ShowEnrollmentScreen(true, user_context.GetUserID());
-    // Enable UI for the enrollment screen. SetUIEnabled(true) will post a
-    // request to show the sign-in screen again when invoked at the sign-in
-    // screen; invoke SetUIEnabled() after navigating to the enrollment screen.
-    PerformLoginFinishedActions(false /* don't start public session timer */);
-  } else {
-    PerformLogin(user_context, LoginPerformer::AUTH_MODE_EXTENSION);
-  }
+  PerformLogin(user_context, LoginPerformer::AUTH_MODE_EXTENSION);
 }
 
 base::string16 ExistingUserController::GetConnectedNetworkName() {
@@ -490,11 +435,6 @@ void ExistingUserController::Login(const UserContext& user_context,
     return;
   }
 
-  if (user_context.GetUserType() == user_manager::USER_TYPE_RETAIL_MODE) {
-    LoginAsRetailModeUser();
-    return;
-  }
-
   if (user_context.GetUserType() == user_manager::USER_TYPE_KIOSK_APP) {
     LoginAsKioskApp(user_context.GetUserID(), specifics.kiosk_diagnostic_mode);
     return;
@@ -525,8 +465,6 @@ void ExistingUserController::PerformLogin(
       ->SetHost(host_);
 
   BootTimesLoader::Get()->RecordLoginAttempted();
-
-  last_login_attempt_auth_flow_ = user_context.GetAuthFlow();
 
   // Use the same LoginPerformer for subsequent login as it has state
   // such as Authenticator instance.
@@ -598,8 +536,7 @@ void ExistingUserController::SetDisplayEmail(const std::string& email) {
 }
 
 void ExistingUserController::ShowWrongHWIDScreen() {
-  scoped_ptr<base::DictionaryValue> params;
-  host_->StartWizard(WizardController::kWrongHWIDScreenName, params.Pass());
+  host_->StartWizard(WizardController::kWrongHWIDScreenName);
 }
 
 void ExistingUserController::Signout() {
@@ -615,7 +552,7 @@ void ExistingUserController::OnConsumerKioskAutoLaunchCheckCompleted(
 void ExistingUserController::OnEnrollmentOwnershipCheckCompleted(
     DeviceSettingsService::OwnershipStatus status) {
   if (status == DeviceSettingsService::OWNERSHIP_NONE) {
-    ShowEnrollmentScreen(false, std::string());
+    ShowEnrollmentScreen();
   } else if (status == DeviceSettingsService::OWNERSHIP_TAKEN) {
     // On a device that is already owned we might want to allow users to
     // re-enroll if the policy information is invalid.
@@ -625,7 +562,7 @@ void ExistingUserController::OnEnrollmentOwnershipCheckCompleted(
                 &ExistingUserController::OnEnrollmentOwnershipCheckCompleted,
                 weak_factory_.GetWeakPtr(), status));
     if (trusted_status == CrosSettingsProvider::PERMANENTLY_UNTRUSTED) {
-      ShowEnrollmentScreen(false, std::string());
+      ShowEnrollmentScreen();
     }
   } else {
     // OwnershipService::GetStatusAsync is supposed to return either
@@ -634,38 +571,24 @@ void ExistingUserController::OnEnrollmentOwnershipCheckCompleted(
   }
 }
 
-void ExistingUserController::ShowEnrollmentScreen(bool is_auto_enrollment,
-                                                  const std::string& user) {
-  scoped_ptr<base::DictionaryValue> params;
-  if (is_auto_enrollment) {
-    params.reset(new base::DictionaryValue());
-    params->SetBoolean("is_auto_enrollment", true);
-    params->SetString("user", user);
-  }
-  host_->StartWizard(WizardController::kEnrollmentScreenName,
-                     params.Pass());
+void ExistingUserController::ShowEnrollmentScreen() {
+  host_->StartWizard(WizardController::kEnrollmentScreenName);
 }
 
 void ExistingUserController::ShowResetScreen() {
-  scoped_ptr<base::DictionaryValue> params;
-  host_->StartWizard(WizardController::kResetScreenName, params.Pass());
+  host_->StartWizard(WizardController::kResetScreenName);
 }
 
 void ExistingUserController::ShowEnableDebuggingScreen() {
-  scoped_ptr<base::DictionaryValue> params;
-  host_->StartWizard(WizardController::kEnableDebuggingScreenName,
-                     params.Pass());
+  host_->StartWizard(WizardController::kEnableDebuggingScreenName);
 }
 
 void ExistingUserController::ShowKioskEnableScreen() {
-  scoped_ptr<base::DictionaryValue> params;
-  host_->StartWizard(WizardController::kKioskEnableScreenName, params.Pass());
+  host_->StartWizard(WizardController::kKioskEnableScreenName);
 }
 
 void ExistingUserController::ShowKioskAutolaunchScreen() {
-  scoped_ptr<base::DictionaryValue> params;
-  host_->StartWizard(WizardController::kKioskAutolaunchScreenName,
-                     params.Pass());
+  host_->StartWizard(WizardController::kKioskAutolaunchScreenName);
 }
 
 void ExistingUserController::ShowTPMError() {
@@ -683,10 +606,6 @@ void ExistingUserController::OnAuthFailure(const AuthFailure& failure) {
   std::string error = failure.GetErrorString();
 
   PerformLoginFinishedActions(false /* don't start public session timer */);
-
-  // TODO(xiyuan): Move into EasyUnlockUserLoginFlow.
-  if (last_login_attempt_auth_flow_ == UserContext::AUTH_FLOW_EASY_UNLOCK)
-    RecordEasySignInOutcome(last_login_attempt_username_, false);
 
   if (ChromeUserManager::Get()
           ->GetUserFlow(last_login_attempt_username_)
@@ -757,13 +676,6 @@ void ExistingUserController::OnAuthSuccess(const UserContext& user_context) {
   ChromeUserManager::Get()
       ->GetUserFlow(user_context.GetUserID())
       ->HandleLoginSuccess(user_context);
-
-  // TODO(xiyuan): Move into EasyUnlockUserLoginFlow.
-  if (last_login_attempt_auth_flow_ == UserContext::AUTH_FLOW_EASY_UNLOCK) {
-    DCHECK_EQ(last_login_attempt_username_, user_context.GetUserID());
-    DCHECK_EQ(last_login_attempt_auth_flow_, user_context.GetAuthFlow());
-    RecordEasySignInOutcome(last_login_attempt_username_, true);
-  }
 
   StopPublicSessionAutoLoginTimer();
 
@@ -913,21 +825,6 @@ bool ExistingUserController::password_changed() const {
     return login_performer_->password_changed();
 
   return password_changed_;
-}
-
-void ExistingUserController::LoginAsRetailModeUser() {
-  PerformPreLoginActions(UserContext(user_manager::USER_TYPE_RETAIL_MODE,
-                                     chromeos::login::kRetailModeUserName));
-
-  // TODO(rkc): Add a CHECK to make sure retail mode logins are allowed once
-  // the enterprise policy wiring is done for retail mode.
-
-  // Only one instance of LoginPerformer should exist at a time.
-  login_performer_.reset(NULL);
-  login_performer_.reset(new ChromeLoginPerformer(this));
-  login_performer_->LoginRetailMode();
-  SendAccessibilityAlert(
-      l10n_util::GetStringUTF8(IDS_CHROMEOS_ACC_LOGIN_SIGNIN_DEMOUSER));
 }
 
 void ExistingUserController::LoginAsGuest() {
@@ -1159,6 +1056,9 @@ void ExistingUserController::SendAccessibilityAlert(
   AccessibilityAlertInfo event(ProfileHelper::GetSigninProfile(), alert_text);
   SendControlAccessibilityNotification(
       ui::AX_EVENT_VALUE_CHANGED, &event);
+
+  AutomationManagerAsh::GetInstance()->HandleAlert(
+      ProfileHelper::GetSigninProfile(), alert_text);
 }
 
 void ExistingUserController::SetPublicSessionKeyboardLayoutAndLogin(

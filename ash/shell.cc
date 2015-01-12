@@ -11,7 +11,6 @@
 #include "ash/accelerators/accelerator_delegate.h"
 #include "ash/accelerators/focus_manager_factory.h"
 #include "ash/accelerators/nested_accelerator_delegate.h"
-#include "ash/accelerometer/accelerometer_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/autoclick/autoclick_controller.h"
 #include "ash/desktop_background/desktop_background_controller.h"
@@ -91,9 +90,9 @@
 #include "ui/compositor/layer_animator.h"
 #include "ui/events/event_target_iterator.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size.h"
 #include "ui/keyboard/keyboard.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_switches.h"
@@ -116,10 +115,10 @@
 
 #if defined(OS_CHROMEOS)
 #if defined(USE_X11)
-#include "ash/accelerators/magnifier_key_scroller.h"
-#include "ash/accelerators/spoken_feedback_toggler.h"
 #include "ui/gfx/x/x11_types.h"
 #endif  // defined(USE_X11)
+#include "ash/accelerators/magnifier_key_scroller.h"
+#include "ash/accelerators/spoken_feedback_toggler.h"
 #include "ash/ash_constants.h"
 #include "ash/content/display/screen_orientation_delegate_chromeos.h"
 #include "ash/display/display_change_observer_chromeos.h"
@@ -139,6 +138,7 @@
 #include "ash/virtual_keyboard_controller.h"
 #include "base/bind_helpers.h"
 #include "base/sys_info.h"
+#include "chromeos/accelerometer/accelerometer_reader.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/chromeos/user_activity_power_manager_notifier.h"
 #include "ui/display/chromeos/display_configurator.h"
@@ -410,7 +410,7 @@ void Shell::OnLockStateChanged(bool locked) {
 }
 
 void Shell::OnCastingSessionStartedOrStopped(bool started) {
-#if defined(OS_CHROMEOS) && defined(USE_X11)
+#if defined(OS_CHROMEOS)
   if (projecting_observer_)
     projecting_observer_->OnCastingSessionStartedOrStopped(started);
 #endif
@@ -638,22 +638,20 @@ Shell::Shell(ShellDelegate* delegate)
       delegate_(delegate),
       window_positioner_(new WindowPositioner),
       activation_client_(NULL),
-      accelerometer_controller_(new AccelerometerController()),
 #if defined(OS_CHROMEOS)
+      accelerometer_reader_(new chromeos::AccelerometerReader()),
       display_configurator_(new ui::DisplayConfigurator()),
 #endif  // defined(OS_CHROMEOS)
       native_cursor_manager_(new AshNativeCursorManager),
       cursor_manager_(
-          scoped_ptr< ::wm::NativeCursorManager>(native_cursor_manager_)),
+          scoped_ptr<::wm::NativeCursorManager>(native_cursor_manager_)),
       simulate_modal_window_open_for_testing_(false),
       is_touch_hud_projection_enabled_(false) {
   DCHECK(delegate_.get());
   gpu_support_.reset(delegate_->CreateGPUSupport());
   display_manager_.reset(new DisplayManager);
   display_controller_.reset(new DisplayController);
-#if defined(OS_CHROMEOS) && defined(USE_X11)
   user_metrics_recorder_.reset(new UserMetricsRecorder);
-#endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_CHROMEOS)
   PowerStatus::Initialize();
@@ -675,7 +673,7 @@ Shell::~Shell() {
   // Please keep in same order as in Init() because it's easy to miss one.
   if (window_modality_controller_)
     window_modality_controller_.reset();
-#if defined(OS_CHROMEOS) && defined(USE_X11)
+#if defined(OS_CHROMEOS)
   RemovePreTargetHandler(magnifier_key_scroll_handler_.get());
   magnifier_key_scroll_handler_.reset();
 
@@ -859,7 +857,7 @@ void Shell::Init(const ShellInitParams& init_params) {
   if (!display_initialized)
     display_manager_->InitDefaultDisplay();
 
-  display_manager_->InitFontParams();
+  display_manager_->RefreshFontParams();
 
   // Install the custom factory first so that views::FocusManagers for Tray,
   // Shelf, and WallPaper could be created by the factory.
@@ -904,10 +902,10 @@ void Shell::Init(const ShellInitParams& init_params) {
   accelerator_controller_.reset(new AcceleratorController);
   maximize_mode_controller_.reset(new MaximizeModeController());
 
-#if defined(OS_CHROMEOS) && defined(USE_X11)
-  magnifier_key_scroll_handler_ = MagnifierKeyScroller::CreateHandler().Pass();
+#if defined(OS_CHROMEOS)
+  magnifier_key_scroll_handler_ = MagnifierKeyScroller::CreateHandler();
   AddPreTargetHandler(magnifier_key_scroll_handler_.get());
-  speech_feedback_handler_ = SpokenFeedbackToggler::CreateHandler().Pass();
+  speech_feedback_handler_ = SpokenFeedbackToggler::CreateHandler();
   AddPreTargetHandler(speech_feedback_handler_.get());
 #endif
 

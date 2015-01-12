@@ -313,7 +313,7 @@ static const EGLint kDisplayAttribsWarp[] {
 // static
 EGLDisplay GLSurfaceEGL::GetPlatformDisplay(
     EGLNativeDisplayType native_display) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseWarp)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseWarp)) {
     // Check for availability of WARP via ANGLE extension.
     bool supports_warp = false;
     const char* no_display_extensions = eglQueryString(EGL_NO_DISPLAY,
@@ -395,12 +395,12 @@ bool NativeViewGLSurfaceEGL::Initialize(
     return false;
   }
 
-  EGLint surfaceVal;
-  EGLBoolean retVal = eglQuerySurface(GetDisplay(),
-                                      surface_,
-                                      EGL_POST_SUB_BUFFER_SUPPORTED_NV,
-                                      &surfaceVal);
-  supports_post_sub_buffer_ = (surfaceVal && retVal) == EGL_TRUE;
+  if (gfx::g_driver_egl.ext.b_EGL_NV_post_sub_buffer) {
+    EGLint surfaceVal;
+    EGLBoolean retVal = eglQuerySurface(
+        GetDisplay(), surface_, EGL_POST_SUB_BUFFER_SUPPORTED_NV, &surfaceVal);
+    supports_post_sub_buffer_ = (surfaceVal && retVal) == EGL_TRUE;
+  }
 
   if (sync_provider)
     vsync_provider_.reset(sync_provider.release());

@@ -113,8 +113,6 @@ std::string GetStringFromID(SavePasswordProgressLogger::StringID id) {
       return "Submitted password replaced with the provisionally saved one";
     case SavePasswordProgressLogger::STRING_DID_START_PROVISIONAL_LOAD_METHOD:
       return "PasswordAutofillAgent::DidStartProvisionalLoad";
-    case SavePasswordProgressLogger::STRING_FORM_FRAME_EQ_FRAME:
-      return "form_frame == frame";
     case SavePasswordProgressLogger::STRING_FRAME_NOT_MAIN_FRAME:
       return "|frame| is not the main frame";
     case SavePasswordProgressLogger::STRING_PROVISIONALLY_SAVED_FORM_FOR_FRAME:
@@ -149,6 +147,10 @@ std::string GetStringFromID(SavePasswordProgressLogger::StringID id) {
       return "Ignore other possible usernames";
     case SavePasswordProgressLogger::STRING_ON_PASSWORD_FORMS_RENDERED_METHOD:
       return "PasswordManager::OnPasswordFormsRendered";
+    case SavePasswordProgressLogger::STRING_ON_IN_PAGE_NAVIGATION:
+      return "PasswordManager::OnInPageNavigation";
+    case SavePasswordProgressLogger::STRING_ON_ASK_USER_OR_SAVE_PASSWORD:
+      return "PasswordManager::AskUserOrSavePassword";
     case SavePasswordProgressLogger::STRING_NO_PROVISIONAL_SAVE_MANAGER:
       return "No provisional save manager";
     case SavePasswordProgressLogger::STRING_NUMBER_OF_VISIBLE_FORMS:

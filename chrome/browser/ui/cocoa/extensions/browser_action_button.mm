@@ -11,16 +11,18 @@
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_controller.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
+#import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_action_view_delegate_cocoa.h"
 #include "chrome/browser/ui/toolbar/toolbar_action_view_controller.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 NSString* const kBrowserActionButtonDraggingNotification =
@@ -218,14 +220,22 @@ void ToolbarActionViewDelegateBridge::SetContextMenuController(
   NSRect buttonFrame = [self frame];
   // The desired x is the current mouse point, minus the original offset of the
   // mouse into the button.
-  CGFloat desiredX = [[self superview] convertPoint:eventPoint fromView:nil].x -
-      dragStartPoint_.x;
+  NSPoint localPoint = [[self superview] convertPoint:eventPoint fromView:nil];
+  CGFloat desiredX = localPoint.x - dragStartPoint_.x;
   // Clamp the button to be within its superview along the X-axis.
   NSRect containerBounds = [[self superview] bounds];
   desiredX = std::min(std::max(NSMinX(containerBounds), desiredX),
                       NSMaxX(containerBounds) - NSWidth(buttonFrame));
-
   buttonFrame.origin.x = desiredX;
+
+  // If the button is in the overflow menu, it could move along the y-axis, too.
+  if ([browserActionsController_ isOverflow]) {
+    CGFloat desiredY = localPoint.y - dragStartPoint_.y;
+    desiredY = std::min(std::max(NSMinY(containerBounds), desiredY),
+                        NSMaxY(containerBounds) - NSHeight(buttonFrame));
+    buttonFrame.origin.y = desiredY;
+  }
+
   [self setFrame:buttonFrame];
   [self setNeedsDisplay:YES];
   [[NSNotificationCenter defaultCenter]
@@ -267,14 +277,12 @@ void ToolbarActionViewDelegateBridge::SetContextMenuController(
     if ([moveAnimation_ isAnimating])
       [moveAnimation_ stopAnimation];
 
-    NSDictionary* animationDictionary =
-        [NSDictionary dictionaryWithObjectsAndKeys:
-            self, NSViewAnimationTargetKey,
-            [NSValue valueWithRect:[self frame]], NSViewAnimationStartFrameKey,
-            [NSValue valueWithRect:frameRect], NSViewAnimationEndFrameKey,
-            nil];
-    [moveAnimation_ setViewAnimations:
-        [NSArray arrayWithObject:animationDictionary]];
+    NSDictionary* animationDictionary = @{
+      NSViewAnimationTargetKey : self,
+      NSViewAnimationStartFrameKey : [NSValue valueWithRect:[self frame]],
+      NSViewAnimationEndFrameKey : [NSValue valueWithRect:frameRect]
+    };
+    [moveAnimation_ setViewAnimations: @[ animationDictionary ]];
     [moveAnimation_ startAnimation];
   }
 }
@@ -399,6 +407,15 @@ void ToolbarActionViewDelegateBridge::SetContextMenuController(
   cellFrame.origin.y += kBrowserActionBadgeOriginYOffset;
   [self drawBadgeWithinFrame:cellFrame
               forWebContents:webContents];
+}
+
+- (ui::ThemeProvider*)themeProviderForWindow:(NSWindow*)window {
+  ui::ThemeProvider* themeProvider = [window themeProvider];
+  if (!themeProvider)
+    themeProvider =
+        [[browserActionsController_ browser]->window()->GetNativeWindow()
+            themeProvider];
+  return themeProvider;
 }
 
 @end

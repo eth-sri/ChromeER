@@ -166,7 +166,13 @@ TimeDelta Pipeline::GetMediaTime() const {
   if (!renderer_)
     return TimeDelta();
 
+  // TODO(sriram): In some cases GetMediaTime() returns a value few
+  // milliseconds less than duration, even though playback has ended
+  // http://crbug.com/438581
   TimeDelta media_time = renderer_->GetMediaTime();
+  if (renderer_ended_)
+    return duration_;
+
   return std::min(media_time, duration_);
 }
 
@@ -357,13 +363,13 @@ void Pipeline::StateTransitionTask(PipelineStatus status) {
         start_timestamp_ = demuxer_->GetStartTime();
       }
 
-      base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
-
       DCHECK(start_timestamp_ >= base::TimeDelta());
       renderer_->StartPlayingFrom(start_timestamp_);
 
       if (text_renderer_)
         text_renderer_->StartPlaying();
+
+      base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
 
       PlaybackRateChangedTask(GetPlaybackRate());
       VolumeChangedTask(GetVolume());
@@ -662,6 +668,16 @@ void Pipeline::RunEndedCallbackIfNeeded() {
   if (text_renderer_ && text_renderer_->HasTracks() && !text_renderer_ended_)
     return;
 
+  // Correct the duration against current time if it turns out that
+  // the initially reported duration is wrong
+  // TODO(sriram): There are cases where duration is correct and current time
+  // falls short of duration by a few milliseconds. This is a workaround
+  // till we find the actual fix and 250ms is chosen here as it is
+  // the max time between timeupdate events (http://crbug.com/438581).
+  TimeDelta media_time = renderer_->GetMediaTime();
+  if ((duration_ - media_time).InMilliseconds() > 250)
+    SetDuration(media_time);
+
   DCHECK_EQ(status_, PIPELINE_OK);
   ended_cb_.Run();
 }
@@ -669,7 +685,7 @@ void Pipeline::RunEndedCallbackIfNeeded() {
 scoped_ptr<TextRenderer> Pipeline::CreateTextRenderer() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (!cmd_line->HasSwitch(switches::kEnableInbandTextTracks))
     return scoped_ptr<media::TextRenderer>();
 

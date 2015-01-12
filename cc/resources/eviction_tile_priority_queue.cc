@@ -152,9 +152,7 @@ Tile* EvictionTilePriorityQueue::PairedTilingSetQueue::Top(
   DCHECK(next_queue && !next_queue->IsEmpty());
 
   Tile* tile = next_queue->Top();
-  DCHECK(std::find(returned_shared_tiles.begin(),
-                   returned_shared_tiles.end(),
-                   tile) == returned_shared_tiles.end());
+  DCHECK(returned_tiles_for_debug.find(tile) == returned_tiles_for_debug.end());
   return tile;
 }
 
@@ -166,25 +164,11 @@ void EvictionTilePriorityQueue::PairedTilingSetQueue::Pop(
   TilingSetEvictionQueue* next_queue =
       next_tree == ACTIVE_TREE ? active_queue.get() : pending_queue.get();
   DCHECK(next_queue && !next_queue->IsEmpty());
-  returned_shared_tiles.push_back(next_queue->Top());
+  DCHECK(returned_tiles_for_debug.insert(next_queue->Top()).second);
   next_queue->Pop();
 
-  if (IsEmpty())
-    return;
-
-  next_tree = NextTileIteratorTree(tree_priority);
-  next_queue =
-      next_tree == ACTIVE_TREE ? active_queue.get() : pending_queue.get();
-  while (std::find(returned_shared_tiles.begin(),
-                   returned_shared_tiles.end(),
-                   next_queue->Top()) != returned_shared_tiles.end()) {
-    next_queue->Pop();
-    if (IsEmpty())
-      break;
-    next_tree = NextTileIteratorTree(tree_priority);
-    next_queue =
-        next_tree == ACTIVE_TREE ? active_queue.get() : pending_queue.get();
-  }
+  // If not empty, use Top to DCHECK the next iterator.
+  DCHECK_IMPLIES(!IsEmpty(), Top(tree_priority));
 }
 
 WhichTree
@@ -200,6 +184,8 @@ EvictionTilePriorityQueue::PairedTilingSetQueue::NextTileIteratorTree(
 
   const Tile* active_tile = active_queue->Top();
   const Tile* pending_tile = pending_queue->Top();
+
+  // If tiles are the same, it doesn't matter which tree we return.
   if (active_tile == pending_tile)
     return ACTIVE_TREE;
 
@@ -208,6 +194,15 @@ EvictionTilePriorityQueue::PairedTilingSetQueue::NextTileIteratorTree(
   const TilePriority& pending_priority =
       pending_tile->priority_for_tree_priority(tree_priority);
 
+  // If the bins are the same and activation differs, then return the tree of
+  // the tile not required for activation.
+  if (active_priority.priority_bin == pending_priority.priority_bin &&
+      active_tile->required_for_activation() !=
+          pending_tile->required_for_activation()) {
+    return active_tile->required_for_activation() ? PENDING_TREE : ACTIVE_TREE;
+  }
+
+  // Return tile with a lower priority.
   if (pending_priority.IsHigherPriorityThan(active_priority))
     return ACTIVE_TREE;
   return PENDING_TREE;

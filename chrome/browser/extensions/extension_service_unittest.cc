@@ -133,7 +133,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_service.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #endif
@@ -3769,6 +3769,15 @@ TEST_F(ExtensionServiceTest, WillNotLoadExtensionsWhenBlocked) {
   ASSERT_TRUE(IsBlocked(good0));
 }
 
+// Tests that IsEnabledExtension won't crash on an uninstalled extension.
+TEST_F(ExtensionServiceTest, IsEnabledExtensionBlockedAndNotInstalled) {
+  InitializeEmptyExtensionService();
+
+  service()->BlockAllExtensions();
+
+  service()->IsExtensionEnabled(theme_crx);
+}
+
 // Will not install extension blacklisted by policy.
 TEST_F(ExtensionServiceTest, BlacklistedByPolicyWillNotInstall) {
   InitializeEmptyExtensionServiceWithTestingPrefs();
@@ -5592,12 +5601,12 @@ TEST(ExtensionServiceTestSimple, Enabledness) {
   scoped_ptr<chromeos::ScopedTestUserManager> user_manager(
       new chromeos::ScopedTestUserManager);
 #endif
-  scoped_ptr<CommandLine> command_line;
+  scoped_ptr<base::CommandLine> command_line;
   base::FilePath install_dir = profile->GetPath()
       .AppendASCII(extensions::kInstallDirectoryName);
 
   // By default, we are enabled.
-  command_line.reset(new CommandLine(CommandLine::NO_PROGRAM));
+  command_line.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
   ExtensionService* service = static_cast<extensions::TestExtensionSystem*>(
       ExtensionSystem::Get(profile.get()))->
       CreateExtensionService(
@@ -5644,7 +5653,7 @@ TEST(ExtensionServiceTestSimple, Enabledness) {
   recorder.set_ready(false);
   profile.reset(new TestingProfile());
   profile->GetPrefs()->SetBoolean(prefs::kDisableExtensions, true);
-  command_line.reset(new CommandLine(CommandLine::NO_PROGRAM));
+  command_line.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
   service = static_cast<extensions::TestExtensionSystem*>(
       ExtensionSystem::Get(profile.get()))->
       CreateExtensionService(
@@ -6531,7 +6540,7 @@ TEST_F(ExtensionServiceTest, ProcessSyncDataNotInstalled) {
   // TODO(akalin): Figure out a way to test |info.ShouldAllowInstall()|.
 }
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
 TEST_F(ExtensionServiceTest, SupervisedUser_InstallOnlyAllowedByCustodian) {
   ExtensionServiceInitParams params = CreateDefaultInitParams();
   params.profile_is_supervised = true;
@@ -6686,7 +6695,7 @@ TEST_F(ExtensionServiceTest,
   EXPECT_FALSE(
       registry()->GenerateInstalledExtensionsSet()->Contains(extension_ids[1]));
 }
-#endif  // defined(ENABLE_MANAGED_USERS)
+#endif  // defined(ENABLE_SUPERVISED_USERS)
 
 TEST_F(ExtensionServiceTest, InstallPriorityExternalUpdateUrl) {
   InitializeEmptyExtensionService();
@@ -7032,7 +7041,7 @@ TEST_F(ExtensionServiceTest, ConcurrentExternalLocalFile) {
 // permissions.
 TEST_F(ExtensionServiceTest, InstallWhitelistedExtension) {
   std::string test_id = "hdkklepkcpckhnpgjnmbdfhehckloojk";
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       extensions::switches::kWhitelistedExtensionID, test_id);
 
   InitializeEmptyExtensionService();

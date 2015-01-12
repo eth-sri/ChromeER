@@ -80,9 +80,7 @@ class LayerTreeHostCommonPerfTest : public LayerTreeTest {
 
 class CalcDrawPropsMainTest : public LayerTreeHostCommonPerfTest {
  public:
-  void RunCalcDrawProps() {
-    RunTest(false, false, false);
-  }
+  void RunCalcDrawProps() { RunTest(false, false, false); }
 
   void BeginTest() override {
     timer_.Reset();
@@ -96,6 +94,8 @@ class CalcDrawPropsMainTest : public LayerTreeHostCommonPerfTest {
           layer_tree_host()->device_viewport_size(), gfx::Transform(),
           layer_tree_host()->device_scale_factor(),
           layer_tree_host()->page_scale_factor(),
+          layer_tree_host()->overscroll_elasticity_layer(),
+          layer_tree_host()->elastic_overscroll(),
           layer_tree_host()->page_scale_layer(), max_texture_size,
           layer_tree_host()->settings().can_use_lcd_text,
           layer_tree_host()->settings().layers_always_allowed_lcd_text,
@@ -103,6 +103,7 @@ class CalcDrawPropsMainTest : public LayerTreeHostCommonPerfTest {
           layer_tree_host()
               ->settings()
               .layer_transforms_should_scale_layer_contents,
+          layer_tree_host()->settings().verify_property_trees,
           &update_list, 0);
       LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
@@ -147,12 +148,15 @@ class CalcDrawPropsImplTest : public LayerTreeHostCommonPerfTest {
     LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
         active_tree->root_layer(), active_tree->DrawViewportSize(),
         host_impl->DrawTransform(), active_tree->device_scale_factor(),
-        active_tree->total_page_scale_factor(),
-        active_tree->InnerViewportContainerLayer(), max_texture_size,
+        active_tree->current_page_scale_factor(),
+        active_tree->InnerViewportContainerLayer(),
+        active_tree->elastic_overscroll()->Current(active_tree->IsActiveTree()),
+        active_tree->overscroll_elasticity_layer(), max_texture_size,
         host_impl->settings().can_use_lcd_text,
         host_impl->settings().layers_always_allowed_lcd_text,
         can_render_to_separate_surface,
         host_impl->settings().layer_transforms_should_scale_layer_contents,
+        host_impl->settings().verify_property_trees,
         &update_list, 0);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
   }
@@ -318,7 +322,12 @@ TEST_F(LayerSorterMainTest, LayerSorterCubes) {
 TEST_F(LayerSorterMainTest, LayerSorterRubik) {
   SetTestName("layer_sort_rubik");
   ReadTestFile("layer_sort_rubik");
+  // TODO(vollick): Remove verify_property_trees setting after
+  // crbug.com/444219 is fixed.
+  bool old_verify_property_trees = verify_property_trees();
+  set_verify_property_trees(false);
   RunSortLayers();
+  set_verify_property_trees(old_verify_property_trees);
 }
 
 TEST_F(BspTreePerfTest, BspTreeCubes) {
@@ -332,7 +341,12 @@ TEST_F(BspTreePerfTest, BspTreeRubik) {
   SetTestName("bsp_tree_rubik");
   SetNumberOfDuplicates(1);
   ReadTestFile("layer_sort_rubik");
+  // TODO(vollick): Remove verify_property_trees setting after
+  // crbug.com/444219 is fixed.
+  bool old_verify_property_trees = verify_property_trees();
+  set_verify_property_trees(false);
   RunSortLayers();
+  set_verify_property_trees(old_verify_property_trees);
 }
 
 TEST_F(BspTreePerfTest, BspTreeCubes_2) {

@@ -76,6 +76,7 @@ GLenum TextureToStorageFormat(ResourceFormat format) {
     case LUMINANCE_8:
     case RGB_565:
     case ETC1:
+    case RED_8:
       NOTREACHED();
       break;
   }
@@ -94,6 +95,7 @@ bool IsFormatSupportedForStorage(ResourceFormat format, bool use_bgra) {
     case LUMINANCE_8:
     case RGB_565:
     case ETC1:
+    case RED_8:
       return false;
   }
   return false;
@@ -125,6 +127,7 @@ gfx::GpuMemoryBuffer::Format ToGpuMemoryBufferFormat(ResourceFormat format) {
     case LUMINANCE_8:
     case RGB_565:
     case ETC1:
+    case RED_8:
       break;
   }
   NOTREACHED();
@@ -552,17 +555,9 @@ ResourceProvider::ResourceId ResourceProvider::CreateBitmap(
     const gfx::Size& size, GLint wrap_mode) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  scoped_ptr<SharedBitmap> bitmap;
-  if (shared_bitmap_manager_)
-    bitmap = shared_bitmap_manager_->AllocateSharedBitmap(size);
-
-  uint8_t* pixels;
-  if (bitmap) {
-    pixels = bitmap->pixels();
-  } else {
-    size_t bytes = SharedBitmap::CheckedSizeInBytes(size);
-    pixels = new uint8_t[bytes];
-  }
+  scoped_ptr<SharedBitmap> bitmap =
+      shared_bitmap_manager_->AllocateSharedBitmap(size);
+  uint8_t* pixels = bitmap->pixels();
   DCHECK(pixels);
 
   ResourceId id = next_id_++;
@@ -612,28 +607,18 @@ ResourceProvider::ResourceId ResourceProvider::CreateResourceFromTextureMailbox(
                         gfx::Size(),
                         Resource::External,
                         mailbox.target(),
-                        GL_LINEAR,
+                        mailbox.nearest_neighbor() ? GL_NEAREST : GL_LINEAR,
                         0,
                         GL_CLAMP_TO_EDGE,
                         TextureHintImmutable,
                         RGBA_8888);
   } else {
     DCHECK(mailbox.IsSharedMemory());
-    base::SharedMemory* shared_memory = mailbox.shared_memory();
-    DCHECK(shared_memory->memory());
-    uint8_t* pixels = reinterpret_cast<uint8_t*>(shared_memory->memory());
+    SharedBitmap* shared_bitmap = mailbox.shared_bitmap();
+    uint8_t* pixels = shared_bitmap->pixels();
     DCHECK(pixels);
-    scoped_ptr<SharedBitmap> shared_bitmap;
-    if (shared_bitmap_manager_) {
-      shared_bitmap =
-          shared_bitmap_manager_->GetBitmapForSharedMemory(shared_memory);
-    }
-    resource = Resource(pixels,
-                        shared_bitmap.release(),
-                        mailbox.shared_memory_size(),
-                        Resource::External,
-                        GL_LINEAR,
-                        GL_CLAMP_TO_EDGE);
+    resource = Resource(pixels, shared_bitmap, mailbox.shared_memory_size(),
+                        Resource::External, GL_LINEAR, GL_CLAMP_TO_EDGE);
   }
   resource.allocated = true;
   resource.mailbox = mailbox;
@@ -711,13 +696,8 @@ void ResourceProvider::DeleteResourceInternal(ResourceMap::iterator it,
       }
     } else {
       DCHECK(resource->mailbox.IsSharedMemory());
-      base::SharedMemory* shared_memory = resource->mailbox.shared_memory();
-      if (resource->pixels && shared_memory) {
-        DCHECK(shared_memory->memory() == resource->pixels);
-        resource->pixels = NULL;
-        delete resource->shared_bitmap;
-        resource->shared_bitmap = NULL;
-      }
+      resource->shared_bitmap = nullptr;
+      resource->pixels = nullptr;
     }
     resource->release_callback_impl.Run(
         sync_point, lost_resource, blocking_main_thread_task_runner_);
@@ -1120,11 +1100,6 @@ SkSurface* ResourceProvider::ScopedWriteLockGr::GetSkSurface(
       !resource_->sk_surface.get() ||
       !SurfaceHasMatchingProperties(use_distance_field_text, can_use_lcd_text);
   if (create_surface) {
-    class GrContext* gr_context = resource_provider_->GrContext();
-    // TODO(alokp): Implement TestContextProvider::GrContext().
-    if (!gr_context)
-      return nullptr;
-
     resource_provider_->LazyAllocate(resource_);
 
     GrBackendTextureDesc desc;
@@ -1134,6 +1109,8 @@ SkSurface* ResourceProvider::ScopedWriteLockGr::GetSkSurface(
     desc.fConfig = ToGrPixelConfig(resource_->format);
     desc.fOrigin = kTopLeft_GrSurfaceOrigin;
     desc.fTextureHandle = resource_->gl_id;
+
+    class GrContext* gr_context = resource_provider_->GrContext();
     skia::RefPtr<GrTexture> gr_texture =
         skia::AdoptRef(gr_context->wrapBackendTexture(desc));
     if (!gr_texture)
@@ -1216,6 +1193,7 @@ ResourceProvider::ResourceProvider(
       use_texture_format_bgra_(false),
       use_texture_usage_hint_(false),
       use_compressed_texture_etc1_(false),
+      yuv_resource_format_(LUMINANCE_8),
       max_texture_size_(0),
       best_texture_format_(RGBA_8888),
       use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
@@ -1254,6 +1232,7 @@ void ResourceProvider::InitializeGL() {
   use_texture_format_bgra_ = caps.gpu.texture_format_bgra8888;
   use_texture_usage_hint_ = caps.gpu.texture_usage;
   use_compressed_texture_etc1_ = caps.gpu.texture_format_etc1;
+  yuv_resource_format_ = caps.gpu.texture_rg ? RED_8 : LUMINANCE_8;
   use_sync_query_ = caps.gpu.sync_query;
 
   GLES2Interface* gl = ContextGL();

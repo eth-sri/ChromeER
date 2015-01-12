@@ -28,6 +28,7 @@
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
@@ -63,6 +64,7 @@
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
+#include "chrome/browser/ui/views/exclusive_access_bubble_views.h"
 #include "chrome/browser/ui/views/extensions/bookmark_app_bubble_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout_delegate.h"
@@ -70,7 +72,6 @@
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
-#include "chrome/browser/ui/views/fullscreen_exit_bubble_views.h"
 #include "chrome/browser/ui/views/infobars/infobar_container_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
@@ -100,6 +101,7 @@
 #include "chrome/grit/locale_settings.h"
 #include "components/app_modal/app_modal_dialog.h"
 #include "components/app_modal/app_modal_dialog_queue.h"
+#include "components/app_modal/native_app_modal_dialog.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "components/translate/core/browser/language_state.h"
 #include "content/app/resources/grit/content_resources.h"
@@ -122,7 +124,7 @@
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/button/menu_button.h"
@@ -168,6 +170,7 @@ using views::GridLayout;
 using web_modal::WebContentsModalDialogHost;
 
 namespace {
+
 // The name of a key to store on the window handle so that other code can
 // locate this object using just the handle.
 const char* const kBrowserViewKey = "__BROWSER_VIEW__";
@@ -175,12 +178,23 @@ const char* const kBrowserViewKey = "__BROWSER_VIEW__";
 // The number of milliseconds between loading animation frames.
 const int kLoadingAnimationFrameTimeMs = 30;
 
+// Paints the horizontal border separating the Bookmarks Bar from the Toolbar
+// or page content according to |at_top| with |color|.
+void PaintHorizontalBorder(gfx::Canvas* canvas,
+                           BookmarkBarView* view,
+                           bool at_top,
+                           SkColor color) {
+  int thickness = views::NonClientFrameView::kClientEdgeThickness;
+  int y = at_top ? 0 : (view->height() - thickness);
+  canvas->FillRect(gfx::Rect(0, y, view->width(), thickness), color);
+}
+
 // TODO(kuan): These functions are temporarily for the bookmark bar while its
 // detached state is at the top of the page;  it'll be moved to float on the
 // content page in the very near future, at which time, these local functions
 // will be removed.
 void PaintDetachedBookmarkBar(gfx::Canvas* canvas,
-                              DetachableToolbarView* view,
+                              BookmarkBarView* view,
                               ThemeService* theme_service) {
   // Paint background for detached state; if animating, this is fade in/out.
   canvas->DrawColor(
@@ -189,11 +203,10 @@ void PaintDetachedBookmarkBar(gfx::Canvas* canvas,
   // if animating, these are fading in/out.
   SkColor separator_color =
       chrome::GetDetachedBookmarkBarSeparatorColor(theme_service);
-  DetachableToolbarView::PaintHorizontalBorder(canvas, view, true,
-                                               separator_color);
+  PaintHorizontalBorder(canvas, view, true, separator_color);
   // The bottom border needs to be 1-px thick in both regular and retina
-  // displays, so we can't use DetachableToolbarView::PaintHorizontalBorder
-  // which paints a 2-px thick border in retina display.
+  // displays, so we can't use PaintHorizontalBorder which paints a 2-px thick
+  // border in retina display.
   SkPaint paint;
   paint.setAntiAlias(false);
   // Sets border to 1-px thick regardless of scale factor.
@@ -210,8 +223,45 @@ void PaintDetachedBookmarkBar(gfx::Canvas* canvas,
                                 SkIntToScalar(view->width()), y, paint);
 }
 
+// Paints the background (including the theme image behind content area) for
+// the Bookmarks Bar when it is attached to the Toolbar into |bounds|.
+// |background_origin| is the origin to use for painting the theme image.
+void PaintBackgroundAttachedMode(gfx::Canvas* canvas,
+                                 ui::ThemeProvider* theme_provider,
+                                 const gfx::Rect& bounds,
+                                 const gfx::Point& background_origin,
+                                 chrome::HostDesktopType host_desktop_type) {
+  canvas->FillRect(bounds,
+                   theme_provider->GetColor(ThemeProperties::COLOR_TOOLBAR));
+  canvas->TileImageInt(*theme_provider->GetImageSkiaNamed(IDR_THEME_TOOLBAR),
+                       background_origin.x(),
+                       background_origin.y(),
+                       bounds.x(),
+                       bounds.y(),
+                       bounds.width(),
+                       bounds.height());
+
+  if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH) {
+    // Ash provides additional lightening at the edges of the toolbar.
+    gfx::ImageSkia* toolbar_left =
+        theme_provider->GetImageSkiaNamed(IDR_TOOLBAR_SHADE_LEFT);
+    canvas->TileImageInt(*toolbar_left,
+                         bounds.x(),
+                         bounds.y(),
+                         toolbar_left->width(),
+                         bounds.height());
+    gfx::ImageSkia* toolbar_right =
+        theme_provider->GetImageSkiaNamed(IDR_TOOLBAR_SHADE_RIGHT);
+    canvas->TileImageInt(*toolbar_right,
+                         bounds.right() - toolbar_right->width(),
+                         bounds.y(),
+                         toolbar_right->width(),
+                         bounds.height());
+  }
+}
+
 void PaintAttachedBookmarkBar(gfx::Canvas* canvas,
-                              DetachableToolbarView* view,
+                              BookmarkBarView* view,
                               BrowserView* browser_view,
                               chrome::HostDesktopType host_desktop_type,
                               int toolbar_overlap) {
@@ -219,24 +269,24 @@ void PaintAttachedBookmarkBar(gfx::Canvas* canvas,
   gfx::Point background_image_offset =
       browser_view->OffsetPointForToolbarBackgroundImage(
           gfx::Point(view->GetMirroredX(), view->y()));
-  DetachableToolbarView::PaintBackgroundAttachedMode(canvas,
-      view->GetThemeProvider(), view->GetLocalBounds(),
-      background_image_offset, host_desktop_type);
+  PaintBackgroundAttachedMode(canvas,
+                              view->GetThemeProvider(),
+                              view->GetLocalBounds(),
+                              background_image_offset,
+                              host_desktop_type);
   if (view->height() >= toolbar_overlap) {
-    // Draw the separator below bookmark bar; this is fading in/out.
-    DetachableToolbarView::PaintHorizontalBorder(canvas, view, false,
-        ThemeProperties::GetDefaultColor(
-            ThemeProperties::COLOR_TOOLBAR_SEPARATOR));
+    // Draw the separator below the Bookmarks Bar; this is fading in/out.
+    PaintHorizontalBorder(canvas,
+                          view,
+                          false,
+                          ThemeProperties::GetDefaultColor(
+                              ThemeProperties::COLOR_TOOLBAR_SEPARATOR));
   }
 }
 
 }  // namespace
 
-// static
-const char BrowserView::kViewClassName[] = "BrowserView";
-
 ///////////////////////////////////////////////////////////////////////////////
-
 // Delegate implementation for BrowserViewLayout. Usually just forwards calls
 // into BrowserView.
 class BrowserViewLayoutDelegateImpl : public BrowserViewLayoutDelegate {
@@ -289,8 +339,8 @@ class BrowserViewLayoutDelegateImpl : public BrowserViewLayoutDelegate {
     return browser_view_->IsBookmarkBarVisible();
   }
 
-  FullscreenExitBubbleViews* GetFullscreenExitBubble() const override {
-    return browser_view_->fullscreen_exit_bubble();
+  ExclusiveAccessBubbleViews* GetExclusiveAccessBubble() const override {
+    return browser_view_->exclusive_access_bubble();
   }
 
  private:
@@ -299,56 +349,55 @@ class BrowserViewLayoutDelegateImpl : public BrowserViewLayoutDelegate {
   DISALLOW_COPY_AND_ASSIGN(BrowserViewLayoutDelegateImpl);
 };
 
-///////////////////////////////////////////////////////////////////////////////
-// BookmarkExtensionBackground, private:
-// This object serves as the views::Background object which is used to layout
-// and paint the bookmark bar.
-class BookmarkExtensionBackground : public views::Background {
+// This class is used to paint the background for Bookmarks Bar.
+class BookmarkBarViewBackground : public views::Background {
  public:
-  BookmarkExtensionBackground(BrowserView* browser_view,
-                              DetachableToolbarView* host_view,
-                              Browser* browser);
+  BookmarkBarViewBackground(BrowserView* browser_view,
+                            BookmarkBarView* bookmark_bar_view,
+                            Browser* browser);
 
-  // View methods overridden from views:Background.
+  // views:Background:
   void Paint(gfx::Canvas* canvas, views::View* view) const override;
 
  private:
   BrowserView* browser_view_;
 
   // The view hosting this background.
-  DetachableToolbarView* host_view_;
+  BookmarkBarView* bookmark_bar_view_;
 
   Browser* browser_;
 
-  DISALLOW_COPY_AND_ASSIGN(BookmarkExtensionBackground);
+  DISALLOW_COPY_AND_ASSIGN(BookmarkBarViewBackground);
 };
 
-BookmarkExtensionBackground::BookmarkExtensionBackground(
+BookmarkBarViewBackground::BookmarkBarViewBackground(
     BrowserView* browser_view,
-    DetachableToolbarView* host_view,
+    BookmarkBarView* bookmark_bar_view,
     Browser* browser)
     : browser_view_(browser_view),
-      host_view_(host_view),
+      bookmark_bar_view_(bookmark_bar_view),
       browser_(browser) {
 }
 
-void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
-                                        views::View* view) const {
-  int toolbar_overlap = host_view_->GetToolbarOverlap();
-  if (!host_view_->IsDetached()) {
-    PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
-                             browser_->host_desktop_type(), toolbar_overlap);
+void BookmarkBarViewBackground::Paint(gfx::Canvas* canvas,
+                                      views::View* view) const {
+  int toolbar_overlap = bookmark_bar_view_->GetToolbarOverlap();
+  if (!bookmark_bar_view_->IsDetached()) {
+    PaintAttachedBookmarkBar(canvas,
+                             bookmark_bar_view_,
+                             browser_view_,
+                             browser_->host_desktop_type(),
+                             toolbar_overlap);
     return;
   }
 
   // As 'hidden' according to the animation is the full in-tab state, we invert
   // the value - when current_state is at '0', we expect the bar to be docked.
-  double current_state = 1 - host_view_->GetAnimationValue();
+  double current_state = 1 - bookmark_bar_view_->GetAnimationValue();
 
-  ThemeService* ts =
-      ThemeServiceFactory::GetForProfile(browser_->profile());
+  ThemeService* ts = ThemeServiceFactory::GetForProfile(browser_->profile());
   if (current_state == 0.0 || current_state == 1.0) {
-    PaintDetachedBookmarkBar(canvas, host_view_, ts);
+    PaintDetachedBookmarkBar(canvas, bookmark_bar_view_, ts);
     return;
   }
   // While animating, set opacity to cross-fade between attached and detached
@@ -360,21 +409,25 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
     // - fade out attached background
     // - fade in detached background.
     canvas->SaveLayerAlpha(attached_alpha);
-    PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
+    PaintAttachedBookmarkBar(canvas,
+                             bookmark_bar_view_,
+                             browser_view_,
                              browser_->host_desktop_type(),
                              toolbar_overlap);
     canvas->Restore();
     canvas->SaveLayerAlpha(detached_alpha);
-    PaintDetachedBookmarkBar(canvas, host_view_, ts);
+    PaintDetachedBookmarkBar(canvas, bookmark_bar_view_, ts);
   } else {
     // To animate from detached to attached state:
     // - fade out detached background
     // - fade in attached background.
     canvas->SaveLayerAlpha(detached_alpha);
-    PaintDetachedBookmarkBar(canvas, host_view_, ts);
+    PaintDetachedBookmarkBar(canvas, bookmark_bar_view_, ts);
     canvas->Restore();
     canvas->SaveLayerAlpha(attached_alpha);
-    PaintAttachedBookmarkBar(canvas, host_view_, browser_view_,
+    PaintAttachedBookmarkBar(canvas,
+                             bookmark_bar_view_,
+                             browser_view_,
                              browser_->host_desktop_type(),
                              toolbar_overlap);
   }
@@ -383,6 +436,9 @@ void BookmarkExtensionBackground::Paint(gfx::Canvas* canvas,
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, public:
+
+// static
+const char BrowserView::kViewClassName[] = "BrowserView";
 
 BrowserView::BrowserView()
     : views::ClientView(nullptr, nullptr),
@@ -874,7 +930,7 @@ void BrowserView::Restore() {
 }
 
 void BrowserView::EnterFullscreen(const GURL& url,
-                                  FullscreenExitBubbleType bubble_type,
+                                  ExclusiveAccessBubbleType bubble_type,
                                   bool with_toolbar) {
   if (IsFullscreen())
     return;  // Nothing to do.
@@ -886,22 +942,24 @@ void BrowserView::ExitFullscreen() {
   if (!IsFullscreen())
     return;  // Nothing to do.
 
-  ProcessFullscreen(false, NORMAL_FULLSCREEN, GURL(), FEB_TYPE_NONE);
+  ProcessFullscreen(false, NORMAL_FULLSCREEN, GURL(),
+                    EXCLUSIVE_ACCESS_BUBBLE_TYPE_NONE);
 }
 
 void BrowserView::UpdateFullscreenExitBubbleContent(
     const GURL& url,
-    FullscreenExitBubbleType bubble_type) {
+    ExclusiveAccessBubbleType bubble_type) {
   // Immersive mode has no exit bubble because it has a visible strip at the
   // top that gives the user a hover target.
   // TODO(jamescook): Figure out what to do with mouse-lock.
-  if (bubble_type == FEB_TYPE_NONE || ShouldUseImmersiveFullscreenForUrl(url)) {
-    fullscreen_bubble_.reset();
-  } else if (fullscreen_bubble_.get()) {
-    fullscreen_bubble_->UpdateContent(url, bubble_type);
+  if (bubble_type == EXCLUSIVE_ACCESS_BUBBLE_TYPE_NONE ||
+      ShouldUseImmersiveFullscreenForUrl(url)) {
+    exclusive_access_bubble_.reset();
+  } else if (exclusive_access_bubble_.get()) {
+    exclusive_access_bubble_->UpdateContent(url, bubble_type);
   } else {
-    fullscreen_bubble_.reset(new FullscreenExitBubbleViews(
-        this, url, bubble_type));
+    exclusive_access_bubble_.reset(
+        new ExclusiveAccessBubbleViews(this, url, bubble_type));
   }
 }
 
@@ -918,7 +976,7 @@ bool BrowserView::IsFullscreen() const {
 }
 
 bool BrowserView::IsFullscreenBubbleVisible() const {
-  return fullscreen_bubble_ != nullptr;
+  return exclusive_access_bubble_ != nullptr;
 }
 
 bool BrowserView::SupportsFullscreenWithToolbar() const {
@@ -937,7 +995,8 @@ bool BrowserView::IsFullscreenWithToolbar() const {
 #if defined(OS_WIN)
 void BrowserView::SetMetroSnapMode(bool enable) {
   LOCAL_HISTOGRAM_COUNTS("Metro.SnapModeToggle", enable);
-  ProcessFullscreen(enable, METRO_SNAP_FULLSCREEN, GURL(), FEB_TYPE_NONE);
+  ProcessFullscreen(enable, METRO_SNAP_FULLSCREEN, GURL(),
+                    EXCLUSIVE_ACCESS_BUBBLE_TYPE_NONE);
 }
 
 bool BrowserView::IsInMetroSnapMode() const {
@@ -953,14 +1012,15 @@ void BrowserView::RestoreFocus() {
 
 void BrowserView::FullscreenStateChanged() {
   CHECK(!IsFullscreen());
-  ProcessFullscreen(false, NORMAL_FULLSCREEN, GURL(), FEB_TYPE_NONE);
+  ProcessFullscreen(false, NORMAL_FULLSCREEN, GURL(),
+                    EXCLUSIVE_ACCESS_BUBBLE_TYPE_NONE);
 }
 
 void BrowserView::ToolbarSizeChanged(bool is_animating) {
-  // The call to InfoBarContainer::SetMaxTopArrowHeight() below can result in
-  // reentrancy; |call_state| tracks whether we're reentrant.  We can't just
-  // early-return in this case because we need to layout again so the infobar
-  // container's bounds are set correctly.
+  // The call to SetMaxTopArrowHeight() below can result in reentrancy;
+  // |call_state| tracks whether we're reentrant.  We can't just early-return in
+  // this case because we need to layout again so the infobar container's bounds
+  // are set correctly.
   static CallState call_state = NORMAL;
 
   // A reentrant call can (and should) use the fast resize path unless both it
@@ -979,7 +1039,7 @@ void BrowserView::ToolbarSizeChanged(bool is_animating) {
   {
     base::AutoReset<CallState> resetter(&call_state,
         is_animating ? REENTRANT_FORCE_FAST_RESIZE : REENTRANT);
-    infobar_container_->SetMaxTopArrowHeight(GetMaxTopInfoBarArrowHeight());
+    SetMaxTopArrowHeight(GetMaxTopInfoBarArrowHeight(), infobar_container_);
   }
 
   // When transitioning from animating to not animating we need to make sure the
@@ -1536,8 +1596,10 @@ bool BrowserView::CanMinimize() const {
 bool BrowserView::CanActivate() const {
   app_modal::AppModalDialogQueue* queue =
       app_modal::AppModalDialogQueue::GetInstance();
-  if (!queue->active_dialog() || !queue->active_dialog()->native_dialog())
+  if (!queue->active_dialog() || !queue->active_dialog()->native_dialog() ||
+      !queue->active_dialog()->native_dialog()->IsShowing()) {
     return true;
+  }
 
 #if defined(USE_AURA) && defined(OS_CHROMEOS)
   // On Aura window manager controls all windows so settings focus via PostTask
@@ -1574,12 +1636,11 @@ views::View* BrowserView::GetInitiallyFocusedView() {
 }
 
 bool BrowserView::ShouldShowWindowTitle() const {
-  // For Ash only, trusted windows (apps and settings) do not show an icon,
-  // crbug.com/119411. Child windows (i.e. popups) do show an icon.
+  // For Ash only, trusted windows (apps and settings) do not show a title,
+  // crbug.com/119411. Child windows (i.e. popups) do show a title.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
       browser_->is_trusted_source() &&
-      !(browser_->is_app() &&
-        extensions::util::IsStreamlinedHostedAppsEnabled()))
+      !browser_->SupportsWindowFeature(Browser::FEATURE_WEBAPPFRAME))
     return false;
 
   return browser_->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
@@ -1609,8 +1670,7 @@ bool BrowserView::ShouldShowWindowIcon() const {
   // crbug.com/119411. Child windows (i.e. popups) do show an icon.
   if (browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
       browser_->is_trusted_source() &&
-      !(browser_->is_app() &&
-        extensions::util::IsStreamlinedHostedAppsEnabled()))
+      !browser_->SupportsWindowFeature(Browser::FEATURE_WEBAPPFRAME))
     return false;
 
   return browser_->SupportsWindowFeature(Browser::FEATURE_TITLEBAR);
@@ -1780,7 +1840,8 @@ bool BrowserView::CanClose() {
     return false;
 
   bool fast_tab_closing_enabled =
-    CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableFastUnload);
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableFastUnload);
 
   if (!browser_->tab_strip_model()->empty()) {
     // Tab strip isn't empty.  Hide the frame (so it appears to have closed
@@ -1901,11 +1962,11 @@ bool BrowserView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, OmniboxPopupModelObserver overrides:
 void BrowserView::OnOmniboxPopupShownOrHidden() {
-  infobar_container_->SetMaxTopArrowHeight(GetMaxTopInfoBarArrowHeight());
+  SetMaxTopArrowHeight(GetMaxTopInfoBarArrowHeight(), infobar_container_);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// BrowserView, InfoBarContainer::Delegate overrides:
+// BrowserView, InfoBarContainerDelegate overrides:
 
 SkColor BrowserView::GetInfoBarSeparatorColor() const {
   // NOTE: Keep this in sync with ToolbarView::OnPaint()!
@@ -1942,7 +2003,7 @@ void BrowserView::InitViews() {
 
   // Start a hung plugin window detector for this browser object (as long as
   // hang detection is not disabled).
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableHangMonitor)) {
     InitHangMonitor();
   }
@@ -2075,10 +2136,8 @@ bool BrowserView::MaybeShowBookmarkBar(WebContents* contents) {
   if (!bookmark_bar_view_.get()) {
     bookmark_bar_view_.reset(new BookmarkBarView(browser_.get(), this));
     bookmark_bar_view_->set_owned_by_client();
-    bookmark_bar_view_->set_background(
-        new BookmarkExtensionBackground(this,
-                                        bookmark_bar_view_.get(),
-                                        browser_.get()));
+    bookmark_bar_view_->set_background(new BookmarkBarViewBackground(
+        this, bookmark_bar_view_.get(), browser_.get()));
     bookmark_bar_view_->SetBookmarkBarState(
         browser_->bookmark_bar_state(),
         BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
@@ -2197,7 +2256,7 @@ void BrowserView::UpdateUIForContents(WebContents* contents) {
 void BrowserView::ProcessFullscreen(bool fullscreen,
                                     FullscreenMode mode,
                                     const GURL& url,
-                                    FullscreenExitBubbleType bubble_type) {
+                                    ExclusiveAccessBubbleType bubble_type) {
   if (in_process_fullscreen_)
     return;
   in_process_fullscreen_ = true;
@@ -2211,7 +2270,7 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
   if (mode == METRO_SNAP_FULLSCREEN || !fullscreen) {
     // Hide the fullscreen bubble as soon as possible, since the mode toggle can
     // take enough time for the user to notice.
-    fullscreen_bubble_.reset();
+    exclusive_access_bubble_.reset();
   }
 
   if (fullscreen) {
@@ -2250,7 +2309,7 @@ void BrowserView::ProcessFullscreen(bool fullscreen,
 bool BrowserView::ShouldUseImmersiveFullscreenForUrl(const GURL& url) const {
   // Kiosk mode needs the whole screen, and if we're not in an Ash desktop
   // immersive fullscreen doesn't exist.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode) ||
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kKioskMode) ||
       browser()->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH) {
     return false;
   }
@@ -2397,17 +2456,6 @@ void BrowserView::UpdateAcceleratorMetrics(const ui::Accelerator& accelerator,
       break;
   }
 #endif
-}
-
-void BrowserView::ShowAvatarBubble(WebContents* web_contents,
-                                   const gfx::Rect& rect) {
-  gfx::Point origin(rect.origin());
-  views::View::ConvertPointToScreen(GetTabContentsContainerView(), &origin);
-  gfx::Rect bounds(origin, rect.size());
-
-  AvatarMenuBubbleView::ShowBubble(
-      this, views::BubbleBorder::TOP_RIGHT, views::BubbleBorder::PAINT_NORMAL,
-      views::BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE, bounds, browser_.get());
 }
 
 void BrowserView::ShowAvatarBubbleFromAvatarButton(

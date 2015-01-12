@@ -69,7 +69,7 @@
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -448,6 +448,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host,
       cursor_visibility_state_in_renderer_(UNKNOWN),
 #if defined(OS_WIN)
       legacy_render_widget_host_HWND_(NULL),
+      legacy_window_destroyed_(false),
 #endif
       has_snapped_to_boundary_(false),
       touch_editing_client_(NULL),
@@ -601,6 +602,16 @@ void RenderWidgetHostViewAura::WasShown() {
   delegated_frame_host_->WasShown(browser_latency_info);
 
 #if defined(OS_WIN)
+  if (legacy_render_widget_host_HWND_) {
+    // Reparent the legacy Chrome_RenderWidgetHostHWND window to the parent
+    // window before reparenting any plugins. This ensures that the plugin
+    // windows stay on top of the child Zorder in the parent and receive
+    // mouse events, etc.
+    legacy_render_widget_host_HWND_->UpdateParent(
+        GetNativeView()->GetHost()->GetAcceleratedWidget());
+    legacy_render_widget_host_HWND_->SetBounds(
+        window_->GetBoundsInRootWindow());
+  }
   LPARAM lparam = reinterpret_cast<LPARAM>(this);
   EnumChildWindows(ui::GetHiddenWindow(), ShowWindowsCallback, lparam);
 #endif
@@ -619,6 +630,10 @@ void RenderWidgetHostViewAura::WasHidden() {
     HWND parent = host->GetAcceleratedWidget();
     LPARAM lparam = reinterpret_cast<LPARAM>(this);
     EnumChildWindows(parent, HideWindowsCallback, lparam);
+    // We reparent the legacy Chrome_RenderWidgetHostHWND window to the global
+    // hidden window on the same lines as Windowed plugin windows.
+    if (legacy_render_widget_host_HWND_)
+      legacy_render_widget_host_HWND_->UpdateParent(ui::GetHiddenWindow());
   }
 #endif
 }
@@ -782,11 +797,19 @@ bool RenderWidgetHostViewAura::IsSurfaceAvailableForCopy() const {
 void RenderWidgetHostViewAura::Show() {
   window_->Show();
   WasShown();
+#if defined(OS_WIN)
+  if (legacy_render_widget_host_HWND_)
+    legacy_render_widget_host_HWND_->Show();
+#endif
 }
 
 void RenderWidgetHostViewAura::Hide() {
   window_->Hide();
   WasHidden();
+#if defined(OS_WIN)
+  if (legacy_render_widget_host_HWND_)
+    legacy_render_widget_host_HWND_->Hide();
+#endif
 }
 
 bool RenderWidgetHostViewAura::IsShowing() {
@@ -929,13 +952,14 @@ gfx::Size RenderWidgetHostViewAura::GetRequestedRendererSize() const {
 void RenderWidgetHostViewAura::SelectionBoundsChanged(
     const ViewHostMsg_SelectionBounds_Params& params) {
   ui::SelectionBound anchor_bound, focus_bound;
-  anchor_bound.edge_top = params.anchor_rect.origin();
-  anchor_bound.edge_bottom = params.anchor_rect.bottom_left();
-  focus_bound.edge_top = params.focus_rect.origin();
-  focus_bound.edge_bottom = params.focus_rect.bottom_left();
+  anchor_bound.SetEdge(params.anchor_rect.origin(),
+                       params.anchor_rect.bottom_left());
+  focus_bound.SetEdge(params.focus_rect.origin(),
+                      params.focus_rect.bottom_left());
 
   if (params.anchor_rect == params.focus_rect) {
-    anchor_bound.type = focus_bound.type = ui::SelectionBound::CENTER;
+    anchor_bound.set_type(ui::SelectionBound::CENTER);
+    focus_bound.set_type(ui::SelectionBound::CENTER);
   } else {
     // Whether text is LTR at the anchor handle.
     bool anchor_LTR = params.anchor_dir == blink::WebTextDirectionLeftToRight;
@@ -944,15 +968,15 @@ void RenderWidgetHostViewAura::SelectionBoundsChanged(
 
     if ((params.is_anchor_first && anchor_LTR) ||
         (!params.is_anchor_first && !anchor_LTR)) {
-      anchor_bound.type = ui::SelectionBound::LEFT;
+      anchor_bound.set_type(ui::SelectionBound::LEFT);
     } else {
-      anchor_bound.type = ui::SelectionBound::RIGHT;
+      anchor_bound.set_type(ui::SelectionBound::RIGHT);
     }
     if ((params.is_anchor_first && focus_LTR) ||
         (!params.is_anchor_first && !focus_LTR)) {
-      focus_bound.type = ui::SelectionBound::RIGHT;
+      focus_bound.set_type(ui::SelectionBound::RIGHT);
     } else {
-      focus_bound.type = ui::SelectionBound::LEFT;
+      focus_bound.set_type(ui::SelectionBound::LEFT);
     }
   }
 
@@ -1037,7 +1061,12 @@ void RenderWidgetHostViewAura::UpdateMouseLockRegion() {
     ::ClipCursor(&window_rect);
   }
 }
-#endif  // defined(OS_WIN)
+
+void RenderWidgetHostViewAura::OnLegacyWindowDestroyed() {
+  legacy_render_widget_host_HWND_ = NULL;
+  legacy_window_destroyed_ = true;
+}
+#endif
 
 void RenderWidgetHostViewAura::OnSwapCompositorFrame(
     uint32 output_surface_id,
@@ -1069,11 +1098,6 @@ void RenderWidgetHostViewAura::DidStopFlinging() {
 }
 
 #if defined(OS_WIN)
-void RenderWidgetHostViewAura::SetLegacyRenderWidgetHostHWND(
-    LegacyRenderWidgetHostHWND* legacy_hwnd) {
-  legacy_render_widget_host_HWND_ = legacy_hwnd;
-}
-
 void RenderWidgetHostViewAura::SetParentNativeViewAccessible(
     gfx::NativeViewAccessible accessible_parent) {
 }
@@ -1081,9 +1105,8 @@ void RenderWidgetHostViewAura::SetParentNativeViewAccessible(
 gfx::NativeViewId RenderWidgetHostViewAura::GetParentForWindowlessPlugin()
     const {
   if (legacy_render_widget_host_HWND_) {
-    HWND hwnd = legacy_render_widget_host_HWND_->hwnd();
-    if (::IsWindow(hwnd))
-      return reinterpret_cast<gfx::NativeViewId>(hwnd);
+    return reinterpret_cast<gfx::NativeViewId>(
+        legacy_render_widget_host_HWND_->hwnd());
   }
   return NULL;
 }
@@ -1226,11 +1249,8 @@ RenderWidgetHostViewAura::CreateBrowserAccessibilityManager(
 gfx::AcceleratedWidget
 RenderWidgetHostViewAura::AccessibilityGetAcceleratedWidget() {
 #if defined(OS_WIN)
-  if (legacy_render_widget_host_HWND_) {
-    HWND hwnd = legacy_render_widget_host_HWND_->hwnd();
-    if (::IsWindow(hwnd))
-      return hwnd;
-  }
+  if (legacy_render_widget_host_HWND_)
+    return legacy_render_widget_host_HWND_->hwnd();
 #endif
   return gfx::kNullAcceleratedWidget;
 }
@@ -1762,7 +1782,20 @@ void RenderWidgetHostViewAura::OnWindowDestroying(aura::Window* window) {
   }
   LPARAM lparam = reinterpret_cast<LPARAM>(this);
   EnumChildWindows(parent, WindowDestroyingCallback, lparam);
-  legacy_render_widget_host_HWND_ = NULL;
+
+  // The LegacyRenderWidgetHostHWND instance is destroyed when its window is
+  // destroyed. Normally we control when that happens via the Destroy call
+  // in the dtor. However there may be cases where the window is destroyed
+  // by Windows, i.e. the parent window is destroyed before the
+  // RenderWidgetHostViewAura instance goes away etc. To avoid that we
+  // destroy the LegacyRenderWidgetHostHWND instance here.
+  if (legacy_render_widget_host_HWND_) {
+    legacy_render_widget_host_HWND_->set_host(NULL);
+    legacy_render_widget_host_HWND_->Destroy();
+    // The Destroy call above will delete the LegacyRenderWidgetHostHWND
+    // instance.
+    legacy_render_widget_host_HWND_ = NULL;
+  }
 #endif
 
   // Make sure that the input method no longer references to this object before
@@ -1838,18 +1871,8 @@ void RenderWidgetHostViewAura::OnKeyEvent(ui::KeyEvent* event) {
     }
 
     // We don't have to communicate with an input method here.
-    if (!event->HasNativeEvent()) {
-      NativeWebKeyboardEvent webkit_event(
-          event->type(),
-          event->is_char(),
-          event->is_char() ? event->GetCharacter() : event->key_code(),
-          event->flags(),
-          ui::EventTimeForNow().InSecondsF());
-      ForwardKeyboardEvent(webkit_event);
-    } else {
-      NativeWebKeyboardEvent webkit_event(*event);
-      ForwardKeyboardEvent(webkit_event);
-    }
+    NativeWebKeyboardEvent webkit_event(*event);
+    ForwardKeyboardEvent(webkit_event);
   }
   event->SetHandled();
 }
@@ -2032,23 +2055,27 @@ void RenderWidgetHostViewAura::OnTouchEvent(ui::TouchEvent* event) {
     return;
 
   // Update the touch event first.
-  blink::WebTouchPoint* point = UpdateWebTouchEventFromUIEvent(*event,
-                                                                &touch_event_);
+  blink::WebTouchPoint* point =
+      UpdateWebTouchEventFromUIEvent(*event, &touch_event_);
 
-  // Forward the touch event only if a touch point was updated, and there's a
-  // touch-event handler in the page, and no other touch-event is in the queue.
-  // It is important to always consume the event if there is a touch-event
-  // handler in the page, or some touch-event is already in the queue, even if
-  // no point has been updated, to make sure that this event does not get
-  // processed by the gesture recognizer before the events in the queue.
-  if (host_->ShouldForwardTouchEvent())
+  if (!point) {
     event->StopPropagation();
-
-  if (point) {
-    if (host_->ShouldForwardTouchEvent())
-      host_->ForwardTouchEventWithLatencyInfo(touch_event_, *event->latency());
-    UpdateWebTouchEventAfterDispatch(&touch_event_, point);
+    return;
   }
+
+  // Forward the touch event only if a touch point was updated, and
+  // there's a touch-event handler in the page, and no other
+  // touch-event is in the queue. It is important to always mark
+  // events as being handled asynchronously if there is a touch-event
+  // handler in the page, or some touch-event is already in the queue,
+  // even if no point has been updated. This ensures that this event
+  // does not get processed by the gesture recognizer before events
+  // currently awaiting dispatch in the touch queue.
+  if (host_->ShouldForwardTouchEvent()) {
+    event->DisableSynchronousHandling();
+    host_->ForwardTouchEventWithLatencyInfo(touch_event_, *event->latency());
+  }
+  UpdateWebTouchEventAfterDispatch(&touch_event_, point);
 }
 
 void RenderWidgetHostViewAura::OnGestureEvent(ui::GestureEvent* event) {
@@ -2269,6 +2296,13 @@ RenderWidgetHostViewAura::~RenderWidgetHostViewAura() {
   // Aura root window and we don't have a way to get an input method object
   // associated with the window, but just in case.
   DetachFromInputMethod();
+
+#if defined(OS_WIN)
+  // The LegacyRenderWidgetHostHWND window should have been destroyed in
+  // RenderWidgetHostViewAura::OnWindowDestroying and the pointer should
+  // be set to NULL.
+  DCHECK(!legacy_render_widget_host_HWND_);
+#endif
 }
 
 void RenderWidgetHostViewAura::UpdateCursorIfOverSelf() {
@@ -2425,6 +2459,34 @@ void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
                                                       selection_focus_);
   }
 #if defined(OS_WIN)
+  // Create the legacy dummy window which corresponds to the bounds of the
+  // webcontents. This will be passed as the container window for windowless
+  // plugins.
+  // Plugins like Flash assume the container window which is returned via the
+  // NPNVnetscapeWindow property corresponds to the bounds of the webpage.
+  // This is not true in Aura where we have only HWND which is the main Aura
+  // window. If we return this window to plugins like Flash then it causes the
+  // coordinate translations done by these plugins to break.
+  // Additonally the legacy dummy window is needed for accessibility and for
+  // scrolling to work in legacy drivers for trackpoints/trackpads, etc.
+  if (!legacy_window_destroyed_ && GetNativeViewId()) {
+    if (!legacy_render_widget_host_HWND_) {
+      legacy_render_widget_host_HWND_ = LegacyRenderWidgetHostHWND::Create(
+          reinterpret_cast<HWND>(GetNativeViewId()));
+    }
+    if (legacy_render_widget_host_HWND_) {
+      legacy_render_widget_host_HWND_->set_host(this);
+      legacy_render_widget_host_HWND_->SetBounds(
+          window_->GetBoundsInRootWindow());
+      // There are cases where the parent window is created, made visible and
+      // the associated RenderWidget is also visible before the
+      // LegacyRenderWidgetHostHWND instace is created. Ensure that it is shown
+      // here.
+      if (!host_->is_hidden())
+        legacy_render_widget_host_HWND_->Show();
+    }
+  }
+
   if (mouse_locked_)
     UpdateMouseLockRegion();
 #endif
@@ -2470,6 +2532,14 @@ void RenderWidgetHostViewAura::AddedToRootWindow() {
       input_method->SetFocusedTextInputClient(this);
   }
 
+#if defined(OS_WIN)
+  // The parent may have changed here. Ensure that the legacy window is
+  // reparented accordingly.
+  if (legacy_render_widget_host_HWND_)
+    legacy_render_widget_host_HWND_->UpdateParent(
+        reinterpret_cast<HWND>(GetNativeViewId()));
+#endif
+
   delegated_frame_host_->AddedToWindow();
 }
 
@@ -2483,6 +2553,13 @@ void RenderWidgetHostViewAura::RemovingFromRootWindow() {
 
   window_->GetHost()->RemoveObserver(this);
   delegated_frame_host_->RemovingFromWindow();
+
+#if defined(OS_WIN)
+  // Update the legacy window's parent temporarily to the desktop window. It
+  // will eventually get reparented to the right root.
+  if (legacy_render_widget_host_HWND_)
+    legacy_render_widget_host_HWND_->UpdateParent(::GetDesktopWindow());
+#endif
 }
 
 void RenderWidgetHostViewAura::DetachFromInputMethod() {

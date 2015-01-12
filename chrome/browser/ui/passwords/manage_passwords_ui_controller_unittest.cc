@@ -120,7 +120,7 @@ TEST_F(ManagePasswordsUIControllerTest, PasswordSubmitted) {
   password_manager::StubPasswordManagerDriver driver;
   scoped_ptr<password_manager::PasswordFormManager> test_form_manager(
       new password_manager::PasswordFormManager(
-          NULL, &client, &driver, test_form(), false));
+          NULL, &client, driver.AsWeakPtr(), test_form(), false));
   controller()->OnPasswordSubmitted(test_form_manager.Pass());
   EXPECT_EQ(password_manager::ui::PENDING_PASSWORD_AND_BUBBLE_STATE,
             controller()->state());
@@ -142,7 +142,7 @@ TEST_F(ManagePasswordsUIControllerTest, PasswordSaved) {
   password_manager::StubPasswordManagerDriver driver;
   scoped_ptr<password_manager::PasswordFormManager> test_form_manager(
       new password_manager::PasswordFormManager(
-          NULL, &client, &driver, test_form(), false));
+          NULL, &client, driver.AsWeakPtr(), test_form(), false));
   controller()->OnPasswordSubmitted(test_form_manager.Pass());
 
   ManagePasswordsIconMock mock;
@@ -157,7 +157,7 @@ TEST_F(ManagePasswordsUIControllerTest, PasswordBlacklisted) {
   password_manager::StubPasswordManagerDriver driver;
   scoped_ptr<password_manager::PasswordFormManager> test_form_manager(
       new password_manager::PasswordFormManager(
-          NULL, &client, &driver, test_form(), false));
+          NULL, &client, driver.AsWeakPtr(), test_form(), false));
   controller()->OnPasswordSubmitted(test_form_manager.Pass());
 
   ManagePasswordsIconMock mock;
@@ -172,7 +172,7 @@ TEST_F(ManagePasswordsUIControllerTest, QuickNavigations) {
   password_manager::StubPasswordManagerDriver driver;
   scoped_ptr<password_manager::PasswordFormManager> test_form_manager(
       new password_manager::PasswordFormManager(
-          NULL, &client, &driver, test_form(), false));
+          NULL, &client, driver.AsWeakPtr(), test_form(), false));
   controller()->OnPasswordSubmitted(test_form_manager.Pass());
   ManagePasswordsIconMock mock;
   controller()->UpdateIconAndBubbleState(&mock);
@@ -199,7 +199,7 @@ TEST_F(ManagePasswordsUIControllerTest, SlowNavigations) {
   password_manager::StubPasswordManagerDriver driver;
   scoped_ptr<password_manager::PasswordFormManager> test_form_manager(
       new password_manager::PasswordFormManager(
-          NULL, &client, &driver, test_form(), false));
+          NULL, &client, driver.AsWeakPtr(), test_form(), false));
   controller()->OnPasswordSubmitted(test_form_manager.Pass());
   ManagePasswordsIconMock mock;
   controller()->UpdateIconAndBubbleState(&mock);
@@ -227,7 +227,7 @@ TEST_F(ManagePasswordsUIControllerTest, PasswordSubmittedToNonWebbyURL) {
   password_manager::StubPasswordManagerDriver driver;
   scoped_ptr<password_manager::PasswordFormManager> test_form_manager(
       new password_manager::PasswordFormManager(
-          NULL, &client, &driver, test_form(), false));
+          NULL, &client, driver.AsWeakPtr(), test_form(), false));
   controller()->OnPasswordSubmitted(test_form_manager.Pass());
   EXPECT_EQ(password_manager::ui::INACTIVE_STATE, controller()->state());
   EXPECT_FALSE(controller()->PasswordPendingUserDecision());
@@ -327,7 +327,7 @@ TEST_F(ManagePasswordsUIControllerTest, AutomaticPasswordSave) {
   password_manager::StubPasswordManagerDriver driver;
   scoped_ptr<password_manager::PasswordFormManager> test_form_manager(
       new password_manager::PasswordFormManager(
-          NULL, &client, &driver, test_form(), false));
+          NULL, &client, driver.AsWeakPtr(), test_form(), false));
 
   controller()->OnAutomaticPasswordSave(test_form_manager.Pass());
   EXPECT_EQ(password_manager::ui::CONFIRMATION_STATE, controller()->state());
@@ -338,10 +338,12 @@ TEST_F(ManagePasswordsUIControllerTest, AutomaticPasswordSave) {
 }
 
 TEST_F(ManagePasswordsUIControllerTest, ChooseCredential) {
-  ScopedVector<autofill::PasswordForm> credentials;
-  credentials.push_back(new autofill::PasswordForm(test_form()));
+  ScopedVector<autofill::PasswordForm> local_credentials;
+  local_credentials.push_back(new autofill::PasswordForm(test_form()));
+  ScopedVector<autofill::PasswordForm> federated_credentials;
   EXPECT_TRUE(controller()->OnChooseCredentials(
-      credentials.Pass(),
+      local_credentials.Pass(),
+      federated_credentials.Pass(),
       base::Bind(&ManagePasswordsUIControllerTest::CredentialCallback,
                  base::Unretained(this))));
   EXPECT_EQ(password_manager::ui::CREDENTIAL_REQUEST_AND_BUBBLE_STATE,
@@ -364,10 +366,12 @@ TEST_F(ManagePasswordsUIControllerTest, ChooseCredential) {
 }
 
 TEST_F(ManagePasswordsUIControllerTest, ChooseCredentialCancel) {
-  ScopedVector<autofill::PasswordForm> credentials;
-  credentials.push_back(new autofill::PasswordForm(test_form()));
+  ScopedVector<autofill::PasswordForm> local_credentials;
+  local_credentials.push_back(new autofill::PasswordForm(test_form()));
+  ScopedVector<autofill::PasswordForm> federated_credentials;
   EXPECT_TRUE(controller()->OnChooseCredentials(
-      credentials.Pass(),
+      local_credentials.Pass(),
+      federated_credentials.Pass(),
       base::Bind(&ManagePasswordsUIControllerTest::CredentialCallback,
                  base::Unretained(this))));
   EXPECT_EQ(password_manager::ui::CREDENTIAL_REQUEST_AND_BUBBLE_STATE,

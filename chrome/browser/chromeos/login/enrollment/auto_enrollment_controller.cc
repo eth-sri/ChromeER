@@ -28,7 +28,7 @@ const int kSafeguardTimeoutSeconds = 30;
 // Returns the int value of the |switch_name| argument, clamped to the [0, 62]
 // interval. Returns 0 if the argument doesn't exist or isn't an int value.
 int GetSanitizedArg(const std::string& switch_name) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (!command_line->HasSwitch(switch_name))
     return 0;
   std::string value = command_line->GetSwitchValueASCII(switch_name);
@@ -67,16 +67,12 @@ bool IsFirstDeviceSetup() {
 }  // namespace
 
 const char AutoEnrollmentController::kForcedReEnrollmentAlways[] = "always";
-const char AutoEnrollmentController::kForcedReEnrollmentLegacy[] = "legacy";
 const char AutoEnrollmentController::kForcedReEnrollmentNever[] = "never";
 const char AutoEnrollmentController::kForcedReEnrollmentOfficialBuild[] =
     "official";
 
 AutoEnrollmentController::Mode AutoEnrollmentController::GetMode() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-
-  if (!command_line->HasSwitch(switches::kEnterpriseEnableForcedReEnrollment))
-    return MODE_LEGACY_AUTO_ENROLLMENT;
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   std::string command_line_mode = command_line->GetSwitchValueASCII(
       switches::kEnterpriseEnableForcedReEnrollment);
@@ -85,14 +81,20 @@ AutoEnrollmentController::Mode AutoEnrollmentController::GetMode() {
   } else if (command_line_mode.empty() ||
              command_line_mode == kForcedReEnrollmentOfficialBuild) {
 #if defined(OFFICIAL_BUILD)
-    return MODE_FORCED_RE_ENROLLMENT;
+    std::string firmware_type;
+    const bool non_chrome_firmware =
+        system::StatisticsProvider::GetInstance()->GetMachineStatistic(
+            system::kFirmwareTypeKey, &firmware_type) &&
+        firmware_type == system::kFirmwareTypeValueNonchrome;
+    return non_chrome_firmware ? MODE_NONE : MODE_FORCED_RE_ENROLLMENT;
 #else
     return MODE_NONE;
 #endif
-  } else if (command_line_mode == kForcedReEnrollmentLegacy) {
-    return MODE_LEGACY_AUTO_ENROLLMENT;
+  } else if (command_line_mode == kForcedReEnrollmentNever) {
+    return MODE_NONE;
   }
 
+  LOG(FATAL) << "Unknown auto-enrollment mode " << command_line_mode;
   return MODE_NONE;
 }
 
@@ -116,7 +118,7 @@ void AutoEnrollmentController::Start() {
   //    also enables factories to start full guest sessions for testing, see
   //    http://crbug.com/397354 for more context.
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(chromeos::switches::kDisableGaiaServices) ||
       (!command_line->HasSwitch(
            chromeos::switches::kEnterpriseEnrollmentInitialModulus) &&
@@ -161,17 +163,14 @@ void AutoEnrollmentController::Cancel() {
 void AutoEnrollmentController::Retry() {
   if (client_)
     client_->Retry();
+  else
+    Start();
 }
 
 scoped_ptr<AutoEnrollmentController::ProgressCallbackList::Subscription>
 AutoEnrollmentController::RegisterProgressCallback(
     const ProgressCallbackList::CallbackType& callback) {
   return progress_callbacks_.Add(callback);
-}
-
-bool AutoEnrollmentController::ShouldEnrollSilently() {
-  return state_ == policy::AUTO_ENROLLMENT_STATE_TRIGGER_ENROLLMENT &&
-         GetMode() == MODE_LEGACY_AUTO_ENROLLMENT;
 }
 
 void AutoEnrollmentController::OnOwnershipStatusCheckDone(
@@ -193,6 +192,12 @@ void AutoEnrollmentController::OnOwnershipStatusCheckDone(
 
 void AutoEnrollmentController::StartClient(
     const std::vector<std::string>& state_keys) {
+  if (state_keys.empty()) {
+    LOG(WARNING) << "No state keys available!";
+    UpdateState(policy::AUTO_ENROLLMENT_STATE_NO_ENROLLMENT);
+    return;
+  }
+
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   policy::DeviceManagementService* service =
@@ -209,23 +214,13 @@ void AutoEnrollmentController::StartClient(
     power_initial = power_limit;
   }
 
-  bool retrieve_device_state = false;
-  std::string device_id;
-  if (GetMode() == MODE_FORCED_RE_ENROLLMENT) {
-    retrieve_device_state = true;
-    device_id = state_keys.empty() ? std::string() : state_keys.front();
-  } else {
-    device_id = policy::DeviceCloudPolicyManagerChromeOS::GetMachineID();
-  }
-
   client_.reset(new policy::AutoEnrollmentClient(
       base::Bind(&AutoEnrollmentController::UpdateState,
                  base::Unretained(this)),
       service,
       g_browser_process->local_state(),
       g_browser_process->system_request_context(),
-      device_id,
-      retrieve_device_state,
+      state_keys.front(),
       power_initial,
       power_limit));
 

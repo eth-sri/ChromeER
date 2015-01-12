@@ -140,6 +140,10 @@ class WebTestDelegate {
   virtual void ClearWebNotificationPermissions() = 0;
   virtual void SimulateWebNotificationClick(const std::string& title) = 0;
 
+  // Controls the Push API.
+  virtual void SetPushMessagingPermission(const GURL& origin, bool allowed) = 0;
+  virtual void ClearPushMessagingPermissions() = 0;
+
   // Controls the device scale factor of the main WebView for hidpi tests.
   virtual void SetDeviceScaleFactor(float factor) = 0;
 
@@ -148,6 +152,17 @@ class WebTestDelegate {
 
   // Change the bluetooth test data while running a layout test.
   virtual void SetBluetoothMockDataSet(const std::string& data_set) = 0;
+
+  // Enables mock geofencing service while running a layout test.
+  // |service_available| indicates if the mock service should mock geofencing
+  // being available or not.
+  virtual void SetGeofencingMockProvider(bool service_available) = 0;
+
+  // Disables mock geofencing service while running a layout test.
+  virtual void ClearGeofencingMockProvider() = 0;
+
+  // Set the mock geofencing position while running a layout test.
+  virtual void SetGeofencingMockPosition(double latitude, double longitude) = 0;
 
   // Controls which WebView should be focused.
   virtual void SetFocus(WebTestProxyBase* proxy, bool focus) = 0;

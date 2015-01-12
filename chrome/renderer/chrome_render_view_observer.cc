@@ -167,7 +167,8 @@ ChromeRenderViewObserver::ChromeRenderViewObserver(
           extensions::kExtensionScheme)),
       phishing_classifier_(NULL),
       capture_timer_(false, false) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kDisableClientSidePhishingDetection))
     OnSetClientSidePhishingDetection(true);
 }
@@ -334,6 +335,11 @@ void ChromeRenderViewObserver::DidStartLoading() {
 
 void ChromeRenderViewObserver::DidStopLoading() {
   WebFrame* main_frame = render_view()->GetWebView()->mainFrame();
+
+  // Remote frames don't host a document, so return early if that's the case.
+  if (main_frame->isWebRemoteFrame())
+    return;
+
   GURL osdd_url = main_frame->document().openSearchDescriptionURL();
   if (!osdd_url.is_empty()) {
     Send(new ChromeViewHostMsg_PageHasOSDD(

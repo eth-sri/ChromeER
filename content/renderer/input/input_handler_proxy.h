@@ -33,6 +33,10 @@ class CONTENT_EXPORT InputHandlerProxy
                     InputHandlerProxyClient* client);
   virtual ~InputHandlerProxy();
 
+  InputScrollElasticityController* scroll_elasticity_controller() {
+    return scroll_elasticity_controller_.get();
+  }
+
   enum EventDisposition {
     DID_HANDLE,
     DID_NOT_HANDLE,
@@ -47,6 +51,7 @@ class CONTENT_EXPORT InputHandlerProxy
   void WillShutdown() override;
   void Animate(base::TimeTicks time) override;
   void MainThreadHasStoppedFlinging() override;
+  void ReconcileElasticOverscrollAndRootScroll() override;
 
   // blink::WebGestureCurveTarget implementation.
   virtual bool scrollBy(const blink::WebFloatSize& offset,
@@ -139,6 +144,8 @@ class CONTENT_EXPORT InputHandlerProxy
   scoped_ptr<InputScrollElasticityController> scroll_elasticity_controller_;
 
   bool smooth_scroll_enabled_;
+
+  bool uma_latency_reporting_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(InputHandlerProxy);
 };

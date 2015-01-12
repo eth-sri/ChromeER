@@ -15,6 +15,10 @@
 #include "extensions/shell/browser/shell_desktop_controller_aura.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "extensions/shell/browser/shell_desktop_controller_mac.h"
+#endif
+
 namespace extensions {
 
 DefaultShellBrowserMainDelegate::DefaultShellBrowserMainDelegate() {
@@ -31,13 +35,12 @@ void DefaultShellBrowserMainDelegate::Start(
         ExtensionSystem::Get(browser_context));
     extension_system->Init();
 
-    CommandLine::StringType path_list =
+    base::CommandLine::StringType path_list =
         command_line->GetSwitchValueNative(switches::kLoadApps);
 
-    base::StringTokenizerT<CommandLine::StringType,
-                           CommandLine::StringType::const_iterator>
+    base::StringTokenizerT<base::CommandLine::StringType,
+                           base::CommandLine::StringType::const_iterator>
         tokenizer(path_list, FILE_PATH_LITERAL(","));
-
 
     std::string launch_id;
     while (tokenizer.GetNext()) {
@@ -67,6 +70,8 @@ void DefaultShellBrowserMainDelegate::Shutdown() {
 DesktopController* DefaultShellBrowserMainDelegate::CreateDesktopController() {
 #if defined(USE_AURA)
   return new ShellDesktopControllerAura();
+#elif defined(OS_MACOSX)
+  return new ShellDesktopControllerMac();
 #else
   return NULL;
 #endif

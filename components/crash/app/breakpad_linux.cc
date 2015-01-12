@@ -205,7 +205,7 @@ size_t LengthWithoutTrailingSpaces(const char* str, size_t len) {
   return len;
 }
 
-void SetClientIdFromCommandLine(const CommandLine& command_line) {
+void SetClientIdFromCommandLine(const base::CommandLine& command_line) {
   // Get the guid from the command line switch.
   std::string switch_value =
       command_line.GetSwitchValueASCII(switches::kEnableCrashReporter);
@@ -666,7 +666,12 @@ void EnableCrashDumping(bool unattended) {
   }
   DCHECK(!g_breakpad);
   MinidumpDescriptor minidump_descriptor(dumps_path.value());
-  minidump_descriptor.set_size_limit(kMaxMinidumpFileSize);
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kFullMemoryCrashReport)) {
+    minidump_descriptor.set_size_limit(-1);  // unlimited.
+  } else {
+    minidump_descriptor.set_size_limit(kMaxMinidumpFileSize);
+  }
 #if defined(OS_ANDROID)
   unattended = true;  // Android never uploads directly.
 #endif
@@ -718,9 +723,10 @@ bool MicrodumpCrashDone(const MinidumpDescriptor& minidump,
 // system console (logcat) a restricted and serialized variant of a minidump.
 // See crbug.com/410294 for more details.
 void InitMicrodumpCrashHandlerIfNecessary(const std::string& process_type) {
-#if !defined(NO_UNWIND_TABLES) || !defined(ARCH_CPU_ARMEL)
-  // TODO(primiano): For the moment microdumps are enabled only on arm32. Extend
-  // support also to other architectures (requires some breakpad changes).
+#if !defined(NO_UNWIND_TABLES) \
+    || (!defined(ARCH_CPU_ARMEL) && !defined(ARCH_CPU_ARM64))
+  // TODO(primiano): For the moment microdumps are enabled only on arm (32/64).
+  // Extend support to other architectures (requires some breakpad changes).
   return;
 #endif
   VLOG(1) << "Enabling microdumps crash handler (process_type:"
@@ -769,7 +775,7 @@ void EnableNonBrowserCrashDumping(const std::string& process_type,
   // This will guarantee that the BuildInfo has been initialized and subsequent
   // calls will not require memory allocation.
   base::android::BuildInfo::GetInstance();
-  SetClientIdFromCommandLine(*CommandLine::ForCurrentProcess());
+  SetClientIdFromCommandLine(*base::CommandLine::ForCurrentProcess());
 
   // On Android, the current sandboxing uses process isolation, in which the
   // child process runs with a different UID. That breaks the normal crash
@@ -845,11 +851,11 @@ class NonBrowserCrashHandler : public google_breakpad::CrashGenerationClient {
             &serialized_map));
     iov[5].iov_base = serialized_map;
 #if !defined(ADDRESS_SANITIZER)
-    COMPILE_ASSERT(5 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
+    static_assert(5 == kCrashIovSize - 1, "kCrashIovSize should equal 6");
 #else
     iov[6].iov_base = const_cast<char*>(g_asan_report_str);
     iov[6].iov_len = kMaxAsanReportSize + 1;
-    COMPILE_ASSERT(6 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
+    static_assert(6 == kCrashIovSize - 1, "kCrashIovSize should equal 7");
 #endif
 
     msg.msg_iov = iov;
@@ -1635,7 +1641,8 @@ void InitCrashReporter(const std::string& process_type) {
   InitMicrodumpCrashHandlerIfNecessary(process_type);
 #endif
   // Determine the process type and take appropriate action.
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& parsed_command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (parsed_command_line.HasSwitch(switches::kDisableBreakpad))
     return;
 
@@ -1680,7 +1687,8 @@ void InitCrashReporter(const std::string& process_type) {
 
 #if defined(OS_ANDROID)
 void InitNonBrowserCrashReporterForAndroid(const std::string& process_type) {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
 
   // Handler registration is LIFO. Install the microdump handler first, such
   // that if conventional minidump crash reporting is enabled below, it takes

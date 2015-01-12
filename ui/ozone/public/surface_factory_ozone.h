@@ -10,9 +10,9 @@
 #include "base/native_library.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/overlay_transform.h"
-#include "ui/gfx/rect.h"
 #include "ui/ozone/ozone_base_export.h"
 
 class SkBitmap;
@@ -87,6 +87,10 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   // Returns native platform display handle. This is used to obtain the EGL
   // display connection for the native display.
   virtual intptr_t GetNativeDisplay();
+
+  // Returns Drm file descriptor. This is used to obtain access to the
+  // driver interface by other API than GL.
+  virtual int GetDrmFd();
 
   // Create SurfaceOzoneEGL for the specified gfx::AcceleratedWidget.
   //

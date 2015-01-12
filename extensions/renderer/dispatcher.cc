@@ -26,11 +26,13 @@
 #include "extensions/common/extension_api.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_urls.h"
+#include "extensions/common/feature_switch.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/content_capabilities_handler.h"
 #include "extensions/common/manifest_handlers/externally_connectable.h"
 #include "extensions/common/manifest_handlers/options_page_info.h"
 #include "extensions/common/manifest_handlers/sandboxed_page_info.h"
@@ -187,7 +189,8 @@ Dispatcher::Dispatcher(DispatcherDelegate* delegate)
       is_webkit_initialized_(false),
       user_script_set_manager_observer_(this),
       webrequest_used_(false) {
-  const CommandLine& command_line = *(CommandLine::ForCurrentProcess());
+  const base::CommandLine& command_line =
+      *(base::CommandLine::ForCurrentProcess());
   is_extension_process_ =
       command_line.HasSwitch(switches::kExtensionProcess) ||
       command_line.HasSwitch(::switches::kSingleProcess);
@@ -326,13 +329,17 @@ void Dispatcher::DidCreateScriptContext(
     module_system->Require("denyAppView");
   }
 
+  if (extensions::FeatureSwitch::surface_worker()->IsEnabled() &&
+      context->GetAvailability("surfaceWorkerInternal").is_available()) {
+    module_system->Require("surfaceWorker");
+  }
+
   // Note: setting up the WebView class here, not the chrome.webview API.
   // The API will be automatically set up when first used.
   if (context->GetAvailability("webViewInternal").is_available()) {
     module_system->Require("webView");
     module_system->Require("webViewApiMethods");
     module_system->Require("webViewAttributes");
-    module_system->Require("webViewConstants");
     if (context->GetAvailability("webViewExperimentalInternal")
             .is_available()) {
       module_system->Require("webViewExperimental");
@@ -545,6 +552,9 @@ std::vector<std::pair<std::string, int> > Dispatcher::GetJsResources() {
   resources.push_back(std::make_pair("guestViewContainer",
                                      IDR_GUEST_VIEW_CONTAINER_JS));
   resources.push_back(std::make_pair("webView", IDR_WEB_VIEW_JS));
+  resources.push_back(std::make_pair("surfaceWorker", IDR_SURFACE_VIEW_JS));
+  resources.push_back(std::make_pair("webViewActionRequests",
+                                     IDR_WEB_VIEW_ACTION_REQUESTS_JS));
   resources.push_back(std::make_pair("webViewApiMethods",
                                      IDR_WEB_VIEW_API_METHODS_JS));
   resources.push_back(std::make_pair("webViewAttributes",
@@ -1078,6 +1088,9 @@ void Dispatcher::EnableCustomElementWhiteList() {
       "extensionoptionsbrowserplugin");
   blink::WebCustomElement::addEmbedderCustomElementName("webview");
   blink::WebCustomElement::addEmbedderCustomElementName("webviewbrowserplugin");
+  blink::WebCustomElement::addEmbedderCustomElementName("surfaceview");
+  blink::WebCustomElement::addEmbedderCustomElementName(
+      "surfaceviewbrowserplugin");
 }
 
 void Dispatcher::UpdateBindings(const std::string& extension_id) {
@@ -1095,33 +1108,17 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
   switch (context->context_type()) {
     case Feature::UNSPECIFIED_CONTEXT:
     case Feature::WEB_PAGE_CONTEXT:
-    case Feature::BLESSED_WEB_PAGE_CONTEXT: {
+    case Feature::BLESSED_WEB_PAGE_CONTEXT:
       // Web page context; it's too expensive to run the full bindings code.
       // Hard-code that the app and webstore APIs are available...
       if (context->GetAvailability("app").is_available())
         RegisterBinding("app", context);
-
       if (context->GetAvailability("webstore").is_available())
         RegisterBinding("webstore", context);
-
-      // ... and that the runtime API might be available if any extension can
-      // connect to it.
-      bool runtime_is_available = false;
-      for (ExtensionSet::const_iterator it = extensions_.begin();
-           it != extensions_.end();
-           ++it) {
-        ExternallyConnectableInfo* info =
-            static_cast<ExternallyConnectableInfo*>(
-                (*it)->GetManifestData(manifest_keys::kExternallyConnectable));
-        if (info && info->matches.MatchesURL(context->GetURL())) {
-          runtime_is_available = true;
-          break;
-        }
-      }
-      if (runtime_is_available)
+      if (IsRuntimeAvailableToContext(context))
         RegisterBinding("runtime", context);
+      UpdateContentCapabilities(context);
       break;
-    }
 
     case Feature::BLESSED_EXTENSION_CONTEXT:
     case Feature::UNBLESSED_EXTENSION_CONTEXT:
@@ -1152,7 +1149,7 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
 
         // Skip chrome.test if this isn't a test.
         if (api_name == "test" &&
-            !CommandLine::ForCurrentProcess()->HasSwitch(
+            !base::CommandLine::ForCurrentProcess()->HasSwitch(
                 ::switches::kTestType)) {
           continue;
         }
@@ -1231,6 +1228,34 @@ void Dispatcher::RegisterNativeHandlers(ModuleSystem* module_system,
           send_request_disabled)));
 
   delegate_->RegisterNativeHandlers(this, module_system, context);
+}
+
+bool Dispatcher::IsRuntimeAvailableToContext(ScriptContext* context) {
+  if (extensions::FeatureSwitch::surface_worker()->IsEnabled() &&
+      context->GetAvailability("surfaceWorkerInternal").is_available()) {
+    return true;
+  }
+  for (const auto& extension : extensions_) {
+    ExternallyConnectableInfo* info = static_cast<ExternallyConnectableInfo*>(
+        extension->GetManifestData(manifest_keys::kExternallyConnectable));
+    if (info && info->matches.MatchesURL(context->GetURL()))
+      return true;
+  }
+  return false;
+}
+
+void Dispatcher::UpdateContentCapabilities(ScriptContext* context) {
+  APIPermissionSet permissions;
+  for (const auto& extension : extensions_) {
+    const ContentCapabilitiesInfo& info =
+        ContentCapabilitiesInfo::Get(extension.get());
+    if (info.url_patterns.MatchesURL(context->GetURL())) {
+      APIPermissionSet new_permissions;
+      APIPermissionSet::Union(permissions, info.permissions, &new_permissions);
+      permissions = new_permissions;
+    }
+  }
+  context->SetContentCapabilities(permissions);
 }
 
 void Dispatcher::PopulateSourceMap() {

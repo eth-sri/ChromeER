@@ -5,6 +5,7 @@
 #include "content/public/common/content_switches.h"
 
 #include "base/command_line.h"
+#include "base/metrics/field_trial.h"
 
 namespace switches {
 
@@ -81,10 +82,6 @@ const char kDisable3DAPIs[]                 = "disable-3d-apis";
 // Disable gpu-accelerated 2d canvas.
 const char kDisableAccelerated2dCanvas[]    = "disable-accelerated-2d-canvas";
 
-// Disables layer squashing.
-const char kDisableLayerSquashing[] =
-    "disable-layer-squashing";
-
 // Disables hardware acceleration of video decode, where available.
 const char kDisableAcceleratedVideoDecode[] =
     "disable-accelerated-video-decode";
@@ -103,10 +100,6 @@ const char kDisableBlinkScheduler[]         = "disable-blink-scheduler";
 // Disable the creation of compositing layers when it would prevent LCD text.
 const char kDisablePreferCompositingToLCDText[] =
     "disable-prefer-compositing-to-lcd-text";
-
-// See comment for kEnableCompositingForTransition.
-const char kDisableCompositingForTransition[] =
-     "disable-transition-compositing";
 
 // Disables HTML5 DB support.
 const char kDisableDatabases[]              = "disable-databases";
@@ -287,11 +280,11 @@ const char kDomAutomationController[]       = "dom-automation";
 // Enable antialiasing on 2d canvas clips (as opposed to draw operations)
 const char kEnable2dCanvasClipAntialiasing[] = "enable-2d-canvas-clip-aa";
 
-// Enable partially decoding jpeg images using the GPU.
-// At least YUV decoding will be accelerated when using this flag.
+// Disable partially decoding jpeg images using the GPU.
+// At least YUV decoding will be accelerated when not using this flag.
 // Has no effect unless GPU rasterization is enabled.
-const char kEnableAcceleratedJpegDecoding[] =
-    "enable-accelerated-jpeg-decoding";
+const char kDisableAcceleratedJpegDecoding[] =
+    "disable-accelerated-jpeg-decoding";
 
 // Enable bleeding-edge code to make Chrome draw content faster. The changes
 // behind this path are very likely to break lots of content.
@@ -306,14 +299,6 @@ const char kEnableLCDText[]                 = "enable-lcd-text";
 // Only valid if GPU rasterization is enabled as well.
 const char kEnableDistanceFieldText[]       = "enable-distance-field-text";
 
-// Enables experimental feature that maps multiple RenderLayers to
-// one composited layer to avoid pathological layer counts.
-const char kEnableLayerSquashing[] =
-    "enable-layer-squashing";
-
-// Enable experimental container node culling.
-const char kEnableContainerCulling[]        = "enable-container-culling";
-
 // Enable the experimental Credential Manager JavaScript API.
 const char kEnableCredentialManagerAPI[]    = "enable-credential-manager-api";
 
@@ -326,16 +311,6 @@ const char kEnablePreferCompositingToLCDText[] =
 
 // PlzNavigate: Use the experimental browser-side navigation path.
 const char kEnableBrowserSideNavigation[]   = "enable-browser-side-navigation";
-
-// Enable/Disable the creation of compositing layers for RenderLayers with a
-// transition on a property that supports accelerated animation (that is,
-// opacity, -webkit-transform, and -webkit-filter), even when no animation is
-// running. These options allow for three possible scenarios:
-//  1. Default (enabled only if we dectect a highDPI display)
-//  2. Enabled always.
-//  3. Disabled always.
-const char kEnableCompositingForTransition[] =
-     "enable-transition-compositing";
 
 // Defer image decoding in WebKit until painting.
 const char kEnableDeferredImageDecoding[]   = "enable-deferred-image-decoding";
@@ -495,8 +470,8 @@ const char kEnableV8IdleNotificationAfterCommit[] =
 // pinch gestures.
 const char kEnableViewport[]                = "enable-viewport";
 
-// Enables the use of the legacy viewport meta tag. Turning this on also
-// turns on the @viewport CSS rule
+// Enables the viewport meta tag, the de facto way to control layout which works
+// only on mobile browsers.
 const char kEnableViewportMeta[]            = "enable-viewport-meta";
 
 // Resizes of the main frame are the caused by changing between landscape
@@ -849,11 +824,16 @@ const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
 // Enable native GPU memory buffer support when available.
 const char kEnableNativeGpuMemoryBuffers[] = "enable-native-gpu-memory-buffers";
 
-// Use TEXTURE_EXTERNAL_OES target with CHROMIUM_image extension.
-const char kUseImageExternal[] = "use-image-external";
+// Overrides the default texture target used with CHROMIUM_image extension.
+const char kUseImageTextureTarget[] = "use-image-texture-target";
 
 // Set when Chromium should use a mobile user agent.
 const char kUseMobileUserAgent[] = "use-mobile-user-agent";
+
+// Use normal priority for tile task worker threads.  Otherwise they may
+// be run at background priority on some platforms.
+const char kUseNormalPriorityForTileTaskWorkerThreads[] =
+    "use-normal-priority-for-tile-task-worker-threads";
 
 // Use the new surfaces system to handle compositor delegation.
 const char kUseSurfaces[] = "use-surfaces";
@@ -984,11 +964,13 @@ const char kDeviceScaleFactor[]     = "device-scale-factor";
 // Disable the Legacy Window which corresponds to the size of the WebContents.
 const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
 
-// Enable the Win32K process mitigation policy for renderer processes which
-// prevents them from invoking user32 and gdi32 system calls which enter
-// the kernel. This is only supported on Windows 8 and beyond.
-const char kEnableWin32kRendererLockDown[]
-    = "enable_win32k_renderer_lockdown";
+// Enables or disables the Win32K process mitigation policy for renderer
+// processes which prevents them from invoking user32 and gdi32 system calls
+// which enter the kernel. This is only supported on Windows 8 and beyond.
+const char kDisableWin32kRendererLockDown[] =
+    "disable-win32k-renderer-lockdown";
+const char kEnableWin32kRendererLockDown[] =
+    "enable-win32k-renderer-lockdown";
 
 // DirectWrite FontCache is shared by browser to renderers using shared memory.
 // This switch allows specifying suffix to shared memory section name to avoid
@@ -999,6 +981,20 @@ const char kFontCacheSharedMemSuffix[] = "font-cache-shared-mem-suffix";
 #if defined(ENABLE_PLUGINS)
 // Enables the plugin power saver feature.
 const char kEnablePluginPowerSaver[] = "enable-plugin-power-saver";
+#endif
+
+#if defined(OS_WIN)
+bool IsWin32kRendererLockdownEnabled() {
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("Win32kLockdown");
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  if (cmd_line->HasSwitch(kEnableWin32kRendererLockDown))
+    return true;
+  if (cmd_line->HasSwitch(kDisableWin32kRendererLockDown))
+    return false;
+  // Default.
+  return group_name == "Enabled";
+}
 #endif
 
 // Don't dump stuff here, follow the same order as the header.

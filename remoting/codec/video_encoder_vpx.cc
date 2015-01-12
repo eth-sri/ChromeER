@@ -56,8 +56,11 @@ void SetCommonCodecParameters(const webrtc::DesktopSize& size,
   // Start emitting packets immediately.
   config->g_lag_in_frames = 0;
 
-  // Since the transport layer is reliable, keyframes aren't necessary.
-  config->kf_mode = VPX_KF_DISABLED;
+  // Since the transport layer is reliable, keyframes should not be necessary.
+  // However, due to crbug.com/440223, decoding fails after 30,000 non-key
+  // frames, so take the hit of an "unnecessary" key-frame every 10,000 frames.
+  config->kf_min_dist = 10000;
+  config->kf_max_dist = 10000;
 
   // Using 2 threads gives a great boost in performance for most systems with
   // adequate processing power. NB: Going to multiple threads on low end
@@ -147,6 +150,12 @@ ScopedVpxCodec CreateVP9Codec(const webrtc::DesktopSize& size,
   // on motion estimation and inter-prediction mode.
   if (vpx_codec_control(codec.get(), VP9E_SET_NOISE_SENSITIVITY, 0))
     return ScopedVpxCodec();
+
+  // Configure the codec to tune it for screen media.
+  if (vpx_codec_control(
+          codec.get(), VP9E_SET_TUNE_CONTENT, VP9E_CONTENT_SCREEN)) {
+    return ScopedVpxCodec();
+  }
 
   return codec.Pass();
 }
@@ -325,7 +334,8 @@ VideoEncoderVpx::VideoEncoderVpx(bool use_vp9)
       active_map_height_(0) {
   if (use_vp9_) {
     // Use I444 colour space, by default, if specified on the command-line.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(kEnableI444SwitchName)) {
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            kEnableI444SwitchName)) {
       SetLosslessColor(true);
     }
   }

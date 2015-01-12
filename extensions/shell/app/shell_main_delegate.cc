@@ -22,6 +22,11 @@
 #include "chromeos/chromeos_paths.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "base/mac/foundation_util.h"
+#include "extensions/shell/app/paths_mac.h"
+#endif
+
 #if !defined(DISABLE_NACL)
 #include "components/nacl/common/nacl_switches.h"
 #if defined(OS_LINUX)
@@ -46,6 +51,21 @@ void InitLogging() {
   logging::SetLogItems(true, true, true, true);
 }
 
+// Returns the path to the extensions_shell_and_test.pak file.
+base::FilePath GetResourcesPakFilePath() {
+#if defined(OS_MACOSX)
+  return base::mac::PathForFrameworkBundleResource(
+      CFSTR("extensions_shell_and_test.pak"));
+#else
+  base::FilePath extensions_shell_and_test_pak_path;
+  PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
+  extensions_shell_and_test_pak_path =
+      extensions_shell_and_test_pak_path.AppendASCII(
+          "extensions_shell_and_test.pak");
+  return extensions_shell_and_test_pak_path;
+#endif  // OS_MACOSX
+}
+
 }  // namespace
 
 namespace extensions {
@@ -61,6 +81,12 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   content_client_.reset(CreateContentClient());
   SetContentClient(content_client_.get());
 
+#if defined(OS_MACOSX)
+  OverrideChildProcessFilePath();
+  // This must happen before InitializeResourceBundle.
+  OverrideFrameworkBundlePath();
+#endif
+
 #if defined(OS_CHROMEOS)
   chromeos::RegisterPathProvider();
 #endif
@@ -73,7 +99,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 
 void ShellMainDelegate::PreSandboxStartup() {
   std::string process_type =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessType);
   if (ProcessNeedsResourceBundle(process_type))
     InitializeResourceBundle();
@@ -124,11 +150,8 @@ ShellMainDelegate::CreateShellContentUtilityClient() {
 }
 
 void ShellMainDelegate::InitializeResourceBundle() {
-  base::FilePath extensions_shell_and_test_pak_path;
-  PathService::Get(base::DIR_MODULE, &extensions_shell_and_test_pak_path);
   ui::ResourceBundle::InitSharedInstanceWithPakPath(
-      extensions_shell_and_test_pak_path.AppendASCII(
-          "extensions_shell_and_test.pak"));
+      GetResourcesPakFilePath());
 }
 
 // static

@@ -79,10 +79,6 @@
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"],
     "matches": []
   },
-  "audio": {
-    "dependencies": ["permission:audio"],
-    "contexts": ["blessed_extension"]
-  },
   "automationInternal": {
     "internal": true,
     "dependencies": ["manifest:automation"],
@@ -212,6 +208,14 @@
   },
   "copresencePrivate": {
     "dependencies": ["permission:copresencePrivate"],
+    "contexts": ["blessed_extension"]
+  },
+  "cryptotokenPrivate": {
+    "dependencies": ["permission:cryptotokenPrivate"],
+    "contexts": ["blessed_extension"]
+  },
+  "dataReductionProxy": {
+    "dependencies": ["permission:dataReductionProxy"],
     "contexts": ["blessed_extension"]
   },
   "debugger": {
@@ -461,6 +465,10 @@
     "dependencies": ["permission:infobars"],
     "contexts": ["blessed_extension"]
   },
+  "inlineInstallPrivate": {
+    "dependencies": ["permission:inlineInstallPrivate"],
+    "contexts": ["blessed_extension"]
+  },
   "input.ime": {
     "dependencies": ["permission:input"],
     "contexts": ["blessed_extension"]
@@ -588,10 +596,6 @@
     "dependencies": ["permission:rtcPrivate"],
     "contexts": ["blessed_extension"]
   },
-  "scriptBadge": {
-    "dependencies": ["manifest:script_badge"],
-    "contexts": ["blessed_extension"]
-  },
   "sessions": {
     "dependencies": ["permission:sessions"],
     "contexts": ["blessed_extension"]
@@ -607,10 +611,6 @@
   "syncFileSystem": {
     "dependencies": ["permission:syncFileSystem"],
     "contexts": ["blessed_extension"]
-  },
-  "syncedNotificationsPrivate": {
-    "contexts": ["blessed_extension"],
-    "dependencies": ["permission:syncedNotificationsPrivate"]
   },
   "systemIndicator": {
     "dependencies": ["manifest:system_indicator"],

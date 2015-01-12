@@ -17,8 +17,8 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/version_loader.h"
 #include "chrome/browser/idle.h"
+#include "chromeos/system/version_loader.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "content/public/browser/geolocation_provider.h"
 #include "content/public/common/geoposition.h"
@@ -58,8 +58,6 @@ class DeviceStatusCollector : public CloudPolicyClient::StatusProvider {
       chromeos::system::StatisticsProvider* provider,
       LocationUpdateRequester* location_update_requester);
   virtual ~DeviceStatusCollector();
-
-  void GetStatus(enterprise_management::DeviceStatusReportRequest* request);
 
   // CloudPolicyClient::StatusProvider:
   virtual bool GetDeviceStatus(
@@ -123,6 +121,8 @@ class DeviceStatusCollector : public CloudPolicyClient::StatusProvider {
       enterprise_management::DeviceStatusReportRequest* request);
   void GetUsers(
       enterprise_management::DeviceStatusReportRequest* request);
+  void GetHardwareStatus(
+      enterprise_management::DeviceStatusReportRequest* request);
 
   // Update the cached values of the reporting settings.
   void UpdateReportingSettings();
@@ -153,9 +153,6 @@ class DeviceStatusCollector : public CloudPolicyClient::StatusProvider {
   base::RepeatingTimer<DeviceStatusCollector> idle_poll_timer_;
   base::OneShotTimer<DeviceStatusCollector> geolocation_update_timer_;
 
-  chromeos::VersionLoader version_loader_;
-  base::CancelableTaskTracker tracker_;
-
   std::string os_version_;
   std::string firmware_version_;
 
@@ -179,6 +176,7 @@ class DeviceStatusCollector : public CloudPolicyClient::StatusProvider {
   bool report_location_;
   bool report_network_interfaces_;
   bool report_users_;
+  bool report_hardware_status_;
 
   scoped_ptr<chromeos::CrosSettings::ObserverSubscription>
       version_info_subscription_;
@@ -192,6 +190,8 @@ class DeviceStatusCollector : public CloudPolicyClient::StatusProvider {
       network_interfaces_subscription_;
   scoped_ptr<chromeos::CrosSettings::ObserverSubscription>
       users_subscription_;
+  scoped_ptr<chromeos::CrosSettings::ObserverSubscription>
+      hardware_status_subscription_;
 
   base::WeakPtrFactory<DeviceStatusCollector> weak_factory_;
 

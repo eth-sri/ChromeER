@@ -8,9 +8,11 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/ui/zoom/zoom_observer.h"
+#include "chrome/browser/ui/autofill/card_unmask_prompt_controller_impl.h"
 #include "components/autofill/core/browser/autofill_client.h"
+#include "components/ui/zoom/zoom_observer.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
@@ -33,7 +35,7 @@ class ChromeAutofillClient
     : public AutofillClient,
       public content::WebContentsUserData<ChromeAutofillClient>,
       public content::WebContentsObserver,
-      public ZoomObserver {
+      public ui_zoom::ZoomObserver {
  public:
   ~ChromeAutofillClient() override;
 
@@ -46,8 +48,10 @@ class ChromeAutofillClient
   PrefService* GetPrefs() override;
   void HideRequestAutocompleteDialog() override;
   void ShowAutofillSettings() override;
-  void ConfirmSaveCreditCard(const AutofillMetrics& metric_logger,
-                             const base::Closure& save_card_callback) override;
+  void ShowUnmaskPrompt(const CreditCard& card,
+                        base::WeakPtr<CardUnmaskDelegate> delegate) override;
+  void OnUnmaskVerificationResult(bool success) override;
+  void ConfirmSaveCreditCard(const base::Closure& save_card_callback) override;
   bool HasCreditCardScanFeature() override;
   void ScanCreditCard(const CreditCardScanCallback& callback) override;
   void ShowRequestAutocompleteDialog(const FormData& form,
@@ -56,10 +60,7 @@ class ChromeAutofillClient
   void ShowAutofillPopup(
       const gfx::RectF& element_bounds,
       base::i18n::TextDirection text_direction,
-      const std::vector<base::string16>& values,
-      const std::vector<base::string16>& labels,
-      const std::vector<base::string16>& icons,
-      const std::vector<int>& identifiers,
+      const std::vector<autofill::Suggestion>& suggestions,
       base::WeakPtr<AutofillPopupDelegate> delegate) override;
   void UpdateAutofillPopupDataListValues(
       const std::vector<base::string16>& values,
@@ -67,15 +68,18 @@ class ChromeAutofillClient
   void HideAutofillPopup() override;
   bool IsAutocompleteEnabled() override;
   void DetectAccountCreationForms(
+      content::RenderFrameHost* rfh,
       const std::vector<autofill::FormStructure*>& forms) override;
   void DidFillOrPreviewField(const base::string16& autofilled_value,
                              const base::string16& profile_full_name) override;
+  void OnFirstUserGestureObserved() override;
 
   // content::WebContentsObserver implementation.
   void WebContentsDestroyed() override;
 
   // ZoomObserver implementation.
-  void OnZoomChanged(const ZoomController::ZoomChangedEventData& data) override;
+  void OnZoomChanged(
+      const ui_zoom::ZoomController::ZoomChangedEventData& data) override;
 
   // Exposed for testing.
   AutofillDialogController* GetDialogControllerForTesting() {
@@ -99,9 +103,9 @@ class ChromeAutofillClient
   explicit ChromeAutofillClient(content::WebContents* web_contents);
   friend class content::WebContentsUserData<ChromeAutofillClient>;
 
-  content::WebContents* const web_contents_;
   base::WeakPtr<AutofillDialogController> dialog_controller_;
   base::WeakPtr<AutofillPopupControllerImpl> popup_controller_;
+  CardUnmaskPromptControllerImpl unmask_controller_;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // Listens to Keystone notifications and passes relevant ones on to the

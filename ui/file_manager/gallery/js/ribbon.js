@@ -8,59 +8,81 @@
  * @param {!Document} document Document.
  * @param {!cr.ui.ArrayDataModel} dataModel Data model.
  * @param {!cr.ui.ListSelectionModel} selectionModel Selection model.
- * @return {!HTMLElement} Ribbon element.
- * @extends {HTMLElement}
+ * @extends {HTMLDivElement}
  * @constructor
  * @suppress {checkStructDictInheritance}
  * @struct
  */
 function Ribbon(document, dataModel, selectionModel) {
-  var self = assertInstanceof(document.createElement('div'), HTMLElement);
-  Ribbon.decorate(self, dataModel, selectionModel);
-  return self;
+  if (this instanceof Ribbon) {
+    return Ribbon.call(/** @type {Ribbon} */ (document.createElement('div')),
+        document, dataModel, selectionModel);
+  }
+
+  this.__proto__ = Ribbon.prototype;
+  this.className = 'ribbon';
+
+  /**
+   * @type {!cr.ui.ArrayDataModel}
+   * @private
+   */
+  this.dataModel_ = dataModel;
+
+  /**
+   * @type {!cr.ui.ListSelectionModel}
+   * @private
+   */
+  this.selectionModel_ = selectionModel;
+
+  /**
+   * @type {!Object}
+   * @private
+   */
+  this.renderCache_ = {};
+
+  /**
+   * @type {number}
+   * @private
+   */
+  this.firstVisibleIndex_ = 0;
+
+  /**
+   * @type {number}
+   * @private
+   */
+  this.lastVisibleIndex_ = -1;
+
+  /**
+   * @type {?function(!Event)}
+   * @private
+   */
+  this.onContentBound_ = null;
+
+  /**
+   * @type {?function(!Event)}
+   * @private
+   */
+  this.onSpliceBound_ = null;
+
+  /**
+   * @type {?function(!Event)}
+   * @private
+   */
+  this.onSelectionBound_ = null;
+
+  /**
+   * @type {?number}
+   * @private
+   */
+  this.removeTimeout_ = null;
+
+  return this;
 }
 
 /**
  * Inherit from HTMLDivElement.
  */
 Ribbon.prototype.__proto__ = HTMLDivElement.prototype;
-
-/**
- * Decorate a Ribbon instance.
- *
- * @param {!HTMLElement} self Self pointer.
- * @param {!cr.ui.ArrayDataModel} dataModel Data model.
- * @param {!cr.ui.ListSelectionModel} selectionModel Selection model.
- */
-Ribbon.decorate = function(self, dataModel, selectionModel) {
-  self.__proto__ = Ribbon.prototype;
-  self = /** @type {!Ribbon} */ (self);
-  self.dataModel_ = dataModel;
-  self.selectionModel_ = selectionModel;
-
-  /** @type {!Object} */
-  self.renderCache_ = {};
-
-  /** @type {number} */
-  self.firstVisibleIndex_ = 0;
-
-  /** @type {number} */
-  self.lastVisibleIndex_ = -1;
-
-  /** @type {?function(!Event)} */
-  self.onContentBound_ = null;
-
-  /** @type {?function(!Event)} */
-  self.onSpliceBound_ = null;
-
-  /** @type {?function(!Event)} */
-  self.onSelectionBound_ = null;
-
-  /** @type {?number} */
-  self.removeTimeout_ = null;
-
-  self.className = 'ribbon';
-};
 
 /**
  * Max number of thumbnails in the ribbon.
@@ -120,11 +142,6 @@ Ribbon.prototype.disable = function() {
  * @private
  */
 Ribbon.prototype.onSplice_ = function(event) {
-  if (event.removed.length > 1) {
-    console.error('Cannot remove multiple items.');
-    return;
-  }
-
   if (event.removed.length > 0 && event.added.length > 0) {
     console.error('Replacing is not implemented.');
     return;
@@ -141,12 +158,6 @@ Ribbon.prototype.onSplice_ = function(event) {
           nextItem && this.renderCache_[nextItem.getEntry().toURL()];
       this.insertBefore(element, nextElement);
     }
-    return;
-  }
-
-  var removed = this.renderCache_[event.removed[0].getEntry().toURL()];
-  if (!removed || !removed.parentNode || !removed.hasAttribute('selected')) {
-    console.error('Can only remove the selected item');
     return;
   }
 
@@ -181,9 +192,20 @@ Ribbon.prototype.onSplice_ = function(event) {
     }
   }
 
-  removed.removeAttribute('selected');
-  removed.setAttribute('vanishing', 'smooth');
-  this.scheduleRemove_();
+  var removed = false;
+  for (var i = 0; i < event.removed.length; i++) {
+    var removedDom = this.renderCache_[event.removed[i].getEntry().toURL()];
+    if (removedDom) {
+      removedDom.removeAttribute('selected');
+      removedDom.setAttribute('vanishing', 'smooth');
+      removed = true;
+    }
+  }
+
+  if (removed)
+    this.scheduleRemove_();
+
+  this.onSelection_();
 };
 
 /**
@@ -328,7 +350,7 @@ Ribbon.prototype.removeVanishing_ = function() {
  * @private
  */
 Ribbon.prototype.renderThumbnail_ = function(index) {
-  var item = this.dataModel_.item(index);
+  var item = assertInstanceof(this.dataModel_.item(index), Gallery.Item);
   var url = item.getEntry().toURL();
 
   var cached = this.renderCache_[url];
@@ -339,7 +361,8 @@ Ribbon.prototype.renderThumbnail_ = function(index) {
     return cached;
   }
 
-  var thumbnail = this.ownerDocument.createElement('div');
+  var thumbnail = assertInstanceof(this.ownerDocument.createElement('div'),
+      HTMLDivElement);
   thumbnail.className = 'ribbon-image';
   thumbnail.addEventListener('click', function() {
     var index = this.dataModel_.indexOf(item);

@@ -26,7 +26,7 @@ namespace content {
 // selection is canceled and the callback never called.
 class SSLClientAuthHandler {
  public:
-  typedef base::Callback<void(net::X509Certificate*)> CertificateCallback;
+  using CertificateCallback = base::Callback<void(net::X509Certificate*)>;
 
   SSLClientAuthHandler(scoped_ptr<net::ClientCertStore> client_cert_store,
                        net::URLRequest* request,
@@ -38,19 +38,24 @@ class SSLClientAuthHandler {
   void SelectCertificate();
 
  private:
-  // Called when ClientCertStore is done retrieving the cert list.
+  class Core;
+
+  // Called when |core_| is done retrieving the cert list.
   void DidGetClientCerts();
 
   // Called when the user has selected a cert.
   void CertificateSelected(net::X509Certificate* cert);
+
+  // A reference-counted core so the ClientCertStore may outlive
+  // SSLClientAuthHandler if the handler is destroyed while an operation on the
+  // ClientCertStore is in progress.
+  scoped_refptr<Core> core_;
 
   // The net::URLRequest that triggered this client auth.
   net::URLRequest* request_;
 
   // The certs to choose from.
   scoped_refptr<net::SSLCertRequestInfo> cert_request_info_;
-
-  scoped_ptr<net::ClientCertStore> client_cert_store_;
 
   // The callback to call when the certificate is selected.
   CertificateCallback callback_;

@@ -32,6 +32,7 @@
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/features/api_feature.h"
 #include "extensions/common/features/base_feature_provider.h"
+#include "extensions/common/features/behavior_feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/features/json_feature_provider_source.h"
 #include "extensions/common/features/manifest_feature.h"
@@ -144,6 +145,9 @@ scoped_ptr<FeatureProvider> ChromeExtensionsClient::CreateFeatureProvider(
   } else if (name == "permission") {
     provider.reset(new BaseFeatureProvider(source->dictionary(),
                                            CreateFeature<PermissionFeature>));
+  } else if (name == "behavior") {
+    provider.reset(new BaseFeatureProvider(source->dictionary(),
+                                           CreateFeature<BehaviorFeature>));
   } else {
     NOTREACHED();
   }
@@ -164,6 +168,8 @@ ChromeExtensionsClient::CreateFeatureProviderSource(
   } else if (name == "permission") {
     source->LoadJSON(IDR_EXTENSION_PERMISSION_FEATURES);
     source->LoadJSON(IDR_CHROME_EXTENSION_PERMISSION_FEATURES);
+  } else if (name == "behavior") {
+    source->LoadJSON(IDR_EXTENSION_BEHAVIOR_FEATURES);
   } else {
     NOTREACHED();
     source.reset();
@@ -175,6 +181,9 @@ void ChromeExtensionsClient::FilterHostPermissions(
     const URLPatternSet& hosts,
     URLPatternSet* new_hosts,
     std::set<PermissionMessage>* messages) const {
+  // When editing this function, be sure to add the same functionality to
+  // FilterHostPermissions() below.
+  // TODO(sashab): Deprecate and remove this function.
   for (URLPatternSet::const_iterator i = hosts.begin();
        i != hosts.end(); ++i) {
     // Filters out every URL pattern that matches chrome:// scheme.
@@ -187,6 +196,30 @@ void ChromeExtensionsClient::FilterHostPermissions(
       messages->insert(PermissionMessage(
           PermissionMessage::kFavicon,
           l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_WARNING_FAVICON)));
+    } else {
+      new_hosts->AddPattern(*i);
+    }
+  }
+}
+
+void ChromeExtensionsClient::FilterHostPermissions(
+    const URLPatternSet& hosts,
+    URLPatternSet* new_hosts,
+    PermissionIDSet* permissions) const {
+  // When editing this function, be sure to add the same functionality to
+  // FilterHostPermissions() above.
+  for (URLPatternSet::const_iterator i = hosts.begin(); i != hosts.end(); ++i) {
+    // Filters out every URL pattern that matches chrome:// scheme.
+    if (i->scheme() == content::kChromeUIScheme) {
+      // chrome://favicon is the only URL for chrome:// scheme that we
+      // want to support. We want to deprecate the "chrome" scheme.
+      // We should not add any additional "host" here.
+      if (GURL(chrome::kChromeUIFaviconURL).host() != i->host())
+        continue;
+      // TODO(sashab): Add the rule
+      // kFavicon -> IDS_EXTENSION_PROMPT_WARNING_FAVICON
+      // to ChromePermissionMessageProvider.
+      permissions->insert(APIPermission::kFavicon);
     } else {
       new_hosts->AddPattern(*i);
     }
@@ -277,8 +310,6 @@ void ChromeExtensionsClient::RegisterAPISchemaResources(
   api->RegisterSchemaResource("privacy", IDR_EXTENSION_API_JSON_PRIVACY);
   api->RegisterSchemaResource("processes", IDR_EXTENSION_API_JSON_PROCESSES);
   api->RegisterSchemaResource("proxy", IDR_EXTENSION_API_JSON_PROXY);
-  api->RegisterSchemaResource("scriptBadge",
-                              IDR_EXTENSION_API_JSON_SCRIPTBADGE);
   api->RegisterSchemaResource("ttsEngine", IDR_EXTENSION_API_JSON_TTSENGINE);
   api->RegisterSchemaResource("tts", IDR_EXTENSION_API_JSON_TTS);
   api->RegisterSchemaResource("types", IDR_EXTENSION_API_JSON_TYPES);
@@ -294,16 +325,18 @@ bool ChromeExtensionsClient::ShouldSuppressFatalErrors() const {
 
 std::string ChromeExtensionsClient::GetWebstoreBaseURL() const {
   std::string gallery_prefix = extension_urls::kChromeWebstoreBaseURL;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppsGalleryURL))
-    gallery_prefix = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-        switches::kAppsGalleryURL);
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAppsGalleryURL))
+    gallery_prefix =
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kAppsGalleryURL);
   if (EndsWith(gallery_prefix, "/", true))
     gallery_prefix = gallery_prefix.substr(0, gallery_prefix.length() - 1);
   return gallery_prefix;
 }
 
 std::string ChromeExtensionsClient::GetWebstoreUpdateURL() const {
-  CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   if (cmdline->HasSwitch(switches::kAppsGalleryUpdateURL))
     return cmdline->GetSwitchValueASCII(switches::kAppsGalleryUpdateURL);
   else

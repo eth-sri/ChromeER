@@ -81,11 +81,27 @@ class AlgorithmImplementation {
                              blink::WebCryptoKeyUsageMask usages,
                              GenerateKeyResult* result) const;
 
-  // This method corresponds to Web Crypto's "derive bits" operation.
+  // This method corresponds to Web Crypto's "derive bits" operation. It is
+  // essentially crypto.subtle.deriveBits() with the exception that the length
+  // can be "null" (|has_length_bits = true|).
+  //
+  // In cases where the length was not specified, an appropriate default for the
+  // algorithm should be used (as described by the spec).
   virtual Status DeriveBits(const blink::WebCryptoAlgorithm& algorithm,
                             const blink::WebCryptoKey& base_key,
-                            unsigned int length_bits,
+                            bool has_optional_length_bits,
+                            unsigned int optional_length_bits,
                             std::vector<uint8_t>* derived_bytes) const;
+
+  // This method corresponds with Web Crypto's "Get key length" operation.
+  //
+  // In the Web Crypto spec the operation returns either "null" or an
+  // "Integer". In this code "null" is represented by setting
+  // |*has_length_bits = false|.
+  virtual Status GetKeyLength(
+      const blink::WebCryptoAlgorithm& key_length_algorithm,
+      bool* has_length_bits,
+      unsigned int* length_bits) const;
 
   // -----------------------------------------------
   // Key import
@@ -106,6 +122,14 @@ class AlgorithmImplementation {
   virtual Status VerifyKeyUsagesBeforeImportKey(
       blink::WebCryptoKeyFormat format,
       blink::WebCryptoKeyUsageMask usages) const;
+
+  // Dispatches to the format-specific ImportKey* method.
+  Status ImportKey(blink::WebCryptoKeyFormat format,
+                   const CryptoData& key_data,
+                   const blink::WebCryptoAlgorithm& algorithm,
+                   bool extractable,
+                   blink::WebCryptoKeyUsageMask usages,
+                   blink::WebCryptoKey* key) const;
 
   // This method corresponds to Web Crypto's
   // crypto.subtle.importKey(format='raw').
@@ -142,6 +166,11 @@ class AlgorithmImplementation {
   // -----------------------------------------------
   // Key export
   // -----------------------------------------------
+
+  // Dispatches to the format-specific ExportKey* method.
+  Status ExportKey(blink::WebCryptoKeyFormat format,
+                   const blink::WebCryptoKey& key,
+                   std::vector<uint8_t>* buffer) const;
 
   virtual Status ExportKeyRaw(const blink::WebCryptoKey& key,
                               std::vector<uint8_t>* buffer) const;

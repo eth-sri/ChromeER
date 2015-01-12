@@ -510,6 +510,17 @@ class TestRunner : public WebTestRunner,
   // Change the bluetooth test data while running a layout test.
   void SetBluetoothMockDataSet(const std::string& name);
 
+  // Enables mock geofencing service while running a layout test.
+  // |service_available| indicates if the mock service should mock geofencing
+  // being available or not.
+  void SetGeofencingMockProvider(bool service_available);
+
+  // Disables mock geofencing service while running a layout test.
+  void ClearGeofencingMockProvider();
+
+  // Set the mock geofencing position while running a layout test.
+  void SetGeofencingMockPosition(double latitude, double longitude);
+
   // Calls setlocale(LC_ALL, ...) for a specified locale.
   // Resets between tests.
   void SetPOSIXLocale(const std::string& locale);
@@ -561,9 +572,11 @@ class TestRunner : public WebTestRunner,
   void CopyImageAtAndCapturePixelsAsyncThen(
       int x, int y, const v8::Handle<v8::Function> callback);
 
-  void SetMockPushClientSuccess(const std::string& endpoint,
-                                const std::string& registration_id);
-  void SetMockPushClientError(const std::string& message);
+  // Sets the origin's permission to use the Push API to granted or denied.
+  void SetPushMessagingPermission(const GURL& origin, bool allowed);
+
+  // Clears all previously granted Push API permissions.
+  void ClearPushMessagingPermissions();
 
   void GetManifestThen(v8::Handle<v8::Function> callback);
 

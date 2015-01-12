@@ -29,7 +29,7 @@
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/test_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace extensions {
 
@@ -803,7 +803,7 @@ content::WebContents* ExtensionTabsZoomTest::OpenUrlAndWaitForLoad(
 namespace {
 
 double GetZoomLevel(const content::WebContents* web_contents) {
-  return ZoomController::FromWebContents(web_contents)->GetZoomLevel();
+  return ui_zoom::ZoomController::FromWebContents(web_contents)->GetZoomLevel();
 }
 
 content::OpenURLParams GetOpenParams(const char* url) {

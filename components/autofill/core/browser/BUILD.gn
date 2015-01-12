@@ -27,7 +27,10 @@ action("regexes") {
     "$target_gen_dir/autofill_regex_constants.cc",
   ]
 
-  args = [ "-o", rebase_path(target_gen_dir, root_build_dir) ]
+  args = [
+    "-o",
+    rebase_path(target_gen_dir, root_build_dir),
+  ]
   args += rebase_path(inputs, root_build_dir)
 }
 
@@ -72,6 +75,8 @@ static_library("browser") {
     "autofill_scanner.cc",
     "autofill_scanner.h",
     "autofill_server_field_info.h",
+    "autofill_sync_constants.cc",
+    "autofill_sync_constants.h",
     "autofill_type.cc",
     "autofill_type.h",
     "autofill_xml_parser.cc",
@@ -108,8 +113,12 @@ static_library("browser") {
     "popup_item_ids.h",
     "state_names.cc",
     "state_names.h",
+    "suggestion.cc",
+    "suggestion.h",
     "validation.cc",
     "validation.h",
+    "webdata/autocomplete_syncable_service.cc",
+    "webdata/autocomplete_syncable_service.h",
     "webdata/autofill_change.cc",
     "webdata/autofill_change.h",
     "webdata/autofill_entry.cc",
@@ -163,6 +172,8 @@ static_library("browser") {
     deps += [ "//sync" ]
   } else {
     sources -= [
+      "webdata/autocomplete_syncable_service.cc",
+      "webdata/autocomplete_syncable_service.h",
       "webdata/autofill_profile_syncable_service.cc",
       "webdata/autofill_profile_syncable_service.h",
     ]
@@ -181,6 +192,7 @@ static_library("test_support") {
     "autofill_test_utils.h",
     "data_driven_test.cc",
     "data_driven_test.h",
+    "suggestion_test_helpers.h",
     "test_autofill_client.cc",
     "test_autofill_client.h",
     "test_autofill_driver.cc",

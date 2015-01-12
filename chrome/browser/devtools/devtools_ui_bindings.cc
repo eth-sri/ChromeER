@@ -70,6 +70,8 @@ static const int kDevToolsActionTakenBoundary = 100;
 static const char kDevToolsPanelShownHistogram[] = "DevTools.PanelShown";
 static const int kDevToolsPanelShownBoundary = 20;
 
+// This constant should be in sync with
+// the constant at shell_devtools_frontend.cc.
 const size_t kMaxMessageChunkSize = IPC::Channel::kMaximumMessageSize / 4;
 
 typedef std::vector<DevToolsUIBindings*> DevToolsUIBindingsList;
@@ -143,8 +145,8 @@ void DevToolsConfirmInfoBarDelegate::Create(
     return;
   }
 
-  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate>(
+  infobar_service->AddInfoBar(
+      infobar_service->CreateConfirmInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
           new DevToolsConfirmInfoBarDelegate(callback, message))));
 }
 
@@ -333,8 +335,8 @@ GURL DevToolsUIBindings::ApplyThemeToURL(Profile* profile,
       SkColorToRGBAString(tp->GetColor(ThemeProperties::COLOR_TOOLBAR)) +
       "&textColor=" +
       SkColorToRGBAString(tp->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT)));
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableDevToolsExperiments))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDevToolsExperiments))
     url_string += "&experiments=true";
 #if defined(DEBUG_DEVTOOLS)
   url_string += "&debugFrontend=true";
@@ -449,9 +451,9 @@ void DevToolsUIBindings::DispatchProtocolMessage(
   DCHECK(agent_host == agent_host_.get());
 
   if (message.length() < kMaxMessageChunkSize) {
-    base::StringValue message_value(message);
-    CallClientFunction("DevToolsAPI.dispatchMessage",
-                       &message_value, NULL, NULL);
+    base::string16 javascript = base::UTF8ToUTF16(
+        "DevToolsAPI.dispatchMessage(" + message + ");");
+    web_contents_->GetMainFrame()->ExecuteJavaScript(javascript);
     return;
   }
 

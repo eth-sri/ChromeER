@@ -177,6 +177,8 @@
       'common/extensions/features/feature_channel.h',
       'common/extensions/image_writer/image_writer_util_mac.cc',
       'common/extensions/image_writer/image_writer_util_mac.h',
+      'common/extensions/manifest_handlers/app_icon_color_info.cc',
+      'common/extensions/manifest_handlers/app_icon_color_info.h',
       'common/extensions/manifest_handlers/app_isolation_info.cc',
       'common/extensions/manifest_handlers/app_isolation_info.h',
       'common/extensions/manifest_handlers/app_launch_info.cc',
@@ -309,8 +311,6 @@
         '<(DEPTH)/components/components.gyp:variations',
         '<(DEPTH)/content/content.gyp:content_common',
         '<(DEPTH)/crypto/crypto.gyp:crypto',
-        '<(DEPTH)/extensions/extensions.gyp:extensions_common_constants',
-        '<(DEPTH)/media/cast/cast.gyp:cast_net',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
@@ -361,7 +361,9 @@
             '<(DEPTH)/components/components.gyp:signin_core_common',
             '<(DEPTH)/components/components.gyp:translate_content_common',
             '<(DEPTH)/components/components.gyp:visitedlink_common',
+            '<(DEPTH)/extensions/extensions.gyp:extensions_common_constants',
             '<(DEPTH)/ipc/ipc.gyp:ipc',
+            '<(DEPTH)/media/cast/cast.gyp:cast_net',
             '<(DEPTH)/third_party/re2/re2.gyp:re2',
             '<(DEPTH)/third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
           ],
@@ -398,7 +400,6 @@
         ['disable_nacl==0', {
           'dependencies': [
             '<(DEPTH)/components/nacl.gyp:nacl_common',
-            '<(DEPTH)/ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
           ],
         }],
         ['enable_plugins==1', {
@@ -477,11 +478,6 @@
           ],
           'sources!': [
             'common/chrome_version_info_posix.cc',
-          ],
-        }],
-        ['remoting==1', {
-          'dependencies': [
-            '../remoting/remoting.gyp:remoting_client_plugin',
           ],
         }],
         ['enable_webrtc==0', {

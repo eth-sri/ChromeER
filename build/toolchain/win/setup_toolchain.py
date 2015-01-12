@@ -67,7 +67,8 @@ def _SetupScript(target_arch, sdk_dir):
     # We only support x64-hosted tools.
     # TODO(scottmg|dpranke): Non-depot_tools toolchain: need to get Visual
     # Studio install location from registry.
-    return [os.path.normpath(os.path.join(FIND_VS_IN_REG, 'VC/vcvarsall.bat')),
+    return [os.path.normpath(os.path.join(os.environ['GYP_MSVS_OVERRIDE_PATH'],
+                                          'VC/vcvarsall.bat')),
             'amd64_x86' if target_arch == 'x86' else 'amd64']
 
 
@@ -98,20 +99,26 @@ def _CopyTool(source_path):
 
 
 def main():
-  if len(sys.argv) != 5:
+  if len(sys.argv) != 6:
     print('Usage setup_toolchain.py '
-          '<visual studio path> <win tool path> <win sdk path> <runtime dirs>')
+          '<visual studio path> <win tool path> <win sdk path> '
+          '<runtime dirs> <cpu_arch>')
     sys.exit(2)
   vs_path = sys.argv[1]
   tool_source = sys.argv[2]
   win_sdk_path = sys.argv[3]
   runtime_dirs = sys.argv[4]
+  cpu_arch = sys.argv[5]
 
   _CopyTool(tool_source)
 
   archs = ('x86', 'x64')
+  assert cpu_arch in archs
+  vc_bin_dir = ''
+
   # TODO(scottmg|goma): Do we need an equivalent of
   # ninja_use_custom_environment_files?
+
   for arch in archs:
     # Extract environment variables for subprocesses.
     args = _SetupScript(arch, win_sdk_path)
@@ -122,12 +129,28 @@ def main():
     env = _ExtractImportantEnvironment(variables)
     env['PATH'] = runtime_dirs + ';' + env['PATH']
 
-    # TODO(scottmg|thakis|dpranke): Is there an equivalent to
-    # msvs_system_include_dirs that we need to inject into INCLUDE here?
+    if arch == cpu_arch:
+      for path in env['PATH'].split(os.pathsep):
+        if os.path.exists(os.path.join(path, 'cl.exe')):
+          vc_bin_dir = os.path.realpath(path)
+          break
 
+    # The Windows SDK include directories must be first. They both have a sal.h,
+    # and the SDK one is newer and the SDK uses some newer features from it not
+    # present in the Visual Studio one.
+
+    if win_sdk_path:
+      additional_includes = ('{sdk_dir}\\Include\\shared;' +
+                             '{sdk_dir}\\Include\\um;' +
+                             '{sdk_dir}\\Include\\winrt;').format(
+                                  sdk_dir=win_sdk_path)
+      env['INCLUDE'] = additional_includes + env['INCLUDE']
     env_block = _FormatAsEnvironmentBlock(env)
     with open('environment.' + arch, 'wb') as f:
       f.write(env_block)
+
+  assert vc_bin_dir
+  print 'vc_bin_dir = "%s"' % vc_bin_dir
 
 
 if __name__ == '__main__':

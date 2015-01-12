@@ -50,18 +50,33 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   bool CanHandle(const std::string& app_id) const override;
 
   // content::PushMessagingService implementation:
-  void Register(
-      const GURL& origin,
+  GURL GetPushEndpoint() override;
+  void RegisterFromDocument(
+      const GURL& requesting_origin,
       int64 service_worker_registration_id,
       const std::string& sender_id,
       int renderer_id,
       int render_frame_id,
-      bool user_gesture,
+      bool user_visible_only,
       const content::PushMessagingService::RegisterCallback& callback) override;
+  void RegisterFromWorker(
+      const GURL& requesting_origin,
+      int64 service_worker_registration_id,
+      const std::string& sender_id,
+      const content::PushMessagingService::RegisterCallback& callback) override;
+  void Unregister(
+      const GURL& requesting_origin,
+      int64 service_worker_registration_id,
+      const content::PushMessagingService::UnregisterCallback&) override;
+  // TODO(mvanouwerkerk): Delete once the Push API flows through platform.
+  // https://crbug.com/389194
   blink::WebPushPermissionStatus GetPermissionStatus(
       const GURL& requesting_origin,
       int renderer_id,
       int render_frame_id) override;
+  blink::WebPushPermissionStatus GetPermissionStatus(
+      const GURL& requesting_origin,
+      const GURL& embedding_origin) override;
 
   void SetProfileForTesting(Profile* profile);
 
@@ -88,6 +103,19 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
       const std::string& sender_id,
       const content::PushMessagingService::RegisterCallback& callback,
       bool allow);
+
+  void Unregister(const PushMessagingApplicationId& application_id,
+                  const content::PushMessagingService::UnregisterCallback&);
+
+  void DidUnregister(const content::PushMessagingService::UnregisterCallback&,
+                     GCMClient::Result result);
+
+  // Helper method that checks if a given origin is allowed to use Push.
+  bool HasPermission(const GURL& origin);
+
+  // Adds this service as an app handler to the GCMDriver if it has not been
+  // added yet.
+  void AddAppHandlerIfNecessary();
 
   GCMProfileService* gcm_profile_service_;  // It owns us.
 

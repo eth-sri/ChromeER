@@ -18,6 +18,8 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using std::string;
+
 namespace net {
 namespace test {
 namespace {
@@ -98,7 +100,6 @@ TEST_F(QuicCryptoClientStreamTest, NegotiatedParameters) {
             config->IdleConnectionStateLifetime().ToSeconds());
   EXPECT_EQ(kDefaultMaxStreamsPerConnection,
             config->MaxStreamsPerConnection());
-  EXPECT_EQ(0, config->KeepaliveTimeout().ToSeconds());
 
   const QuicCryptoNegotiatedParameters& crypto_params(
       stream_->crypto_negotiated_params());

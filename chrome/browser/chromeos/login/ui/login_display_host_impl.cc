@@ -15,7 +15,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
-#include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -26,9 +25,9 @@
 #include "chrome/browser/chromeos/first_run/drive_first_run_controller.h"
 #include "chrome/browser/chromeos/first_run/first_run.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
+#include "chrome/browser/chromeos/login/enrollment/auto_enrollment_controller.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
@@ -42,8 +41,8 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/mobile_config.h"
 #include "chrome/browser/chromeos/net/delay_network_call.h"
-#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/enrollment_config.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/chromeos/ui/focus_ring_controller.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -77,7 +76,7 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/transform.h"
@@ -113,6 +112,9 @@ const char kLoginURL[] = "chrome://oobe/login";
 
 // URL which corresponds to the OOBE WebUI.
 const char kOobeURL[] = "chrome://oobe/oobe";
+
+// URL which corresponds to the new implementation of OOBE WebUI.
+const char kNewOobeURL[] = "chrome://oobe/new-oobe";
 
 // URL which corresponds to the user adding WebUI.
 const char kUserAddingURL[] = "chrome://oobe/user-adding";
@@ -168,8 +170,7 @@ void ShowLoginWizardFinish(
     chromeos::LoginDisplayHost* display_host) {
   TRACE_EVENT0("chromeos", "ShowLoginWizard::ShowLoginWizardFinish");
 
-  scoped_ptr<base::DictionaryValue> params;
-  display_host->StartWizard(first_screen_name, params.Pass());
+  display_host->StartWizard(first_screen_name);
 
   // Set initial timezone if specified by customization.
   const std::string timezone_name = startup_manifest->initial_timezone();
@@ -328,8 +329,9 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
 
   bool is_registered = StartupUtils::IsDeviceRegistered();
   bool zero_delay_enabled = WizardController::IsZeroDelayEnabled();
-  bool disable_boot_animation = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableBootAnimation);
+  bool disable_boot_animation =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableBootAnimation);
 
   waiting_for_wallpaper_load_ = !zero_delay_enabled &&
                                 (!is_registered || !disable_boot_animation);
@@ -349,9 +351,10 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
       kHiddenWebUIInitializationDefault && !zero_delay_enabled;
 
   // Check if WebUI init type is overriden.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshWebUIInit)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAshWebUIInit)) {
     const std::string override_type =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kAshWebUIInit);
     if (override_type == kWebUIInitParallel)
       initialize_webui_hidden_ = true;
@@ -362,10 +365,6 @@ LoginDisplayHostImpl::LoginDisplayHostImpl(const gfx::Rect& background_bounds)
   // Always postpone WebUI initialization on first boot, otherwise we miss
   // initial animation.
   if (!StartupUtils::IsOobeCompleted())
-    initialize_webui_hidden_ = false;
-
-  // There is no wallpaper for KioskMode, don't initialize the webui hidden.
-  if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
     initialize_webui_hidden_ = false;
 
 #if !defined(USE_ATHENA)
@@ -505,19 +504,12 @@ void LoginDisplayHostImpl::SetStatusAreaVisible(bool visible) {
 }
 
 AutoEnrollmentController* LoginDisplayHostImpl::GetAutoEnrollmentController() {
-  if (!auto_enrollment_controller_) {
+  if (!auto_enrollment_controller_)
     auto_enrollment_controller_.reset(new AutoEnrollmentController());
-    auto_enrollment_progress_subscription_ =
-        auto_enrollment_controller_->RegisterProgressCallback(
-            base::Bind(&LoginDisplayHostImpl::OnAutoEnrollmentProgress,
-                       base::Unretained(this)));
-  }
   return auto_enrollment_controller_.get();
 }
 
-void LoginDisplayHostImpl::StartWizard(
-    const std::string& first_screen_name,
-    scoped_ptr<base::DictionaryValue> screen_parameters) {
+void LoginDisplayHostImpl::StartWizard(const std::string& first_screen_name) {
   if (login::LoginScrollIntoViewEnabled())
     DisableKeyboardOverscroll();
 
@@ -527,10 +519,6 @@ void LoginDisplayHostImpl::StartWizard(
   // Keep parameters to restore if renderer crashes.
   restore_path_ = RESTORE_WIZARD;
   first_screen_name_ = first_screen_name;
-  if (screen_parameters.get())
-    screen_parameters_.reset(screen_parameters->DeepCopy());
-  else
-    screen_parameters_.reset();
   is_showing_login_ = false;
 
   if (waiting_for_wallpaper_load_ && !initialize_webui_hidden_) {
@@ -539,8 +527,10 @@ void LoginDisplayHostImpl::StartWizard(
   }
   VLOG(1) << "Login WebUI >> wizard";
 
-  if (!login_window_)
-    LoadURL(GURL(kOobeURL));
+  if (!login_window_) {
+    LoadURL(StartupUtils::IsNewOobeActivated() ? GURL(kNewOobeURL)
+                                               : GURL(kOobeURL));
+  }
 
   DVLOG(1) << "Starting wizard, first_screen_name: " << first_screen_name;
   // Create and show the wizard.
@@ -552,7 +542,7 @@ void LoginDisplayHostImpl::StartWizard(
 
   oobe_progress_bar_visible_ = !StartupUtils::IsDeviceRegistered();
   SetOobeProgressBarVisible(oobe_progress_bar_visible_);
-  wizard_controller_->Init(first_screen_name, screen_parameters.Pass());
+  wizard_controller_->Init(first_screen_name);
 }
 
 WizardController* LoginDisplayHostImpl::GetWizardController() {
@@ -665,10 +655,7 @@ void LoginDisplayHostImpl::StartSignInScreen(
   // We might be here after a reboot that was triggered after OOBE was complete,
   // so check for auto-enrollment again. This might catch a cached decision from
   // a previous oobe flow, or might start a new check with the server.
-  if (GetAutoEnrollmentController()->ShouldEnrollSilently())
-    existing_user_controller_->DoAutoEnrollment();
-  else
-    GetAutoEnrollmentController()->Start();
+  GetAutoEnrollmentController()->Start();
 
   // Initiate mobile config load.
   MobileConfig::GetInstance();
@@ -683,8 +670,6 @@ void LoginDisplayHostImpl::StartSignInScreen(
   GetOobeUI()->ShowSigninScreen(context,
                                 webui_login_display_,
                                 webui_login_display_);
-  if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled())
-    SetStatusAreaVisible(false);
   TRACE_EVENT_ASYNC_STEP_INTO0("ui",
                                "ShowLoginWebUI",
                                kShowLoginWebUIid,
@@ -692,18 +677,6 @@ void LoginDisplayHostImpl::StartSignInScreen(
   BootTimesLoader::Get()->RecordCurrentStats(
       "login-wait-for-signin-state-initialize");
 }
-
-void LoginDisplayHostImpl::ResumeSignInScreen() {
-  // We only get here after a previous call the StartSignInScreen. That sign-in
-  // was successful but was interrupted by an auto-enrollment execution; once
-  // auto-enrollment is complete we resume the normal login flow from here.
-  DVLOG(1) << "Resuming sign in screen";
-  CHECK(existing_user_controller_.get());
-  SetOobeProgressBarVisible(oobe_progress_bar_visible_);
-  SetStatusAreaVisible(true);
-  existing_user_controller_->ResumeLogin();
-}
-
 
 void LoginDisplayHostImpl::OnPreferencesChanged() {
   if (is_showing_login_)
@@ -976,7 +949,7 @@ void LoginDisplayHostImpl::ScheduleWorkspaceAnimation() {
     return;
   }
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableLoginAnimations))
     ash::Shell::GetInstance()->DoInitialWorkspaceAnimation();
 #endif
@@ -990,16 +963,6 @@ void LoginDisplayHostImpl::ScheduleFadeOutAnimation() {
                  animation_weak_ptr_factory_.GetWeakPtr(),
                  false)));
   layer->SetOpacity(0);
-}
-
-void LoginDisplayHostImpl::OnAutoEnrollmentProgress(
-    policy::AutoEnrollmentState state) {
-  VLOG(1) << "OnAutoEnrollmentProgress, state " << state;
-
-  if (existing_user_controller_ &&
-      auto_enrollment_controller_->ShouldEnrollSilently()) {
-    existing_user_controller_->DoAutoEnrollment();
-  }
 }
 
 void LoginDisplayHostImpl::LoadURL(const GURL& url) {
@@ -1043,7 +1006,7 @@ void LoginDisplayHostImpl::StartPostponedWebUI() {
 
   switch (restore_path_) {
     case RESTORE_WIZARD:
-      StartWizard(first_screen_name_, screen_parameters_.Pass());
+      StartWizard(first_screen_name_);
       break;
     case RESTORE_SIGN_IN:
       StartSignInScreen(LoginScreenContext());
@@ -1218,7 +1181,7 @@ void ShowLoginWizard(const std::string& first_screen_name) {
         prefs->GetBoolean(prefs::kOwnerTapToClickEnabled));
   }
   system::InputDeviceSettings::Get()->SetNaturalScroll(
-      CommandLine::ForCurrentProcess()->HasSwitch(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kNaturalScrollDefault));
 #endif
 
@@ -1242,19 +1205,15 @@ void ShowLoginWizard(const std::string& first_screen_name) {
   }
 
   // Check whether we need to execute OOBE flow.
-  bool oobe_complete = StartupUtils::IsOobeCompleted();
-  policy::BrowserPolicyConnectorChromeOS* connector =
-      g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  bool enrollment_screen_wanted =
-      WizardController::ShouldRecoverEnrollment() ||
-      (WizardController::ShouldAutoStartEnrollment() && oobe_complete &&
-       !connector->IsEnterpriseManaged());
-  if (enrollment_screen_wanted && first_screen_name.empty()) {
+  const policy::EnrollmentConfig enrollment_config =
+      g_browser_process->platform_part()
+          ->browser_policy_connector_chromeos()
+          ->GetPrescribedEnrollmentConfig();
+  if (enrollment_config.should_enroll() && first_screen_name.empty()) {
     // Shows networks screen instead of enrollment screen to resume the
     // interrupted auto start enrollment flow because enrollment screen does
     // not handle flaky network. See http://crbug.com/332572
-    display_host->StartWizard(WizardController::kNetworkScreenName,
-                              scoped_ptr<base::DictionaryValue>());
+    display_host->StartWizard(WizardController::kNetworkScreenName);
     return;
   }
 
@@ -1266,7 +1225,7 @@ void ShowLoginWizard(const std::string& first_screen_name) {
   }
 
   bool show_login_screen =
-      (first_screen_name.empty() && oobe_complete) ||
+      (first_screen_name.empty() && StartupUtils::IsOobeCompleted()) ||
       first_screen_name == WizardController::kLoginScreenName;
 
   if (show_login_screen) {

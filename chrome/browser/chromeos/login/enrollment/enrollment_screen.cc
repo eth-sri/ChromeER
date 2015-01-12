@@ -13,18 +13,16 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_uma.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/screen_manager.h"
 #include "chrome/browser/chromeos/login/screens/base_screen_delegate.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/session_manager_client.h"
 #include "components/pairing/controller_pairing_controller.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
@@ -66,7 +64,6 @@ EnrollmentScreen::EnrollmentScreen(BaseScreenDelegate* base_screen_delegate,
       shark_controller_(NULL),
       remora_controller_(NULL),
       actor_(actor),
-      enrollment_mode_(ENROLLMENT_MODE_MANUAL),
       enrollment_failed_once_(false),
       weak_ptr_factory_(this) {
   // Init the TPM if it has not been done until now (in debug build we might
@@ -82,26 +79,23 @@ EnrollmentScreen::~EnrollmentScreen() {
 }
 
 void EnrollmentScreen::SetParameters(
-    EnrollmentMode enrollment_mode,
-    const std::string& management_domain,
-    const std::string& user,
+    const policy::EnrollmentConfig& enrollment_config,
     pairing_chromeos::ControllerPairingController* shark_controller,
     pairing_chromeos::HostPairingController* remora_controller) {
-  enrollment_mode_ = enrollment_mode;
-  user_ = user.empty() ? user : gaia::CanonicalizeEmail(user);
+  enrollment_config_ = enrollment_config;
   shark_controller_ = shark_controller;
   if (remora_controller_)
     remora_controller_->RemoveObserver(this);
   remora_controller_ = remora_controller;
   if (remora_controller_)
     remora_controller_->AddObserver(this);
-  actor_->SetParameters(this, enrollment_mode_, management_domain);
+  actor_->SetParameters(this, enrollment_config_);
 }
 
 void EnrollmentScreen::CreateEnrollmentHelper() {
   DCHECK(!enrollment_helper_);
-  enrollment_helper_ =
-      EnterpriseEnrollmentHelper::Create(this, enrollment_mode_, user_);
+  enrollment_helper_ = EnterpriseEnrollmentHelper::Create(
+      this, enrollment_config_, enrolling_user_domain_);
 }
 
 void EnrollmentScreen::ClearAuth(const base::Closure& callback) {
@@ -124,18 +118,9 @@ void EnrollmentScreen::PrepareToShow() {
 }
 
 void EnrollmentScreen::Show() {
-  if (is_auto_enrollment() && !enrollment_failed_once_) {
-    actor_->Show();
-    UMA(policy::kMetricEnrollmentAutoStarted);
-    actor_->ShowEnrollmentSpinnerScreen();
-    CreateEnrollmentHelper();
-    enrollment_helper_->EnrollUsingProfile(ProfileHelper::GetSigninProfile(),
-                                           false /* fetch_additional_token */);
-  } else {
-    UMA(policy::kMetricEnrollmentTriggered);
-    ClearAuth(base::Bind(&EnrollmentScreen::ShowSigninScreen,
-                         weak_ptr_factory_.GetWeakPtr()));
-  }
+  UMA(policy::kMetricEnrollmentTriggered);
+  ClearAuth(base::Bind(&EnrollmentScreen::ShowSigninScreen,
+                       weak_ptr_factory_.GetWeakPtr()));
 }
 
 void EnrollmentScreen::Hide() {
@@ -176,14 +161,10 @@ void EnrollmentScreen::EnrollHost(const std::string& auth_token) {
 
 void EnrollmentScreen::OnLoginDone(const std::string& user) {
   elapsed_timer_.reset(new base::ElapsedTimer());
-  user_ = gaia::CanonicalizeEmail(user);
+  enrolling_user_domain_ = gaia::ExtractDomainName(user);
 
-  if (is_auto_enrollment())
-    UMA(policy::kMetricEnrollmentAutoRestarted);
-  else if (enrollment_failed_once_)
-    UMA(policy::kMetricEnrollmentRestarted);
-  else
-    UMA(policy::kMetricEnrollmentStarted);
+  UMA(enrollment_failed_once_ ? policy::kMetricEnrollmentRestarted
+                              : policy::kMetricEnrollmentStarted);
 
   actor_->ShowEnrollmentSpinnerScreen();
   CreateEnrollmentHelper();
@@ -198,44 +179,21 @@ void EnrollmentScreen::OnRetry() {
 }
 
 void EnrollmentScreen::OnCancel() {
-  UMA(is_auto_enrollment() ? policy::kMetricEnrollmentAutoCancelled
-                           : policy::kMetricEnrollmentCancelled);
+  UMA(policy::kMetricEnrollmentCancelled);
   if (elapsed_timer_)
     UMA_ENROLLMENT_TIME(kMetricEnrollmentTimeCancel, elapsed_timer_);
-  if (enrollment_mode_ == ENROLLMENT_MODE_FORCED ||
-      enrollment_mode_ == ENROLLMENT_MODE_RECOVERY) {
-    ClearAuth(base::Bind(&EnrollmentScreen::Finish, base::Unretained(this),
-                         BaseScreenDelegate::ENTERPRISE_ENROLLMENT_BACK));
-    return;
-  }
 
-  if (is_auto_enrollment())
-    policy::AutoEnrollmentClient::CancelAutoEnrollment();
-
-  ClearAuth(base::Bind(&EnrollmentScreen::Finish, base::Unretained(this),
-                       BaseScreenDelegate::ENTERPRISE_ENROLLMENT_COMPLETED));
+  const BaseScreenDelegate::ExitCodes exit_code =
+      enrollment_config_.is_forced()
+          ? BaseScreenDelegate::ENTERPRISE_ENROLLMENT_BACK
+          : BaseScreenDelegate::ENTERPRISE_ENROLLMENT_COMPLETED;
+  ClearAuth(
+      base::Bind(&EnrollmentScreen::Finish, base::Unretained(this), exit_code));
 }
 
 void EnrollmentScreen::OnConfirmationClosed() {
-  // If the machine has been put in KIOSK mode we have to restart the session
-  // here to go in the proper KIOSK mode login screen.
-  policy::BrowserPolicyConnectorChromeOS* connector =
-      g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  if (connector->GetDeviceMode() == policy::DEVICE_MODE_RETAIL_KIOSK) {
-    DBusThreadManager::Get()->GetSessionManagerClient()->StopSession();
-    return;
-  }
-
-  if (is_auto_enrollment() &&
-      !enrollment_failed_once_ &&
-      !user_.empty() &&
-      LoginUtils::IsWhitelisted(user_, NULL)) {
-    actor_->ShowLoginSpinnerScreen();
-    Finish(BaseScreenDelegate::ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED);
-  } else {
-    ClearAuth(base::Bind(&EnrollmentScreen::Finish, base::Unretained(this),
-                         BaseScreenDelegate::ENTERPRISE_ENROLLMENT_COMPLETED));
-  }
+  ClearAuth(base::Bind(&EnrollmentScreen::Finish, base::Unretained(this),
+                       BaseScreenDelegate::ENTERPRISE_ENROLLMENT_COMPLETED));
 }
 
 void EnrollmentScreen::OnAuthError(const GoogleServiceAuthError& error) {
@@ -282,7 +240,7 @@ void EnrollmentScreen::ShowEnrollmentStatusOnSuccess() {
 }
 
 void EnrollmentScreen::UMA(policy::MetricEnrollment sample) {
-  EnrollmentUMA(sample, enrollment_mode_);
+  EnrollmentUMA(sample, enrollment_config_.mode);
 }
 
 void EnrollmentScreen::ShowSigninScreen() {

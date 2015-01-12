@@ -4,6 +4,7 @@
 
 #include "cc/trees/layer_tree_settings.h"
 
+#include <GLES2/gl2.h>
 #include <limits>
 
 #include "base/command_line.h"
@@ -41,7 +42,6 @@ LayerTreeSettings::LayerTreeSettings()
       layers_always_allowed_lcd_text(false),
       minimum_contents_scale(0.0625f),
       low_res_contents_scale_factor(0.25f),
-      top_controls_height(0.f),
       top_controls_show_threshold(0.5f),
       top_controls_hide_threshold(0.5f),
       background_animation_rate(1.0),
@@ -54,19 +54,21 @@ LayerTreeSettings::LayerTreeSettings()
       use_pinch_virtual_viewport(false),
       // At 256x256 tiles, 128 tiles cover an area of 2048x4096 pixels.
       max_tiles_for_interest_area(128),
-      skewport_target_time_multiplier(1.0f),
+      skewport_target_time_in_seconds(1.0f),
       skewport_extrapolation_limit_in_content_pixels(2000),
       max_unused_resource_memory_percentage(100),
       max_memory_for_prepaint_percentage(100),
       strict_layer_property_change_checking(false),
       use_one_copy(false),
       use_zero_copy(false),
-      use_image_external(false),
+      enable_elastic_overscroll(false),
+      use_image_texture_target(GL_TEXTURE_2D),
       ignore_root_layer_flings(false),
       scheduled_raster_task_limit(32),
       use_occlusion_for_tile_prioritization(false),
       record_full_layer(false),
-      use_display_lists(false) {
+      use_display_lists(false),
+      verify_property_trees(false) {
 }
 
 LayerTreeSettings::~LayerTreeSettings() {}

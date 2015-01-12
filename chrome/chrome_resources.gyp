@@ -81,6 +81,7 @@
             '../components/components_resources.gyp:components_resources',
             '../content/browser/devtools/devtools_resources.gyp:devtools_resources',
             '../content/browser/tracing/tracing_resources.gyp:tracing_resources',
+            'browser/devtools/webrtc_device_provider_resources.gyp:webrtc_device_provider_resources',
           ],
           'actions': [
             {
@@ -603,8 +604,11 @@
           },
           'action_name': 'generate_about_credits',
           'inputs': [
-            # TODO(phajdan.jr): make licenses.py print inputs too.
+            # TODO(phajdan.jr): make licenses.py print license input files so
+            # about:credits gets rebuilt when one changes.
             '<(generator_path)',
+            'browser/resources/about_credits.tmpl',
+            'browser/resources/about_credits_entry.tmpl',
           ],
           'outputs': [
             '<(about_credits_file)',

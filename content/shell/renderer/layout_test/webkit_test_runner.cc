@@ -67,7 +67,7 @@
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebTestingSupport.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 using blink::Platform;
 using blink::WebArrayBufferView;
@@ -432,6 +432,16 @@ void WebKitTestRunner::SimulateWebNotificationClick(const std::string& title) {
   Send(new LayoutTestHostMsg_SimulateWebNotificationClick(routing_id(), title));
 }
 
+void WebKitTestRunner::SetPushMessagingPermission(const GURL& origin,
+                                                  bool allowed) {
+  Send(new LayoutTestHostMsg_SetPushMessagingPermission(routing_id(), origin,
+                                                        allowed));
+}
+
+void WebKitTestRunner::ClearPushMessagingPermissions() {
+  Send(new LayoutTestHostMsg_ClearPushMessagingPermissions(routing_id()));
+}
+
 void WebKitTestRunner::SetDeviceScaleFactor(float factor) {
   content::SetDeviceScaleFactor(render_view(), factor);
 }
@@ -442,6 +452,19 @@ void WebKitTestRunner::SetDeviceColorProfile(const std::string& name) {
 
 void WebKitTestRunner::SetBluetoothMockDataSet(const std::string& name) {
   content::SetBluetoothMockDataSetForTesting(name);
+}
+
+void WebKitTestRunner::SetGeofencingMockProvider(bool service_available) {
+  content::SetGeofencingMockProvider(service_available);
+}
+
+void WebKitTestRunner::ClearGeofencingMockProvider() {
+  content::ClearGeofencingMockProvider();
+}
+
+void WebKitTestRunner::SetGeofencingMockPosition(double latitude,
+                                                 double longitude) {
+  content::SetGeofencingMockPosition(latitude, longitude);
 }
 
 void WebKitTestRunner::SetFocus(WebTestProxyBase* proxy, bool focus) {

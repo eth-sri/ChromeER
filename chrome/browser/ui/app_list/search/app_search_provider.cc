@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/clock.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -46,42 +47,50 @@ class AppSearchProvider::App {
 };
 
 AppSearchProvider::AppSearchProvider(Profile* profile,
-                                     AppListControllerDelegate* list_controller)
+                                     AppListControllerDelegate* list_controller,
+                                     scoped_ptr<base::Clock> clock)
     : profile_(profile),
       list_controller_(list_controller),
-      extension_registry_observer_(this) {
+      extension_registry_observer_(this),
+      clock_(clock.Pass()) {
   extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
   RefreshApps();
 }
 
 AppSearchProvider::~AppSearchProvider() {}
 
-void AppSearchProvider::Start(const base::string16& query) {
-  StartImpl(base::Time::Now(), query);
-}
-
-void AppSearchProvider::Stop() {
-}
-
-void AppSearchProvider::StartImpl(const base::Time& current_time,
-                                  const base::string16& query) {
+void AppSearchProvider::Start(bool /*is_voice_query*/,
+                              const base::string16& query) {
+  query_ = query;
   const TokenizedString query_terms(query);
 
   ClearResults();
 
   bool show_recommendations = query.empty();
   // Refresh list of apps to ensure we have the latest launch time information.
+  // This will also cause the results to update.
   if (show_recommendations)
     RefreshApps();
+
+  UpdateResults();
+}
+
+void AppSearchProvider::Stop() {
+}
+
+void AppSearchProvider::UpdateResults() {
+  const TokenizedString query_terms(query_);
+  bool show_recommendations = query_.empty();
+  ClearResults();
 
   for (Apps::const_iterator app_it = apps_.begin();
        app_it != apps_.end();
        ++app_it) {
-    scoped_ptr<AppResult> result(
-        new AppResult(profile_, (*app_it)->app_id(), list_controller_));
+    scoped_ptr<AppResult> result(new AppResult(
+        profile_, (*app_it)->app_id(), list_controller_, show_recommendations));
     if (show_recommendations) {
       result->set_title((*app_it)->indexed_name().text());
-      result->UpdateFromLastLaunched(current_time,
+      result->UpdateFromLastLaunched(clock_->Now(),
                                      (*app_it)->last_launch_time());
     } else {
       TokenizedStringMatch match;
@@ -123,6 +132,7 @@ void AppSearchProvider::OnExtensionLoaded(
     content::BrowserContext* browser_context,
     const extensions::Extension* extension) {
   RefreshApps();
+  UpdateResults();
 }
 
 void AppSearchProvider::OnExtensionUninstalled(
@@ -130,6 +140,7 @@ void AppSearchProvider::OnExtensionUninstalled(
     const extensions::Extension* extension,
     extensions::UninstallReason reason) {
   RefreshApps();
+  UpdateResults();
 }
 
 }  // namespace app_list

@@ -55,7 +55,7 @@
 #include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "third_party/WebKit/public/web/WebURLLoaderOptions.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
 
@@ -1219,7 +1219,7 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   if (!delegate_)
     return;
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableDirectNPAPIRequests)) {
     // We got here either because the plugin called GetURL/PostURL, or because
     // we're fetching the data for an embed tag. If we're in multi-process mode,

@@ -33,7 +33,7 @@ class ExecutableNotFound(Exception): pass
 class BadBinary(Exception): pass
 
 class ChromeTests:
-  SLOW_TOOLS = ["memcheck", "tsan", "tsan_rv", "drmemory"]
+  SLOW_TOOLS = ["memcheck", "drmemory"]
   LAYOUT_TESTS_DEFAULT_CHUNK_SIZE = 300
 
   def __init__(self, options, args, test):
@@ -362,9 +362,6 @@ class ChromeTests:
   def TestExtensions(self):
     return self.SimpleTest("extensions", "extensions_unittests")
 
-  def TestFFmpeg(self):
-    return self.SimpleTest("chrome", "ffmpeg_unittests")
-
   def TestFFmpegRegressions(self):
     return self.SimpleTest("chrome", "ffmpeg_regression_tests")
 
@@ -678,7 +675,6 @@ class ChromeTests:
     "display": TestDisplay,      "display_unittests": TestDisplay,
     "events": TestEvents,        "events_unittests": TestEvents,
     "extensions": TestExtensions, "extensions_unittests": TestExtensions,
-    "ffmpeg": TestFFmpeg,        "ffmpeg_unittests": TestFFmpeg,
     "ffmpeg_regression_tests": TestFFmpegRegressions,
     "gcm": TestGCM,              "gcm_unit_tests": TestGCM,
     "gin": TestGin,              "gin_unittests": TestGin,

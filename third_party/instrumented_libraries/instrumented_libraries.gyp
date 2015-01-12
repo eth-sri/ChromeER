@@ -156,6 +156,12 @@
             '<(_sanitizer_type)-libpng12-0',
           ],
         }],
+        ['chromeos==1', {
+          'dependencies': [
+            '<(_sanitizer_type)-brltty',
+            '<(_sanitizer_type)-libva1',
+          ],
+        }]
       ],
       'direct_dependent_settings': {
         'target_conditions': [
@@ -315,6 +321,12 @@
       'package_name': 'libxcb1',
       'dependencies=': [],
       'extra_configure_flags': ['--disable-build-docs'],
+      'conditions': [
+        ['"<(_ubuntu_release)"=="precise"', {
+          # Backport fix for https://bugs.freedesktop.org/show_bug.cgi?id=54671
+          'patch': 'patches/libxcb1.precise.diff',
+        }],
+      ],
       # Required on Trusty due to autoconf version mismatch.
       'run_before_build': 'scripts/autoreconf.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
@@ -666,6 +678,35 @@
           '--disable-introspection',
       ],
       'dependencies=': [],
+      'includes': ['standard_instrumented_package_target.gypi'],
+    },
+    {
+      'package_name': 'brltty',
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--without-viavoice',
+          '--without-theta',
+          '--without-swift',
+          '--bindir=/sbin',
+          '--with-curses=ncursesw',
+          '--disable-stripping',
+          # We don't need any of those.
+          '--disable-java-bindings',
+          '--disable-lisp-bindings',
+          '--disable-ocaml-bindings',
+          '--disable-python-bindings',
+          '--disable-tcl-bindings'
+      ],
+      'dependencies=': [],
+      'includes': ['standard_instrumented_package_target.gypi'],
+    },
+    {
+      'package_name': 'libva1',
+      'dependencies=': [],
+      # Backport a use-after-free fix:
+      # http://cgit.freedesktop.org/libva/diff/va/va.c?h=staging&id=d4988142a3f2256e38c5c5cdcdfc1b4f5f3c1ea9
+      'patch': 'patches/libva1.diff',
+      'run_before_build': 'scripts/libva1.sh',
       'includes': ['standard_instrumented_package_target.gypi'],
     },
   ],

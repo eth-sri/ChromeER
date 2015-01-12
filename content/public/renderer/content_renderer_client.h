@@ -53,7 +53,7 @@ struct WebURLError;
 }
 
 namespace media {
-class Renderer;
+class RendererFactory;
 struct KeySystemInfo;
 }
 
@@ -223,6 +223,10 @@ class CONTENT_EXPORT ContentRendererClient {
                           bool is_server_redirect,
                           bool* send_referrer);
 
+  // Returns true if this IPC message belongs to a guest container. Currently,
+  // BrowserPlugin is a guest container.
+  virtual bool ShouldForwardToGuestContainer(const IPC::Message& msg);
+
   // Notifies the embedder that the given frame is requesting the resource at
   // |url|.  If the function returns true, the url is changed to |new_url|.
   virtual bool WillSendRequest(blink::WebFrame* frame,
@@ -257,11 +261,9 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);
 
-  // Allows an embedder to create a media::Renderer. The caller owns the
-  // returned renderer.
-  virtual scoped_ptr<media::Renderer> CreateMediaRenderer(
-      RenderFrame* render_frame,
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+  // Allows an embedder to provide a media::RendererFactory.
+  virtual scoped_ptr<media::RendererFactory> CreateMediaRendererFactory(
+      RenderFrame* render_frame);
 
   // Gives the embedder a chance to register the key system(s) it supports by
   // populating |key_systems|.

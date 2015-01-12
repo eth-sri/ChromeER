@@ -36,24 +36,31 @@
         '../url/url.gyp:*',
       ],
       'conditions': [
+        ['OS!="ios" and OS!="mac"', {
+          'dependencies': [
+            '../ui/touch_selection/ui_touch_selection.gyp:*',
+          ],
+        }],
         ['OS=="ios"', {
           'dependencies': [
+            '../chrome/chrome.gyp:browser',
+            '../chrome/chrome.gyp:browser_ui',
             '../ios/ios.gyp:*',
             # NOTE: This list of targets is present because
             # mojo_base.gyp:mojo_base cannot be built on iOS, as
             # javascript-related targets cause v8 to be built.
-            '../mojo/edk/mojo_edk_tests.gyp:mojo_public_bindings_unittests',
-            '../mojo/edk/mojo_edk_tests.gyp:mojo_public_environment_unittests',
-            '../mojo/edk/mojo_edk_tests.gyp:mojo_public_system_perftests',
-            '../mojo/edk/mojo_edk_tests.gyp:mojo_public_system_unittests',
-            '../mojo/edk/mojo_edk_tests.gyp:mojo_public_utility_unittests',
-            '../mojo/edk/mojo_edk.gyp:mojo_system_impl',
-            '../mojo/edk/mojo_edk_tests.gyp:mojo_system_unittests',
             '../mojo/mojo_base.gyp:mojo_common_lib',
             '../mojo/mojo_base.gyp:mojo_common_unittests',
-            '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
-            '../mojo/public/mojo_public.gyp:mojo_public_test_utils',
-            '../mojo/public/mojo_public.gyp:mojo_system',
+            '../mojo/mojo_edk.gyp:mojo_system_impl',
+            '../mojo/mojo_edk_tests.gyp:mojo_public_bindings_unittests',
+            '../mojo/mojo_edk_tests.gyp:mojo_public_environment_unittests',
+            '../mojo/mojo_edk_tests.gyp:mojo_public_system_perftests',
+            '../mojo/mojo_edk_tests.gyp:mojo_public_system_unittests',
+            '../mojo/mojo_edk_tests.gyp:mojo_public_utility_unittests',
+            '../mojo/mojo_edk_tests.gyp:mojo_system_unittests',
+            '../mojo/mojo_public.gyp:mojo_cpp_bindings',
+            '../mojo/mojo_public.gyp:mojo_public_test_utils',
+            '../mojo/mojo_public.gyp:mojo_system',
             '../google_apis/google_apis.gyp:google_apis_unittests',
             '../ui/base/ui_base_tests.gyp:ui_base_unittests',
             '../ui/ios/ui_ios_tests.gyp:ui_ios_unittests',
@@ -265,7 +272,7 @@
             '../google_apis/gcm/gcm.gyp:*',
           ],
         }],
-        ['chromeos==1 or OS=="linux" or OS=="win"', {
+        ['chromeos==1 or OS=="linux" or OS=="win" or OS=="mac"', {
           'dependencies': [
             '../extensions/shell/app_shell.gyp:*',
           ],
@@ -312,6 +319,11 @@
         '../url/url.gyp:url_unittests',
       ],
       'conditions': [
+        ['OS!="ios" and OS!="mac"', {
+          'dependencies': [
+            '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests',
+          ],
+        }],
         ['OS!="ios" and OS!="android"', {
           'dependencies': [
             '../cc/blink/cc_blink_tests.gyp:cc_blink_unittests',
@@ -463,8 +475,10 @@
         }],
         ['disable_nacl==0 and disable_nacl_untrusted==0', {
           'dependencies': [
-            '../mojo/mojo_nacl.gyp:*',
-            '../testing/gtest_nacl.gyp:*',
+            '../mojo/mojo_nacl_untrusted.gyp:libmojo',
+            '../mojo/mojo_nacl.gyp:monacl_codegen',
+            '../mojo/mojo_nacl.gyp:monacl_sel',
+            '../mojo/mojo_nacl.gyp:monacl_shell',
           ],
         }],
       ],
@@ -536,6 +550,7 @@
             '../chrome/chrome.gyp:load_library_perf_tests',
             '../chrome/chrome.gyp:performance_browser_tests',
             '../chrome/chrome.gyp:sync_performance_tests',
+            '../content/content_shell_and_tests.gyp:content_shell',
             '../media/media.gyp:media_perftests',
             '../tools/perf/clear_system_cache/clear_system_cache.gyp:*',
             '../tools/telemetry/telemetry.gyp:*',
@@ -832,8 +847,10 @@
             '../tools/android/android_tools.gyp:android_tools',
             '../tools/android/android_tools.gyp:memconsumer',
             '../tools/android/findbugs_plugin/findbugs_plugin.gyp:findbugs_plugin_test',
+            '../ui/android/ui_android.gyp:ui_android_unittests',
             '../ui/base/ui_base_tests.gyp:ui_base_unittests',
             '../ui/events/events.gyp:events_unittests',
+            '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests',
             # Unit test bundles packaged as an apk.
             '../android_webview/android_webview.gyp:android_webview_test_apk',
             '../android_webview/android_webview.gyp:android_webview_unittests_apk',
@@ -843,6 +860,7 @@
             '../chrome/chrome.gyp:chrome_shell_test_apk',
             '../chrome/chrome.gyp:chrome_sync_shell_test_apk',
             '../chrome/chrome.gyp:chrome_shell_uiautomator_tests',
+            '../chrome/chrome.gyp:chromedriver_webview_shell_apk',
             '../chrome/chrome.gyp:unit_tests_apk',
             '../components/components_tests.gyp:components_unittests_apk',
             '../content/content_shell_and_tests.gyp:content_browsertests_apk',
@@ -858,15 +876,16 @@
             '../sql/sql.gyp:sql_unittests_apk',
             '../sync/sync.gyp:sync_unit_tests_apk',
             '../tools/android/heap_profiler/heap_profiler.gyp:heap_profiler_unittests_apk',
+            '../ui/android/ui_android.gyp:ui_android_unittests_apk',
             '../ui/base/ui_base_tests.gyp:ui_base_unittests_apk',
             '../ui/events/events.gyp:events_unittests_apk',
             '../ui/gfx/gfx_tests.gyp:gfx_unittests_apk',
+            '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests_apk',
           ],
           'conditions': [
             ['enable_webrtc==1 and "<(libpeer_target_type)"=="static_library"', {
               'dependencies': [
                 '../components/devtools_bridge.gyp:devtools_bridge_tests_apk',
-                '../components/devtools_bridge.gyp:libdevtools_bridge_browsertests',
               ],
             }],
           ],
@@ -882,7 +901,6 @@
             '../tools/android/android_tools.gyp:memconsumer',
             # Unit test bundles packaged as an apk.
             '../components/devtools_bridge.gyp:devtools_bridge_tests_apk',
-            '../components/devtools_bridge.gyp:libdevtools_bridge_browsertests',
             '../content/content_shell_and_tests.gyp:content_browsertests_apk',
           ],
         },  # target_name: android_builder_chromium_webrtc
@@ -1074,6 +1092,7 @@
             '../ui/base/ui_base_tests.gyp:ui_base_unittests',
             '../ui/events/events.gyp:events_unittests',
             '../ui/gfx/gfx_tests.gyp:gfx_unittests',
+            '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests',
             '../ui/views/views.gyp:views_unittests',
             '../url/url.gyp:url_unittests',
           ],
@@ -1178,6 +1197,7 @@
             '../ui/events/events.gyp:events_unittests',
             '../ui/gfx/gfx_tests.gyp:gfx_unittests',
             '../ui/keyboard/keyboard.gyp:keyboard_unittests',
+            '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests',
             '../url/url.gyp:url_unittests',
           ],
         },
@@ -1218,6 +1238,7 @@
                 '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
                 '../ui/base/ui_base_tests.gyp:ui_base_unittests',
                 '../ui/gfx/gfx_tests.gyp:gfx_unittests',
+                '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests',
                 '../ui/views/views.gyp:views_unittests',
                 '../url/url.gyp:url_unittests',
               ],
@@ -1266,6 +1287,7 @@
             '../ui/keyboard/keyboard.gyp:*',
             '../ui/message_center/message_center.gyp:*',
             '../ui/snapshot/snapshot.gyp:snapshot_unittests',
+            '../ui/touch_selection/ui_touch_selection.gyp:ui_touch_selection_unittests',
             '../ui/views/examples/examples.gyp:views_examples_with_content_exe',
             '../ui/views/views.gyp:views',
             '../ui/views/views.gyp:views_unittests',

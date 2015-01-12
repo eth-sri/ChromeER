@@ -27,7 +27,11 @@ void BindFramebuffer(GLenum target, GLuint framebuffer) override;
 
 void BindRenderbuffer(GLenum target, GLuint renderbuffer) override;
 
+void BindSampler(GLuint unit, GLuint sampler) override;
+
 void BindTexture(GLenum target, GLuint texture) override;
+
+void BindTransformFeedback(GLenum target, GLuint transformfeedback) override;
 
 void BlendColor(GLclampf red,
                 GLclampf green,
@@ -132,9 +136,13 @@ void DeleteProgram(GLuint program) override;
 
 void DeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers) override;
 
+void DeleteSamplers(GLsizei n, const GLuint* samplers) override;
+
 void DeleteShader(GLuint shader) override;
 
 void DeleteTextures(GLsizei n, const GLuint* textures) override;
+
+void DeleteTransformFeedbacks(GLsizei n, const GLuint* ids) override;
 
 void DepthFunc(GLenum func) override;
 
@@ -186,7 +194,11 @@ void GenFramebuffers(GLsizei n, GLuint* framebuffers) override;
 
 void GenRenderbuffers(GLsizei n, GLuint* renderbuffers) override;
 
+void GenSamplers(GLsizei n, GLuint* samplers) override;
+
 void GenTextures(GLsizei n, GLuint* textures) override;
+
+void GenTransformFeedbacks(GLsizei n, GLuint* ids) override;
 
 void GetActiveAttrib(GLuint program,
                      GLuint index,
@@ -243,6 +255,14 @@ void GetRenderbufferParameteriv(GLenum target,
                                 GLenum pname,
                                 GLint* params) override;
 
+void GetSamplerParameterfv(GLuint sampler,
+                           GLenum pname,
+                           GLfloat* params) override;
+
+void GetSamplerParameteriv(GLuint sampler,
+                           GLenum pname,
+                           GLint* params) override;
+
 void GetShaderiv(GLuint shader, GLenum pname, GLint* params) override;
 
 void GetShaderInfoLog(GLuint shader,
@@ -278,6 +298,18 @@ void GetVertexAttribPointerv(GLuint index,
 
 void Hint(GLenum target, GLenum mode) override;
 
+void InvalidateFramebuffer(GLenum target,
+                           GLsizei count,
+                           const GLenum* attachments) override;
+
+void InvalidateSubFramebuffer(GLenum target,
+                              GLsizei count,
+                              const GLenum* attachments,
+                              GLint x,
+                              GLint y,
+                              GLsizei width,
+                              GLsizei height) override;
+
 GLboolean IsBuffer(GLuint buffer) override;
 
 GLboolean IsEnabled(GLenum cap) override;
@@ -288,17 +320,25 @@ GLboolean IsProgram(GLuint program) override;
 
 GLboolean IsRenderbuffer(GLuint renderbuffer) override;
 
+GLboolean IsSampler(GLuint sampler) override;
+
 GLboolean IsShader(GLuint shader) override;
 
 GLboolean IsTexture(GLuint texture) override;
+
+GLboolean IsTransformFeedback(GLuint transformfeedback) override;
 
 void LineWidth(GLfloat width) override;
 
 void LinkProgram(GLuint program) override;
 
+void PauseTransformFeedback() override;
+
 void PixelStorei(GLenum pname, GLint param) override;
 
 void PolygonOffset(GLfloat factor, GLfloat units) override;
+
+void ReadBuffer(GLenum src) override;
 
 void ReadPixels(GLint x,
                 GLint y,
@@ -315,7 +355,21 @@ void RenderbufferStorage(GLenum target,
                          GLsizei width,
                          GLsizei height) override;
 
+void ResumeTransformFeedback() override;
+
 void SampleCoverage(GLclampf value, GLboolean invert) override;
+
+void SamplerParameterf(GLuint sampler, GLenum pname, GLfloat param) override;
+
+void SamplerParameterfv(GLuint sampler,
+                        GLenum pname,
+                        const GLfloat* params) override;
+
+void SamplerParameteri(GLuint sampler, GLenum pname, GLint param) override;
+
+void SamplerParameteriv(GLuint sampler,
+                        GLenum pname,
+                        const GLint* params) override;
 
 void Scissor(GLint x, GLint y, GLsizei width, GLsizei height) override;
 
@@ -585,7 +639,11 @@ GLboolean IsQueryEXT(GLuint id) override;
 
 void BeginQueryEXT(GLenum target, GLuint id) override;
 
+void BeginTransformFeedback(GLenum primitivemode) override;
+
 void EndQueryEXT(GLenum target) override;
+
+void EndTransformFeedback() override;
 
 void GetQueryivEXT(GLenum target, GLenum pname, GLint* params) override;
 
@@ -737,7 +795,8 @@ void BindTexImage2DCHROMIUM(GLenum target, GLint imageId) override;
 
 void ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) override;
 
-void TraceBeginCHROMIUM(const char* name) override;
+void TraceBeginCHROMIUM(const char* category_name,
+                        const char* trace_name) override;
 
 void TraceEndCHROMIUM() override;
 
@@ -790,6 +849,8 @@ void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                   GLfloat uv_y,
                                   GLfloat uv_width,
                                   GLfloat uv_height) override;
+
+void SwapInterval(GLint interval) override;
 
 void MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) override;
 

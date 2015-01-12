@@ -11,6 +11,7 @@
 //<include src="../../file_manager/foreground/js/metrics_base.js">
 //<include src="../../file_manager/foreground/js/metrics.js">
 
+//<include src="../../file_manager/common/js/lru_cache.js">
 //<include src="../../image_loader/image_loader_client.js">
 
 //<include src="../../../webui/resources/js/cr.js">
@@ -39,6 +40,7 @@
 //<include src="../../file_manager/common/js/util.js">
 //<include src="../../file_manager/common/js/volume_manager_common.js">
 //<include src="../../file_manager/foreground/js/metadata/metadata_cache.js">
+//<include src="../../file_manager/foreground/js/metadata/exif_constants.js">
 //<include src="../../file_manager/foreground/js/mouse_inactivity_watcher.js">
 //<include src="../../file_manager/foreground/js/share_client.js">
 //<include src="../../file_manager/foreground/js/thumbnail_loader.js">
@@ -59,18 +61,18 @@
 //<include src="image_editor/image_encoder.js">
 //<include src="image_editor/exif_encoder.js">
 
+//<include src="entry_list_watcher.js">
+//<include src="error_banner.js">
 //<include src="gallery.js">
 //<include src="gallery_item.js">
-//<include src="error_banner.js">
 //<include src="mosaic_mode.js">
-//<include src="slide_mode.js">
 //<include src="ribbon.js">
+//<include src="slide_mode.js">
 
 // Exports
 window.ImageUtil = ImageUtil;
 window.ImageUtil.metrics = metrics;
 window.Gallery = Gallery;
-window.unload = unload;
 window.util = util;
 
 })();

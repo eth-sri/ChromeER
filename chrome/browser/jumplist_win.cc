@@ -22,7 +22,6 @@
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/metrics/jumplist_metrics_win.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
@@ -53,7 +52,8 @@ namespace {
 // Append the common switches to each shell link.
 void AppendCommonSwitches(ShellLinkItem* shell_link) {
   const char* kSwitchNames[] = { switches::kUserDataDir };
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   shell_link->GetCommandLine()->CopySwitchesFrom(command_line,
                                                  kSwitchNames,
                                                  arraysize(kSwitchNames));
@@ -596,7 +596,7 @@ void JumpList::UpdateProfileSwitcher() {
 
       gfx::Image avatar;
       bool is_rectangle;
-      profiles::GetTransparentBackgroundProfileAvatar(
+      avatar_menu_->GetImageForMenuButton(
           item.profile_path, &avatar, &is_rectangle);
       link->set_icon_data(avatar.AsBitmap());
       new_profile_switcher.push_back(link);

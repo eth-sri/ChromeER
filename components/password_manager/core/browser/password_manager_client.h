@@ -12,10 +12,15 @@
 
 class PrefService;
 
+namespace autofill {
+class AutofillManager;
+}
+
 namespace password_manager {
 
 struct CredentialInfo;
 class PasswordFormManager;
+class PasswordManager;
 class PasswordManagerDriver;
 class PasswordStore;
 
@@ -41,6 +46,11 @@ class PasswordManagerClient {
   // always returns true.
   virtual bool IsPasswordManagerEnabledForCurrentPage() const;
 
+  // Return true if "Allow to collect URL?" should be shown.
+  // TODO(vabr): If http://crbug.com/437528 gets fixed, make this a const
+  // method.
+  virtual bool ShouldAskUserToSubmitURL(const GURL& url);
+
   // Return true if |form| should not be available for autofill.
   virtual bool ShouldFilterAutofillResult(
       const autofill::PasswordForm& form) = 0;
@@ -53,6 +63,11 @@ class PasswordManagerClient {
   // syncing.
   virtual bool IsSyncAccountCredential(
       const std::string& username, const std::string& origin) const = 0;
+
+  // This should be called if the password manager encounters a problem on
+  // |url|. The implementation should show the "Allow to collect URL?" bubble
+  // and, if the user confirms, report the |url|.
+  virtual void AskUserAndMaybeReportURL(const GURL& url) const;
 
   // Called when all autofill results have been computed. Client can use
   // this signal to report statistics. Default implementation is a noop.
@@ -69,9 +84,11 @@ class PasswordManagerClient {
   // Returns true if the prompt is indeed displayed. If the prompt is not
   // displayed, returns false and does not call |callback|.
   // |callback| should be invoked with the chosen form.
-  // Note: The implementation takes ownership of all PasswordForms in |forms|.
+  // Note: The implementation takes ownership of all PasswordForms in
+  // |local_forms| and |federated_forms|.
   virtual bool PromptUserToChooseCredentials(
-      const std::vector<autofill::PasswordForm*>& forms,
+      const std::vector<autofill::PasswordForm*>& local_forms,
+      const std::vector<autofill::PasswordForm*>& federated_forms,
       base::Callback<void(const CredentialInfo&)> callback) = 0;
 
   // Called when a password is saved in an automated fashion. Embedder may
@@ -98,9 +115,6 @@ class PasswordManagerClient {
 
   // Returns the PasswordStore associated with this instance.
   virtual PasswordStore* GetPasswordStore() = 0;
-
-  // Returns the PasswordManagerDriver instance associated with this instance.
-  virtual PasswordManagerDriver* GetDriver() = 0;
 
   // Returns the probability that the experiment identified by |experiment_name|
   // should be enabled. The default implementation returns 0.
@@ -132,6 +146,22 @@ class PasswordManagerClient {
   // Only relevant on OSX.
   virtual PasswordStore::AuthorizationPromptPolicy GetAuthorizationPromptPolicy(
       const autofill::PasswordForm& form);
+
+  // Returns whether any SSL certificate errors were encountered as a result of
+  // the last page load.
+  virtual bool DidLastPageLoadEncounterSSLErrors();
+
+  // If this browsing session should not be persisted.
+  virtual bool IsOffTheRecord();
+
+  // Returns the PasswordManager associated with this client.
+  virtual PasswordManager* GetPasswordManager();
+
+  // Returns the AutofillManager for the main frame.
+  virtual autofill::AutofillManager* GetAutofillManagerForMainFrame();
+
+  // Returns the main frame URL.
+  virtual const GURL& GetMainFrameURL();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerClient);

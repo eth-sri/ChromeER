@@ -44,7 +44,7 @@ system::ChannelId MakeChannel(
     return 0;
   }
 
-  channel->AttachAndRunEndpoint(channel_endpoint, true);
+  channel->SetBootstrapEndpoint(channel_endpoint);
 
   DCHECK(internal::g_channel_manager);
   return internal::g_channel_manager->AddChannel(
@@ -62,7 +62,7 @@ void CreateChannelHelper(
       MakeChannel(platform_handle.Pass(), channel_endpoint);
 
   // Hand the channel back to the embedder.
-  if (callback_thread_task_runner.get()) {
+  if (callback_thread_task_runner) {
     callback_thread_task_runner->PostTask(
         FROM_HERE, base::Bind(callback, channel_info.release()));
   } else {
@@ -118,7 +118,7 @@ ScopedMessagePipeHandle CreateChannel(
     DidCreateChannelCallback callback,
     scoped_refptr<base::TaskRunner> callback_thread_task_runner) {
   DCHECK(platform_handle.is_valid());
-  DCHECK(io_thread_task_runner.get());
+  DCHECK(io_thread_task_runner);
   DCHECK(!callback.is_null());
 
   scoped_refptr<system::ChannelEndpoint> channel_endpoint;
@@ -195,7 +195,7 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
   DCHECK(internal::g_core);
   scoped_refptr<system::Dispatcher> dispatcher(
       internal::g_core->GetDispatcher(platform_handle_wrapper_handle));
-  if (!dispatcher.get())
+  if (!dispatcher)
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if (dispatcher->GetType() != system::Dispatcher::kTypePlatformHandle)
@@ -206,6 +206,12 @@ MojoResult PassWrappedPlatformHandle(MojoHandle platform_handle_wrapper_handle,
           ->PassPlatformHandle()
           .Pass();
   return MOJO_RESULT_OK;
+}
+
+MojoResult AsyncWait(MojoHandle handle,
+                     MojoHandleSignals signals,
+                     base::Callback<void(MojoResult)> callback) {
+  return internal::g_core->AsyncWait(handle, signals, callback);
 }
 
 }  // namespace embedder

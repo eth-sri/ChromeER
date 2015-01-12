@@ -9,8 +9,8 @@ import unittest
 from telemetry.core import browser_credentials
 from telemetry.core import discover
 from telemetry.page import page_set as page_set_module
-from telemetry.page import page_set_archive_info
 from telemetry.util import classes
+from telemetry.wpr import archive_info
 
 
 class PageSetSmokeTest(unittest.TestCase):
@@ -30,12 +30,12 @@ class PageSetSmokeTest(unittest.TestCase):
                     msg='Archive data file not found for %s' %
                     page_set.file_path)
 
-    wpr_archive_info = page_set_archive_info.PageSetArchiveInfo.FromFile(
+    wpr_archive_info = archive_info.WprArchiveInfo.FromFile(
         archive_data_file_path, page_set.bucket, ignore_archive=True)
     for page in page_set.pages:
       if not page.url.startswith('http'):
         continue
-      self.assertTrue(wpr_archive_info.WprFilePathForPage(page),
+      self.assertTrue(wpr_archive_info.WprFilePathForUserStory(page),
                       msg='No archive found for %s in %s' % (
                           page.url, page_set.archive_data_file))
 
@@ -100,14 +100,6 @@ class PageSetSmokeTest(unittest.TestCase):
           isinstance(page_set.user_agent_type, str),
           msg='page_set\'s user_agent_type must have type string')
 
-    self.assertTrue(
-        isinstance(page_set.make_javascript_deterministic, bool),
-        msg='page_set\'s make_javascript_deterministic must have type bool')
-
-    self.assertTrue(
-        isinstance(page_set.startup_url, str),
-        msg='page_set\'s startup_url must have type string')
-
   def CheckAttributesOfPageBasicAttributes(self, page):
     self.assertTrue(not hasattr(page, 'disabled'))
     self.assertTrue(
@@ -123,6 +115,14 @@ class PageSetSmokeTest(unittest.TestCase):
     self.assertTrue(
        isinstance(page.labels, set),
        msg='page %s \'s labels field must have type set' % page.display_name)
+    self.assertTrue(
+        isinstance(page.startup_url, str),
+        msg=('page %s \'s startup_url field must have type string'
+            % page.display_name))
+    self.assertIsInstance(
+        page.make_javascript_deterministic, bool,
+        msg='page %s \'s make_javascript_deterministic must have type bool'
+            % page.display_name)
     for l in page.labels:
       self.assertTrue(
          isinstance(l, str),

@@ -30,7 +30,6 @@ class SK_API AnalysisCanvas : public SkCanvas, public SkDrawPictureCallback {
   bool abortDrawing() override;
 
   // SkCanvas overrides.
-  void clear(SkColor) override;
   void drawPaint(const SkPaint& paint) override;
   void drawPoints(PointMode,
                   size_t count,
@@ -49,9 +48,6 @@ class SK_API AnalysisCanvas : public SkCanvas, public SkDrawPictureCallback {
                             const SkRect& dst,
                             const SkPaint* paint,
                             DrawBitmapRectFlags flags) override;
-  void drawBitmapMatrix(const SkBitmap&,
-                        const SkMatrix&,
-                        const SkPaint* paint = NULL) override;
   void drawBitmapNine(const SkBitmap& bitmap,
                       const SkIRect& center,
                       const SkRect& dst,

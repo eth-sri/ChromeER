@@ -25,7 +25,6 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/browser_ui_prefs_migrator.h"
 #include "chrome/browser/prefs/command_line_pref_store.h"
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
@@ -62,7 +61,7 @@
 #include "extensions/browser/pref_names.h"
 #endif
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_pref_store.h"
 #endif
 
@@ -172,11 +171,6 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
   {
-    16, prefs::kSafeBrowsingIncidentReportSent,
-    PrefHashFilter::ENFORCE_ON_LOAD,
-    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
-  },
-  {
     17, sync_driver::prefs::kSyncRemainingRollbackTries,
     PrefHashFilter::ENFORCE_ON_LOAD,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
@@ -198,6 +192,13 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
 #endif
+  {
+    21, prefs::kGoogleServicesUsername,
+    PrefHashFilter::ENFORCE_ON_LOAD,
+    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
+  },
+  // See note at top, new items added here also need to be added to
+  // histograms.xml's TrackedPreference enum.
 };
 
 // One more than the last tracked preferences ID above.
@@ -386,7 +387,7 @@ void PrepareFactory(
           policy::POLICY_LEVEL_RECOMMENDED)));
 #endif  // ENABLE_CONFIGURATION_POLICY
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
   if (supervised_user_settings) {
     factory->set_supervised_user_prefs(
         make_scoped_refptr(
@@ -396,9 +397,8 @@ void PrepareFactory(
 
   factory->set_async(async);
   factory->set_extension_prefs(extension_prefs);
-  factory->set_command_line_prefs(
-      make_scoped_refptr(
-          new CommandLinePrefStore(CommandLine::ForCurrentProcess())));
+  factory->set_command_line_prefs(make_scoped_refptr(
+      new CommandLinePrefStore(base::CommandLine::ForCurrentProcess())));
   factory->set_read_error_callback(base::Bind(&HandleReadError));
   factory->set_user_prefs(user_pref_store);
 }
@@ -466,9 +466,6 @@ scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
           ->CreateProfilePrefStore(pref_io_task_runner,
                                    start_sync_flare_for_prefs,
                                    validation_delegate));
-  // BrowserUIPrefsMigrator unregisters and deletes itself after it is done.
-  user_pref_store->AddObserver(
-      new BrowserUIPrefsMigrator(user_pref_store.get()));
   PrepareFactory(&factory,
                  policy_service,
                  supervised_user_settings,

@@ -57,6 +57,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceLoaderTest, ClientCertStoreLookup);
   FRIEND_TEST_ALL_PREFIXES(ResourceLoaderTest, ClientCertStoreNull);
+  FRIEND_TEST_ALL_PREFIXES(ResourceLoaderTest, ClientCertStoreAsyncCancel);
 
   // net::URLRequest::Delegate implementation:
   void OnReceivedRedirect(net::URLRequest* request,

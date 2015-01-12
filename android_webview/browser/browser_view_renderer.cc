@@ -24,6 +24,8 @@ namespace android_webview {
 
 namespace {
 
+const double kEpsilon = 1e-8;
+
 const int64 kFallbackTickTimeoutInMilliseconds = 100;
 
 // Used to calculate memory allocation. Determined experimentally.
@@ -75,8 +77,8 @@ BrowserViewRenderer::BrowserViewRenderer(
 BrowserViewRenderer::~BrowserViewRenderer() {
 }
 
-intptr_t BrowserViewRenderer::GetAwDrawGLViewContext() {
-  return reinterpret_cast<intptr_t>(&shared_renderer_state_);
+SharedRendererState* BrowserViewRenderer::GetAwDrawGLViewContext() {
+  return &shared_renderer_state_;
 }
 
 bool BrowserViewRenderer::RequestDrawGL(bool wait_for_completion) {
@@ -144,16 +146,23 @@ void BrowserViewRenderer::PrepareToDraw(const gfx::Vector2d& scroll,
 bool BrowserViewRenderer::OnDrawHardware() {
   TRACE_EVENT0("android_webview", "BrowserViewRenderer::OnDrawHardware");
   shared_renderer_state_.InitializeHardwareDrawIfNeededOnUI();
-  if (!compositor_)
+  if (!compositor_) {
+    TRACE_EVENT_INSTANT0("android_webview", "EarlyOut_NoCompositor",
+                         TRACE_EVENT_SCOPE_THREAD);
     return false;
+  }
 
   shared_renderer_state_.SetScrollOffsetOnUI(last_on_draw_scroll_offset_);
 
   if (!hardware_enabled_) {
+    TRACE_EVENT0("android_webview", "InitializeHwDraw");
     hardware_enabled_ = compositor_->InitializeHwDraw();
   }
-  if (!hardware_enabled_)
+  if (!hardware_enabled_) {
+    TRACE_EVENT_INSTANT0("android_webview", "EarlyOut_HardwareNotEnabled",
+                         TRACE_EVENT_SCOPE_THREAD);
     return false;
+  }
 
   if (last_on_draw_global_visible_rect_.IsEmpty() &&
       parent_draw_constraints_.surface_rect.IsEmpty()) {
@@ -174,8 +183,11 @@ bool BrowserViewRenderer::OnDrawHardware() {
   }
 
   scoped_ptr<cc::CompositorFrame> frame = CompositeHw();
-  if (!frame.get())
+  if (!frame.get()) {
+    TRACE_EVENT_INSTANT0("android_webview", "NoNewFrame",
+                         TRACE_EVENT_SCOPE_THREAD);
     return false;
+  }
 
   shared_renderer_state_.SetCompositorFrameOnUI(frame.Pass(), false);
   return true;
@@ -418,11 +430,11 @@ void BrowserViewRenderer::SetContinuousInvalidate(bool invalidate) {
 
 void BrowserViewRenderer::SetDipScale(float dip_scale) {
   dip_scale_ = dip_scale;
-  CHECK_GT(dip_scale_, 0);
+  CHECK_GT(dip_scale_, 0.f);
 }
 
 gfx::Vector2d BrowserViewRenderer::max_scroll_offset() const {
-  DCHECK_GT(dip_scale_, 0);
+  DCHECK_GT(dip_scale_, 0.f);
   return gfx::ToCeiledVector2d(gfx::ScaleVector2d(
       max_scroll_offset_dip_, dip_scale_ * page_scale_factor_));
 }
@@ -443,10 +455,14 @@ void BrowserViewRenderer::ScrollTo(gfx::Vector2d scroll_offset) {
                             max_offset.y());
   }
 
-  DCHECK_LE(0, scroll_offset_dip.x());
-  DCHECK_LE(0, scroll_offset_dip.y());
-  DCHECK_LE(scroll_offset_dip.x(), max_scroll_offset_dip_.x());
-  DCHECK_LE(scroll_offset_dip.y(), max_scroll_offset_dip_.y());
+  DCHECK_LE(0.f, scroll_offset_dip.x());
+  DCHECK_LE(0.f, scroll_offset_dip.y());
+  DCHECK(scroll_offset_dip.x() < max_scroll_offset_dip_.x() ||
+         scroll_offset_dip.x() - max_scroll_offset_dip_.x() < kEpsilon)
+      << scroll_offset_dip.x() << " " << max_scroll_offset_dip_.x();
+  DCHECK(scroll_offset_dip.y() < max_scroll_offset_dip_.y() ||
+         scroll_offset_dip.y() - max_scroll_offset_dip_.y() < kEpsilon)
+      << scroll_offset_dip.y() << " " << max_scroll_offset_dip_.y();
 
   if (scroll_offset_dip_ == scroll_offset_dip)
     return;
@@ -527,14 +543,14 @@ void BrowserViewRenderer::UpdateRootLayerState(
       "state",
       RootLayerStateAsValue(total_scroll_offset_dip, scrollable_size_dip));
 
-  DCHECK_GT(dip_scale_, 0);
+  DCHECK_GT(dip_scale_, 0.f);
 
   max_scroll_offset_dip_ = max_scroll_offset_dip;
-  DCHECK_LE(0, max_scroll_offset_dip_.x());
-  DCHECK_LE(0, max_scroll_offset_dip_.y());
+  DCHECK_LE(0.f, max_scroll_offset_dip_.x());
+  DCHECK_LE(0.f, max_scroll_offset_dip_.y());
 
   page_scale_factor_ = page_scale_factor;
-  DCHECK_GT(page_scale_factor_, 0);
+  DCHECK_GT(page_scale_factor_, 0.f);
 
   client_->UpdateScrollState(max_scroll_offset(),
                              scrollable_size_dip,

@@ -26,13 +26,13 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       last_frame_number_swap_performed_(-1),
       last_frame_number_swap_requested_(-1),
       last_frame_number_begin_main_frame_sent_(-1),
-      manage_tiles_funnel_(0),
+      prepare_tiles_funnel_(0),
       consecutive_checkerboard_animations_(0),
       max_pending_swaps_(1),
       pending_swaps_(0),
       needs_redraw_(false),
       needs_animate_(false),
-      needs_manage_tiles_(false),
+      needs_prepare_tiles_(false),
       needs_commit_(false),
       inside_poll_for_anticipated_draw_triggers_(false),
       visible_(false),
@@ -97,6 +97,8 @@ const char* SchedulerStateMachine::CommitStateToString(CommitState state) {
       return "COMMIT_STATE_READY_TO_COMMIT";
     case COMMIT_STATE_WAITING_FOR_ACTIVATION:
       return "COMMIT_STATE_WAITING_FOR_ACTIVATION";
+    case COMMIT_STATE_WAITING_FOR_DRAW:
+      return "COMMIT_STATE_WAITING_FOR_DRAW";
   }
   NOTREACHED();
   return "???";
@@ -138,8 +140,8 @@ const char* SchedulerStateMachine::ActionToString(Action action) {
       return "ACTION_DRAW_AND_SWAP_ABORT";
     case ACTION_BEGIN_OUTPUT_SURFACE_CREATION:
       return "ACTION_BEGIN_OUTPUT_SURFACE_CREATION";
-    case ACTION_MANAGE_TILES:
-      return "ACTION_MANAGE_TILES";
+    case ACTION_PREPARE_TILES:
+      return "ACTION_PREPARE_TILES";
   }
   NOTREACHED();
   return "???";
@@ -204,14 +206,14 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
   state->SetInteger("last_frame_number_begin_main_frame_sent",
                     last_frame_number_begin_main_frame_sent_);
 
-  state->SetInteger("manage_tiles_funnel", manage_tiles_funnel_);
+  state->SetInteger("prepare_tiles_funnel", prepare_tiles_funnel_);
   state->SetInteger("consecutive_checkerboard_animations",
                     consecutive_checkerboard_animations_);
   state->SetInteger("max_pending_swaps_", max_pending_swaps_);
   state->SetInteger("pending_swaps_", pending_swaps_);
   state->SetBoolean("needs_redraw", needs_redraw_);
   state->SetBoolean("needs_animate_", needs_animate_);
-  state->SetBoolean("needs_manage_tiles", needs_manage_tiles_);
+  state->SetBoolean("needs_prepare_tiles", needs_prepare_tiles_);
   state->SetBoolean("needs_commit", needs_commit_);
   state->SetBoolean("visible", visible_);
   state->SetBoolean("can_start", can_start_);
@@ -242,9 +244,9 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
 void SchedulerStateMachine::AdvanceCurrentFrameNumber() {
   current_frame_number_++;
 
-  // "Drain" the ManageTiles funnel.
-  if (manage_tiles_funnel_ > 0)
-    manage_tiles_funnel_--;
+  // "Drain" the PrepareTiles funnel.
+  if (prepare_tiles_funnel_ > 0)
+    prepare_tiles_funnel_--;
 
   skip_begin_main_frame_to_reduce_latency_ =
       skip_next_begin_main_frame_to_reduce_latency_;
@@ -340,6 +342,10 @@ bool SchedulerStateMachine::ShouldDraw() const {
   if (PendingDrawsShouldBeAborted())
     return active_tree_needs_first_draw_;
 
+  // Don't draw if we are waiting on the first commit after a surface.
+  if (output_surface_state_ != OUTPUT_SURFACE_ACTIVE)
+    return false;
+
   // If a commit has occurred after the animate call, we need to call animate
   // again before we should draw.
   if (did_commit_after_animating_)
@@ -385,6 +391,10 @@ bool SchedulerStateMachine::ShouldActivatePendingTree() const {
 }
 
 bool SchedulerStateMachine::ShouldAnimate() const {
+  // Don't animate if we are waiting on the first commit after a surface.
+  if (output_surface_state_ != OUTPUT_SURFACE_ACTIVE)
+    return false;
+
   // If a commit occurred after our last call, we need to do animation again.
   if (HasAnimatedThisFrame() && !did_commit_after_animating_)
     return false;
@@ -421,10 +431,6 @@ bool SchedulerStateMachine::ShouldSendBeginMainFrame() const {
       (has_pending_tree_ || active_tree_needs_first_draw_)) {
     return false;
   }
-
-  // We want to start the first commit after we get a new output surface ASAP.
-  if (output_surface_state_ == OUTPUT_SURFACE_WAITING_FOR_FIRST_COMMIT)
-    return true;
 
   // We should not send BeginMainFrame while we are in
   // BEGIN_IMPL_FRAME_STATE_IDLE since we might have new
@@ -479,20 +485,20 @@ bool SchedulerStateMachine::ShouldCommit() const {
   return true;
 }
 
-bool SchedulerStateMachine::ShouldManageTiles() const {
-  // ManageTiles only really needs to be called immediately after commit
+bool SchedulerStateMachine::ShouldPrepareTiles() const {
+  // PrepareTiles only really needs to be called immediately after commit
   // and then periodically after that. Use a funnel to make sure we average
-  // one ManageTiles per BeginImplFrame in the long run.
-  if (manage_tiles_funnel_ > 0)
+  // one PrepareTiles per BeginImplFrame in the long run.
+  if (prepare_tiles_funnel_ > 0)
     return false;
 
   // Limiting to once per-frame is not enough, since we only want to
-  // manage tiles _after_ draws. Polling for draw triggers and
+  // prepare tiles _after_ draws. Polling for draw triggers and
   // begin-frame are mutually exclusive, so we limit to these two cases.
   if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE &&
       !inside_poll_for_anticipated_draw_triggers_)
     return false;
-  return needs_manage_tiles_;
+  return needs_prepare_tiles_;
 }
 
 SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
@@ -510,8 +516,8 @@ SchedulerStateMachine::Action SchedulerStateMachine::NextAction() const {
     else
       return ACTION_DRAW_AND_SWAP_IF_POSSIBLE;
   }
-  if (ShouldManageTiles())
-    return ACTION_MANAGE_TILES;
+  if (ShouldPrepareTiles())
+    return ACTION_PREPARE_TILES;
   if (ShouldSendBeginMainFrame())
     return ACTION_SEND_BEGIN_MAIN_FRAME;
   if (ShouldBeginOutputSurfaceCreation())
@@ -548,8 +554,8 @@ void SchedulerStateMachine::UpdateState(Action action) {
       return;
 
     case ACTION_COMMIT: {
-      bool commit_was_aborted = false;
-      UpdateStateOnCommit(commit_was_aborted);
+      bool commit_has_no_updates = false;
+      UpdateStateOnCommit(commit_has_no_updates);
       return;
     }
 
@@ -578,29 +584,31 @@ void SchedulerStateMachine::UpdateState(Action action) {
       DCHECK(!active_tree_needs_first_draw_);
       return;
 
-    case ACTION_MANAGE_TILES:
-      UpdateStateOnManageTiles();
+    case ACTION_PREPARE_TILES:
+      UpdateStateOnPrepareTiles();
       return;
   }
 }
 
-void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
+void SchedulerStateMachine::UpdateStateOnCommit(bool commit_has_no_updates) {
   commit_count_++;
 
-  if (!commit_was_aborted && HasAnimatedThisFrame())
+  if (!commit_has_no_updates && HasAnimatedThisFrame())
     did_commit_after_animating_ = true;
 
-  if (commit_was_aborted || settings_.main_frame_before_activation_enabled) {
+  if (commit_has_no_updates || settings_.main_frame_before_activation_enabled) {
     commit_state_ = COMMIT_STATE_IDLE;
+  } else if (settings_.impl_side_painting) {
+    commit_state_ = COMMIT_STATE_WAITING_FOR_ACTIVATION;
   } else {
-    commit_state_ = settings_.impl_side_painting
-                        ? COMMIT_STATE_WAITING_FOR_ACTIVATION
+    commit_state_ = settings_.main_thread_should_always_be_low_latency
+                        ? COMMIT_STATE_WAITING_FOR_DRAW
                         : COMMIT_STATE_IDLE;
   }
 
   // If we are impl-side-painting but the commit was aborted, then we behave
   // mostly as if we are not impl-side-painting since there is no pending tree.
-  has_pending_tree_ = settings_.impl_side_painting && !commit_was_aborted;
+  has_pending_tree_ = settings_.impl_side_painting && !commit_has_no_updates;
 
   // Update state related to forced draws.
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_COMMIT) {
@@ -623,7 +631,7 @@ void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
   // Update state if we have a new active tree to draw, or if the active tree
   // was unchanged but we need to do a forced draw.
   if (!has_pending_tree_ &&
-      (!commit_was_aborted ||
+      (!commit_has_no_updates ||
        forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)) {
     needs_redraw_ = true;
     active_tree_needs_first_draw_ = true;
@@ -637,8 +645,11 @@ void SchedulerStateMachine::UpdateStateOnCommit(bool commit_was_aborted) {
 }
 
 void SchedulerStateMachine::UpdateStateOnActivation() {
-  if (commit_state_ == COMMIT_STATE_WAITING_FOR_ACTIVATION)
-    commit_state_ = COMMIT_STATE_IDLE;
+  if (commit_state_ == COMMIT_STATE_WAITING_FOR_ACTIVATION) {
+    commit_state_ = settings_.main_thread_should_always_be_low_latency
+                        ? COMMIT_STATE_WAITING_FOR_DRAW
+                        : COMMIT_STATE_IDLE;
+  }
 
   if (output_surface_state_ == OUTPUT_SURFACE_WAITING_FOR_FIRST_ACTIVATION)
     output_surface_state_ = OUTPUT_SURFACE_ACTIVE;
@@ -656,6 +667,9 @@ void SchedulerStateMachine::UpdateStateOnDraw(bool did_request_swap) {
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)
     forced_redraw_state_ = FORCED_REDRAW_STATE_IDLE;
 
+  if (commit_state_ == COMMIT_STATE_WAITING_FOR_DRAW)
+    commit_state_ = COMMIT_STATE_IDLE;
+
   needs_redraw_ = false;
   active_tree_needs_first_draw_ = false;
 
@@ -663,8 +677,8 @@ void SchedulerStateMachine::UpdateStateOnDraw(bool did_request_swap) {
     last_frame_number_swap_requested_ = current_frame_number_;
 }
 
-void SchedulerStateMachine::UpdateStateOnManageTiles() {
-  needs_manage_tiles_ = false;
+void SchedulerStateMachine::UpdateStateOnPrepareTiles() {
+  needs_prepare_tiles_ = false;
 }
 
 void SchedulerStateMachine::SetSkipNextBeginMainFrameToReduceLatency() {
@@ -769,7 +783,7 @@ bool SchedulerStateMachine::ProactiveBeginFrameWanted() const {
 
   // Changing priorities may allow us to activate (given the new priorities),
   // which may result in a new frame.
-  if (needs_manage_tiles_)
+  if (needs_prepare_tiles_)
     return true;
 
   // If we just sent a swap request, it's likely that we are going to produce
@@ -810,7 +824,25 @@ void SchedulerStateMachine::OnBeginImplFrameIdle() {
   begin_impl_frame_state_ = BEGIN_IMPL_FRAME_STATE_IDLE;
 }
 
-bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineEarly() const {
+SchedulerStateMachine::BeginImplFrameDeadlineMode
+SchedulerStateMachine::CurrentBeginImplFrameDeadlineMode() const {
+  if (ShouldTriggerBeginImplFrameDeadlineImmediately()) {
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_IMMEDIATE;
+  } else if (needs_redraw_ && pending_swaps_ < max_pending_swaps_) {
+    // We have an animation or fast input path on the impl thread that wants
+    // to draw, so don't wait too long for a new active tree.
+    // If we are swap throttled we should wait until we are unblocked.
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_REGULAR;
+  } else {
+    // The impl thread doesn't have anything it wants to draw and we are just
+    // waiting for a new active tree or we are swap throttled. In short we are
+    // blocked.
+    return BEGIN_IMPL_FRAME_DEADLINE_MODE_LATE;
+  }
+}
+
+bool SchedulerStateMachine::ShouldTriggerBeginImplFrameDeadlineImmediately()
+    const {
   // TODO(brianderson): This should take into account multiple commit sources.
 
   if (begin_impl_frame_state_ != BEGIN_IMPL_FRAME_STATE_INSIDE_BEGIN_FRAME)
@@ -911,11 +943,10 @@ void SchedulerStateMachine::SetNeedsAnimate() {
   needs_animate_ = true;
 }
 
-void SchedulerStateMachine::SetNeedsManageTiles() {
-  if (!needs_manage_tiles_) {
-    TRACE_EVENT0("cc",
-                 "SchedulerStateMachine::SetNeedsManageTiles");
-    needs_manage_tiles_ = true;
+void SchedulerStateMachine::SetNeedsPrepareTiles() {
+  if (!needs_prepare_tiles_) {
+    TRACE_EVENT0("cc", "SchedulerStateMachine::SetNeedsPrepareTiles");
+    needs_prepare_tiles_ = true;
   }
 }
 
@@ -991,23 +1022,32 @@ void SchedulerStateMachine::NotifyReadyToCommit() {
   DCHECK(commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED)
       << AsValue()->ToString();
   commit_state_ = COMMIT_STATE_READY_TO_COMMIT;
+  // In main thread low latency mode, commit should happen right after
+  // BeginFrame, meaning when this function is called, next action should be
+  // commit.
+  if (settings_.main_thread_should_always_be_low_latency)
+    DCHECK(ShouldCommit());
 }
 
-void SchedulerStateMachine::BeginMainFrameAborted(bool did_handle) {
+void SchedulerStateMachine::BeginMainFrameAborted(CommitEarlyOutReason reason) {
   DCHECK_EQ(commit_state_, COMMIT_STATE_BEGIN_MAIN_FRAME_SENT);
-  if (did_handle) {
-    bool commit_was_aborted = true;
-    UpdateStateOnCommit(commit_was_aborted);
-  } else {
-    commit_state_ = COMMIT_STATE_IDLE;
-    SetNeedsCommit();
+  switch (reason) {
+    case CommitEarlyOutReason::ABORTED_OUTPUT_SURFACE_LOST:
+    case CommitEarlyOutReason::ABORTED_NOT_VISIBLE:
+      commit_state_ = COMMIT_STATE_IDLE;
+      SetNeedsCommit();
+      return;
+    case CommitEarlyOutReason::FINISHED_NO_UPDATES:
+      bool commit_has_no_updates = true;
+      UpdateStateOnCommit(commit_has_no_updates);
+      return;
   }
 }
 
-void SchedulerStateMachine::DidManageTiles() {
-  needs_manage_tiles_ = false;
-  // "Fill" the ManageTiles funnel.
-  manage_tiles_funnel_++;
+void SchedulerStateMachine::DidPrepareTiles() {
+  needs_prepare_tiles_ = false;
+  // "Fill" the PrepareTiles funnel.
+  prepare_tiles_funnel_++;
 }
 
 void SchedulerStateMachine::DidLoseOutputSurface() {

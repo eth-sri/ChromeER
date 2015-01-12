@@ -129,7 +129,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif  // OS_MACOSX
 
   InitLogging();
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)) {
     // If CheckLayoutSystemDeps succeeds, we don't exit early. Instead we
     // continue and try to load the fonts in BlinkTestPlatformInitialize
@@ -176,11 +176,9 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kEnableInbandTextTracks);
     command_line.AppendSwitch(switches::kMuteAudio);
 
-#if defined(USE_AURA) || defined(OS_ANDROID) || defined(OS_MACOSX)
     // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
     command_line.AppendSwitch(cc::switches::kCompositeToMailbox);
-#endif
 
     command_line.AppendSwitch(switches::kEnableFileCookies);
 
@@ -211,10 +209,10 @@ void ShellMainDelegate::PreSandboxStartup() {
   // cpu_brand info.
   base::CPU cpu_info;
 #endif
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     std::string process_type =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kProcessType);
     crash_reporter::SetCrashReporterClient(g_shell_crash_client.Pointer());
 #if defined(OS_MACOSX)
@@ -257,7 +255,7 @@ int ShellMainDelegate::RunProcess(
 #endif
 
   browser_runner_.reset(BrowserMainRunner::Create());
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
   return command_line.HasSwitch(switches::kDumpRenderTree) ||
                  command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)
              ? LayoutTestBrowserMain(main_function_params, browser_runner_)
@@ -266,10 +264,10 @@ int ShellMainDelegate::RunProcess(
 
 #if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 void ShellMainDelegate::ZygoteForked() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     std::string process_type =
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kProcessType);
     breakpad::InitCrashReporter(process_type);
   }
@@ -313,19 +311,19 @@ void ShellMainDelegate::InitializeResourceBundle() {
 }
 
 ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
-  browser_client_.reset(
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) ?
-          new LayoutTestContentBrowserClient :
-          new ShellContentBrowserClient);
+  browser_client_.reset(base::CommandLine::ForCurrentProcess()->HasSwitch(
+                            switches::kDumpRenderTree)
+                            ? new LayoutTestContentBrowserClient
+                            : new ShellContentBrowserClient);
 
   return browser_client_.get();
 }
 
 ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
-  renderer_client_.reset(
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree) ?
-          new LayoutTestContentRendererClient :
-          new ShellContentRendererClient);
+  renderer_client_.reset(base::CommandLine::ForCurrentProcess()->HasSwitch(
+                             switches::kDumpRenderTree)
+                             ? new LayoutTestContentRendererClient
+                             : new ShellContentRendererClient);
 
   return renderer_client_.get();
 }

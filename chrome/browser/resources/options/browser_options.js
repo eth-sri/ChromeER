@@ -6,6 +6,7 @@ cr.exportPath('options');
 
 /**
  * @typedef {{actionLinkText: (string|undefined),
+ *            childUser: (boolean|undefined),
  *            hasError: (boolean|undefined),
  *            hasUnrecoverableError: (boolean|undefined),
  *            managed: (boolean|undefined),
@@ -15,6 +16,7 @@ cr.exportPath('options');
  *            signinAllowed: (boolean|undefined),
  *            signoutAllowed: (boolean|undefined),
  *            statusText: (string|undefined),
+ *            supervisedUser: (boolean|undefined),
  *            syncSystemEnabled: (boolean|undefined)}}
  * @see chrome/browser/ui/webui/options/browser_options_handler.cc
  */
@@ -461,6 +463,10 @@ cr.define('options', function() {
             true,
             metric);
       };
+      if (loadTimeData.valueExists('showWakeOnWifi') &&
+          loadTimeData.getBoolean('showWakeOnWifi')) {
+        $('wake-on-wifi').hidden = false;
+      }
 
       // Bluetooth (CrOS only).
       if (cr.isChromeOS) {
@@ -566,7 +572,8 @@ cr.define('options', function() {
       // Web Content section.
       $('fontSettingsCustomizeFontsButton').onclick = function(event) {
         PageManager.showPageByName('fonts');
-        chrome.send('coreOptionsUserMetricsAction', ['Options_FontSettings']);
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_ShowFontSettings']);
       };
       $('defaultFontSize').onchange = function(event) {
         var value = event.target.options[event.target.selectedIndex].value;
@@ -640,19 +647,9 @@ cr.define('options', function() {
         $('accessibility-settings-button').onclick = function(unused_event) {
           window.open(loadTimeData.getString('accessibilitySettingsURL'));
         };
-        $('accessibility-spoken-feedback-check').onchange = function(
-            unused_event) {
-          chrome.send('spokenFeedbackChange',
-                      [$('accessibility-spoken-feedback-check').checked]);
-          updateAccessibilitySettingsButton();
-        };
+        $('accessibility-spoken-feedback-check').onchange =
+            updateAccessibilitySettingsButton;
         updateAccessibilitySettingsButton();
-
-        $('accessibility-high-contrast-check').onchange = function(
-            unused_event) {
-          chrome.send('highContrastChange',
-                      [$('accessibility-high-contrast-check').checked]);
-        };
 
         var updateDelayDropdown = function() {
           $('accessibility-autoclick-dropdown').disabled =
@@ -984,7 +981,7 @@ cr.define('options', function() {
       $('sync-section').hidden = false;
       this.maybeShowUserSection_();
 
-      if (cr.isChromeOS && syncData.supervisedUser) {
+      if (cr.isChromeOS && syncData.supervisedUser && !syncData.childUser) {
         var subSection = $('sync-section').firstChild;
         while (subSection) {
           if (subSection.nodeType == Node.ELEMENT_NODE)
@@ -1196,6 +1193,18 @@ cr.define('options', function() {
     },
 
     /**
+     * Controls the visibility of all the hotword sections.
+     * @param {boolean} visible Whether to show hotword sections.
+     * @private
+     */
+    setAllHotwordSectionsVisible_: function(visible) {
+      $('hotword-search').hidden = !visible;
+      $('hotword-always-on-search').hidden = !visible;
+      $('hotword-no-dsp-search').hidden = !visible;
+      $('audio-history').hidden = !visible;
+    },
+
+    /**
      * Shows or hides the hotword retrain link
      * @param {boolean} visible Whether to show the link.
      * @private
@@ -1216,11 +1225,14 @@ cr.define('options', function() {
 
     /**
      * Activates the Audio History section of the Settings page.
+     * @param {boolean} visible Whether the audio history section is visible.
      * @param {boolean} alwaysOn Whether always-on hotwording is available.
+     * @param {string} labelText Text describing current audio history state.
      * @private
      */
-    showAudioHistorySection_: function(alwaysOn) {
-      $('audio-history').hidden = false;
+    setAudioHistorySectionVisible_: function(visible, alwaysOn, labelText) {
+      $('audio-history').hidden = !visible;
+      $('audio-history-label').textContent = labelText;
       $('audio-history-always-on-description').hidden = !alwaysOn;
     },
 
@@ -2113,6 +2125,7 @@ cr.define('options', function() {
     'setNativeThemeButtonEnabled',
     'setNetworkPredictionValue',
     'setHighContrastCheckboxState',
+    'setAllHotwordSectionsVisible',
     'setMetricsReportingCheckboxState',
     'setMetricsReportingSettingVisibility',
     'setProfilesInfo',
@@ -2121,7 +2134,7 @@ cr.define('options', function() {
     'setVirtualKeyboardCheckboxState',
     'setupPageZoomSelector',
     'setupProxySettingsButton',
-    'showAudioHistorySection',
+    'setAudioHistorySectionVisible',
     'showBluetoothSettings',
     'showCreateProfileError',
     'showCreateProfileSuccess',

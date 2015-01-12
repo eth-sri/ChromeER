@@ -78,8 +78,7 @@ TEST(AnalysisCanvasTest, ComplexActions) {
   canvas.drawPaint(paint);
 
   SkColor outputColor;
-  //TODO(vmpstr): This should return true. (crbug.com/180597)
-  EXPECT_FALSE(canvas.GetColorIfSolid(&outputColor));
+  EXPECT_TRUE(canvas.GetColorIfSolid(&outputColor));
 
   // Draw points test.
   SkPoint points[4] = {
@@ -311,7 +310,7 @@ TEST(AnalysisCanvasTest, EarlyOutNotSolid) {
   // Draw the picture into the analysis canvas, using the canvas as a callback
   // as well.
   skia::AnalysisCanvas canvas(256, 256);
-  picture->draw(&canvas, &canvas);
+  picture->playback(&canvas, &canvas);
 
   // Ensure that canvas is not solid.
   SkColor output_color;

@@ -70,11 +70,12 @@ PasswordForm CopyAndModifySSLValidity(const PasswordForm& orig,
 
 }  // namespace
 
-PasswordFormManager::PasswordFormManager(PasswordManager* password_manager,
-                                         PasswordManagerClient* client,
-                                         PasswordManagerDriver* driver,
-                                         const PasswordForm& observed_form,
-                                         bool ssl_valid)
+PasswordFormManager::PasswordFormManager(
+    PasswordManager* password_manager,
+    PasswordManagerClient* client,
+    const base::WeakPtr<PasswordManagerDriver>& driver,
+    const PasswordForm& observed_form,
+    bool ssl_valid)
     : best_matches_deleter_(&best_matches_),
       observed_form_(CopyAndModifySSLValidity(observed_form, ssl_valid)),
       is_new_login_(true),
@@ -83,10 +84,10 @@ PasswordFormManager::PasswordFormManager(PasswordManager* password_manager,
       preferred_match_(NULL),
       state_(PRE_MATCHING_PHASE),
       client_(client),
-      driver_(driver),
       manager_action_(kManagerActionNone),
       user_action_(kUserActionNone),
       submit_result_(kSubmitResultNotSubmitted) {
+  drivers_.push_back(driver);
   if (observed_form_.origin.is_valid())
     base::SplitString(observed_form_.origin.path(), '/', &form_path_tokens_);
 }
@@ -355,7 +356,7 @@ void PasswordFormManager::ProvisionallySave(
 
 void PasswordFormManager::Save() {
   DCHECK_EQ(state_, POST_MATCHING_PHASE);
-  DCHECK(!driver_->IsOffTheRecord());
+  DCHECK(!client_->IsOffTheRecord());
 
   if (IsNewLogin())
     SaveAsNewLogin(true);
@@ -381,8 +382,6 @@ void PasswordFormManager::FetchMatchingLoginsFromPasswordStore(
     NOTREACHED();
     return;
   }
-  // This logging is only temporary, to investigate http://crbug.com/423327.
-  VLOG(4) << "Asking the store for logins for this form: " << observed_form_;
   password_store->GetLogins(observed_form_, prompt_policy, this);
 }
 
@@ -463,8 +462,6 @@ void PasswordFormManager::OnRequestDone(
     preferred_match_ = logins_result[i]->preferred ? logins_result[i]
                                                    : preferred_match_;
   }
-  // We're done matching now.
-  state_ = POST_MATCHING_PHASE;
 
   client_->AutofillResultsComputed();
 
@@ -472,9 +469,6 @@ void PasswordFormManager::OnRequestDone(
   // be equivalent for the moment, but it's less clear and may not be
   // equivalent in the future.
   if (best_score <= 0) {
-    // If no saved forms can be used, then it isn't blacklisted and generation
-    // should be allowed.
-    driver_->AllowPasswordGenerationForForm(observed_form_);
     if (logger)
       logger->LogNumber(Logger::STRING_BEST_SCORE, best_score);
     return;
@@ -505,27 +499,38 @@ void PasswordFormManager::OnRequestDone(
   if (preferred_match_->blacklisted_by_user) {
     client_->PasswordAutofillWasBlocked(best_matches_);
     manager_action_ = kManagerActionBlacklisted;
+  }
+}
+
+void PasswordFormManager::ProcessFrame(
+    const base::WeakPtr<PasswordManagerDriver>& driver) {
+  if (state_ != POST_MATCHING_PHASE) {
+    drivers_.push_back(driver);
     return;
   }
 
-  // If not blacklisted, inform the driver that password generation is allowed
-  // for |observed_form_|.
-  driver_->AllowPasswordGenerationForForm(observed_form_);
+  if (!driver || manager_action_ == kManagerActionBlacklisted)
+    return;
+
+  // Allow generation for any non-blacklisted form.
+  driver->AllowPasswordGenerationForForm(observed_form_);
+
+  if (best_matches_.empty())
+    return;
 
   // Proceed to autofill.
   // Note that we provide the choices but don't actually prefill a value if:
   // (1) we are in Incognito mode, (2) the ACTION paths don't match,
   // or (3) if it matched using public suffix domain matching.
-  bool wait_for_username =
-      driver_->IsOffTheRecord() ||
-      observed_form_.action.GetWithEmptyPath() !=
-          preferred_match_->action.GetWithEmptyPath() ||
-          preferred_match_->IsPublicSuffixMatch();
+  bool wait_for_username = client_->IsOffTheRecord() ||
+                           observed_form_.action.GetWithEmptyPath() !=
+                               preferred_match_->action.GetWithEmptyPath() ||
+                           preferred_match_->IsPublicSuffixMatch();
   if (wait_for_username)
     manager_action_ = kManagerActionNone;
   else
     manager_action_ = kManagerActionAutofilled;
-  password_manager_->Autofill(observed_form_, best_matches_,
+  password_manager_->Autofill(driver.get(), observed_form_, best_matches_,
                               *preferred_match_, wait_for_username);
 }
 
@@ -540,15 +545,15 @@ void PasswordFormManager::OnGetPasswordStoreResults(
     logger->LogNumber(Logger::STRING_NUMBER_RESULTS, results.size());
   }
 
-  if (results.empty()) {
-    state_ = POST_MATCHING_PHASE;
-    // No result means that we visit this site the first time so we don't need
-    // to check whether this site is blacklisted or not. Just send a message
-    // to allow password generation.
-    driver_->AllowPasswordGenerationForForm(observed_form_);
-    return;
+  if (!results.empty())
+    OnRequestDone(results);
+  state_ = POST_MATCHING_PHASE;
+
+  if (manager_action_ != kManagerActionBlacklisted) {
+    for (auto const& driver : drivers_)
+      ProcessFrame(driver);
   }
-  OnRequestDone(results);
+  drivers_.clear();
 }
 
 bool PasswordFormManager::ShouldIgnoreResult(const PasswordForm& form) const {
@@ -574,7 +579,7 @@ void PasswordFormManager::SaveAsNewLogin(bool reset_preferred_login) {
   // new_form contains the same basic data as observed_form_ (because its the
   // same form), but with the newly added credentials.
 
-  DCHECK(!driver_->IsOffTheRecord());
+  DCHECK(!client_->IsOffTheRecord());
 
   PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
@@ -597,8 +602,6 @@ void PasswordFormManager::SaveAsNewLogin(bool reset_preferred_login) {
 
   pending_credentials_.date_created = Time::Now();
   SanitizePossibleUsernames(&pending_credentials_);
-  // This logging is only temporary, to investigate http://crbug.com/423327.
-  VLOG(4) << "Adding this login: " << pending_credentials_;
   password_store->AddLogin(pending_credentials_);
 
   if (reset_preferred_login) {
@@ -633,8 +636,6 @@ void PasswordFormManager::UpdatePreferredLoginState(
       iter->second->preferred = false;
       if (user_action_ == kUserActionNone)
         user_action_ = kUserActionChoose;
-      // This logging is only temporary, to investigate http://crbug.com/423327.
-      VLOG(4) << "Updating this login: " << *iter->second;
       password_store->UpdateLogin(*iter->second);
     }
   }
@@ -648,7 +649,7 @@ void PasswordFormManager::UpdateLogin() {
   // username, or the user selected one of the non-preferred matches,
   // thus requiring a swap of preferred bits.
   DCHECK(!IsNewLogin() && pending_credentials_.preferred);
-  DCHECK(!driver_->IsOffTheRecord());
+  DCHECK(!client_->IsOffTheRecord());
 
   PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
@@ -677,8 +678,6 @@ void PasswordFormManager::UpdateLogin() {
     // username, so we delete the old credentials and add a new one instead.
     password_store->RemoveLogin(pending_credentials_);
     pending_credentials_.username_value = selected_username_;
-    // This logging is only temporary, to investigate http://crbug.com/423327.
-    VLOG(4) << "Adding this login: " << pending_credentials_;
     password_store->AddLogin(pending_credentials_);
   } else if ((observed_form_.scheme == PasswordForm::SCHEME_HTML) &&
              (observed_form_.origin.spec().length() >
@@ -703,8 +702,6 @@ void PasswordFormManager::UpdateLogin() {
     PasswordForm copy(pending_credentials_);
     copy.origin = observed_form_.origin;
     copy.action = observed_form_.action;
-    // This logging is only temporary, to investigate http://crbug.com/423327.
-    VLOG(4) << "Adding this login: " << copy;
     password_store->AddLogin(copy);
   } else if (observed_form_.new_password_element.empty() &&
              (pending_credentials_.password_element.empty() ||
@@ -720,12 +717,8 @@ void PasswordFormManager::UpdateLogin() {
     pending_credentials_.password_element = observed_form_.password_element;
     pending_credentials_.username_element = observed_form_.username_element;
     pending_credentials_.submit_element = observed_form_.submit_element;
-    // This logging is only temporary, to investigate http://crbug.com/423327.
-    VLOG(4) << "Adding this login: " << pending_credentials_;
     password_store->AddLogin(pending_credentials_);
   } else {
-    // This logging is only temporary, to investigate http://crbug.com/423327.
-    VLOG(4) << "Updating this login: " << pending_credentials_;
     password_store->UpdateLogin(pending_credentials_);
   }
 }
@@ -781,7 +774,7 @@ void PasswordFormManager::UploadPasswordForm(
     const autofill::FormData& form_data,
     const autofill::ServerFieldType& password_type) {
   autofill::AutofillManager* autofill_manager =
-      driver_->GetAutofillManager();
+      client_->GetAutofillManagerForMainFrame();
   if (!autofill_manager)
     return;
 

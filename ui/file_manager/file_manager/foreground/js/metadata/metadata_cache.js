@@ -9,7 +9,6 @@
  * Some of the properties:
  * {
  *   filesystem: size, modificationTime
- *   internal: presence
  *   external: pinned, present, hosted, availableOffline, externalFileUrl
  *
  *   Following are not fetched for non-present external files.
@@ -29,7 +28,7 @@
  *       alert("Pinned and empty!");
  *   });
  *
- *   cache.set(entry, 'internal', {presence: 'deleted'});
+ *   cache.set(entry, 'external', {present: true});
  *
  *   cache.clear([fileEntry1, fileEntry2], 'filesystem');
  *
@@ -45,6 +44,7 @@
  *
  * @param {Array.<MetadataProvider>} providers Metadata providers.
  * @constructor
+ * @struct
  */
 function MetadataCache(providers) {
   /**
@@ -84,8 +84,6 @@ function MetadataCache(providers) {
    * @private
    */
   this.lastBatchStart_ = new Date();
-
-  Object.seal(this);
 }
 
 /**
@@ -112,7 +110,8 @@ MetadataCache.DESCENDANTS = 2;
 MetadataCache.EVICTION_THRESHOLD_MARGIN = 500;
 
 /**
- * @param {VolumeManagerWrapper} volumeManager Volume manager instance.
+ * @param {VolumeManagerCommon.VolumeInfoProvider} volumeManager Volume manager
+ *     instance.
  * @return {MetadataCache!} The cache with all providers.
  */
 MetadataCache.createFull = function(volumeManager) {
@@ -128,8 +127,8 @@ MetadataCache.createFull = function(volumeManager) {
 /**
  * Clones metadata entry. Metadata entries may contain scalars, arrays,
  * hash arrays and Date object. Other objects are not supported.
- * @param {Object} metadata Metadata object.
- * @return {Object} Cloned entry.
+ * @param {!Object} metadata Metadata object.
+ * @return {!Object} Cloned entry.
  */
 MetadataCache.cloneMetadata = function(metadata) {
   if (metadata instanceof Array) {
@@ -774,7 +773,8 @@ FilesystemProvider.prototype.fetch = function(
  * This provider returns the following objects:
  *     external: { pinned, hosted, present, customIconUrl, etc. }
  *     thumbnail: { url, transform }
- * @param {VolumeManagerWrapper} volumeManager Volume manager instance.
+ * @param {VolumeManagerCommon.VolumeInfoProvider} volumeManager Volume manager
+ *     instance.
  * @constructor
  * @extends {MetadataProvider}
  */
@@ -782,7 +782,7 @@ function ExternalProvider(volumeManager) {
   MetadataProvider.call(this);
 
   /**
-   * @type {VolumeManagerWrapper}
+   * @type {VolumeManagerCommon.VolumeInfoProvider}
    * @private
    */
   this.volumeManager_ = volumeManager;
@@ -804,11 +804,11 @@ ExternalProvider.prototype = {
  * @return {boolean} Whether this provider supports the entry.
  */
 ExternalProvider.prototype.supportsEntry = function(entry) {
-  var locationInfo = this.volumeManager_.getLocationInfo(entry);
-  if (!locationInfo)
+  var volumeInfo = this.volumeManager_.getVolumeInfo(entry);
+  if (!volumeInfo)
     return false;
-  return locationInfo.isDriveBased ||
-      locationInfo.rootType === VolumeManagerCommon.RootType.PROVIDED;
+  return volumeInfo.volumeType === VolumeManagerCommon.VolumeType.DRIVE ||
+      volumeInfo.volumeType === VolumeManagerCommon.VolumeType.PROVIDED;
 };
 
 /**
@@ -955,7 +955,6 @@ function ContentProvider() {
 /**
  * Path of a worker script.
  * @type {string}
- * @const
  */
 ContentProvider.WORKER_SCRIPT =
     'chrome-extension://hhaomjibdihmijegdhdafkllkbggdgoj/' +

@@ -19,6 +19,8 @@ const char* BeginFrameArgs::TypeToString(BeginFrameArgsType type) {
       return "SYNCHRONOUS";
     case BeginFrameArgs::MISSED:
       return "MISSED";
+    case BeginFrameArgs::BEGIN_FRAME_ARGS_TYPE_MAX:
+      return "BEGIN_FRAME_ARGS_TYPE_MAX";
   }
   NOTREACHED();
   return "???";
@@ -41,12 +43,20 @@ BeginFrameArgs::BeginFrameArgs(base::TimeTicks frame_time,
       type(type) {
 }
 
-BeginFrameArgs BeginFrameArgs::Create(base::TimeTicks frame_time,
+BeginFrameArgs BeginFrameArgs::Create(BeginFrameArgs::CreationLocation location,
+                                      base::TimeTicks frame_time,
                                       base::TimeTicks deadline,
                                       base::TimeDelta interval,
                                       BeginFrameArgs::BeginFrameArgsType type) {
   DCHECK_NE(type, BeginFrameArgs::INVALID);
+  DCHECK_NE(type, BeginFrameArgs::BEGIN_FRAME_ARGS_TYPE_MAX);
+#ifdef NDEBUG
   return BeginFrameArgs(frame_time, deadline, interval, type);
+#else
+  BeginFrameArgs args = BeginFrameArgs(frame_time, deadline, interval, type);
+  args.created_from = location;
+  return args;
+#endif
 }
 
 scoped_refptr<base::debug::ConvertableToTraceFormat> BeginFrameArgs::AsValue()
@@ -63,6 +73,9 @@ void BeginFrameArgs::AsValueInto(base::debug::TracedValue* state) const {
   state->SetDouble("frame_time_us", frame_time.ToInternalValue());
   state->SetDouble("deadline_us", deadline.ToInternalValue());
   state->SetDouble("interval_us", interval.InMicroseconds());
+#ifndef NDEBUG
+  state->SetString("created_from", created_from.ToString());
+#endif
 }
 
 // This is a hard-coded deadline adjustment that assumes 60Hz, to be used in

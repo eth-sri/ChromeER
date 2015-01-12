@@ -8,8 +8,10 @@
 #include "base/macros.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_credentials_getter.h"
+#include "chrome/browser/extensions/api/networking_private/networking_private_delegate_factory.h"
+#include "chrome/browser/extensions/api/networking_private/networking_private_event_router.h"
+#include "chrome/browser/extensions/api/networking_private/networking_private_event_router_factory.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client.h"
-#include "chrome/browser/extensions/api/networking_private/networking_private_service_client_factory.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
@@ -22,8 +24,10 @@ using testing::Return;
 using testing::_;
 
 using extensions::NetworkingPrivateDelegate;
+using extensions::NetworkingPrivateDelegateFactory;
+using extensions::NetworkingPrivateEventRouter;
+using extensions::NetworkingPrivateEventRouterFactory;
 using extensions::NetworkingPrivateServiceClient;
-using extensions::NetworkingPrivateServiceClientFactory;
 
 // This tests the Windows / Mac implementation of the networkingPrivate API.
 // Note: the expectations in test/data/extensions/api_test/networking/test.js
@@ -70,11 +74,7 @@ class NetworkingPrivateServiceClientApiTest : public ExtensionApiTest {
                                kFlagEnableFileAccess | kFlagLoadAsComponent);
   }
 
-  void SetUpInProcessBrowserTestFixture() override {
-    ExtensionApiTest::SetUpInProcessBrowserTestFixture();
-  }
-
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     ExtensionApiTest::SetUpCommandLine(command_line);
     // Whitelist the extension ID of the test extension.
     command_line->AppendSwitchASCII(
@@ -93,8 +93,13 @@ class NetworkingPrivateServiceClientApiTest : public ExtensionApiTest {
   void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
     content::RunAllPendingInMessageLoop();
-    NetworkingPrivateServiceClientFactory::GetInstance()->SetTestingFactory(
+    NetworkingPrivateDelegateFactory::GetInstance()->SetTestingFactory(
         profile(), &CreateNetworkingPrivateServiceClient);
+  }
+
+  void TearDownOnMainThread() override {
+    content::RunAllPendingInMessageLoop();
+    ExtensionApiTest::SetUpOnMainThread();
   }
 
  protected:

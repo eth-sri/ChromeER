@@ -268,7 +268,8 @@ bool ComponentLoader::Exists(const std::string& id) const {
 void ComponentLoader::AddFileManagerExtension() {
 #if defined(OS_CHROMEOS)
 #ifndef NDEBUG
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kFileManagerExtensionPath)) {
     base::FilePath filemgr_extension_path(
         command_line->GetSwitchValuePath(switches::kFileManagerExtensionPath));
@@ -355,20 +356,13 @@ void ComponentLoader::AddChromeVoxExtension(
   base::FilePath chromevox_path =
       resources_path.Append(extension_misc::kChromeVoxExtensionPath);
 
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  bool is_chromevox_next =
-      command_line->HasSwitch(chromeos::switches::kEnableChromeVoxNext);
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   bool is_guest = command_line->HasSwitch(chromeos::switches::kGuestSession);
-  const char* manifest_filename;
-  if (is_chromevox_next) {
-    manifest_filename =
-        is_guest ? extension_misc::kChromeVoxNextGuestManifestFilename
-                 : extension_misc::kChromeVoxNextManifestFilename;
-  } else {
-    manifest_filename =
-        is_guest ? extension_misc::kChromeVoxGuestManifestFilename
-                 : extension_misc::kChromeVoxManifestFilename;
-  }
+  const char* manifest_filename =
+      is_guest ? extension_misc::kChromeVoxGuestManifestFilename
+               : extension_misc::kChromeVoxManifestFilename;
+
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::FILE,
       FROM_HERE,
@@ -391,7 +385,8 @@ void ComponentLoader::AddChromeVoxExtensionWithManifest(
 }
 
 std::string ComponentLoader::AddChromeOsSpeechSynthesisExtension() {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   int idr = command_line->HasSwitch(chromeos::switches::kGuestSession) ?
       IDR_SPEECH_SYNTHESIS_GUEST_MANIFEST : IDR_SPEECH_SYNTHESIS_MANIFEST;
   std::string id = Add(idr,
@@ -467,7 +462,8 @@ void ComponentLoader::AddDefaultComponentExtensions(
 
   // Skip all other extensions that require user session presence.
   if (!skip_session_components) {
-    const CommandLine* command_line = CommandLine::ForCurrentProcess();
+    const base::CommandLine* command_line =
+        base::CommandLine::ForCurrentProcess();
     if (!command_line->HasSwitch(chromeos::switches::kGuestSession))
       Add(IDR_BOOKMARKS_MANIFEST,
           base::FilePath(FILE_PATH_LITERAL("bookmark_manager")));
@@ -509,7 +505,8 @@ void ComponentLoader::AddDefaultComponentExtensionsForKioskMode(
 
 void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
     bool skip_session_components) {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
 
   // Component extensions with background pages are not enabled during tests
   // because they generate a lot of background behavior that can interfere.
@@ -645,7 +642,8 @@ void ComponentLoader::UnloadComponent(ComponentExtensionInfo* component) {
 
 void ComponentLoader::EnableFileSystemInGuestMode(const std::string& id) {
 #if defined(OS_CHROMEOS)
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(chromeos::switches::kGuestSession)) {
     // TODO(dpolukhin): Hack to enable HTML5 temporary file system for
     // the extension. Some component extensions don't work without temporary

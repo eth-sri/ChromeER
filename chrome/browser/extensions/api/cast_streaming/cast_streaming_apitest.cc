@@ -28,7 +28,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/rand_callback.h"
-#include "net/udp/udp_socket.h"
+#include "net/udp/udp_server_socket.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using media::cast::test::GetFreeLocalPort;
@@ -37,7 +37,7 @@ namespace extensions {
 
 class CastStreamingApiTest : public ExtensionApiTest {
  public:
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     ExtensionApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(
         extensions::switches::kWhitelistedExtensionID,
@@ -321,7 +321,7 @@ class CastStreamingApiTestWithPixelOutput : public CastStreamingApiTest {
     CastStreamingApiTest::SetUp();
   }
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitchASCII(::switches::kWindowSize, "128,128");
     CastStreamingApiTest::SetUpCommandLine(command_line);
   }
@@ -341,13 +341,10 @@ class CastStreamingApiTestWithPixelOutput : public CastStreamingApiTest {
 #define MAYBE_EndToEnd DISABLED_EndToEnd
 #endif
 IN_PROC_BROWSER_TEST_F(CastStreamingApiTestWithPixelOutput, MAYBE_EndToEnd) {
-  scoped_ptr<net::UDPSocket> receive_socket(
-      new net::UDPSocket(net::DatagramSocket::DEFAULT_BIND,
-                         net::RandIntCallback(),
-                         NULL,
-                         net::NetLog::Source()));
+  scoped_ptr<net::UDPServerSocket> receive_socket(
+      new net::UDPServerSocket(NULL, net::NetLog::Source()));
   receive_socket->AllowAddressReuse();
-  ASSERT_EQ(net::OK, receive_socket->Bind(GetFreeLocalPort()));
+  ASSERT_EQ(net::OK, receive_socket->Listen(GetFreeLocalPort()));
   net::IPEndPoint receiver_end_point;
   ASSERT_EQ(net::OK, receive_socket->GetLocalAddress(&receiver_end_point));
   receive_socket.reset();

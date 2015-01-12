@@ -13,10 +13,14 @@
 #include "components/keyed_service/core/keyed_service.h"
 
 namespace content {
+
 class BrowserContext;
-}
+
+}  // content
 
 namespace extensions {
+
+class NetworkingPrivateDelegateObserver;
 
 namespace api {
 namespace networking_private {
@@ -74,14 +78,11 @@ class NetworkingPrivateDelegate : public KeyedService {
     DISALLOW_COPY_AND_ASSIGN(VerifyDelegate);
   };
 
-  static NetworkingPrivateDelegate* GetForBrowserContext(
-      content::BrowserContext* browser_context);
-
   // If |verify_delegate| is not NULL, the Verify* methods will be forwarded
   // to the delegate. Otherwise they will fail with a NotSupported error.
   explicit NetworkingPrivateDelegate(
       scoped_ptr<VerifyDelegate> verify_delegate);
-  virtual ~NetworkingPrivateDelegate();
+  ~NetworkingPrivateDelegate() override;
 
   // Asynchronous methods
   virtual void GetProperties(const std::string& guid,
@@ -119,10 +120,9 @@ class NetworkingPrivateDelegate : public KeyedService {
       bool enabled,
       const StringCallback& success_callback,
       const FailureCallback& failure_callback) = 0;
-  virtual void GetWifiTDLSStatus(
-      const std::string& ip_or_mac_address,
-      const StringCallback& success_callback,
-      const FailureCallback& failure_callback) = 0;
+  virtual void GetWifiTDLSStatus(const std::string& ip_or_mac_address,
+                                 const StringCallback& success_callback,
+                                 const FailureCallback& failure_callback) = 0;
   virtual void GetCaptivePortalStatus(
       const std::string& guid,
       const StringCallback& success_callback,
@@ -143,11 +143,15 @@ class NetworkingPrivateDelegate : public KeyedService {
   // to complete. The scan may or may not trigger API events when complete.
   virtual bool RequestScan() = 0;
 
+  // Optional methods for adding a NetworkingPrivateDelegateObserver for
+  // implementations that require it (non-chromeos).
+  virtual void AddObserver(NetworkingPrivateDelegateObserver* observer);
+  virtual void RemoveObserver(NetworkingPrivateDelegateObserver* observer);
+
   // Verify* methods are forwarded to |verify_delegate_| if not NULL.
-  void VerifyDestination(
-      const VerificationProperties& verification_properties,
-      const BoolCallback& success_callback,
-      const FailureCallback& failure_callback);
+  void VerifyDestination(const VerificationProperties& verification_properties,
+                         const BoolCallback& success_callback,
+                         const FailureCallback& failure_callback);
   void VerifyAndEncryptCredentials(
       const std::string& guid,
       const VerificationProperties& verification_properties,

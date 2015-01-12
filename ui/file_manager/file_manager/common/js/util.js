@@ -200,26 +200,6 @@ util.bytesToString = function(bytes) {
 };
 
 /**
- * Utility function to read specified range of bytes from file
- * @param {File} file The file to read.
- * @param {number} begin Starting byte(included).
- * @param {number} end Last byte(excluded).
- * @param {function(File, ByteReader)} callback Callback to invoke.
- * @param {function(string)} onError Error handler.
- */
-util.readFileBytes = function(file, begin, end, callback, onError) {
-  var fileReader = new FileReader();
-  fileReader.onerror = function(event) {
-    onError(event.type);
-  };
-  fileReader.onloadend = function() {
-    callback(file, new ByteReader(
-        /** @type {ArrayBuffer} */ (fileReader.result)));
-  };
-  fileReader.readAsArrayBuffer(file.slice(begin, end));
-};
-
-/**
  * Returns a string '[Ctrl-][Alt-][Shift-][Meta-]' depending on the event
  * modifiers. Convenient for writing out conditions in keyboard handlers.
  *
@@ -288,9 +268,9 @@ util.createChild = function(parent, opt_className, opt_tag) {
 /**
  * Updates the app state.
  *
- * @param {string} currentDirectoryURL Currently opened directory as an URL.
+ * @param {?string} currentDirectoryURL Currently opened directory as an URL.
  *     If null the value is left unchanged.
- * @param {string} selectionURL Currently selected entry as an URL. If null the
+ * @param {?string} selectionURL Currently selected entry as an URL. If null the
  *     value is left unchanged.
  * @param {string|Object=} opt_param Additional parameters, to be stored. If
  *     null, then left unchanged.
@@ -402,10 +382,10 @@ util.AppCache.getValue = function(key, callback) {
 };
 
 /**
- * Update the cache.
+ * Updates the cache.
  *
  * @param {string} key Key.
- * @param {string} value Value. Remove the key if value is null.
+ * @param {?(string|number)} value Value. Remove the key if value is null.
  * @param {number=} opt_lifetime Maximum time to keep an item (in milliseconds).
  */
 util.AppCache.update = function(key, value, opt_lifetime) {
@@ -483,37 +463,6 @@ util.AppCache.cleanup_ = function(map) {
   for (var i = 0; i != itemsToDelete; i++) {
     delete map[keys[i]];
   }
-};
-
-/**
- * Load an image.
- *
- * @param {HTMLImageElement} image Image element.
- * @param {string} url Source url.
- * @param {Object=} opt_options Hash array of options, eg. width, height,
- *     maxWidth, maxHeight, scale, cache.
- * @param {function()=} opt_isValid Function returning false iff the task
- *     is not valid and should be aborted.
- * @return {?number} Task identifier or null if fetched immediately from
- *     cache.
- */
-util.loadImage = function(image, url, opt_options, opt_isValid) {
-  return ImageLoaderClient.loadToImage(url,
-                                       image,
-                                       opt_options || {},
-                                       function() {},
-                                       function() {
-                                         image.onerror(new Event('load-error'));
-                                       },
-                                       opt_isValid);
-};
-
-/**
- * Cancels loading an image.
- * @param {number} taskId Task identifier returned by util.loadImage().
- */
-util.cancelLoadImage = function(taskId) {
-  ImageLoaderClient.getInstance().cancel(taskId);
 };
 
 /**
@@ -722,6 +671,29 @@ util.compareName = function(entry1, entry2) {
  */
 util.comparePath = function(entry1, entry2) {
   return util.collator.compare(entry1.fullPath, entry2.fullPath);
+};
+
+/**
+ * Checks if {@code entry} is an immediate child of {@code directory}.
+ *
+ * @param {Entry} entry The presumptive child.
+ * @param {DirectoryEntry} directory The presumptive parent.
+ * @return {!Promise.<boolean>} Resolves with true if {@code directory} is
+ *     parent of {@code entry}.
+ */
+util.isChildEntry = function(entry, directory) {
+  return new Promise(
+      function(resolve, reject) {
+        if (!entry || !directory) {
+          resolve(false);
+        }
+
+        entry.getParent(
+            function(parent) {
+              resolve(util.isSameEntry(parent, directory));
+            },
+            reject);
+    });
 };
 
 /**

@@ -97,7 +97,7 @@ void SpoolerServiceCommand(const char* command) {
   options.wait = true;
   options.start_hidden = true;
   VLOG(0) << command_line.GetCommandLineString();
-  base::LaunchProcess(command_line, options, NULL);
+  base::LaunchProcess(command_line, options);
 }
 
 HRESULT RegisterPortMonitor(bool install, const base::FilePath& install_path) {
@@ -138,16 +138,16 @@ HRESULT RegisterPortMonitor(bool install, const base::FilePath& install_path) {
   base::LaunchOptions options;
   options.wait = true;
 
-  base::win::ScopedHandle regsvr32_handle;
-  if (!base::LaunchProcess(command_line.GetCommandLineString(), options,
-                           &regsvr32_handle)) {
+  base::Process regsvr32_process =
+      base::LaunchProcess(command_line.GetCommandLineString(), options);
+  if (!regsvr32_process.IsValid()) {
     LOG(ERROR) << "Unable to launch regsvr32.exe.";
     return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
   }
 
   DWORD exit_code = S_OK;
   if (install) {
-    if (!GetExitCodeProcess(regsvr32_handle.Get(), &exit_code)) {
+    if (!GetExitCodeProcess(regsvr32_process.Handle(), &exit_code)) {
       LOG(ERROR) << "Unable to get regsvr32.exe exit code.";
       return GetLastHResult();
     }
@@ -507,7 +507,7 @@ HRESULT ExecuteCommands() {
       *base::CommandLine::ForCurrentProcess();
 
   base::FilePath exe_path;
-  if (FAILED(PathService::Get(base::DIR_EXE, &exe_path)) ||
+  if (!PathService::Get(base::DIR_EXE, &exe_path) ||
       !base::DirectoryExists(exe_path)) {
     return HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND);
   }

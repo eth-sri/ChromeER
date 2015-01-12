@@ -18,8 +18,6 @@ config("sdk") {
     "WIN32",
     "_SECURE_ATL",
   ]
-
-  include_dirs = system_include_dirs
 }
 
 # Sets the default Windows build version. This is separated because some
@@ -122,9 +120,7 @@ config("unicode") {
 # to have a separate config for it. Remove this config from your target to
 # get the "bloaty and accomodating" version of windows.h.
 config("lean_and_mean") {
-  defines = [
-    "WIN32_LEAN_AND_MEAN",
-  ]
+  defines = [ "WIN32_LEAN_AND_MEAN" ]
 }
 
 # Nominmax --------------------------------------------------------------------
@@ -134,7 +130,5 @@ config("lean_and_mean") {
 # For such targets, this config can be removed.
 
 config("nominmax") {
-  defines = [
-    "NOMINMAX",
-  ]
+  defines = [ "NOMINMAX" ]
 }

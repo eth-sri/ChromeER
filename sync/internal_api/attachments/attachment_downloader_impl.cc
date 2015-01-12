@@ -7,8 +7,11 @@
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/sys_byteorder.h"
+#include "base/time/time.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
@@ -34,6 +37,7 @@ struct AttachmentDownloaderImpl::DownloadState {
   std::string access_token;
   scoped_ptr<net::URLFetcher> url_fetcher;
   std::vector<DownloadCallback> user_callbacks;
+  base::TimeTicks start_time;
 };
 
 AttachmentDownloaderImpl::DownloadState::DownloadState(
@@ -50,14 +54,16 @@ AttachmentDownloaderImpl::AttachmentDownloaderImpl(
     const OAuth2TokenService::ScopeSet& scopes,
     const scoped_refptr<OAuth2TokenServiceRequest::TokenServiceProvider>&
         token_service_provider,
-    const std::string& store_birthday)
+    const std::string& store_birthday,
+    ModelType model_type)
     : OAuth2TokenService::Consumer("attachment-downloader-impl"),
       sync_service_url_(sync_service_url),
       url_request_context_getter_(url_request_context_getter),
       account_id_(account_id),
       oauth2_scopes_(scopes),
       token_service_provider_(token_service_provider),
-      raw_store_birthday_(store_birthday) {
+      raw_store_birthday_(store_birthday),
+      model_type_(model_type) {
   DCHECK(url_request_context_getter_.get());
   DCHECK(!account_id.empty());
   DCHECK(!scopes.empty());
@@ -106,6 +112,7 @@ void AttachmentDownloaderImpl::OnGetTokenSuccess(
     download_state->access_token = access_token;
     download_state->url_fetcher =
         CreateFetcher(download_state->attachment_url, access_token).Pass();
+    download_state->start_time = base::TimeTicks::Now();
     download_state->url_fetcher->Start();
   }
   requests_waiting_for_access_token_.clear();
@@ -156,6 +163,9 @@ void AttachmentDownloaderImpl::OnURLFetchComplete(
     source->GetResponseAsString(&data_as_string);
     attachment_data = base::RefCountedString::TakeString(&data_as_string);
 
+    UMA_HISTOGRAM_LONG_TIMES("Sync.Attachments.DownloadTotalTime",
+        base::TimeTicks::Now() - download_state.start_time);
+
     attachment_crc32c = ComputeCrc32c(attachment_data);
     uint32_t crc32c_from_headers = 0;
     if (ExtractCrc32c(source->GetResponseHeaders(), &crc32c_from_headers) &&
@@ -167,6 +177,8 @@ void AttachmentDownloaderImpl::OnURLFetchComplete(
     } else {
       result = DOWNLOAD_SUCCESS;
     }
+    UMA_HISTOGRAM_BOOLEAN("Sync.Attachments.DownloadChecksumResult",
+                          result == DOWNLOAD_SUCCESS);
   } else if (response_code == net::HTTP_UNAUTHORIZED) {
     // Server tells us we've got a bad token so invalidate it.
     OAuth2TokenServiceRequest::InvalidateToken(token_service_provider_.get(),
@@ -191,7 +203,7 @@ scoped_ptr<net::URLFetcher> AttachmentDownloaderImpl::CreateFetcher(
   scoped_ptr<net::URLFetcher> url_fetcher(
       net::URLFetcher::Create(GURL(url), net::URLFetcher::GET, this));
   AttachmentUploaderImpl::ConfigureURLFetcherCommon(
-      url_fetcher.get(), access_token, raw_store_birthday_,
+      url_fetcher.get(), access_token, raw_store_birthday_, model_type_,
       url_request_context_getter_.get());
   return url_fetcher.Pass();
 }

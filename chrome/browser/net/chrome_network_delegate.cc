@@ -15,6 +15,7 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/metrics/user_metrics.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_member.h"
@@ -34,27 +35,19 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_metrics.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats.h"
-#include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/domain_reliability/monitor.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_info.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_options.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
-#include "net/proxy/proxy_config.h"
-#include "net/proxy/proxy_info.h"
-#include "net/proxy/proxy_retry_info.h"
-#include "net/proxy/proxy_server.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 
@@ -115,90 +108,6 @@ void ForceGoogleSafeSearchCallbackWrapper(
   callback.Run(rv);
 }
 
-void UpdateContentLengthPrefs(
-    int received_content_length,
-    int original_content_length,
-    data_reduction_proxy::DataReductionProxyRequestType request_type,
-    Profile* profile,
-    data_reduction_proxy::DataReductionProxyStatisticsPrefs* statistics_prefs) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_GE(received_content_length, 0);
-  DCHECK_GE(original_content_length, 0);
-
-  // Can be NULL in a unit test.
-  if (!g_browser_process)
-    return;
-
-  // Ignore off-the-record data.
-  if (!g_browser_process->profile_manager()->IsValidProfile(profile) ||
-      profile->IsOffTheRecord()) {
-    return;
-  }
-  data_reduction_proxy::UpdateContentLengthPrefs(
-      received_content_length,
-      original_content_length,
-      profile->GetPrefs(),
-      request_type, statistics_prefs);
-}
-
-void StoreAccumulatedContentLength(
-    int received_content_length,
-    int original_content_length,
-    data_reduction_proxy::DataReductionProxyRequestType request_type,
-    Profile* profile,
-    data_reduction_proxy::DataReductionProxyStatisticsPrefs* statistics_prefs) {
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      base::Bind(&UpdateContentLengthPrefs,
-                 received_content_length,
-                 original_content_length,
-                 request_type,
-                 profile,
-                 statistics_prefs));
-}
-
-void RecordContentLengthHistograms(
-    int64 received_content_length,
-    int64 original_content_length,
-    const base::TimeDelta& freshness_lifetime) {
-  // Add the current resource to these histograms only when a valid
-  // X-Original-Content-Length header is present.
-  if (original_content_length >= 0) {
-    UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthWithValidOCL",
-                         received_content_length);
-    UMA_HISTOGRAM_COUNTS("Net.HttpOriginalContentLengthWithValidOCL",
-                         original_content_length);
-    UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthDifferenceWithValidOCL",
-                         original_content_length - received_content_length);
-  } else {
-    // Presume the original content length is the same as the received content
-    // length if the X-Original-Content-Header is not present.
-    original_content_length = received_content_length;
-  }
-  UMA_HISTOGRAM_COUNTS("Net.HttpContentLength", received_content_length);
-  UMA_HISTOGRAM_COUNTS("Net.HttpOriginalContentLength",
-                       original_content_length);
-  UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthDifference",
-                       original_content_length - received_content_length);
-  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.HttpContentFreshnessLifetime",
-                              freshness_lifetime.InSeconds(),
-                              base::TimeDelta::FromHours(1).InSeconds(),
-                              base::TimeDelta::FromDays(30).InSeconds(),
-                              100);
-  if (freshness_lifetime.InSeconds() <= 0)
-    return;
-  UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthCacheable",
-                       received_content_length);
-  if (freshness_lifetime.InHours() < 4)
-    return;
-  UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthCacheable4Hours",
-                       received_content_length);
-
-  if (freshness_lifetime.InHours() < 24)
-    return;
-  UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthCacheable24Hours",
-                       received_content_length);
-}
-
 #if defined(OS_ANDROID)
 void RecordPrecacheStatsOnUIThread(const GURL& url,
                                    const base::Time& fetch_time, int64 size,
@@ -243,6 +152,21 @@ void ReportInvalidReferrerSend(const GURL& target_url,
   NOTREACHED();
 }
 
+// Record network errors that HTTP requests complete with, including OK and
+// ABORTED.
+void RecordNetworkErrorHistograms(const net::URLRequest* request) {
+  if (request->url().SchemeIs("http")) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.HttpRequestCompletionErrorCodes",
+                                std::abs(request->status().error()));
+
+    if (request->load_flags() & net::LOAD_MAIN_FRAME) {
+      UMA_HISTOGRAM_SPARSE_SLOWLY(
+          "Net.HttpRequestCompletionErrorCodes.MainFrame",
+          std::abs(request->status().error()));
+    }
+  }
+}
+
 }  // namespace
 
 ChromeNetworkDelegate::ChromeNetworkDelegate(
@@ -251,20 +175,15 @@ ChromeNetworkDelegate::ChromeNetworkDelegate(
     : profile_(NULL),
       enable_referrers_(enable_referrers),
       enable_do_not_track_(NULL),
+      force_safe_search_(NULL),
       force_google_safe_search_(NULL),
-      data_reduction_proxy_enabled_(NULL),
+      force_youtube_safety_mode_(NULL),
 #if defined(ENABLE_CONFIGURATION_POLICY)
       url_blacklist_manager_(NULL),
 #endif
       domain_reliability_monitor_(NULL),
-      received_content_length_(0),
-      original_content_length_(0),
       first_request_(true),
-      prerender_tracker_(NULL),
-      data_reduction_proxy_params_(NULL),
-      data_reduction_proxy_usage_stats_(NULL),
-      data_reduction_proxy_auth_request_handler_(NULL),
-      data_reduction_proxy_statistics_prefs_(NULL) {
+      prerender_tracker_(NULL) {
   DCHECK(enable_referrers);
   extensions_delegate_.reset(
       ChromeExtensionsNetworkDelegate::Create(event_router));
@@ -309,7 +228,9 @@ void ChromeNetworkDelegate::NeverThrottleRequests() {
 void ChromeNetworkDelegate::InitializePrefsOnUIThread(
     BooleanPrefMember* enable_referrers,
     BooleanPrefMember* enable_do_not_track,
+    BooleanPrefMember* force_safe_search,
     BooleanPrefMember* force_google_safe_search,
+    BooleanPrefMember* force_youtube_safety_mode,
     PrefService* pref_service) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   enable_referrers->Init(prefs::kEnableReferrers, pref_service);
@@ -320,9 +241,20 @@ void ChromeNetworkDelegate::InitializePrefsOnUIThread(
     enable_do_not_track->MoveToThread(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   }
+  if (force_safe_search) {
+    force_safe_search->Init(prefs::kForceSafeSearch, pref_service);
+    force_safe_search->MoveToThread(
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+  }
   if (force_google_safe_search) {
-    force_google_safe_search->Init(prefs::kForceSafeSearch, pref_service);
+    force_google_safe_search->Init(prefs::kForceGoogleSafeSearch, pref_service);
     force_google_safe_search->MoveToThread(
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+  }
+  if (force_youtube_safety_mode) {
+    force_youtube_safety_mode->Init(prefs::kForceYouTubeSafetyMode,
+                                    pref_service);
+    force_youtube_safety_mode->MoveToThread(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   }
 }
@@ -330,36 +262,6 @@ void ChromeNetworkDelegate::InitializePrefsOnUIThread(
 // static
 void ChromeNetworkDelegate::AllowAccessToAllFiles() {
   g_allow_file_access_ = true;
-}
-
-// static
-// TODO(megjablon): Use data_reduction_proxy_delayed_pref_service to read prefs.
-// Until updated the pref values may be up to an hour behind on desktop.
-base::Value* ChromeNetworkDelegate::HistoricNetworkStatsInfoToValue(
-    PrefService* prefs) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  int64 total_received = prefs->GetInt64(
-      data_reduction_proxy::prefs::kHttpReceivedContentLength);
-  int64 total_original = prefs->GetInt64(
-      data_reduction_proxy::prefs::kHttpOriginalContentLength);
-
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  // Use strings to avoid overflow.  base::Value only supports 32-bit integers.
-  dict->SetString("historic_received_content_length",
-                  base::Int64ToString(total_received));
-  dict->SetString("historic_original_content_length",
-                  base::Int64ToString(total_original));
-  return dict;
-}
-
-base::Value* ChromeNetworkDelegate::SessionNetworkStatsInfoToValue() const {
-  base::DictionaryValue* dict = new base::DictionaryValue();
-  // Use strings to avoid overflow.  base::Value only supports 32-bit integers.
-  dict->SetString("session_received_content_length",
-                  base::Int64ToString(received_content_length_));
-  dict->SetString("session_original_content_length",
-                  base::Int64ToString(original_content_length_));
-  return dict;
 }
 
 int ChromeNetworkDelegate::OnBeforeURLRequest(
@@ -395,8 +297,9 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
         client_hints_->GetDevicePixelRatioHeader(), true);
   }
 
-  bool force_safe_search = force_google_safe_search_ &&
-                           force_google_safe_search_->GetValue();
+  bool force_safe_search =
+      (force_safe_search_ && force_safe_search_->GetValue()) ||
+      (force_google_safe_search_ && force_google_safe_search_->GetValue());
 
   net::CompletionCallback wrapped_callback = callback;
   if (force_safe_search) {
@@ -418,50 +321,18 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
   return rv;
 }
 
-void ChromeNetworkDelegate::OnResolveProxy(
-    const GURL& url,
-    int load_flags,
-    const net::ProxyService& proxy_service,
-    net::ProxyInfo* result) {
-  if (!on_resolve_proxy_handler_.is_null() &&
-      !proxy_config_getter_.is_null()) {
-    on_resolve_proxy_handler_.Run(url, load_flags,
-                                  proxy_config_getter_.Run(),
-                                  proxy_service.config(),
-                                  proxy_service.proxy_retry_info(),
-                                  data_reduction_proxy_params_, result);
-  }
-}
-
-void ChromeNetworkDelegate::OnProxyFallback(const net::ProxyServer& bad_proxy,
-                                            int net_error) {
-  if (data_reduction_proxy_usage_stats_) {
-    data_reduction_proxy_usage_stats_->OnProxyFallback(
-        bad_proxy, net_error);
-  }
-}
-
 int ChromeNetworkDelegate::OnBeforeSendHeaders(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     net::HttpRequestHeaders* headers) {
-  bool force_safe_search = force_google_safe_search_ &&
-                           force_google_safe_search_->GetValue();
-  if (force_safe_search)
+  bool force_safety_mode =
+      (force_safe_search_ && force_safe_search_->GetValue()) ||
+      (force_youtube_safety_mode_ && force_youtube_safety_mode_->GetValue());
+  if (force_safety_mode)
     safe_search_util::ForceYouTubeSafetyMode(request, headers);
 
   TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request, "SendRequest");
   return extensions_delegate_->OnBeforeSendHeaders(request, callback, headers);
-}
-
-void ChromeNetworkDelegate::OnBeforeSendProxyHeaders(
-    net::URLRequest* request,
-    const net::ProxyInfo& proxy_info,
-    net::HttpRequestHeaders* headers) {
-  if (data_reduction_proxy_auth_request_handler_) {
-    data_reduction_proxy_auth_request_handler_->MaybeAddRequestHeader(
-        request, proxy_info.proxy_server(), headers);
-  }
 }
 
 void ChromeNetworkDelegate::OnSendHeaders(
@@ -531,17 +402,16 @@ void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
 
 void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
                                         bool started) {
-  if (data_reduction_proxy_usage_stats_)
-    data_reduction_proxy_usage_stats_->OnUrlRequestCompleted(request, started);
+  RecordNetworkErrorHistograms(request);
 
   TRACE_EVENT_ASYNC_END0("net", "URLRequest", request);
   if (request->status().status() == net::URLRequestStatus::SUCCESS) {
+#if defined(OS_ANDROID)
     // For better accuracy, we use the actual bytes read instead of the length
     // specified with the Content-Length header, which may be inaccurate,
     // or missing, as is the case with chunked encoding.
     int64 received_content_length = request->received_response_content_length();
 
-#if defined(OS_ANDROID)
     if (precache::PrecacheManager::IsPrecachingEnabled()) {
       // Record precache metrics when a fetch is completed successfully, if
       // precaching is enabled.
@@ -552,48 +422,6 @@ void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
                      request->was_cached(), profile_));
     }
 #endif  // defined(OS_ANDROID)
-
-    // Only record for http or https urls.
-    bool is_http = request->url().SchemeIs("http");
-    bool is_https = request->url().SchemeIs("https");
-
-    if (!request->was_cached() &&         // Don't record cached content
-        received_content_length &&        // Zero-byte responses aren't useful.
-        (is_http || is_https)) {          // Only record for HTTP or HTTPS urls.
-      int64 original_content_length =
-          request->response_info().headers->GetInt64HeaderValue(
-              "x-original-content-length");
-      data_reduction_proxy::DataReductionProxyRequestType request_type =
-          data_reduction_proxy::GetDataReductionProxyRequestType(request);
-
-      base::TimeDelta freshness_lifetime =
-          request->response_info().headers->GetFreshnessLifetimes(
-              request->response_info().response_time).freshness;
-      int64 adjusted_original_content_length =
-          data_reduction_proxy::GetAdjustedOriginalContentLength(
-              request_type, original_content_length,
-              received_content_length);
-      AccumulateContentLength(received_content_length,
-                              adjusted_original_content_length,
-                              request_type);
-      RecordContentLengthHistograms(received_content_length,
-                                    original_content_length,
-                                    freshness_lifetime);
-
-      if (data_reduction_proxy_enabled_ &&
-          data_reduction_proxy_usage_stats_ &&
-          !proxy_config_getter_.is_null()) {
-        data_reduction_proxy_usage_stats_->RecordBytesHistograms(
-            request,
-            *data_reduction_proxy_enabled_,
-            proxy_config_getter_.Run());
-      }
-      DVLOG(2) << __FUNCTION__
-          << " received content length: " << received_content_length
-          << " original content length: " << original_content_length
-          << " url: " << request->url();
-    }
-
     extensions_delegate_->OnCompleted(request, started);
   } else if (request->status().status() == net::URLRequestStatus::FAILED ||
              request->status().status() == net::URLRequestStatus::CANCELED) {
@@ -708,7 +536,7 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
   // If we're running Chrome for ChromeOS on Linux, we want to allow file
   // access.
   if (!base::SysInfo::IsRunningOnChromeOS() ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+      base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
     return true;
   }
 
@@ -804,21 +632,4 @@ bool ChromeNetworkDelegate::OnCancelURLRequestWithPolicyViolatingReferrerHeader(
                           base::Bind(&ReportInvalidReferrerSend, target_url,
                                      referrer_url, callstack));
   return true;
-}
-
-void ChromeNetworkDelegate::AccumulateContentLength(
-    int64 received_content_length,
-    int64 original_content_length,
-    data_reduction_proxy::DataReductionProxyRequestType request_type) {
-  DCHECK_GE(received_content_length, 0);
-  DCHECK_GE(original_content_length, 0);
-  if (data_reduction_proxy_statistics_prefs_) {
-    StoreAccumulatedContentLength(received_content_length,
-                                  original_content_length,
-                                  request_type,
-                                  reinterpret_cast<Profile*>(profile_),
-                                  data_reduction_proxy_statistics_prefs_);
-  }
-  received_content_length_ += received_content_length;
-  original_content_length_ += original_content_length;
 }

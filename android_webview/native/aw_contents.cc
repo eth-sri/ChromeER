@@ -43,7 +43,7 @@
 #include "base/pickle.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
-#include "components/autofill/content/browser/content_autofill_driver.h"
+#include "components/autofill/content/browser/content_autofill_driver_factory.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
@@ -67,12 +67,12 @@
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/size.h"
 
 struct AwDrawSWFunctionTable;
 
-using autofill::ContentAutofillDriver;
+using autofill::ContentAutofillDriverFactory;
 using autofill::AutofillManager;
 using base::android::AttachCurrentThread;
 using base::android::ConvertJavaStringToUTF16;
@@ -241,7 +241,7 @@ void AwContents::SetSaveFormData(bool enabled) {
   InitAutofillIfNecessary(enabled);
   // We need to check for the existence, since autofill_manager_delegate
   // may not be created when the setting is false.
-  if (ContentAutofillDriver::FromWebContents(web_contents_.get())) {
+  if (AwAutofillClient::FromWebContents(web_contents_.get())) {
     AwAutofillClient::FromWebContents(web_contents_.get())->
         SetSaveFormData(enabled);
   }
@@ -257,17 +257,16 @@ void AwContents::InitAutofillIfNecessary(bool enabled) {
   // Do not initialize if the feature is not enabled.
   if (!enabled)
     return;
-  // Check if the autofill driver already exists.
+  // Check if the autofill driver factory already exists.
   content::WebContents* web_contents = web_contents_.get();
-  if (ContentAutofillDriver::FromWebContents(web_contents))
+  if (ContentAutofillDriverFactory::FromWebContents(web_contents))
     return;
 
   AwBrowserContext::FromWebContents(web_contents)->
       CreateUserPrefServiceIfNecessary();
   AwAutofillClient::CreateForWebContents(web_contents);
-  ContentAutofillDriver::CreateForWebContentsAndDelegate(
-      web_contents,
-      AwAutofillClient::FromWebContents(web_contents),
+  ContentAutofillDriverFactory::CreateForWebContentsAndDelegate(
+      web_contents, AwAutofillClient::FromWebContents(web_contents),
       base::android::GetDefaultLocale(),
       AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
 }
@@ -342,7 +341,8 @@ jint GetNativeInstanceCount(JNIEnv* env, jclass) {
 
 jlong AwContents::GetAwDrawGLViewContext(JNIEnv* env, jobject obj) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return browser_view_renderer_.GetAwDrawGLViewContext();
+  return reinterpret_cast<intptr_t>(
+      browser_view_renderer_.GetAwDrawGLViewContext());
 }
 
 namespace {
@@ -882,8 +882,11 @@ bool AwContents::OnDraw(JNIEnv* env,
   }
 
   gfx::Size view_size = browser_view_renderer_.size();
-  if (view_size.IsEmpty())
+  if (view_size.IsEmpty()) {
+    TRACE_EVENT_INSTANT0("android_webview", "EarlyOut_EmptySize",
+                         TRACE_EVENT_SCOPE_THREAD);
     return false;
+  }
 
   // TODO(hush): Right now webview size is passed in as the auxiliary bitmap
   // size, which might hurt performace (only for software draws with auxiliary
@@ -892,8 +895,11 @@ bool AwContents::OnDraw(JNIEnv* env,
   // viewspace.  Use the resulting rect as the auxiliary bitmap.
   scoped_ptr<SoftwareCanvasHolder> canvas_holder =
       SoftwareCanvasHolder::Create(canvas, scroll, view_size);
-  if (!canvas_holder || !canvas_holder->GetCanvas())
+  if (!canvas_holder || !canvas_holder->GetCanvas()) {
+    TRACE_EVENT_INSTANT0("android_webview", "EarlyOut_EmptySize",
+                         TRACE_EVENT_SCOPE_THREAD);
     return false;
+  }
   return browser_view_renderer_.OnDrawSoftware(canvas_holder->GetCanvas());
 }
 

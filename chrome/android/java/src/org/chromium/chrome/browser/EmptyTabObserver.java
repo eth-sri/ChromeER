@@ -39,6 +39,9 @@ public class EmptyTabObserver implements TabObserver {
     public void onContextMenuShown(Tab tab, ContextMenu menu) { }
 
     @Override
+    public void onContextualActionBarVisibilityChanged(Tab tab, boolean visible) { }
+
+    @Override
     public void onWebContentsInstantSupportDisabled() { }
 
     @Override
@@ -75,6 +78,15 @@ public class EmptyTabObserver implements TabObserver {
 
     @Override
     public void onDidChangeThemeColor(int color) { }
+
+    @Override
+    public void onDidAttachInterstitialPage(Tab tab) { }
+
+    @Override
+    public void onDidDetachInterstitialPage(Tab tab) { }
+
+    @Override
+    public void onBackgroundColorChanged(Tab tab, int color) { }
 
     @Override
     public void webContentsCreated(Tab tab, long sourceWebContents, long openerRenderFrameId,

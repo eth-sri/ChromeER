@@ -6,7 +6,7 @@
 
 #include "base/numerics/safe_math.h"
 #include "content/child/webcrypto/crypto_data.h"
-#include "content/child/webcrypto/nss/aes_key_nss.h"
+#include "content/child/webcrypto/nss/aes_algorithm_nss.h"
 #include "content/child/webcrypto/nss/key_nss.h"
 #include "content/child/webcrypto/nss/sym_key_nss.h"
 #include "content/child/webcrypto/nss/util_nss.h"
@@ -122,7 +122,6 @@ class AesKwCryptoAlgorithmNss : public AesAlgorithm {
   AesKwCryptoAlgorithmNss()
       : AesAlgorithm(
             CKM_NSS_AES_KEY_WRAP,
-            CKF_WRAP | CKF_WRAP,
             blink::WebCryptoKeyUsageWrapKey | blink::WebCryptoKeyUsageUnwrapKey,
             "KW") {}
 

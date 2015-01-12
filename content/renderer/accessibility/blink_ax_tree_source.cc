@@ -74,6 +74,8 @@ std::string GetEquivalentAriaRoleString(const ui::AXRole role) {
       return "figure";
     case ui::AX_ROLE_FOOTER:
       return "contentinfo";
+    case ui::AX_ROLE_HEADING:
+      return "heading";
     case ui::AX_ROLE_IMAGE:
       return "img";
     case ui::AX_ROLE_MAIN:
@@ -267,6 +269,9 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
   }
   if (src.actionVerb().length())
     dst->AddStringAttribute(ui::AX_ATTR_ACTION, UTF16ToUTF8(src.actionVerb()));
+  if (src.ariaAutoComplete().length())
+    dst->AddStringAttribute(ui::AX_ATTR_AUTO_COMPLETE,
+                            UTF16ToUTF8(src.ariaAutoComplete()));
   if (src.isAriaReadOnly())
     dst->AddBoolAttribute(ui::AX_ATTR_ARIA_READONLY, true);
   if (src.isButtonStateMixed())
@@ -337,8 +342,7 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
       dst->html_attributes.push_back(std::make_pair(name, value));
     }
 
-    if (dst->role == ui::AX_ROLE_EDITABLE_TEXT ||
-        dst->role == ui::AX_ROLE_TEXT_AREA ||
+    if (dst->role == ui::AX_ROLE_TEXT_AREA ||
         dst->role == ui::AX_ROLE_TEXT_FIELD) {
       dst->AddIntAttribute(ui::AX_ATTR_TEXT_SEL_START, src.selectionStart());
       dst->AddIntAttribute(ui::AX_ATTR_TEXT_SEL_END, src.selectionEnd());
@@ -386,8 +390,10 @@ void BlinkAXTreeSource::SerializeNode(blink::WebAXObject src,
     dst->AddBoolAttribute(ui::AX_ATTR_LIVE_BUSY, src.liveRegionBusy());
     if (src.liveRegionBusy())
       dst->state |= (1 << ui::AX_STATE_BUSY);
-    dst->AddStringAttribute(ui::AX_ATTR_LIVE_STATUS,
-                            UTF16ToUTF8(src.liveRegionStatus()));
+    if (!src.liveRegionStatus().isEmpty()) {
+      dst->AddStringAttribute(ui::AX_ATTR_LIVE_STATUS,
+                              UTF16ToUTF8(src.liveRegionStatus()));
+    }
     dst->AddStringAttribute(ui::AX_ATTR_LIVE_RELEVANT,
                             UTF16ToUTF8(src.liveRegionRelevant()));
     dst->AddBoolAttribute(ui::AX_ATTR_CONTAINER_LIVE_ATOMIC,

@@ -29,6 +29,7 @@ var selectionAnchor = -1;
 var activeVisit = null;
 
 /** @const */ var Command = cr.ui.Command;
+/** @const */ var FocusOutlineManager = cr.ui.FocusOutlineManager;
 /** @const */ var Menu = cr.ui.Menu;
 /** @const */ var MenuButton = cr.ui.MenuButton;
 
@@ -930,7 +931,21 @@ HistoryFocusGrid.prototype = {
 
   /** @override */
   onMousedown: function(row, e) {
-    return !!findAncestorByClass(e.target, 'menu-button');
+    // TODO(dbeam): Can cr.ui.FocusGrid know about cr.ui.MenuButton? If so, bake
+    // this logic into the base class directly.
+    var menuButton = findAncestorByClass(e.target, 'menu-button');
+    if (menuButton) {
+      // Deactivate any other active row.
+      this.rows.some(function(r) {
+        if (r.activeIndex >= 0 && r != row) {
+          r.activeIndex = -1;
+          return true;
+        }
+      });
+      // Activate only the row with a pressed menu button.
+      row.activeIndex = row.items.indexOf(menuButton);
+    }
+    return !!menuButton;
   },
 };
 
@@ -1890,6 +1905,7 @@ PageState.getHashString = function(term, page, range, offset) {
  */
 function load() {
   uber.onContentFrameLoaded();
+  FocusOutlineManager.forDocument(document);
 
   var searchField = $('search-field');
 
@@ -2038,10 +2054,23 @@ function showConfirmationOverlay() {
   $('history-page').setAttribute('aria-hidden', 'true');
   uber.invokeMethodOnParent('beginInterceptingEvents');
 
-  // If an element is focused behind the confirm overlay, blur it so focus
-  // doesn't accidentally get stuck behind it.
+  // Change focus to the overlay if any other control was focused by keyboard
+  // before. Otherwise, no one should have focus.
+  var focusOverlay = FocusOutlineManager.forDocument(document).visible &&
+                     document.activeElement != document.body;
   if ($('history-page').contains(document.activeElement))
     document.activeElement.blur();
+
+  if (focusOverlay) {
+    // Wait until the browser knows the button has had a chance to become
+    // visible.
+    window.requestAnimationFrame(function() {
+      var button = cr.ui.overlay.getDefaultButton($('overlay'));
+      if (button)
+        button.focus();
+    });
+  }
+  $('alertOverlay').classList.toggle('focus-on-hide', focusOverlay);
 }
 
 /**
@@ -2118,6 +2147,10 @@ function removeItems() {
         historyView.reload.bind(historyView));
     $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
     hideConfirmationOverlay();
+    if ($('alertOverlay').classList.contains('focus-on-hide') &&
+        FocusOutlineManager.forDocument(document).visible) {
+      $('search-field').focus();
+    }
   }
 
   function onCancelRemove() {
@@ -2132,6 +2165,10 @@ function removeItems() {
     }
     $('overlay').removeEventListener('cancelOverlay', onCancelRemove);
     hideConfirmationOverlay();
+    if ($('alertOverlay').classList.contains('focus-on-hide') &&
+        FocusOutlineManager.forDocument(document).visible) {
+      $('remove-selected').focus();
+    }
   }
 
   if (checked.length) {

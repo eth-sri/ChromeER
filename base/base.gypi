@@ -122,6 +122,8 @@
           'callback_internal.h',
           'callback_list.h',
           'cancelable_callback.h',
+          'chromeos/memory_pressure_observer_chromeos.cc',
+          'chromeos/memory_pressure_observer_chromeos.h',
           'command_line.cc',
           'command_line.h',
           'compiler_specific.h',
@@ -251,6 +253,8 @@
           'ios/ios_util.mm',
           'ios/scoped_critical_action.h',
           'ios/scoped_critical_action.mm',
+          'ios/weak_nsobject.h',
+          'ios/weak_nsobject.mm',
           'json/json_file_value_serializer.cc',
           'json/json_file_value_serializer.h',
           'json/json_parser.cc',
@@ -259,6 +263,7 @@
           'json/json_reader.h',
           'json/json_string_value_serializer.cc',
           'json/json_string_value_serializer.h',
+          'json/json_value_converter.cc',
           'json/json_value_converter.h',
           'json/json_writer.cc',
           'json/json_writer.h',
@@ -978,6 +983,11 @@
           # command-line-string limitation when building NaCl on Windows.
           ['OS == "win" and >(nacl_untrusted_build)==1', {
               'sources/': [ ['exclude', '\\.h$'] ],
+          }],
+          # Enable more direct string conversions on platforms with native utf8
+          # strings
+          ['OS=="mac" or OS=="ios" or <(chromeos)==1 or <(chromecast)==1', {
+            'defines': ['SYSTEM_NATIVE_UTF8'],
           }],
         ],
       }],

@@ -38,7 +38,6 @@ extern const char kChromeUIDomainReliabilityInternalsURL[];
 extern const char kChromeUIDownloadsURL[];
 extern const char kChromeUIEditSearchEngineDialogURL[];
 extern const char kChromeUIExtensionIconURL[];
-extern const char kChromeUIExtensionInfoURL[];
 extern const char kChromeUIExtensionsFrameURL[];
 extern const char kChromeUIExtensionsURL[];
 extern const char kChromeUIFaviconURL[];
@@ -133,6 +132,11 @@ extern const char kChromeUISalsaHost[];
 extern const char kChromeUITabModalConfirmDialogURL[];
 #endif
 
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+extern const char kChromeUICopresenceURL[];
+extern const char kChromeUICopresenceHost[];
+#endif
+
 #if defined(ENABLE_WEBRTC)
 extern const char kChromeUIWebRtcLogsURL[];
 #endif
@@ -168,7 +172,6 @@ extern const char kChromeUIDownloadsHost[];
 extern const char kChromeUIDriveInternalsHost[];
 extern const char kChromeUIEditSearchEngineDialogHost[];
 extern const char kChromeUIExtensionIconHost[];
-extern const char kChromeUIExtensionInfoHost[];
 extern const char kChromeUIExtensionsFrameHost[];
 extern const char kChromeUIExtensionsHost[];
 extern const char kChromeUIFaviconHost[];
@@ -235,6 +238,7 @@ extern const char kChromeUIUberHost[];
 extern const char kChromeUIUserActionsHost[];
 extern const char kChromeUIVersionHost[];
 extern const char kChromeUIVoiceSearchHost[];
+extern const char kChromeUIWebRTCDeviceProviderHost[];
 extern const char kChromeUIWorkersHost[];
 
 extern const char kChromeUIScreenshotPath[];
@@ -260,6 +264,7 @@ extern const char kChromeUIBluetoothPairingHost[];
 extern const char kChromeUICertificateManagerHost[];
 extern const char kChromeUIChooseMobileNetworkHost[];
 extern const char kChromeUICryptohomeHost[];
+extern const char kChromeUIDeviceLogHost[];
 extern const char kChromeUIDiagnosticsHost[];
 extern const char kChromeUIDiscardsHost[];
 extern const char kChromeUIFirstRunHost[];

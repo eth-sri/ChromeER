@@ -10,6 +10,7 @@
 #include "base/path_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/remoting/key_code_conv.h"
@@ -165,7 +166,7 @@ void RemoteDesktopBrowserTest::VerifyChromotingLoaded(bool expected) {
   ASSERT_EQ(installed, expected);
 }
 
-void RemoteDesktopBrowserTest::LaunchChromotingApp() {
+void RemoteDesktopBrowserTest::LaunchChromotingApp(bool defer_start) {
   ASSERT_TRUE(extension_);
 
   GURL chromoting_main = Chromoting_Main_URL();
@@ -173,13 +174,21 @@ void RemoteDesktopBrowserTest::LaunchChromotingApp() {
   // loaded could be the generated background page. We need to wait
   // till the chromoting main page is loaded.
   PageLoadNotificationObserver observer(chromoting_main);
+  observer.set_ignore_url_parameters(true);
 
-  OpenApplication(AppLaunchParams(
-      browser()->profile(),
-      extension_,
-      is_platform_app() ? extensions::LAUNCH_CONTAINER_NONE :
-          extensions::LAUNCH_CONTAINER_TAB,
-      is_platform_app() ? NEW_WINDOW : CURRENT_TAB));
+  // If the app should be started in deferred mode, ensure that a "source" URL
+  // parameter; if not, ensure that no such parameter is present. The value of
+  // the parameter is determined by the AppLaunchParams ("test", in this case).
+  extensions::FeatureSwitch::ScopedOverride override_trace_app_source(
+      extensions::FeatureSwitch::trace_app_source(),
+      defer_start);
+
+  OpenApplication(AppLaunchParams(browser()->profile(), extension_,
+                                  is_platform_app()
+                                      ? extensions::LAUNCH_CONTAINER_NONE
+                                      : extensions::LAUNCH_CONTAINER_TAB,
+                                  is_platform_app() ? NEW_WINDOW : CURRENT_TAB,
+                                  extensions::SOURCE_TEST));
 
   observer.Wait();
 
@@ -208,6 +217,10 @@ void RemoteDesktopBrowserTest::LaunchChromotingApp() {
 
   EXPECT_EQ(Chromoting_Main_URL(), GetCurrentURL());
 }
+
+void RemoteDesktopBrowserTest::StartChromotingApp() {
+  ClickOnControl("browser-test-continue-init");
+};
 
 void RemoteDesktopBrowserTest::Authorize() {
   // The chromoting extension should be installed.
@@ -348,11 +361,7 @@ void RemoteDesktopBrowserTest::DisconnectMe2Me() {
 
   ASSERT_TRUE(RemoteDesktopBrowserTest::IsSessionConnected());
 
-  ClickOnControl("toolbar-stub");
-
-  EXPECT_TRUE(HtmlElementVisible("session-toolbar"));
-
-  ClickOnControl("toolbar-disconnect");
+  ExecuteScript("remoting.disconnect();");
 
   EXPECT_TRUE(HtmlElementVisible("client-dialog"));
   EXPECT_TRUE(HtmlElementVisible("client-reconnect-button"));
@@ -464,7 +473,7 @@ void RemoteDesktopBrowserTest::Cleanup() {
 void RemoteDesktopBrowserTest::SetUpTestForMe2Me() {
   VerifyInternetAccess();
   Install();
-  LaunchChromotingApp();
+  LaunchChromotingApp(false);
   Auth();
   LoadScript(app_web_content(), FILE_PATH_LITERAL("browser_test.js"));
   ExpandMe2Me();
@@ -575,7 +584,7 @@ void RemoteDesktopBrowserTest::DisableDNSLookupForThisTest() {
 }
 
 void RemoteDesktopBrowserTest::ParseCommandLine() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   // The test framework overrides any command line user-data-dir
   // argument with a /tmp/.org.chromium.Chromium.XXXXXX directory.
@@ -594,7 +603,7 @@ void RemoteDesktopBrowserTest::ParseCommandLine() {
                                    override_user_data_dir);
   }
 
-  CommandLine::StringType accounts_file =
+  base::CommandLine::StringType accounts_file =
       command_line->GetSwitchValueNative(kAccountsFile);
   std::string account_type = command_line->GetSwitchValueASCII(kAccountType);
   if (!accounts_file.empty()) {
@@ -717,7 +726,7 @@ void RemoteDesktopBrowserTest::RunJavaScriptTest(
   std::string script = "browserTest.runTest(browserTest." + testName + ", " +
                        testData + ");";
 
-  LOG(INFO) << "Executing " << script;
+  DVLOG(1) << "Executing " << script;
 
   ASSERT_TRUE(
       content::ExecuteScriptAndExtractString(web_contents, script, &result));

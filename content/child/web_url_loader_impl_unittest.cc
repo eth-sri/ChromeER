@@ -114,7 +114,7 @@ class TestBridge : public ResourceLoaderBridge,
 
 class TestResourceDispatcher : public ResourceDispatcher {
  public:
-  TestResourceDispatcher() : ResourceDispatcher(NULL) {}
+  TestResourceDispatcher() : ResourceDispatcher(nullptr, nullptr) {}
   ~TestResourceDispatcher() override {}
 
   // ResourceDispatcher implementation:
@@ -507,7 +507,7 @@ TEST_F(WebURLLoaderImplTest, DataURLDeleteOnReceiveData) {
   EXPECT_FALSE(bridge());
 }
 
-TEST_F(WebURLLoaderImplTest, DataURLDeleteOnFinisha) {
+TEST_F(WebURLLoaderImplTest, DataURLDeleteOnFinish) {
   blink::WebURLRequest request;
   request.initialize();
   request.setURL(GURL("data:text/html;charset=utf-8,blah!"));
@@ -518,6 +518,44 @@ TEST_F(WebURLLoaderImplTest, DataURLDeleteOnFinisha) {
   EXPECT_EQ("blah!", client()->received_data());
   EXPECT_TRUE(client()->did_finish());
   EXPECT_FALSE(bridge());
+}
+
+TEST_F(WebURLLoaderImplTest, DataURLDefersLoading) {
+  blink::WebURLRequest request;
+  request.initialize();
+  request.setURL(GURL("data:text/html;charset=utf-8,blah!"));
+  client()->loader()->loadAsynchronously(request, client());
+
+  // setDefersLoading() might be called with either false or true in no
+  // specific order. The user of the API will not have sufficient information
+  // about the WebURLLoader's internal state, so the latter gracefully needs to
+  // handle calling setDefersLoading any number of times with any values from
+  // any point in time.
+
+  client()->loader()->setDefersLoading(false);
+  client()->loader()->setDefersLoading(true);
+  client()->loader()->setDefersLoading(true);
+  message_loop()->RunUntilIdle();
+  EXPECT_FALSE(client()->did_finish());
+
+  client()->loader()->setDefersLoading(false);
+  client()->loader()->setDefersLoading(true);
+  message_loop()->RunUntilIdle();
+  EXPECT_FALSE(client()->did_finish());
+
+  client()->loader()->setDefersLoading(false);
+  message_loop()->RunUntilIdle();
+  EXPECT_TRUE(client()->did_finish());
+
+  client()->loader()->setDefersLoading(true);
+  client()->loader()->setDefersLoading(false);
+  client()->loader()->setDefersLoading(false);
+  message_loop()->RunUntilIdle();
+  EXPECT_TRUE(client()->did_finish());
+
+  EXPECT_EQ("blah!", client()->received_data());
+  EXPECT_EQ(net::OK, client()->error().reason);
+  EXPECT_EQ("", client()->error().domain.utf8());
 }
 
 // FTP integration tests.  These are focused more on safe deletion than correct
@@ -681,7 +719,7 @@ TEST_F(WebURLLoaderImplTest, BrowserSideNavigationCommit) {
   RequestExtraData* extra_data = new RequestExtraData();
   extra_data->set_stream_override(stream_override.Pass());
   request.setExtraData(extra_data);
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableBrowserSideNavigation);
 
   client()->loader()->loadAsynchronously(request, client());

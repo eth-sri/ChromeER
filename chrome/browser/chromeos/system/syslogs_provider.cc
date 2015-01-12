@@ -331,11 +331,14 @@ void SyslogsProviderImpl::ReadSyslogs(
       dbus::statistics::FORMAT_ALL);
 
   // Include recent network log events
-  (*logs)["network_event_log"] = network_event_log::GetAsString(
-      network_event_log::OLDEST_FIRST,
-      "time,file,desc",
-      network_event_log::kDefaultLogLevel,
-      system::kFeedbackMaxLineCount);
+  (*logs)["network_event_log"] = device_event_log::GetAsString(
+      device_event_log::OLDEST_FIRST, "time,file", "network",
+      device_event_log::kDefaultLogLevel, system::kFeedbackMaxLineCount);
+
+  // Include recent non-network device events
+  (*logs)["device_event_log"] = device_event_log::GetAsString(
+      device_event_log::OLDEST_FIRST, "time,file", "non-network",
+      device_event_log::kDefaultLogLevel, system::kFeedbackMaxLineCount);
 
   // SyslogsMemoryHandler will clean itself up.
   // SyslogsMemoryHandler::OnDetailsAvailable() will modify |logs| and call

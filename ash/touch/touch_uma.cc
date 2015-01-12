@@ -14,7 +14,7 @@
 #include "ui/aura/window_property.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
-#include "ui/gfx/point_conversions.h"
+#include "ui/gfx/geometry/point_conversions.h"
 
 #if defined(USE_X11)
 #include <X11/extensions/XInput2.h>
@@ -260,6 +260,14 @@ TouchUMA::GestureActionType TouchUMA::FindGestureActionType(
 
   views::Widget* widget = views::Widget::GetWidgetForNativeView(window);
   if (!widget)
+    return GESTURE_UNKNOWN;
+
+  // |widget| may be in the process of destroying if it has ownership
+  // views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET and |event| was
+  // dispatched as part of gesture state cleanup. In this case the RootView
+  // of |widget| may no longer exist, so check before calling into any
+  // RootView methods.
+  if (!widget->GetRootView())
     return GESTURE_UNKNOWN;
 
   views::View* view = widget->GetRootView()->

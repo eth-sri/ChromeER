@@ -78,6 +78,7 @@ class SystemTrayDelegateChromeOS
   const base::string16 GetSupervisedUserManagerName() const override;
   const base::string16 GetSupervisedUserMessage() const override;
   bool IsUserSupervised() const override;
+  bool IsUserChild() const override;
   void GetSystemUpdateInfo(ash::UpdateInfo* info) const override;
   base::HourClockType GetHourClockType() const override;
   void ShowSettings() override;
@@ -135,8 +136,9 @@ class SystemTrayDelegateChromeOS
 
   // Overridden from user_manager::UserManager::UserSessionStateObserver:
   void UserAddedToSession(const user_manager::User* active_user) override;
+  void ActiveUserChanged(const user_manager::User* active_user) override;
 
-  void UserChangedSupervisedStatus(user_manager::User* user) override;
+  void UserChangedChildStatus(user_manager::User* user) override;
 
   // browser tests need to call ShouldUse24HourClock().
   bool GetShouldUse24HourClockForTesting() const;
@@ -237,6 +239,7 @@ class SystemTrayDelegateChromeOS
 
   // Overridden from ash::SessionStateObserver
   void UserAddedToSession(const std::string& user_id) override;
+  void ActiveUserChanged(const std::string& user_id) override;
 
   // Overridden from chrome::BrowserListObserver:
   void OnBrowserRemoved(Browser* browser) override;
@@ -249,6 +252,10 @@ class SystemTrayDelegateChromeOS
 
   void OnAccessibilityStatusChanged(
       const AccessibilityStatusEventDetails& details);
+
+  // helper methods used by GetSupervisedUserMessage.
+  const base::string16 GetLegacySupervisedUserMessage() const;
+  const base::string16 GetChildUserMessage() const;
 
   scoped_ptr<content::NotificationRegistrar> registrar_;
   scoped_ptr<PrefChangeRegistrar> local_state_registrar_;

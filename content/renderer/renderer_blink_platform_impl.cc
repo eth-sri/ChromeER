@@ -35,6 +35,7 @@
 #include "content/common/mime_registry_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/service_registry.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/battery_status/battery_status_dispatcher.h"
@@ -315,7 +316,8 @@ bool RendererBlinkPlatformImpl::sandboxEnabled() {
   // case, we have no other choice.  Platform.h discourages using
   // this switch unless absolutely necessary, so hopefully we won't end up
   // with too many code paths being different in single-process mode.
-  return !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kSingleProcess);
 }
 
 unsigned long long RendererBlinkPlatformImpl::visitedLinkHash(
@@ -1054,12 +1056,23 @@ void RendererBlinkPlatformImpl::SetMockDeviceOrientationDataForTesting(
 //------------------------------------------------------------------------------
 
 void RendererBlinkPlatformImpl::vibrate(unsigned int milliseconds) {
-  RenderThread::Get()->Send(
-      new ViewHostMsg_Vibrate(base::checked_cast<int64>(milliseconds)));
+  GetConnectedVibrationManagerService()->Vibrate(
+      base::checked_cast<int64>(milliseconds));
+  vibration_manager_.reset();
 }
 
 void RendererBlinkPlatformImpl::cancelVibration() {
-  RenderThread::Get()->Send(new ViewHostMsg_CancelVibration());
+  GetConnectedVibrationManagerService()->Cancel();
+  vibration_manager_.reset();
+}
+
+device::VibrationManagerPtr&
+RendererBlinkPlatformImpl::GetConnectedVibrationManagerService() {
+  if (!vibration_manager_) {
+    RenderThread::Get()->GetServiceRegistry()
+        ->ConnectToRemoteService(&vibration_manager_);
+  }
+  return vibration_manager_;
 }
 
 //------------------------------------------------------------------------------

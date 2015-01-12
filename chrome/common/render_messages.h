@@ -36,8 +36,8 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
-#include "ui/gfx/rect.h"
 
 // Singly-included section for enums and custom IPC traits.
 #ifndef CHROME_COMMON_RENDER_MESSAGES_H_
@@ -50,12 +50,12 @@ struct ChromeViewHostMsg_GetPluginInfo_Status {
     kAllowed,
     kBlocked,
     kBlockedByPolicy,
-    kClickToPlay,
     kDisabled,
     kNotFound,
     kNPAPINotSupported,
     kOutdatedBlocked,
     kOutdatedDisallowed,
+    kPlayImportantContent,
     kUnauthorized,
   };
 
@@ -337,8 +337,10 @@ IPC_MESSAGE_ROUTED3(ChromeViewMsg_UpdateTopControlsState,
 IPC_MESSAGE_ROUTED1(ChromeViewMsg_SetWindowFeatures,
                     blink::WebWindowFeatures /* window_features */)
 
+// Responds to the request for a thumbnail.
+// Thumbnail data will be empty is a thumbnail could not be produced.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_RequestThumbnailForContextNode_ACK,
-                    SkBitmap /* thumbnail */,
+                    std::string /* JPEG-encoded thumbnail data */,
                     gfx::Size /* original size of the image */)
 
 // Requests application info for the page. The renderer responds back with
@@ -394,8 +396,9 @@ IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_UpdatedCacheStats,
 
 // Tells the browser that content in the current page was blocked due to the
 // user's content settings.
-IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_ContentBlocked,
-                    ContentSettingsType /* type of blocked content */)
+IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_ContentBlocked,
+                    ContentSettingsType /* type of blocked content */,
+                    base::string16 /* details on blocked content */)
 
 // Sent by the renderer process to check whether access to web databases is
 // granted by content settings.

@@ -18,8 +18,8 @@
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "url/gurl.h"
 
 namespace ui {
@@ -119,7 +119,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                                jlong time_ms,
                                jfloat x,
                                jfloat y,
-                               jfloat vertical_axis);
+                               jfloat vertical_axis,
+                               jfloat horizontal_axis);
   void ScrollBegin(JNIEnv* env, jobject obj, jlong time_ms,
                    jfloat x, jfloat y, jfloat hintx, jfloat hinty);
   void ScrollEnd(JNIEnv* env, jobject obj, jlong time_ms);
@@ -229,9 +230,9 @@ class ContentViewCoreImpl : public ContentViewCore,
                          InputEventAckState ack_result);
   bool FilterInputEvent(const blink::WebInputEvent& event);
   void OnSelectionChanged(const std::string& text);
-  void OnSelectionEvent(SelectionEventType event,
+  void OnSelectionEvent(ui::SelectionEventType event,
                         const gfx::PointF& anchor_position);
-  scoped_ptr<TouchHandleDrawable> CreatePopupTouchHandleDrawable();
+  scoped_ptr<ui::TouchHandleDrawable> CreatePopupTouchHandleDrawable();
 
   void StartContentIntent(const GURL& content_url);
 
@@ -267,7 +268,8 @@ class ContentViewCoreImpl : public ContentViewCore,
 
   gfx::Size GetPhysicalBackingSize() const;
   gfx::Size GetViewportSizeDip() const;
-  float GetTopControlsLayoutHeightDip() const;
+  bool DoTopControlsShrinkBlinkSize() const;
+  float GetTopControlsHeightDip() const;
 
   void AttachLayer(scoped_refptr<cc::Layer> layer);
   void RemoveLayer(scoped_refptr<cc::Layer> layer);
@@ -301,7 +303,7 @@ class ContentViewCoreImpl : public ContentViewCore,
       blink::WebInputEvent::Type type, int64 time_ms, float x, float y) const;
 
   gfx::Size GetViewportSizePix() const;
-  int GetTopControlsLayoutHeightPix() const;
+  int GetTopControlsHeightPix() const;
 
   void SendGestureEvent(const blink::WebGestureEvent& event);
 
@@ -340,8 +342,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   bool accessibility_enabled_;
 
   // Manages injecting Java objects.
-  scoped_ptr<GinJavaBridgeDispatcherHost>
-      java_bridge_dispatcher_host_;
+  scoped_refptr<GinJavaBridgeDispatcherHost> java_bridge_dispatcher_host_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

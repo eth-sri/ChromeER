@@ -65,8 +65,9 @@ class CC_EXPORT Picture
   // Has Record() been called yet?
   bool HasRecording() const { return picture_.get() != NULL; }
 
-  bool IsSuitableForGpuRasterization() const;
+  bool IsSuitableForGpuRasterization(const char** reason) const;
   int ApproximateOpCount() const;
+  size_t ApproximateMemoryUsage() const;
 
   bool HasText() const;
 

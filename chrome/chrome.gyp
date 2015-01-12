@@ -46,6 +46,16 @@
               # embedder is using.
               '<(DEPTH)/third_party/cld_2/cld_2.gyp:cld2_platform_impl', ],
           }],
+          ['enable_plugins==1 and disable_nacl==0', {
+            'chromium_child_dependencies': [
+              '<(DEPTH)/ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
+            ],
+          }],
+          ['remoting==1', {
+            'chromium_child_dependencies': [
+              '../remoting/remoting.gyp:remoting_client_plugin',
+            ],
+          }],
         ],
       }],
       ['enable_basic_printing==1 or enable_print_preview==1', {
@@ -250,12 +260,6 @@
                 # With mac_real_dsym set, strip_from_xcode won't be used.
                 # Specify CHROMIUM_STRIP_SAVE_FILE directly to Xcode.
                 'STRIPFLAGS': '-s $(CHROMIUM_STRIP_SAVE_FILE)',
-              },
-            }],
-            ['asan==1', {
-              'xcode_settings': {
-                # Override the outer definition of CHROMIUM_STRIP_SAVE_FILE.
-                'CHROMIUM_STRIP_SAVE_FILE': 'app/app_asan.saves',
               },
             }],
             ['component=="shared_library"', {
@@ -506,9 +510,11 @@
           'type': 'executable',
           'dependencies': [
             '../base/base.gyp:base',
+            '../crypto/crypto.gyp:crypto',
             'safe_browsing_proto',
           ],
           'sources': [
+            'browser/safe_browsing/binary_feature_extractor.cc',
             'browser/safe_browsing/binary_feature_extractor.h',
             'browser/safe_browsing/binary_feature_extractor_win.cc',
             'browser/safe_browsing/pe_image_reader_win.cc',
@@ -596,6 +602,7 @@
             'chrome_resources.gyp:chrome_strings',
             'chrome_strings_grd',
             'chrome_version_java',
+            'document_tab_model_info_proto_java',
             'profile_account_management_metrics_java',
             'content_setting_java',
             'content_settings_type_java',
@@ -617,6 +624,7 @@
             '../sync/sync.gyp:sync_java',
             '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
             '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
+            '../third_party/libaddressinput/libaddressinput.gyp:android_addressinput_widget',
             '../ui/android/ui_android.gyp:ui_java',
           ],
           'variables': {

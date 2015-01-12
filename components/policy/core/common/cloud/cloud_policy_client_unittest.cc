@@ -243,7 +243,7 @@ TEST_F(CloudPolicyClientTest, RegistrationAndPolicyFetch) {
   ExpectRegistration(kOAuthToken);
   EXPECT_CALL(observer_, OnRegistrationStateChanged(_));
   client_->Register(em::DeviceRegisterRequest::USER, kOAuthToken, std::string(),
-                    false, std::string(), std::string());
+                    std::string(), std::string());
   EXPECT_TRUE(client_->is_registered());
   EXPECT_FALSE(client_->GetPolicyFor(policy_type_, std::string()));
   EXPECT_EQ(DM_STATUS_SUCCESS, client_->status());
@@ -258,7 +258,6 @@ TEST_F(CloudPolicyClientTest, RegistrationAndPolicyFetch) {
 
 TEST_F(CloudPolicyClientTest, RegistrationParameters) {
   registration_request_.mutable_register_request()->set_reregister(true);
-  registration_request_.mutable_register_request()->set_auto_enrolled(true);
   registration_request_.mutable_register_request()->set_requisition(
       kRequisition);
   registration_request_.mutable_register_request()->set_server_backed_state_key(
@@ -266,7 +265,7 @@ TEST_F(CloudPolicyClientTest, RegistrationParameters) {
   ExpectRegistration(kOAuthToken);
   EXPECT_CALL(observer_, OnRegistrationStateChanged(_));
   client_->Register(em::DeviceRegisterRequest::USER, kOAuthToken, kClientID,
-                    true, kRequisition, kStateKey);
+                    kRequisition, kStateKey);
   EXPECT_EQ(kClientID, client_id_);
 }
 
@@ -276,7 +275,7 @@ TEST_F(CloudPolicyClientTest, RegistrationNoToken) {
   ExpectRegistration(kOAuthToken);
   EXPECT_CALL(observer_, OnClientError(_));
   client_->Register(em::DeviceRegisterRequest::USER, kOAuthToken, std::string(),
-                    false, std::string(), std::string());
+                    std::string(), std::string());
   EXPECT_FALSE(client_->is_registered());
   EXPECT_FALSE(client_->GetPolicyFor(policy_type_, std::string()));
   EXPECT_EQ(DM_STATUS_RESPONSE_DECODING_ERROR, client_->status());
@@ -290,7 +289,7 @@ TEST_F(CloudPolicyClientTest, RegistrationFailure) {
   EXPECT_CALL(service_, StartJob(_, _, _, _, _, _, _));
   EXPECT_CALL(observer_, OnClientError(_));
   client_->Register(em::DeviceRegisterRequest::USER, kOAuthToken, std::string(),
-                    false, std::string(), std::string());
+                    std::string(), std::string());
   EXPECT_FALSE(client_->is_registered());
   EXPECT_FALSE(client_->GetPolicyFor(policy_type_, std::string()));
   EXPECT_EQ(DM_STATUS_REQUEST_FAILED, client_->status());
@@ -310,7 +309,7 @@ TEST_F(CloudPolicyClientTest, RetryRegistration) {
                        kOAuthToken, std::string(), std::string(), _,
                        MatchProto(registration_request_)));
   client_->Register(em::DeviceRegisterRequest::USER, kOAuthToken, std::string(),
-                    false, std::string(), std::string());
+                    std::string(), std::string());
   EXPECT_FALSE(client_->is_registered());
   Mock::VerifyAndClearExpectations(&service_);
 
@@ -504,6 +503,7 @@ TEST_F(CloudPolicyClientTest, PolicyFetchWithExtensionPolicy) {
       policy_response_.policy_response().response(0));
   expected_namespaces.insert(key);
   key.first = dm_protocol::kChromeExtensionPolicyType;
+  expected_namespaces.insert(key);
   for (size_t i = 0; i < arraysize(kExtensions); ++i) {
     key.second = kExtensions[i];
     em::PolicyData policy_data;
@@ -512,7 +512,6 @@ TEST_F(CloudPolicyClientTest, PolicyFetchWithExtensionPolicy) {
     expected_responses[key].set_policy_data(policy_data.SerializeAsString());
     policy_response_.mutable_policy_response()->add_response()->CopyFrom(
         expected_responses[key]);
-    expected_namespaces.insert(key);
   }
 
   // Make a policy fetch.
@@ -527,26 +526,21 @@ TEST_F(CloudPolicyClientTest, PolicyFetchWithExtensionPolicy) {
       .WillOnce(SaveArg<6>(&policy_request_));
   EXPECT_CALL(observer_, OnPolicyFetched(_));
   EXPECT_CALL(*status_provider_, OnSubmittedSuccessfully());
-  for (size_t i = 0; i < arraysize(kExtensions); ++i) {
-    client_->AddPolicyTypeToFetch(dm_protocol::kChromeExtensionPolicyType,
-                                  kExtensions[i]);
-  }
+  client_->AddPolicyTypeToFetch(dm_protocol::kChromeExtensionPolicyType,
+                                std::string());
   client_->FetchPolicy();
 
   // Verify that the request includes the expected namespaces.
   ASSERT_TRUE(policy_request_.has_policy_request());
   const em::DevicePolicyRequest& policy_request =
       policy_request_.policy_request();
-  ASSERT_EQ(static_cast<int>(1 + arraysize(kExtensions)),
-            policy_request.request_size());
+  ASSERT_EQ(2, policy_request.request_size());
   for (int i = 0; i < policy_request.request_size(); ++i) {
     const em::PolicyFetchRequest& fetch_request = policy_request.request(i);
     ASSERT_TRUE(fetch_request.has_policy_type());
-    std::string entity_id;
-    if (fetch_request.has_settings_entity_id())
-      entity_id = fetch_request.settings_entity_id();
+    EXPECT_FALSE(fetch_request.has_settings_entity_id());
     std::pair<std::string, std::string> key(fetch_request.policy_type(),
-                                            entity_id);
+                                            std::string());
     EXPECT_EQ(1u, expected_namespaces.erase(key));
   }
   EXPECT_TRUE(expected_namespaces.empty());

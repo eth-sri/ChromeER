@@ -14,6 +14,7 @@
 #include "mojo/public/cpp/application/application_delegate.h"
 #include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/public/cpp/application/application_test_base.h"
+#include "mojo/public/cpp/application/connect.h"
 
 namespace {
 
@@ -98,9 +99,7 @@ namespace media {
 
 class MojoRendererTest : public mojo::test::ApplicationTestBase {
  public:
-  MojoRendererTest()
-      : ApplicationTestBase(mojo::Array<mojo::String>()),
-        service_provider_(NULL) {}
+  MojoRendererTest() : service_provider_(NULL) {}
   ~MojoRendererTest() override {}
 
  protected:
@@ -114,11 +113,17 @@ class MojoRendererTest : public mojo::test::ApplicationTestBase {
     demuxer_stream_provider_.reset(new FakeDemuxerStream());
     service_provider_ =
         application_impl()
-            ->ConnectToApplication("mojo:mojo_media_renderer_app")
+            ->ConnectToApplication("mojo:media")
             ->GetServiceProvider();
   }
 
-  mojo::ServiceProvider* service_provider() { return service_provider_; }
+  mojo::MediaRendererPtr CreateMediaRenderer() {
+    mojo::MediaRendererPtr mojo_media_renderer;
+    mojo::ConnectToService(service_provider_,
+                           &mojo_media_renderer);
+    return mojo_media_renderer.Pass();
+  }
+
   DemuxerStreamProvider* stream_provider() {
     return demuxer_stream_provider_.get();
   }
@@ -143,7 +148,7 @@ void ErrorCallback(PipelineStatus* output, PipelineStatus status) {
 // connection. The test also initializes a media::AudioRendererImpl which
 // will error-out expectedly due to lack of support for decoder selection.
 TEST_F(MojoRendererTest, BasicInitialize) {
-  MojoRendererImpl mojo_renderer_impl(task_runner(), service_provider());
+  MojoRendererImpl mojo_renderer_impl(task_runner(), CreateMediaRenderer());
   PipelineStatus expected_error(PIPELINE_OK);
   mojo_renderer_impl.Initialize(
       stream_provider(), base::MessageLoop::current()->QuitClosure(),
@@ -151,10 +156,7 @@ TEST_F(MojoRendererTest, BasicInitialize) {
       media::Renderer::PaintCB(), base::Closure(),
       base::Bind(&ErrorCallback, &expected_error));
   base::MessageLoop::current()->Run();
-
-  // We expect an error during initialization because MojoRendererService
-  // doesn't initialize any decoders, which causes an error.
-  EXPECT_EQ(PIPELINE_ERROR_COULD_NOT_RENDER, expected_error);
+  EXPECT_EQ(PIPELINE_OK, expected_error);
 }
 
 }  // namespace media

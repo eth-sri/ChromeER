@@ -103,7 +103,7 @@ class _ServiceWorkerMeasurement(page_test.PageTest):
 
   def ValidateAndMeasurePage(self, page, tab, results):
     tab.WaitForDocumentReadyStateToBeComplete(40)
-    self._timeline_controller.Stop(tab)
+    self._timeline_controller.Stop(tab, results)
 
     # Retrieve TRACE_EVENTs
     timeline_metric = _ServiceWorkerTimelineMetric()
@@ -153,7 +153,7 @@ class _ServiceWorkerMicroBenchmarkMeasurement(page_test.PageTest):
 
   def ValidateAndMeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression('window.done', 40)
-    self._timeline_controller.Stop(tab)
+    self._timeline_controller.Stop(tab, results)
 
     # Measure JavaScript-land
     json = tab.EvaluateJavaScript('window.results || {}')
@@ -173,17 +173,22 @@ class _ServiceWorkerMicroBenchmarkMeasurement(page_test.PageTest):
         browser_process, 'IOThread', filter_text , results)
 
 
-# TODO(simonhatch): Temporarily disabling (http://crbug.com/433943)
-@benchmark.Disabled
 class ServiceWorkerPerfTest(benchmark.Benchmark):
   """Performance test on public applications using ServiceWorker"""
   test = _ServiceWorkerMeasurement
   page_set = page_sets.ServiceWorkerPageSet
 
 
-# FIXME(nhiroki): Temporary disable the benchmark (http://crbug.com/430232).
+# Disabled due to redness on the tree. crbug.com/442752
 @benchmark.Disabled
 class ServiceWorkerMicroBenchmarkPerfTest(benchmark.Benchmark):
-  """Service Worker performance test using a micro benchmark page set"""
+  """This test measures the performance of pages using ServiceWorker.
+
+  As a page set, two benchamrk pages (many registration, many concurrent
+  fetching) and one application (Trained-to-thrill:
+  https://jakearchibald.github.io/trained-to-thrill/) are included. Execution
+  time of these pages will be shown as Speed Index, and TRACE_EVENTs are
+  subsidiary information to know more detail performance regression.
+  """
   test = _ServiceWorkerMicroBenchmarkMeasurement
   page_set = page_sets.ServiceWorkerMicroBenchmarkPageSet

@@ -18,28 +18,35 @@
 
 namespace commands {
 
+const char kSwitchDryRun[] = "dry-run";
 const char kSwitchDumpTree[] = "dump-tree";
 const char kSwitchInPlace[] = "in-place";
 const char kSwitchStdin[] = "stdin";
 
 const char kFormat[] = "format";
 const char kFormat_HelpShort[] =
-    "format: Format .gn file. (ALPHA, WILL DESTROY DATA!)";
+    "format: Format .gn file.";
 const char kFormat_Help[] =
     "gn format [--dump-tree] [--in-place] [--stdin] BUILD.gn\n"
     "\n"
-    "  Formats .gn file to a standard format. THIS IS NOT FULLY IMPLEMENTED\n"
-    "  YET! IT WILL EAT YOUR BEAUTIFUL .GN FILES. AND YOUR LAUNDRY.\n"
-    "  At a minimum, make sure everything is `git commit`d so you can\n"
-    "  `git checkout -f` to recover.\n"
+    "  Formats .gn file to a standard format.\n"
     "\n"
     "Arguments\n"
+    "  --dry-run\n"
+    "      Does not change or output anything, but sets the process exit code\n"
+    "      based on whether output would be different than what's on disk.\n"
+    "      This is useful for presubmit/lint-type checks.\n"
+    "      - Exit code 0: successful format, matches on disk.\n"
+    "      - Exit code 1: general failure (parse error, etc.)\n"
+    "      - Exit code 2: successful format, but differs from on disk.\n"
+    "\n"
     "  --dump-tree\n"
     "      For debugging only, dumps the parse tree.\n"
     "\n"
     "  --in-place\n"
-    "      Instead writing the formatted file to stdout, replace the input\n"
-    "      with the formatted output.\n"
+    "      Instead of writing the formatted file to stdout, replace the input\n"
+    "      file with the formatted output. If no reformatting is required,\n"
+    "      the input file will not be touched, and nothing printed.\n"
     "\n"
     "  --stdin\n"
     "      Read input from stdin (and write to stdout). Not compatible with\n"
@@ -68,8 +75,8 @@ enum Precedence {
   kPrecedenceAnd,
   kPrecedenceCompare,
   kPrecedenceAdd,
-  kPrecedenceSuffix,
   kPrecedenceUnary,
+  kPrecedenceSuffix,
 };
 
 int CountLines(const std::string& str) {
@@ -120,7 +127,7 @@ class Printer {
   bool HaveBlankLine();
 
   // Flag assignments to sources, deps, etc. to make their RHSs multiline.
-  void AnnotatePreferedMultilineAssignment(const BinaryOpNode* binop);
+  void AnnotatePreferredMultilineAssignment(const BinaryOpNode* binop);
 
   // Heuristics to decide if there should be a blank line added between two
   // items. For various "small" items, it doesn't look nice if there's too much
@@ -146,6 +153,9 @@ class Printer {
 
   // Generic penalties for exceeding maximum width, adding more lines, etc.
   int AssessPenalty(const std::string& output);
+
+  // Tests if any lines exceed the maximum width.
+  bool ExceedsMaximumWidth(const std::string& output);
 
   // Format a list of values using the given style.
   // |end| holds any trailing comments to be printed just before the closing
@@ -178,15 +188,23 @@ class Printer {
   }
 
   struct IndentState {
-    IndentState() : margin(0), continuation_requires_indent(false) {}
-    IndentState(int margin, bool continuation_requires_indent)
+    IndentState()
+        : margin(0),
+          continuation_requires_indent(false),
+          parent_is_boolean_or(false) {}
+    IndentState(int margin,
+                bool continuation_requires_indent,
+                bool parent_is_boolean_or)
         : margin(margin),
-          continuation_requires_indent(continuation_requires_indent) {}
+          continuation_requires_indent(continuation_requires_indent),
+          parent_is_boolean_or(parent_is_boolean_or) {}
 
     // The left margin (number of spaces).
     int margin;
 
     bool continuation_requires_indent;
+
+    bool parent_is_boolean_or;
   };
   // Stack used to track
   std::vector<IndentState> stack_;
@@ -239,7 +257,7 @@ void Printer::Newline() {
     // Save the margin, and temporarily set it to where the first comment
     // starts so that multiple suffix comments are vertically aligned. This
     // will need to be fancier once we enforce 80 col.
-    stack_.push_back(IndentState(CurrentColumn(), false));
+    stack_.push_back(IndentState(CurrentColumn(), false, false));
     int i = 0;
     for (const auto& c : comments_) {
       if (i > 0) {
@@ -272,19 +290,18 @@ bool Printer::HaveBlankLine() {
   return n > 2 && output_[n - 1] == '\n' && output_[n - 2] == '\n';
 }
 
-void Printer::AnnotatePreferedMultilineAssignment(const BinaryOpNode* binop) {
+void Printer::AnnotatePreferredMultilineAssignment(const BinaryOpNode* binop) {
   const IdentifierNode* ident = binop->left()->AsIdentifier();
   const ListNode* list = binop->right()->AsList();
   // This is somewhat arbitrary, but we include the 'deps'- and 'sources'-like
   // things, but not flags things.
-  if (binop->op().value() == "=" && ident && list &&
-      (ident->value().value() == "data" ||
-       ident->value().value() == "datadeps" ||
-       ident->value().value() == "deps" || ident->value().value() == "inputs" ||
-       ident->value().value() == "public" ||
-       ident->value().value() == "public_deps" ||
-       ident->value().value() == "sources")) {
-    const_cast<ListNode*>(list)->set_prefer_multiline(true);
+  if (binop->op().value() == "=" && ident && list) {
+    const base::StringPiece lhs = ident->value().value();
+    if (lhs == "data" || lhs == "datadeps" || lhs == "deps" ||
+        lhs == "inputs" || lhs == "outputs" || lhs == "public" ||
+        lhs == "public_deps" || lhs == "sources") {
+      const_cast<ListNode*>(list)->set_prefer_multiline(true);
+    }
   }
 }
 
@@ -308,7 +325,7 @@ int Printer::CurrentColumn() const {
 
 int Printer::CurrentLine() const {
   int count = 1;
-  for (const char* p = output_.c_str(); (p = strchr(p, '\n')) != NULL;) {
+  for (const char* p = output_.c_str(); (p = strchr(p, '\n')) != nullptr;) {
     ++count;
     ++p;
   }
@@ -368,6 +385,16 @@ int Printer::AssessPenalty(const std::string& output) {
   return penalty;
 }
 
+bool Printer::ExceedsMaximumWidth(const std::string& output) {
+  std::vector<std::string> lines;
+  base::SplitStringDontTrim(output, '\n', &lines);
+  for (const auto& line : lines) {
+    if (line.size() > kMaximumWidth)
+      return true;
+  }
+  return false;
+}
+
 void Printer::AddParen(int prec, int outer_prec, bool* parenthesized) {
   if (prec < outer_prec) {
     Print("(");
@@ -412,9 +439,27 @@ int Printer::Expr(const ParseNode* root,
     }
   } else if (const BinaryOpNode* binop = root->AsBinaryOp()) {
     CHECK(precedence_.find(binop->op().value()) != precedence_.end());
-    AnnotatePreferedMultilineAssignment(binop);
+    AnnotatePreferredMultilineAssignment(binop);
+
     Precedence prec = precedence_[binop->op().value()];
-    AddParen(prec, outer_prec, &parenthesized);
+
+    // Since binary operators format left-to-right, it is ok for the left side
+    // use the same operator without parentheses, so the left uses prec. For the
+    // same reason, the right side cannot reuse the same operator, or else "x +
+    // (y + z)" would format as "x + y + z" which means "(x + y) + z". So, treat
+    // the right expression as appearing one precedence level higher.
+    // However, because the source parens are not in the parse tree, as a
+    // special case for && and || we insert strictly-redundant-but-helpful-for-
+    // human-readers parentheses.
+    int prec_left = prec;
+    int prec_right = prec + 1;
+    if (binop->op().value() == "&&" && stack_.back().parent_is_boolean_or) {
+      Print("(");
+      parenthesized = true;
+    } else {
+      AddParen(prec_left, outer_prec, &parenthesized);
+    }
+
     int start_line = CurrentLine();
     int start_column = CurrentColumn();
     bool is_assignment = binop->op().value() == "=" ||
@@ -434,11 +479,13 @@ int Printer::Expr(const ParseNode* root,
     if (stack_.back().continuation_requires_indent)
       indent_column += kIndentSize * 2;
 
-    stack_.push_back(IndentState(indent_column, false));
+    stack_.push_back(IndentState(indent_column,
+                                 stack_.back().continuation_requires_indent,
+                                 binop->op().value() == "||"));
     Printer sub_left;
     InitializeSub(&sub_left);
     sub_left.Expr(binop->left(),
-                  prec,
+                  prec_left,
                   std::string(" ") + binop->op().value().as_string());
     bool left_is_multiline = CountLines(sub_left.String()) > 1;
     // Avoid walking the whole left redundantly times (see timing of Format.046)
@@ -453,7 +500,7 @@ int Printer::Expr(const ParseNode* root,
     InitializeSub(&sub1);
     sub1.Print(" ");
     int penalty_current_line =
-        sub1.Expr(binop->right(), prec + 1, std::string());
+        sub1.Expr(binop->right(), prec_right, std::string());
     sub1.Print(suffix);
     penalty_current_line += AssessPenalty(sub1.String());
     if (!is_assignment && left_is_multiline) {
@@ -467,19 +514,29 @@ int Printer::Expr(const ParseNode* root,
     Printer sub2;
     InitializeSub(&sub2);
     sub2.Newline();
-    int penalty_next_line = sub2.Expr(binop->right(), prec + 1, std::string());
+    int penalty_next_line =
+        sub2.Expr(binop->right(), prec_right, std::string());
     sub2.Print(suffix);
     penalty_next_line += AssessPenalty(sub2.String());
 
-    if (penalty_current_line < penalty_next_line) {
+    // If in both cases it was forced past 80col, then we don't break to avoid
+    // breaking after '=' in the case of:
+    //   variable = "... very long string ..."
+    // as breaking and indenting doesn't make things much more readable, even
+    // though there's less characters past the maximum width.
+    bool exceeds_maximum_either_way = ExceedsMaximumWidth(sub1.String()) &&
+                                      ExceedsMaximumWidth(sub2.String());
+
+    if (penalty_current_line < penalty_next_line ||
+        exceeds_maximum_either_way) {
       Print(" ");
-      Expr(binop->right(), prec + 1, std::string());
+      Expr(binop->right(), prec_right, std::string());
     } else {
       // Otherwise, put first argument and op, and indent next.
       Newline();
       penalty += std::abs(CurrentColumn() - start_column) *
                  kPenaltyHorizontalSeparation;
-      Expr(binop->right(), prec + 1, std::string());
+      Expr(binop->right(), prec_right, std::string());
     }
     stack_.pop_back();
     penalty += (CurrentLine() - start_line) * GetPenaltyForLineBreak();
@@ -498,7 +555,7 @@ int Printer::Expr(const ParseNode* root,
       Print(" else ");
       // If it's a block it's a bare 'else', otherwise it's an 'else if'. See
       // ConditionNode::Execute.
-      bool is_else_if = condition->if_false()->AsBlock() == NULL;
+      bool is_else_if = condition->if_false()->AsBlock() == nullptr;
       if (is_else_if) {
         Expr(condition->if_false(), kPrecedenceLowest, std::string());
       } else {
@@ -570,8 +627,9 @@ void Printer::Sequence(SequenceStyle style,
     CHECK(!list[0]->comments() || list[0]->comments()->after().empty());
     Print(" ");
   } else {
-    stack_.push_back(
-        IndentState(margin() + kIndentSize, style == kSequenceStyleList));
+    stack_.push_back(IndentState(margin() + kIndentSize,
+                                 style == kSequenceStyleList,
+                                 false));
     size_t i = 0;
     for (const auto& x : list) {
       Newline();
@@ -657,10 +715,16 @@ int Printer::FunctionCall(const FunctionCallNode* func_call,
     terminator += " {";
   terminator += suffix;
 
+  // Special case to make function calls of one arg taking a long list of
+  // boolean operators not indent.
+  bool continuation_requires_indent =
+      list.size() != 1 || !list[0]->AsBinaryOp();
+
   // 1: Same line.
   Printer sub1;
   InitializeSub(&sub1);
-  sub1.stack_.push_back(IndentState(CurrentColumn(), true));
+  sub1.stack_.push_back(
+      IndentState(CurrentColumn(), continuation_requires_indent, false));
   int penalty_one_line = 0;
   for (size_t i = 0; i < list.size(); ++i) {
     penalty_one_line += sub1.Expr(list[i], kPrecedenceLowest,
@@ -677,7 +741,8 @@ int Printer::FunctionCall(const FunctionCallNode* func_call,
   // 2: Starting on same line, broken at commas.
   Printer sub2;
   InitializeSub(&sub2);
-  sub2.stack_.push_back(IndentState(CurrentColumn(), true));
+  sub2.stack_.push_back(
+      IndentState(CurrentColumn(), continuation_requires_indent, false));
   int penalty_multiline_start_same_line = 0;
   for (size_t i = 0; i < list.size(); ++i) {
     penalty_multiline_start_same_line += sub2.Expr(
@@ -692,7 +757,8 @@ int Printer::FunctionCall(const FunctionCallNode* func_call,
   // 3: Starting on next line, broken at commas.
   Printer sub3;
   InitializeSub(&sub3);
-  sub3.stack_.push_back(IndentState(margin() + kIndentSize * 2, true));
+  sub3.stack_.push_back(IndentState(margin() + kIndentSize * 2,
+                                    continuation_requires_indent, false));
   sub3.Newline();
   int penalty_multiline_start_next_line = 0;
   for (size_t i = 0; i < list.size(); ++i) {
@@ -728,10 +794,13 @@ int Printer::FunctionCall(const FunctionCallNode* func_call,
     // No elements, and not forcing newlines, print nothing.
   } else {
     if (penalty_multiline_start_next_line < penalty_multiline_start_same_line) {
-      stack_.push_back(IndentState(margin() + kIndentSize * 2, true));
+      stack_.push_back(IndentState(margin() + kIndentSize * 2,
+                                   continuation_requires_indent,
+                                   false));
       Newline();
     } else {
-      stack_.push_back(IndentState(CurrentColumn(), true));
+      stack_.push_back(
+          IndentState(CurrentColumn(), continuation_requires_indent, false));
     }
 
     for (size_t i = 0; i < list.size(); ++i) {
@@ -828,9 +897,9 @@ std::string ReadStdin() {
   char buffer[kBufferSize];
   std::string result;
   while (true) {
-    char* input = NULL;
+    char* input = nullptr;
     input = fgets(buffer, kBufferSize, stdin);
-    if (input == NULL && feof(stdin))
+    if (input == nullptr && feof(stdin))
       return result;
     int length = static_cast<int>(strlen(buffer));
     if (length == 0)
@@ -884,11 +953,20 @@ bool FormatStringToString(const std::string& input,
 }
 
 int RunFormat(const std::vector<std::string>& args) {
+  bool dry_run =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(kSwitchDryRun);
   bool dump_tree =
       base::CommandLine::ForCurrentProcess()->HasSwitch(kSwitchDumpTree);
-
   bool from_stdin =
       base::CommandLine::ForCurrentProcess()->HasSwitch(kSwitchStdin);
+  bool in_place =
+    base::CommandLine::ForCurrentProcess()->HasSwitch(kSwitchInPlace);
+
+  if (dry_run) {
+    // --dry-run only works with an actual file to compare to.
+    from_stdin = false;
+    in_place = true;
+  }
 
   if (from_stdin) {
     if (args.size() != 0) {
@@ -915,24 +993,32 @@ int RunFormat(const std::vector<std::string>& args) {
   Setup setup;
   SourceDir source_dir =
       SourceDirForCurrentDirectory(setup.build_settings().root_path());
-  SourceFile file = source_dir.ResolveRelativeFile(args[0],
-      setup.build_settings().root_path_utf8());
+  SourceFile file = source_dir.ResolveRelativeFile(args[0]);
 
   std::string output_string;
   if (FormatFileToString(&setup, file, dump_tree, &output_string)) {
-    bool in_place =
-        base::CommandLine::ForCurrentProcess()->HasSwitch(kSwitchInPlace);
     if (in_place) {
       base::FilePath to_write = setup.build_settings().GetFullPath(file);
-      if (base::WriteFile(to_write,
-                          output_string.data(),
-                          static_cast<int>(output_string.size())) == -1) {
-        Err(Location(),
-            std::string("Failed to write formatted output back to \"") +
-                to_write.AsUTF8Unsafe() + std::string("\".")).PrintToStdout();
+      std::string original_contents;
+      if (!base::ReadFileToString(to_write, &original_contents)) {
+        Err(Location(), std::string("Couldn't read \"") +
+                            to_write.AsUTF8Unsafe() +
+                            std::string("\" for comparison.")).PrintToStdout();
         return 1;
       }
-      printf("Wrote formatted to '%s'.\n", to_write.AsUTF8Unsafe().c_str());
+      if (dry_run)
+        return original_contents == output_string ? 0 : 2;
+      if (original_contents != output_string) {
+        if (base::WriteFile(to_write,
+                            output_string.data(),
+                            static_cast<int>(output_string.size())) == -1) {
+          Err(Location(),
+              std::string("Failed to write formatted output back to \"") +
+                  to_write.AsUTF8Unsafe() + std::string("\".")).PrintToStdout();
+          return 1;
+        }
+        printf("Wrote formatted to '%s'.\n", to_write.AsUTF8Unsafe().c_str());
+      }
     } else {
       printf("%s", output_string.c_str());
     }

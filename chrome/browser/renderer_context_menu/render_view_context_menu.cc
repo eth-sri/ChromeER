@@ -97,7 +97,7 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/favicon_size.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/text_elider.h"
 
@@ -1197,14 +1197,26 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
     case IDC_CONTENT_CONTEXT_COPY:
       return !!(params_.edit_flags & WebContextMenuData::CanCopy);
 
-    case IDC_CONTENT_CONTEXT_PASTE:
-    case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE: {
+    case IDC_CONTENT_CONTEXT_PASTE: {
+      if (!(params_.edit_flags & WebContextMenuData::CanPaste))
+        return false;
+
       std::vector<base::string16> types;
       bool ignore;
       ui::Clipboard::GetForCurrentThread()->ReadAvailableTypes(
           ui::CLIPBOARD_TYPE_COPY_PASTE, &types, &ignore);
       return !types.empty();
     }
+
+    case IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE: {
+      if (!(params_.edit_flags & WebContextMenuData::CanPaste))
+        return false;
+
+      return ui::Clipboard::GetForCurrentThread()->IsFormatAvailable(
+          ui::Clipboard::GetPlainTextFormatType(),
+          ui::CLIPBOARD_TYPE_COPY_PASTE);
+    }
+
     case IDC_CONTENT_CONTEXT_DELETE:
       return !!(params_.edit_flags & WebContextMenuData::CanDelete);
 
@@ -1712,7 +1724,8 @@ void RenderViewContextMenu::NotifyURLOpened(
 bool RenderViewContextMenu::IsDevCommandEnabled(int id) const {
   if (id == IDC_CONTENT_CONTEXT_INSPECTELEMENT ||
       id == IDC_CONTENT_CONTEXT_INSPECTBACKGROUNDPAGE) {
-    const CommandLine* command_line = CommandLine::ForCurrentProcess();
+    const base::CommandLine* command_line =
+        base::CommandLine::ForCurrentProcess();
     if (!GetPrefs(browser_context_)
              ->GetBoolean(prefs::kWebKitJavascriptEnabled) ||
         command_line->HasSwitch(switches::kDisableJavaScript))

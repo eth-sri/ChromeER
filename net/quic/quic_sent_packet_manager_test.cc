@@ -1384,6 +1384,20 @@ TEST_F(QuicSentPacketManagerTest, NegotiatePacingFromOptions) {
   EXPECT_TRUE(manager_.using_pacing());
 }
 
+TEST_F(QuicSentPacketManagerTest, EnablePacingViaFlag) {
+  EXPECT_FALSE(manager_.using_pacing());
+
+  // If pacing is enabled via command-line flag, it will be turned on,
+  // regardless of the contents of the config.
+  ValueRestore<bool> old_flag(&FLAGS_quic_enable_pacing, true);
+  QuicConfig config;
+  EXPECT_CALL(*network_change_visitor_, OnCongestionWindowChange());
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _, /* using_pacing= */ true));
+  manager_.SetFromConfig(config);
+
+  EXPECT_TRUE(manager_.using_pacing());
+}
+
 TEST_F(QuicSentPacketManagerTest, NegotiateReceiveWindowFromOptions) {
   EXPECT_EQ(kDefaultSocketReceiveBuffer,
             QuicSentPacketManagerPeer::GetReceiveWindow(&manager_));
@@ -1449,6 +1463,19 @@ TEST_F(QuicSentPacketManagerTest, UseInitialRoundTripTimeToSend) {
 
   EXPECT_EQ(0, manager_.GetRttStats()->smoothed_rtt().ToMicroseconds());
   EXPECT_EQ(initial_rtt_us, manager_.GetRttStats()->initial_rtt_us());
+}
+
+TEST_F(QuicSentPacketManagerTest, ResumeConnectionState) {
+  // The sent packet manager should use the RTT from CachedNetworkParameters if
+  // it is provided.
+  const int kRttMs = 1234;
+  CachedNetworkParameters cached_network_params;
+  cached_network_params.set_min_rtt_ms(kRttMs);
+
+  EXPECT_CALL(*send_algorithm_, ResumeConnectionState(_));
+  manager_.ResumeConnectionState(cached_network_params);
+  EXPECT_EQ(kRttMs * kNumMicrosPerMilli,
+            static_cast<uint64>(manager_.GetRttStats()->initial_rtt_us()));
 }
 
 }  // namespace

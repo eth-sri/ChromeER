@@ -40,6 +40,12 @@
       }, {
         'pkg-config': 'pkg-config'
       }],
+      # low memory buffer is used in non-Android based chromecast build due to hardware limitation.
+      ['chromecast==1 and OS!="android"', {
+        'use_low_memory_buffer%': 1,
+      }, {
+        'use_low_memory_buffer%': 0,
+      }],
     ],
   },
   'includes': [
@@ -327,6 +333,8 @@
         'base/ranges.h',
         'base/renderer.cc',
         'base/renderer.h',
+        'base/renderer_factory.cc',
+        'base/renderer_factory.h',
         'base/sample_format.cc',
         'base/sample_format.h',
         'base/scoped_histogram_timer.h',
@@ -384,6 +392,8 @@
         'base/wall_clock_time_source.h',
         'cdm/aes_decryptor.cc',
         'cdm/aes_decryptor.h',
+        'cdm/default_cdm_factory.cc',
+        'cdm/default_cdm_factory.h',
         'cdm/json_web_key.cc',
         'cdm/json_web_key.h',
         'cdm/key_system_names.cc',
@@ -419,6 +429,8 @@
         'filters/decrypting_demuxer_stream.h',
         'filters/decrypting_video_decoder.cc',
         'filters/decrypting_video_decoder.h',
+        'filters/default_renderer_factory.cc',
+        'filters/default_renderer_factory.h',
         'filters/ffmpeg_audio_decoder.cc',
         'filters/ffmpeg_audio_decoder.h',
         'filters/ffmpeg_bitstream_converter.h',
@@ -448,8 +460,6 @@
         'filters/renderer_impl.h',
         'filters/skcanvas_video_renderer.cc',
         'filters/skcanvas_video_renderer.h',
-        'filters/source_buffer_platform.cc',
-        'filters/source_buffer_platform.h',
         'filters/source_buffer_range.cc',
         'filters/source_buffer_range.h',
         'filters/source_buffer_stream.cc',
@@ -656,6 +666,7 @@
           'sources': [
             'base/browser_cdm.cc',
             'base/browser_cdm.h',
+            'base/browser_cdm_factory.cc',
             'base/browser_cdm_factory.h',
           ],
         }],
@@ -671,6 +682,8 @@
             'base/media_stub.cc',
           ],
           'sources!': [
+            'filters/default_renderer_factory.cc',
+            'filters/default_renderer_factory.h',
             'filters/opus_audio_decoder.cc',
             'filters/opus_audio_decoder.h',
           ],
@@ -686,7 +699,7 @@
           ],
         }],
         # For VaapiVideoEncodeAccelerator.
-        ['target_arch != "arm" and chromeos == 1 and use_x11 == 1', {
+        ['target_arch != "arm" and chromeos == 1', {
           'sources': [
             'filters/h264_bitstream_buffer.cc',
             'filters/h264_bitstream_buffer.h',
@@ -1029,6 +1042,17 @@
             'base/keyboard_event_counter.h',
           ],
         }],
+        ['use_low_memory_buffer==1', {
+          'sources': [
+            'filters/source_buffer_platform_lowmem.cc',
+            'filters/source_buffer_platform.h',
+          ]
+        }, {  # 'use_low_memory_buffer==0'
+          'sources': [
+            'filters/source_buffer_platform.cc',
+            'filters/source_buffer_platform.h',
+          ]
+        }],
       ],  # conditions
       'target_conditions': [
         ['OS == "ios" and _toolset != "host"', {
@@ -1045,108 +1069,6 @@
           ],
         }],
       ],  # target_conditions
-    },
-    {
-      # GN version: //media/mojo/interfaces
-      'target_name': 'media_mojo_bindings',
-      'type': 'static_library',
-      'sources': [
-        'mojo/interfaces/media_types.mojom',
-        'mojo/interfaces/media_renderer.mojom',
-        'mojo/interfaces/demuxer_stream.mojom',
-      ],
-      'includes': [
-        '../mojo/public/tools/bindings/mojom_bindings_generator.gypi'
-       ],
-      'export_dependent_settings': [
-        '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
-        '../mojo/services/public/mojo_services_public.gyp:mojo_geometry_bindings',
-      ],
-      'dependencies': [
-        '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
-        '../mojo/services/public/mojo_services_public.gyp:mojo_geometry_bindings',
-      ],
-    },
-    {
-      'target_name': 'media_mojo_lib',
-      'type': 'static_library',
-      'includes': [
-        '../mojo/mojo_variables.gypi',
-      ],
-      'dependencies': [
-        'media',
-        'media_mojo_bindings',
-        '../base/base.gyp:base',
-        '../mojo/mojo_geometry_converters.gyp:mojo_geometry_lib',
-        '../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../mojo/public/mojo_public.gyp:mojo_application_base',
-        '../mojo/public/mojo_public.gyp:mojo_application_bindings',
-        '../skia/skia.gyp:skia',
-        '../ui/gfx/gfx.gyp:gfx_geometry',
-        '<(mojo_system_for_component)',
-      ],
-      'export_dependent_settings': [
-        'media_mojo_bindings',
-      ],
-      'sources': [
-        'mojo/services/media_type_converters.cc',
-        'mojo/services/media_type_converters.h',
-        'mojo/services/mojo_demuxer_stream_impl.cc',
-        'mojo/services/mojo_demuxer_stream_impl.h',
-        'mojo/services/mojo_renderer_impl.cc',
-        'mojo/services/mojo_renderer_impl.h',
-      ],
-    },
-    {
-      'target_name': 'mojo_media_renderer_app',
-      'type': 'loadable_module',
-      'includes': [
-        '../mojo/mojo_variables.gypi',
-      ],
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../mojo/mojo_base.gyp:mojo_application_chromium',
-        '<(mojo_system_for_loadable_module)',
-        'media_mojo_lib',
-        'shared_memory_support',
-      ],
-      'sources': [
-        'mojo/services/demuxer_stream_provider_shim.cc',
-        'mojo/services/demuxer_stream_provider_shim.h',
-        'mojo/services/mojo_demuxer_stream_adapter.cc',
-        'mojo/services/mojo_demuxer_stream_adapter.h',
-        'mojo/services/mojo_renderer_service.cc',
-        'mojo/services/mojo_renderer_service.h',
-        'mojo/services/renderer_config.cc',
-        'mojo/services/renderer_config.h',
-        'mojo/services/renderer_config_default.cc',
-      ],
-    },
-    {
-      'target_name': 'media_mojo_lib_unittests',
-      'type': '<(gtest_target_type)',
-      'dependencies': [
-        'media',
-        'media_mojo_bindings',
-        'media_mojo_lib',
-        '../base/base.gyp:base',
-        '../base/base.gyp:test_support_base',
-        '../testing/gtest.gyp:gtest',
-        '../mojo/edk/mojo_edk.gyp:mojo_run_all_unittests',
-        '../mojo/mojo_base.gyp:mojo_environment_chromium',
-      ],
-      'sources': [
-        'mojo/services/media_type_converters_unittest.cc',
-      ],
-    },
-    {
-      'target_name': 'media_mojo',
-      'type': 'none',
-      'dependencies': [
-        'media_mojo_lib',
-        'media_mojo_lib_unittests',
-        'mojo_media_renderer_app',
-      ]
     },
     {
       # GN version: //media:media_unittests
@@ -1281,8 +1203,6 @@
         'filters/h264_bit_reader_unittest.cc',
         'filters/h264_parser_unittest.cc',
         'filters/in_memory_url_protocol_unittest.cc',
-        'filters/pipeline_integration_test.cc',
-        'filters/pipeline_integration_test_base.cc',
         'filters/renderer_impl_unittest.cc',
         'filters/skcanvas_video_renderer_unittest.cc',
         'filters/source_buffer_stream_unittest.cc',
@@ -1311,6 +1231,8 @@
         'formats/webm/webm_parser_unittest.cc',
         'formats/webm/webm_tracks_parser_unittest.cc',
         'formats/webm/webm_webvtt_parser_unittest.cc',
+        'test/pipeline_integration_test.cc',
+        'test/pipeline_integration_test_base.cc',
       ],
       'include_dirs': [
         # Needed by media_drm_bridge.cc.
@@ -1341,8 +1263,8 @@
             'filters/ffmpeg_h264_to_annex_b_bitstream_converter_unittest.cc',
             'filters/ffmpeg_video_decoder_unittest.cc',
             'filters/in_memory_url_protocol_unittest.cc',
-            'filters/pipeline_integration_test.cc',
-            'filters/pipeline_integration_test_base.cc',
+            'test/pipeline_integration_test.cc',
+            'test/pipeline_integration_test_base.cc',
           ],
         }],
         ['use_alsa==1', {
@@ -1464,8 +1386,8 @@
         'base/sinc_resampler_perftest.cc',
         'base/vector_math_perftest.cc',
         'base/yuv_convert_perftest.cc',
-        'filters/pipeline_integration_perftest.cc',
-        'filters/pipeline_integration_test_base.cc',
+        'test/pipeline_integration_perftest.cc',
+        'test/pipeline_integration_test_base.cc',
       ],
       'conditions': [
         ['arm_neon==1', {
@@ -1486,8 +1408,8 @@
         }, {  # media_use_ffmpeg==0
           'sources!': [
             'base/demuxer_perftest.cc',
-            'filters/pipeline_integration_perftest.cc',
-            'filters/pipeline_integration_test_base.cc',
+            'test/pipeline_integration_perftest.cc',
+            'test/pipeline_integration_test_base.cc',
           ],
         }],
       ],
@@ -1784,6 +1706,7 @@
             'base/android/audio_decoder_job.cc',
             'base/android/audio_decoder_job.h',
             'base/android/browser_cdm_factory_android.cc',
+            'base/android/browser_cdm_factory_android.h',
             'base/android/demuxer_android.h',
             'base/android/demuxer_stream_player_params.cc',
             'base/android/demuxer_stream_player_params.h',
@@ -1859,23 +1782,6 @@
     ['media_use_ffmpeg==1', {
       'targets': [
         {
-          # GN version: //media:ffmpeg_unittests
-          'target_name': 'ffmpeg_unittests',
-          'type': 'executable',
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../base/base.gyp:base_i18n',
-            '../base/base.gyp:test_support_base',
-            '../testing/gtest.gyp:gtest',
-            '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
-            'media',
-            'media_test_support',
-          ],
-          'sources': [
-            'ffmpeg/ffmpeg_unittest.cc',
-          ],
-        },
-        {
           # GN version: //media:ffmpeg_regression_tests
           'target_name': 'ffmpeg_regression_tests',
           'type': 'executable',
@@ -1891,7 +1797,7 @@
           'sources': [
             'base/run_all_unittests.cc',
             'ffmpeg/ffmpeg_regression_tests.cc',
-            'filters/pipeline_integration_test_base.cc',
+            'test/pipeline_integration_test_base.cc',
           ],
           'conditions': [
             ['os_posix==1 and OS!="mac"', {

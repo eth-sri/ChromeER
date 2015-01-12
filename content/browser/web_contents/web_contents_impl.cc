@@ -222,11 +222,13 @@ WebContents* WebContents::CreateWithSessionStorage(
   return new_contents;
 }
 
-void WebContentsImpl::AddCreatedCallback(const CreatedCallback& callback) {
+void WebContentsImpl::FriendZone::AddCreatedCallbackForTesting(
+    const CreatedCallback& callback) {
   g_created_callbacks.Get().push_back(callback);
 }
 
-void WebContentsImpl::RemoveCreatedCallback(const CreatedCallback& callback) {
+void WebContentsImpl::FriendZone::RemoveCreatedCallbackForTesting(
+    const CreatedCallback& callback) {
   for (size_t i = 0; i < g_created_callbacks.Get().size(); ++i) {
     if (g_created_callbacks.Get().at(i).Equals(callback)) {
       g_created_callbacks.Get().erase(g_created_callbacks.Get().begin() + i);
@@ -333,8 +335,6 @@ WebContentsImpl::WebContentsImpl(BrowserContext* browser_context,
       audio_stream_monitor_(this),
       virtual_keyboard_requested_(false),
       loading_weak_factory_(this) {
-  for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
-    g_created_callbacks.Get().at(i).Run(this);
   frame_tree_.SetFrameRemoveListener(
       base::Bind(&WebContentsImpl::OnFrameRemoved,
                  base::Unretained(this)));
@@ -1148,6 +1148,11 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
   // it should be hidden.
   should_normally_be_visible_ = !params.initially_hidden;
 
+  // Either both routing ids can be given, or neither can be.
+  DCHECK((params.routing_id == MSG_ROUTING_NONE &&
+              params.main_frame_routing_id == MSG_ROUTING_NONE) ||
+         (params.routing_id != MSG_ROUTING_NONE &&
+              params.main_frame_routing_id != MSG_ROUTING_NONE));
   GetRenderManager()->Init(
       params.browser_context, params.site_instance, params.routing_id,
       params.main_frame_routing_id);
@@ -1196,6 +1201,14 @@ void WebContentsImpl::Init(const WebContents::CreateParams& params) {
 #if defined(OS_ANDROID)
   date_time_chooser_.reset(new DateTimeChooserAndroid());
 #endif
+
+  // BrowserPluginGuest::Init needs to be called after this WebContents has
+  // a RenderWidgetHostViewGuest. That is, |view_->CreateView| above.
+  if (browser_plugin_guest_)
+    browser_plugin_guest_->Init();
+
+  for (size_t i = 0; i < g_created_callbacks.Get().size(); i++)
+    g_created_callbacks.Get().at(i).Run(this);
 }
 
 void WebContentsImpl::OnWebContentsDestroyed(WebContentsImpl* web_contents) {
@@ -1472,12 +1485,12 @@ void WebContentsImpl::CreateNewWindow(
   // this WebContentsImpl instance. If any other process sends the request,
   // it is invalid and the process must be terminated.
   if (GetRenderProcessHost()->GetID() != render_process_id) {
-    base::ProcessHandle process_handle =
-        RenderProcessHost::FromID(render_process_id)->GetHandle();
+    RenderProcessHost* rph = RenderProcessHost::FromID(render_process_id);
+    base::ProcessHandle process_handle = rph->GetHandle();
     if (process_handle != base::kNullProcessHandle) {
       RecordAction(
           base::UserMetricsAction("Terminate_ProcessMismatch_CreateNewWindow"));
-      base::KillProcess(process_handle, RESULT_CODE_KILLED, false);
+      rph->Shutdown(RESULT_CODE_KILLED, false);
     }
     return;
   }
@@ -1500,6 +1513,7 @@ void WebContentsImpl::CreateNewWindow(
   if (delegate_ &&
       !delegate_->ShouldCreateWebContents(this,
                                           route_id,
+                                          main_frame_route_id,
                                           params.window_container_type,
                                           params.frame_name,
                                           params.target_url,
@@ -1606,12 +1620,12 @@ void WebContentsImpl::CreateNewWidget(int render_process_id,
   // this WebContentsImpl instance. If any other process sends the request,
   // it is invalid and the process must be terminated.
   if (process->GetID() != render_process_id) {
-    base::ProcessHandle process_handle =
-        RenderProcessHost::FromID(render_process_id)->GetHandle();
+    RenderProcessHost* rph = RenderProcessHost::FromID(render_process_id);
+    base::ProcessHandle process_handle = rph->GetHandle();
     if (process_handle != base::kNullProcessHandle) {
       RecordAction(
           base::UserMetricsAction("Terminate_ProcessMismatch_CreateNewWidget"));
-      base::KillProcess(process_handle, RESULT_CODE_KILLED, false);
+      rph->Shutdown(RESULT_CODE_KILLED, false);
     }
     return;
   }
@@ -1938,28 +1952,18 @@ void WebContentsImpl::DetachInterstitialPage() {
                     DidDetachInterstitialPage());
 }
 
-void WebContentsImpl::SetHistoryLengthAndPrune(
-    const SiteInstance* site_instance,
-    int history_length,
-    int32 minimum_page_id) {
-  // SetHistoryLengthAndPrune doesn't work when there are pending cross-site
-  // navigations. Callers should ensure that this is the case.
-  if (GetRenderManager()->pending_render_view_host()) {
-    NOTREACHED();
-    return;
-  }
-  RenderViewHostImpl* rvh = GetRenderViewHostImpl();
-  if (!rvh) {
-    NOTREACHED();
-    return;
-  }
-  if (site_instance && rvh->GetSiteInstance() != site_instance) {
-    NOTREACHED();
-    return;
-  }
-  Send(new ViewMsg_SetHistoryLengthAndPrune(GetRoutingID(),
-                                            history_length,
-                                            minimum_page_id));
+void WebContentsImpl::SetHistoryOffsetAndLength(int history_offset,
+                                                int history_length) {
+  SetHistoryOffsetAndLengthForView(
+      GetRenderViewHost(), history_offset, history_length);
+}
+
+void WebContentsImpl::SetHistoryOffsetAndLengthForView(
+    RenderViewHost* render_view_host,
+    int history_offset,
+    int history_length) {
+  render_view_host->Send(new ViewMsg_SetHistoryOffsetAndLength(
+      render_view_host->GetRoutingID(), history_offset, history_length));
 }
 
 void WebContentsImpl::ReloadFocusedFrame(bool ignore_cache) {
@@ -2375,6 +2379,10 @@ bool WebContentsImpl::HasOpener() const {
   return opener_ != NULL;
 }
 
+WebContents* WebContentsImpl::GetOpener() const {
+  return static_cast<WebContents*>(opener_);
+}
+
 void WebContentsImpl::DidChooseColorInColorChooser(SkColor color) {
   if (!color_chooser_info_.get())
     return;
@@ -2734,6 +2742,13 @@ void WebContentsImpl::OnDidStartLoading(bool to_different_document) {
       static_cast<RenderFrameHostImpl*>(render_frame_message_source_);
   int64 render_frame_id = rfh->frame_tree_node()->frame_tree_node_id();
 
+  // Any main frame load to a new document should reset the load progress, since
+  // it will replace the current page and any frames.
+  if (to_different_document && !rfh->GetParent()) {
+    ResetLoadProgressState();
+    loading_frames_in_progress_ = 0;
+  }
+
   // It is possible to get multiple calls to OnDidStartLoading that don't have
   // corresponding calls to OnDidStopLoading:
   // - With "swappedout://" URLs, this happens when a RenderView gets swapped
@@ -2753,6 +2768,9 @@ void WebContentsImpl::OnDidStartLoading(bool to_different_document) {
     ++loading_frames_in_progress_;
   }
 
+  // Notify the RenderFrameHostManager of the event.
+  rfh->frame_tree_node()->render_manager()->OnDidStartLoading();
+
   loading_progresses_[render_frame_id] = kMinimumLoadingProgress;
   SendLoadProgressChanged();
 }
@@ -2771,6 +2789,9 @@ void WebContentsImpl::OnDidStopLoading() {
     if (loading_total_progress_ == 1.0)
       ResetLoadProgressState();
   }
+
+  // Notify the RenderFrameHostManager of the event.
+  rfh->frame_tree_node()->render_manager()->OnDidStopLoading();
 
   // TODO(japhet): This should be a DCHECK, but the pdf plugin sometimes
   // calls DidStopLoading() without a matching DidStartLoading().
@@ -3611,14 +3632,12 @@ void WebContentsImpl::RenderViewDeleted(RenderViewHost* rvh) {
 void WebContentsImpl::UpdateState(RenderViewHost* rvh,
                                   int32 page_id,
                                   const PageState& page_state) {
-  // Ensure that this state update comes from either the active RVH or one of
-  // the swapped out RVHs.  We don't expect to hear from any other RVHs.
+  // Ensure that this state update comes from a RenderViewHost that belongs to
+  // this WebContents.
   // TODO(nasko): This should go through RenderFrameHost.
   // TODO(creis): We can't update state for cross-process subframes until we
   // have FrameNavigationEntries.  Once we do, this should be a DCHECK.
-  if (rvh != GetRenderViewHost() &&
-      !GetRenderManager()->IsRVHOnSwappedOutList(
-          static_cast<RenderViewHostImpl*>(rvh)))
+  if (rvh->GetDelegate()->GetAsWebContents() != this)
     return;
 
   // We must be prepared to handle state updates for any page, these occur
@@ -4144,6 +4163,10 @@ bool WebContentsImpl::CreateRenderViewForRenderManager(
                                               created_with_opener_)) {
     return false;
   }
+
+  SetHistoryOffsetAndLengthForView(render_view_host,
+                                   controller_.GetLastCommittedEntryIndex(),
+                                   controller_.GetEntryCount());
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   // Force a ViewMsg_Resize to be sent, needed to make plugins show up on

@@ -253,6 +253,7 @@ cr.define('cr.login', function() {
       populateParams(SUPPORTED_PARAMS, data);
       populateParams(LOCALIZED_STRING_PARAMS, data.localizedStrings);
       params.push('parentPage=' + encodeURIComponent(window.location.origin));
+      params.push('needPassword=1');
 
       var url;
       switch (authMode) {
@@ -369,6 +370,11 @@ cr.define('cr.login', function() {
       if (msg.method == 'authPageLoaded') {
         this.authDomain = msg.domain;
         this.authFlow = msg.isSAML ? AuthFlow.SAML : AuthFlow.GAIA;
+        return;
+      }
+
+      if (msg.method == 'resetAuthFlow') {
+        this.authFlow = AuthFlow.GAIA;
         return;
       }
 

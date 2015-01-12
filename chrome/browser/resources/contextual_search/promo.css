@@ -1,7 +1,8 @@
 /* Copyright 2014 The Chromium Authors. All rights reserved.
    Use of this source code is governed by a BSD-style license that can be
-   found in the LICENSE file.
-*/
+   found in the LICENSE file. */
+
+/* TODO: Need to clean up @font-face after we remove font-family from body. */
 @font-face {
   font-family: 'Roboto2';
   font-weight: 400;
@@ -30,7 +31,7 @@ a.colored-link {
 
 #container.hide {
   -webkit-transform: scale(0.95);
-  -webkit-transition-duration: 218ms;
+  -webkit-transition-duration: 130ms;
   -webkit-transition-property: opacity, -webkit-transform;
   opacity: 0;
 }
@@ -79,8 +80,11 @@ a.colored-link {
   }
 }
 
-.label {
+button {
+  background: none;
+  border: none;
   display: inline-block;
+  font-family: 'Roboto2', sans-serif;
   font-size: 14px;
   margin: 14px 0;
   /* We use a slightly different top-bottom padding because Roboto has a
@@ -90,21 +94,21 @@ a.colored-link {
   white-space: nowrap;
 }
 
-.label a {
+button .caption {
   text-transform: uppercase;
 }
 
-#optin-label {
+#optin-button {
   background: rgb(66, 133, 244);
   background-clip: padding-box;
   border-radius: 3px;
   margin-right: 24px;
 }
 
-#optin-label a {
+#optin-button .caption {
   color: white;
 }
 
-#optout-label a {
+#optout-button .caption {
   color: rgb(66, 133, 244);
 }

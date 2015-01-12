@@ -49,7 +49,7 @@ const WebInputEvent* GetInputEventFromMessage(const IPC::Message& message) {
   PickleIterator iter(message);
   const char* data;
   int data_length;
-  if (!message.ReadData(&iter, &data, &data_length))
+  if (!iter.ReadData(&data, &data_length))
     return NULL;
   return reinterpret_cast<const WebInputEvent*>(data);
 }
@@ -80,7 +80,7 @@ WebInputEvent& GetEventWithType(WebInputEvent::Type type) {
 bool GetIsShortcutFromHandleInputEventMessage(const IPC::Message* msg) {
   InputMsg_HandleInputEvent::Schema::Param param;
   InputMsg_HandleInputEvent::Read(msg, &param);
-  return param.c;
+  return get<2>(param);
 }
 
 template<typename MSG_T, typename ARG_T1>
@@ -88,7 +88,7 @@ void ExpectIPCMessageWithArg1(const IPC::Message* msg, const ARG_T1& arg1) {
   ASSERT_EQ(MSG_T::ID, msg->type());
   typename MSG_T::Schema::Param param;
   ASSERT_TRUE(MSG_T::Read(msg, &param));
-  EXPECT_EQ(arg1, param.a);
+  EXPECT_EQ(arg1, get<0>(param));
 }
 
 template<typename MSG_T, typename ARG_T1, typename ARG_T2>
@@ -98,8 +98,8 @@ void ExpectIPCMessageWithArg2(const IPC::Message* msg,
   ASSERT_EQ(MSG_T::ID, msg->type());
   typename MSG_T::Schema::Param param;
   ASSERT_TRUE(MSG_T::Read(msg, &param));
-  EXPECT_EQ(arg1, param.a);
-  EXPECT_EQ(arg2, param.b);
+  EXPECT_EQ(arg1, get<0>(param));
+  EXPECT_EQ(arg2, get<1>(param));
 }
 
 #if defined(USE_AURA)
@@ -1628,7 +1628,7 @@ TEST_F(InputRouterImplTest, TouchpadPinchUpdate) {
   EXPECT_EQ(25, wheel_event->windowY);
   EXPECT_EQ(PinchScaleToWheelDelta(1.5), wheel_event->deltaY);
   EXPECT_EQ(0, wheel_event->deltaX);
-  EXPECT_EQ(1, wheel_event->hasPreciseScrollingDeltas);
+  EXPECT_TRUE(wheel_event->hasPreciseScrollingDeltas);
   EXPECT_EQ(1, wheel_event->wheelTicksY);
   EXPECT_EQ(0, wheel_event->wheelTicksX);
   EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
@@ -1651,7 +1651,7 @@ TEST_F(InputRouterImplTest, TouchpadPinchUpdate) {
   ASSERT_EQ(WebInputEvent::MouseWheel, input_event->type);
   wheel_event = static_cast<const WebMouseWheelEvent*>(input_event);
   EXPECT_FLOAT_EQ(PinchScaleToWheelDelta(0.3f), wheel_event->deltaY);
-  EXPECT_EQ(1, wheel_event->hasPreciseScrollingDeltas);
+  EXPECT_TRUE(wheel_event->hasPreciseScrollingDeltas);
   EXPECT_EQ(-1, wheel_event->wheelTicksY);
   EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
 

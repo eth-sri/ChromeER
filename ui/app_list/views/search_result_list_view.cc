@@ -5,6 +5,7 @@
 #include "ui/app_list/views/search_result_list_view.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
@@ -246,11 +247,6 @@ void SearchResultListView::SearchResultActionActivated(SearchResultView* view,
 void SearchResultListView::OnSearchResultInstalled(SearchResultView* view) {
   if (delegate_ && view->result())
     delegate_->OnResultInstalled(view->result());
-}
-
-void SearchResultListView::OnSearchResultUninstalled(SearchResultView* view) {
-  if (delegate_ && view->result())
-    delegate_->OnResultUninstalled(view->result());
 }
 
 }  // namespace app_list

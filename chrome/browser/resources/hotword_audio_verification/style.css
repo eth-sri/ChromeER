@@ -2,6 +2,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
+/* TODO(xdai): Remove hard-coded font-family for 'Roboto'. */
+
 * {
   box-sizing: border-box;
   color: rgba(0, 0, 0, .54);
@@ -54,19 +56,29 @@ div.intro-text {
 #start-container div.buttonbar {
   background-color: rgb(51, 103, 214);
   height: 56px;
+  padding: 0;
   text-align: center;
 }
 
 #start-container .buttonbar button {
+  height: 100%;
+  margin: 0;
   padding: 0 8px;
+  width: 100%;
 }
 
 a {
+  -webkit-app-region: no-drag;
   color: rgb(66, 133, 244);
   text-decoration: none;
 }
 
+button {
+  -webkit-app-region: no-drag;
+}
+
 body {
+  -webkit-app-region: drag;
   background: #ddd;
 }
 
@@ -305,6 +317,7 @@ div.buttonbar {
 }
 
 .close {
+  -webkit-app-region: no-drag;
   background: -webkit-image-set(
       url(../images/ic-x-white-1x.png) 1x,
       url(../images/ic-x-white-2x.png) 2x)

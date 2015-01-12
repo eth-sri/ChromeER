@@ -357,6 +357,53 @@ def _CheckNoUNIT_TESTInSourceFiles(input_api, output_api):
   return [output_api.PresubmitPromptWarning('UNIT_TEST is only for headers.\n' +
       '\n'.join(problems))]
 
+def _CheckUmaHistogramChanges(input_api, output_api):
+  """Check that UMA histogram names in touched lines can still be found in other
+  lines of the patch or in histograms.xml. Note that this check would not catch
+  the reverse: changes in histograms.xml not matched in the code itself."""
+
+  touched_histograms = []
+  histograms_xml_modifications = []
+  pattern = input_api.re.compile('UMA_HISTOGRAM.*\("(.*)"')
+  for f in input_api.AffectedFiles():
+    # If histograms.xml itself is modified, keep the modified lines for later.
+    if (f.LocalPath().endswith(('histograms.xml'))):
+      histograms_xml_modifications = f.ChangedContents()
+      continue
+    if (not f.LocalPath().endswith(('cc', 'mm', 'cpp'))):
+      continue
+    for line_num, line in f.ChangedContents():
+      found = pattern.search(line)
+      if found:
+        touched_histograms.append([found.group(1), f, line_num])
+
+  # Search for the touched histogram names in the local modifications to
+  # histograms.xml, and if not found on the base file.
+  problems = []
+  for histogram_name, f, line_num in touched_histograms:
+    histogram_name_found = False
+    for line_num, line in histograms_xml_modifications:
+      if histogram_name in line:
+        histogram_name_found = True;
+        break;
+    if histogram_name_found:
+      continue
+
+    with open('tools/metrics/histograms/histograms.xml') as histograms_xml:
+      for line in histograms_xml:
+        if histogram_name in line:
+          histogram_name_found = True;
+          break;
+    if histogram_name_found:
+      continue
+    problems.append(' [%s:%d] %s' % (f.LocalPath(), line_num, histogram_name))
+
+  if not problems:
+    return []
+  return [output_api.PresubmitPromptWarning('Some UMA_HISTOGRAM lines have '
+    'been modified and the associated histogram name has no match in either '
+    'metrics/histograms.xml or the modifications of it:',  problems)]
+
 
 def _CheckNoNewWStrings(input_api, output_api):
   """Checks to make sure we don't introduce use of wstrings."""
@@ -815,12 +862,17 @@ def _CheckHardcodedGoogleHostsInLowerLayers(input_api, output_api):
 
 def _CheckNoAbbreviationInPngFileName(input_api, output_api):
   """Makes sure there are no abbreviations in the name of PNG files.
+  The native_client_sdk directory is excluded because it has auto-generated PNG
+  files for documentation.
   """
-  pattern = input_api.re.compile(r'.*_[a-z]_.*\.png$|.*_[a-z]\.png$')
   errors = []
-  for f in input_api.AffectedFiles(include_deletes=False):
-    if pattern.match(f.LocalPath()):
-      errors.append('    %s' % f.LocalPath())
+  white_list = (r'.*_[a-z]_.*\.png$|.*_[a-z]\.png$',)
+  black_list = (r'^native_client_sdk[\\\/]',)
+  file_filter = lambda f: input_api.FilterSourceFile(
+      f, white_list=white_list, black_list=black_list)
+  for f in input_api.AffectedFiles(include_deletes=False,
+                                   file_filter=file_filter):
+    errors.append('    %s' % f.LocalPath())
 
   results = []
   if errors:
@@ -1215,6 +1267,26 @@ def _CheckJavaStyle(input_api, output_api):
       input_api, output_api, 'tools/android/checkstyle/chromium-style-5.0.xml')
 
 
+def _CheckForCopyrightedCode(input_api, output_api):
+  """Verifies that newly added code doesn't contain copyrighted material
+  and is properly licensed under the standard Chromium license.
+
+  As there can be false positives, we maintain a whitelist file. This check
+  also verifies that the whitelist file is up to date.
+  """
+  import sys
+  original_sys_path = sys.path
+  try:
+    sys.path = sys.path + [input_api.os_path.join(
+        input_api.PresubmitLocalPath(), 'android_webview', 'tools')]
+    import copyright_scanner
+  finally:
+    # Restore sys.path to what it was before.
+    sys.path = original_sys_path
+
+  return copyright_scanner.ScanAtPresubmit(input_api, output_api)
+
+
 _DEPRECATED_CSS = [
   # Values
   ( "-webkit-box", "flex" ),
@@ -1330,6 +1402,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckNoDeprecatedJS(input_api, output_api))
   results.extend(_CheckParseErrors(input_api, output_api))
   results.extend(_CheckForIPCRules(input_api, output_api))
+  results.extend(_CheckForCopyrightedCode(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -1520,6 +1593,9 @@ def CheckChangeOnUpload(input_api, output_api):
   results.extend(_CommonChecks(input_api, output_api))
   results.extend(_CheckValidHostsInDEPS(input_api, output_api))
   results.extend(_CheckJavaStyle(input_api, output_api))
+  results.extend(_CheckUmaHistogramChanges(input_api, output_api))
+  results.extend(
+      input_api.canned_checks.CheckGNFormatted(input_api, output_api))
   return results
 
 
@@ -1532,7 +1608,6 @@ def GetTryServerMasterForBot(bot):
   # Potentially ambiguous bot names are listed explicitly.
   master_map = {
       'linux_gpu': 'tryserver.chromium.gpu',
-      'mac_gpu': 'tryserver.chromium.gpu',
       'win_gpu': 'tryserver.chromium.gpu',
       'chromium_presubmit': 'tryserver.chromium.linux',
       'blink_presubmit': 'tryserver.chromium.linux',
@@ -1551,113 +1626,15 @@ def GetTryServerMasterForBot(bot):
   return master
 
 
-def GetDefaultTryConfigs(bots=None):
-  """Returns a list of ('bot', set(['tests']), optionally filtered by [bots].
-
-  To add tests to this list, they MUST be in the the corresponding master's
-  gatekeeper config. For example, anything on master.chromium would be closed by
-  tools/build/masters/master.chromium/master_gatekeeper_cfg.py.
-
-  If 'bots' is specified, will only return configurations for bots in that list.
+def GetDefaultTryConfigs(bots):
+  """Returns a list of ('bot', set(['tests']), filtered by [bots].
   """
 
-  standard_tests = [
-      'base_unittests',
-      'browser_tests',
-      'cacheinvalidation_unittests',
-      'check_deps',
-      'check_deps2git',
-      'content_browsertests',
-      'content_unittests',
-      'crypto_unittests',
-      'gpu_unittests',
-      'interactive_ui_tests',
-      'ipc_tests',
-      'jingle_unittests',
-      'media_unittests',
-      'net_unittests',
-      'ppapi_unittests',
-      'printing_unittests',
-      'sql_unittests',
-      'sync_unit_tests',
-      'unit_tests',
-      # Broken in release.
-      #'url_unittests',
-      #'webkit_unit_tests',
-  ]
-
-  builders_and_tests = {
-      # TODO(maruel): Figure out a way to run 'sizes' where people can
-      # effectively update the perf expectation correctly.  This requires a
-      # clobber=True build running 'sizes'. 'sizes' is not accurate with
-      # incremental build. Reference:
-      # http://chromium.org/developers/tree-sheriffs/perf-sheriffs.
-      # TODO(maruel): An option would be to run 'sizes' but not count a failure
-      # of this step as a try job failure.
-      'android_aosp': ['compile'],
-      'android_arm64_dbg_recipe': ['slave_steps'],
-      'android_chromium_gn_compile_dbg': ['compile'],
-      'android_chromium_gn_compile_rel': ['compile'],
-      'android_clang_dbg_recipe': ['slave_steps'],
-      'android_dbg_tests_recipe': ['slave_steps'],
-      'ios_dbg_simulator': [
-          'compile',
-          'base_unittests',
-          'content_unittests',
-          'crypto_unittests',
-          'url_unittests',
-          'net_unittests',
-          'sql_unittests',
-          'ui_base_unittests',
-      ],
-      'ios_rel_device': ['compile'],
-      'ios_rel_device_ninja': ['compile'],
-      'mac_asan': ['compile'],
-      #TODO(stip): Change the name of this builder to reflect that it's release.
-      'linux_gtk': standard_tests,
-      'linux_chromeos_asan': ['compile'],
-      'linux_chromium_asan_rel': ['defaulttests'],
-      'linux_chromium_chromeos_clang_dbg': ['defaulttests'],
-      'linux_chromium_chromeos_compile_dbg_ng': ['defaulttests'],
-      'linux_chromium_chromeos_rel': ['defaulttests'],
-      'linux_chromium_chromeos_rel_ng': ['defaulttests'],
-      'linux_chromium_compile_dbg': ['defaulttests'],
-      'linux_chromium_compile_dbg_32_ng': ['compile'],
-      'linux_chromium_gn_dbg': ['compile'],
-      'linux_chromium_gn_rel': ['defaulttests'],
-      'linux_chromium_rel': ['defaulttests'],
-      'linux_chromium_rel_ng': ['defaulttests'],
-      'linux_chromium_clang_dbg': ['defaulttests'],
-      'linux_gpu': ['defaulttests'],
-      'linux_nacl_sdk_build': ['compile'],
-      'mac_chromium_compile_dbg': ['defaulttests'],
-      'mac_chromium_compile_dbg_ng': ['defaulttests'],
-      'mac_chromium_rel': ['defaulttests'],
-      'mac_chromium_rel_ng': ['defaulttests'],
-      'mac_gpu': ['defaulttests'],
-      'mac_nacl_sdk_build': ['compile'],
-      'win_chromium_compile_dbg': ['defaulttests'],
-      'win_chromium_dbg': ['defaulttests'],
-      'win_chromium_rel': ['defaulttests'],
-      'win_chromium_rel_ng': ['defaulttests'],
-      'win_chromium_x64_rel': ['defaulttests'],
-      'win_chromium_x64_rel_ng': ['defaulttests'],
-      'win_gpu': ['defaulttests'],
-      'win_nacl_sdk_build': ['compile'],
-      'win8_chromium_rel': ['defaulttests'],
-  }
-
-  if bots:
-    filtered_builders_and_tests = dict((bot, set(builders_and_tests[bot]))
-                                       for bot in bots)
-  else:
-    filtered_builders_and_tests = dict(
-        (bot, set(tests))
-        for bot, tests in builders_and_tests.iteritems())
+  builders_and_tests = dict((bot, set(['defaulttests'])) for bot in bots)
 
   # Build up the mapping from tryserver master to bot/test.
   out = dict()
-  for bot, tests in filtered_builders_and_tests.iteritems():
+  for bot, tests in builders_and_tests.iteritems():
     out.setdefault(GetTryServerMasterForBot(bot), {})[bot] = tests
   return out
 
@@ -1695,11 +1672,12 @@ def GetPreferredTryMasters(project, change):
     ])
   if all(re.search('(^|[/_])win[/_.]', f) for f in files):
     return GetDefaultTryConfigs([
-        'win_chromium_dbg',
-        'win_chromium_rel',
         'win8_chromium_rel',
+        'win_chromium_rel_ng',
+        'win_chromium_x64_rel_ng',
     ])
-  if all(re.search(r'(^|[\\\/_])android[\\\/_.]', f) for f in files):
+  if all(re.search(r'(^|[\\\/_])android[\\\/_.]', f) and
+         not re.search(r'(^|[\\\/_])devtools[\\\/_.]', f) for f in files):
     return GetDefaultTryConfigs([
         'android_aosp',
         'android_dbg_tests_recipe',
@@ -1710,8 +1688,10 @@ def GetPreferredTryMasters(project, change):
   builders = [
       'android_aosp',
       'android_arm64_dbg_recipe',
-      'android_chromium_gn_compile_rel',
+      'android_arm64_dbg_recipe',
       'android_chromium_gn_compile_dbg',
+      'android_chromium_gn_compile_rel',
+      'android_clang_dbg_recipe',
       'android_clang_dbg_recipe',
       'android_dbg_tests_recipe',
       'ios_dbg_simulator',
@@ -1727,19 +1707,18 @@ def GetPreferredTryMasters(project, change):
       'linux_gpu',
       'mac_chromium_compile_dbg_ng',
       'mac_chromium_rel_ng',
-      'mac_gpu',
-      'win_chromium_compile_dbg',
-      'win_chromium_rel',
-      'win_chromium_x64_rel',
-      'win_gpu',
       'win8_chromium_rel',
+      'win_chromium_compile_dbg',
+      'win_chromium_rel_ng',
+      'win_chromium_x64_rel_ng',
+      'win_gpu',
   ]
 
   # Match things like path/aura/file.cc and path/file_aura.cc.
   # Same for chromeos.
   if any(re.search(r'[\\\/_](aura|chromeos)', f) for f in files):
     builders.extend([
-        'linux_chromeos_asan',
+        'linux_chromium_chromeos_asan_rel_ng',
     ])
 
   return GetDefaultTryConfigs(builders)

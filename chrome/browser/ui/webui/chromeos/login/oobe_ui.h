@@ -39,6 +39,7 @@ class NetworkStateInformer;
 class SigninScreenHandler;
 class SigninScreenHandlerDelegate;
 class UpdateScreenHandler;
+class UserBoardScreenHandler;
 
 // A custom WebUI that defines datasource for out-of-box-experience (OOBE) UI:
 // - welcome screen (setup language/keyboard/network).
@@ -62,6 +63,7 @@ class OobeUI : public OobeDisplay,
   static const char kLockDisplay[];
   static const char kUserAddingDisplay[];
   static const char kAppLaunchSplashDisplay[];
+  static const char kNewOobeDisplay[];
 
   // JS oobe/login screens names.
   static const char kScreenOobeHIDDetection[];
@@ -97,7 +99,7 @@ class OobeUI : public OobeDisplay,
   // OobeDisplay implementation:
   virtual CoreOobeActor* GetCoreOobeActor() override;
   virtual UpdateScreenActor* GetUpdateScreenActor() override;
-  virtual NetworkScreenActor* GetNetworkScreenActor() override;
+  virtual NetworkView* GetNetworkView() override;
   virtual EulaView* GetEulaView() override;
   virtual EnableDebuggingScreenActor* GetEnableDebuggingScreenActor() override;
   virtual EnrollmentScreenActor* GetEnrollmentScreenActor() override;
@@ -123,6 +125,7 @@ class OobeUI : public OobeDisplay,
   virtual HostPairingScreenActor* GetHostPairingScreenActor() override;
   DeviceDisabledScreenActor* GetDeviceDisabledScreenActor() override;
   virtual GaiaScreenHandler* GetGaiaScreenActor() override;
+  virtual UserBoardView* GetUserBoardScreenActor() override;
 
   // Collects localized strings from the owned handlers.
   void GetLocalizedStrings(base::DictionaryValue* localized_strings);
@@ -136,11 +139,6 @@ class OobeUI : public OobeDisplay,
 
   // Shows or hides OOBE UI elements.
   void ShowOobeUI(bool show);
-
-  // TODO(rkc): Create a separate retail mode login UI and move this method
-  // there - see crbug.com/157671.
-  // Shows a login spinner for retail mode logins.
-  void ShowRetailModeLoginSpinner();
 
   // Shows the signin screen.
   void ShowSigninScreen(const LoginScreenContext& context,
@@ -191,7 +189,7 @@ class OobeUI : public OobeDisplay,
 
   // Screens actors. Note, OobeUI owns them via |handlers_|, not directly here.
   UpdateScreenHandler* update_screen_handler_;
-  NetworkScreenActor* network_screen_actor_;
+  NetworkView* network_view_;
   EnableDebuggingScreenActor* debugging_screen_actor_;
   EulaView* eula_view_;
   EnrollmentScreenActor* enrollment_screen_actor_;
@@ -215,6 +213,10 @@ class OobeUI : public OobeDisplay,
   // Reference to GaiaScreenHandler that handles gaia screen requests and
   // forwards calls from native code to JS side.
   GaiaScreenHandler* gaia_screen_handler_;
+
+  // Reference to UserBoardScreenHandler, that allows to pick user on device
+  // and attempt authentication.
+  UserBoardScreenHandler* user_board_screen_handler_;
 
   // Reference to SigninScreenHandler that handles sign-in screen requests and
   // forwards calls from native code to JS side.

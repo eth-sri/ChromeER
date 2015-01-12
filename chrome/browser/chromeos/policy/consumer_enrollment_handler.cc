@@ -8,12 +8,15 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
+#include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos_factory.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/consumer_management_service.h"
+#include "chrome/browser/chromeos/policy/consumer_management_stage.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
 #include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
@@ -72,7 +75,7 @@ void ConsumerEnrollmentHandler::OnGetTokenFailure(
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, token_request_.release());
 
   LOG(ERROR) << "Failed to get the access token: " << error.ToString();
-  EndEnrollment(ConsumerManagementService::ENROLLMENT_STAGE_GET_TOKEN_FAILED);
+  EndEnrollment(ConsumerManagementStage::EnrollmentGetTokenFailed());
 }
 
 void ConsumerEnrollmentHandler::ContinueEnrollmentProcess() {
@@ -109,10 +112,10 @@ void ConsumerEnrollmentHandler::OnOwnerAccessTokenAvailable(
   device_modes[policy::DEVICE_MODE_ENTERPRISE] = true;
 
   initializer->StartEnrollment(
-      MANAGEMENT_MODE_CONSUMER_MANAGED,
-      device_management_service_,
+      MANAGEMENT_MODE_CONSUMER_MANAGED, device_management_service_,
+      chromeos::OwnerSettingsServiceChromeOSFactory::GetForBrowserContext(
+          profile_),
       access_token,
-      false,  // is_auto_enrollment
       device_modes,
       base::Bind(&ConsumerEnrollmentHandler::OnEnrollmentCompleted,
                  weak_ptr_factory_.GetWeakPtr()));
@@ -126,16 +129,16 @@ void ConsumerEnrollmentHandler::OnEnrollmentCompleted(EnrollmentStatus status) {
                << " http_status=" << status.http_status()
                << " store_status=" << status.store_status()
                << " validation_status=" << status.validation_status();
-    EndEnrollment(ConsumerManagementService::ENROLLMENT_STAGE_DM_SERVER_FAILED);
+    EndEnrollment(ConsumerManagementStage::EnrollmentDMServerFailed());
     return;
   }
 
-  EndEnrollment(ConsumerManagementService::ENROLLMENT_STAGE_SUCCESS);
+  EndEnrollment(ConsumerManagementStage::EnrollmentSuccess());
 }
 
 void ConsumerEnrollmentHandler::EndEnrollment(
-    ConsumerManagementService::EnrollmentStage stage) {
-  consumer_management_service_->SetEnrollmentStage(stage);
+    const ConsumerManagementStage& stage) {
+  consumer_management_service_->SetStage(stage);
 }
 
 }  // namespace policy

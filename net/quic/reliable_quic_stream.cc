@@ -12,6 +12,7 @@
 
 using base::StringPiece;
 using std::min;
+using std::string;
 
 namespace net {
 
@@ -363,7 +364,7 @@ QuicConsumedData ReliableQuicStream::WritevData(
 
   if (flow_controller_.IsEnabled()) {
     // How much data we are allowed to write from flow control.
-    uint64 send_window = flow_controller_.SendWindowSize();
+    QuicByteCount send_window = flow_controller_.SendWindowSize();
     // TODO(rjshade): Remove connection_flow_controller_->IsEnabled() check when
     // removing QUIC_VERSION_19.
     if (stream_contributes_to_connection_flow_control_ &&
@@ -383,7 +384,7 @@ QuicConsumedData ReliableQuicStream::WritevData(
       fin = false;
 
       // Writing more data would be a violation of flow control.
-      write_length = send_window;
+      write_length = static_cast<size_t>(send_window);
     }
   }
 
@@ -466,7 +467,8 @@ void ReliableQuicStream::OnClose() {
   // As there may be more bytes in flight and we need to ensure that both
   // endpoints have the same connection level flow control state, mark all
   // unreceived or buffered bytes as consumed.
-  uint64 bytes_to_consume = flow_controller_.highest_received_byte_offset() -
+  QuicByteCount bytes_to_consume =
+      flow_controller_.highest_received_byte_offset() -
       flow_controller_.bytes_consumed();
   AddBytesConsumed(bytes_to_consume);
 }
@@ -487,7 +489,8 @@ void ReliableQuicStream::OnWindowUpdateFrame(
   }
 }
 
-bool ReliableQuicStream::MaybeIncreaseHighestReceivedOffset(uint64 new_offset) {
+bool ReliableQuicStream::MaybeIncreaseHighestReceivedOffset(
+    QuicStreamOffset new_offset) {
   if (!flow_controller_.IsEnabled()) {
     return false;
   }
@@ -508,7 +511,7 @@ bool ReliableQuicStream::MaybeIncreaseHighestReceivedOffset(uint64 new_offset) {
   return true;
 }
 
-void ReliableQuicStream::AddBytesSent(uint64 bytes) {
+void ReliableQuicStream::AddBytesSent(QuicByteCount bytes) {
   if (flow_controller_.IsEnabled()) {
     flow_controller_.AddBytesSent(bytes);
     if (stream_contributes_to_connection_flow_control_) {
@@ -517,7 +520,7 @@ void ReliableQuicStream::AddBytesSent(uint64 bytes) {
   }
 }
 
-void ReliableQuicStream::AddBytesConsumed(uint64 bytes) {
+void ReliableQuicStream::AddBytesConsumed(QuicByteCount bytes) {
   if (flow_controller_.IsEnabled()) {
     // Only adjust stream level flow controller if we are still reading.
     if (!read_side_closed_) {
@@ -530,7 +533,7 @@ void ReliableQuicStream::AddBytesConsumed(uint64 bytes) {
   }
 }
 
-void ReliableQuicStream::UpdateSendWindowOffset(uint64 new_window) {
+void ReliableQuicStream::UpdateSendWindowOffset(QuicStreamOffset new_window) {
   if (flow_controller_.UpdateSendWindowOffset(new_window)) {
     OnCanWrite();
   }

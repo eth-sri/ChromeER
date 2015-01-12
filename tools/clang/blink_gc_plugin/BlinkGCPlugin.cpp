@@ -197,7 +197,8 @@ class CollectVisitor : public RecursiveASTVisitor<CollectVisitor> {
 
   // Collect tracing method definitions, but don't traverse method bodies.
   bool TraverseCXXMethodDecl(CXXMethodDecl* method) {
-    if (method->isThisDeclarationADefinition() && Config::IsTraceMethod(method))
+    if (method->isThisDeclarationADefinition() &&
+        Config::IsTraceMethod(method, nullptr))
       trace_decls_.push_back(method);
     return true;
   }
@@ -322,7 +323,9 @@ class CheckDispatchVisitor : public RecursiveASTVisitor<CheckDispatchVisitor> {
 class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
  public:
   CheckTraceVisitor(CXXMethodDecl* trace, RecordInfo* info)
-      : trace_(trace), info_(info) {}
+      : trace_(trace), info_(info), delegates_to_traceimpl_(false) {}
+
+  bool delegates_to_traceimpl() const { return delegates_to_traceimpl_; }
 
   bool VisitMemberExpr(MemberExpr* member) {
     // In weak callbacks, consider any occurrence as a correct usage.
@@ -383,6 +386,11 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
     if (CXXMemberCallExpr* expr = dyn_cast<CXXMemberCallExpr>(call)) {
       if (CheckTraceFieldCall(expr) || CheckRegisterWeakMembers(expr))
         return true;
+
+      if (expr->getMethodDecl()->getNameAsString() == kTraceImplName) {
+        delegates_to_traceimpl_ = true;
+        return true;
+      }
     }
 
     CheckTraceBaseCall(call);
@@ -400,21 +408,29 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
     if (!type)
       return 0;
 
-    const TemplateSpecializationType* tmpl_type =
-        type->getAs<TemplateSpecializationType>();
-    if (!tmpl_type)
-      return 0;
-
-    TemplateDecl* tmpl_decl = tmpl_type->getTemplateName().getAsTemplateDecl();
-    if (!tmpl_decl)
-      return 0;
-
-    return dyn_cast<CXXRecordDecl>(tmpl_decl->getTemplatedDecl());
+    return RecordInfo::GetDependentTemplatedDecl(*type);
   }
 
   void CheckCXXDependentScopeMemberExpr(CallExpr* call,
                                         CXXDependentScopeMemberExpr* expr) {
     string fn_name = expr->getMember().getAsString();
+
+    // Check for VisitorDispatcher::trace(field)
+    if (!expr->isImplicitAccess()) {
+      if (clang::DeclRefExpr* base_decl =
+              clang::dyn_cast<clang::DeclRefExpr>(expr->getBase())) {
+        if (Config::IsVisitorDispatcherType(base_decl->getType()) &&
+            call->getNumArgs() == 1 && fn_name == kTraceName) {
+          FindFieldVisitor finder;
+          finder.TraverseStmt(call->getArg(0));
+          if (finder.field())
+            FoundField(finder.field());
+
+          return;
+        }
+      }
+    }
+
     CXXRecordDecl* tmpl = GetDependentTemplatedDecl(expr);
     if (!tmpl)
       return;
@@ -445,7 +461,7 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
       return false;
 
     FunctionDecl* fn = dyn_cast<FunctionDecl>(callee->getMemberDecl());
-    if (!fn || !Config::IsTraceMethod(fn))
+    if (!fn || !Config::IsTraceMethod(fn, nullptr))
       return false;
 
     // Currently, a manually dispatched class cannot have mixin bases (having
@@ -565,6 +581,7 @@ class CheckTraceVisitor : public RecursiveASTVisitor<CheckTraceVisitor> {
 
   CXXMethodDecl* trace_;
   RecordInfo* info_;
+  bool delegates_to_traceimpl_;
 };
 
 // This visitor checks that the fields of a class and the fields of
@@ -1042,7 +1059,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     while (it != left_most->bases_end()) {
       left_most_base = it->getType()->getAsCXXRecordDecl();
       if (!left_most_base && it->getType()->isDependentType())
-        left_most_base = GetDependentTemplatedDecl(*it->getType());
+        left_most_base = RecordInfo::GetDependentTemplatedDecl(*it->getType());
 
       // TODO: Find a way to correctly check actual instantiations
       // for dependent types. The escape below will be hit, eg, when
@@ -1103,7 +1120,7 @@ class BlinkGCPluginConsumer : public ASTConsumer {
     CXXRecordDecl::base_class_iterator it = left_most->bases_begin();
     while (it != left_most->bases_end()) {
       if (it->getType()->isDependentType())
-        left_most = GetDependentTemplatedDecl(*it->getType());
+        left_most = RecordInfo::GetDependentTemplatedDecl(*it->getType());
       else
         left_most = it->getType()->getAsCXXRecordDecl();
       if (!left_most || !left_most->hasDefinition())
@@ -1122,12 +1139,9 @@ class BlinkGCPluginConsumer : public ASTConsumer {
   }
 
   void CheckLeftMostDerived(RecordInfo* info) {
-    CXXRecordDecl* left_most = info->record();
-    CXXRecordDecl::base_class_iterator it = left_most->bases_begin();
-    while (it != left_most->bases_end()) {
-      left_most = it->getType()->getAsCXXRecordDecl();
-      it = left_most->bases_begin();
-    }
+    CXXRecordDecl* left_most = GetLeftMostBase(info->record());
+    if (!left_most)
+      return;
     if (!Config::IsGCBase(left_most->getName()))
       ReportClassMustLeftMostlyDeriveGC(info);
   }
@@ -1302,6 +1316,11 @@ class BlinkGCPluginConsumer : public ASTConsumer {
 
     CheckTraceVisitor visitor(trace, parent);
     visitor.TraverseCXXMethodDecl(trace);
+
+    // Skip reporting if this trace method is a just delegate to
+    // traceImpl method. We will report on CheckTraceMethod on traceImpl method.
+    if (visitor.delegates_to_traceimpl())
+      return;
 
     for (RecordInfo::Bases::iterator it = parent->GetBases().begin();
          it != parent->GetBases().end();

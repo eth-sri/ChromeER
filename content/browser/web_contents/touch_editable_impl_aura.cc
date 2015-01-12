@@ -14,6 +14,7 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/base/touch/selection_bound.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/gfx/range/range.h"
 #include "ui/strings/grit/ui_strings.h"
@@ -78,7 +79,7 @@ void TouchEditableImplAura::StartTouchEditing() {
 
   if (!touch_selection_controller_) {
     touch_selection_controller_.reset(
-        ui::TouchSelectionController::create(this));
+        ui::TouchEditingControllerDeprecated::Create(this));
   }
   if (touch_selection_controller_)
     touch_selection_controller_->SelectionChanged();
@@ -136,7 +137,13 @@ bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
           selection_anchor_ != selection_focus_) {
         gfx::Rect selection_rect =
             ui::RectBetweenSelectionBounds(selection_anchor_, selection_focus_);
-        if (selection_rect.Contains(gesture_event->location())) {
+        // When tap is on selection, show handles and mark event as handled only
+        // if handles are not present or text is not editable. Otherwise, do not
+        // set event as handles so that event is forwarded to the renderer to
+        // update selection/cursor.
+        if (selection_rect.Contains(gesture_event->location()) &&
+            (text_input_type_ == ui::TEXT_INPUT_TYPE_NONE ||
+                !touch_selection_controller_)) {
           StartTouchEditing();
           return true;
         }

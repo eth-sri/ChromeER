@@ -9,11 +9,28 @@
 #include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/src/core/SkRasterClip.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace {
 
 const int kNoLayer = -1;
+
+bool ActsLikeClear(SkXfermode::Mode mode, unsigned src_alpha) {
+  switch (mode) {
+    case SkXfermode::kClear_Mode:
+      return true;
+    case SkXfermode::kSrc_Mode:
+    case SkXfermode::kSrcIn_Mode:
+    case SkXfermode::kDstIn_Mode:
+    case SkXfermode::kSrcOut_Mode:
+    case SkXfermode::kDstATop_Mode:
+      return src_alpha == 0;
+    case SkXfermode::kDstOut_Mode:
+      return src_alpha == 0xFF;
+    default:
+      return false;
+  }
+}
 
 bool IsSolidColorPaint(const SkPaint& paint) {
   SkXfermode::Mode xfermode;
@@ -78,26 +95,10 @@ void AnalysisCanvas::SetForceNotTransparent(bool flag) {
     is_transparent_ = false;
 }
 
-void AnalysisCanvas::clear(SkColor color) {
-  is_transparent_ = (!is_forced_not_transparent_ && SkColorGetA(color) == 0);
-
-  if (!is_forced_not_solid_ && SkColorGetA(color) == 255) {
-    is_solid_color_ = true;
-    color_ = color;
-  } else {
-    is_solid_color_ = false;
-  }
-}
-
 void AnalysisCanvas::drawPaint(const SkPaint& paint) {
-  // This check is in SkCanvas::drawPaint(), and some of our unittests rely on
-  // on this, so we reproduce it here.
-  if (isClipEmpty())
-    return;
-
-  is_solid_color_ = false;
-  is_transparent_ = false;
-  ++draw_op_count_;
+  SkRect rect;
+  getClipBounds(&rect);
+  drawRect(rect, paint);
 }
 
 void AnalysisCanvas::drawPoints(SkCanvas::PointMode mode,
@@ -137,7 +138,7 @@ void AnalysisCanvas::drawRect(const SkRect& rect, const SkPaint& paint) {
   // In all other cases, we keep the current transparent value
   if (does_cover_canvas &&
       !is_forced_not_transparent_ &&
-      xfermode == SkXfermode::kClear_Mode) {
+      ActsLikeClear(xfermode, paint.getAlpha())) {
     is_transparent_ = true;
   } else if (paint.getAlpha() != 0 || xfermode != SkXfermode::kSrc_Mode) {
     is_transparent_ = false;
@@ -199,14 +200,6 @@ void AnalysisCanvas::drawBitmapRectToRect(const SkBitmap&,
     paint = &tmpPaint;
   drawRect(dst, *paint);
   is_solid_color_ = false;
-  ++draw_op_count_;
-}
-
-void AnalysisCanvas::drawBitmapMatrix(const SkBitmap& bitmap,
-                                      const SkMatrix& matrix,
-                                      const SkPaint* paint) {
-  is_solid_color_ = false;
-  is_transparent_ = false;
   ++draw_op_count_;
 }
 

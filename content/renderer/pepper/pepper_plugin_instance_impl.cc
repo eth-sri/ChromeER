@@ -832,15 +832,17 @@ static void SetGPUHistogram(const ppapi::Preferences& prefs,
 bool PepperPluginInstanceImpl::Initialize(
     const std::vector<std::string>& arg_names,
     const std::vector<std::string>& arg_values,
-    bool full_frame) {
+    bool full_frame,
+    RenderFrame::PluginPowerSaverMode power_saver_mode) {
   if (!render_frame_)
     return false;
 
+  blink::WebRect bounds = container()->element().boundsInViewportSpace();
+
   throttler_.reset(new PepperPluginInstanceThrottler(
-      render_frame()->plugin_power_saver_helper(),
-      container()->element().boundsInViewportSpace(), module()->name(),
-      plugin_url_, base::Bind(&PepperPluginInstanceImpl::SendDidChangeView,
-                              weak_factory_.GetWeakPtr())));
+      render_frame(), bounds, module()->name(), plugin_url_, power_saver_mode,
+      base::Bind(&PepperPluginInstanceImpl::SendDidChangeView,
+                 weak_factory_.GetWeakPtr())));
 
   message_channel_ = MessageChannel::Create(this, &message_channel_object_);
 
@@ -1335,17 +1337,6 @@ void PepperPluginInstanceImpl::ViewInitiatedPaint() {
     bound_compositor_->ViewInitiatedPaint();
 }
 
-void PepperPluginInstanceImpl::ViewFlushedPaint() {
-  // Keep a reference on the stack. See NOTE above.
-  scoped_refptr<PepperPluginInstanceImpl> ref(this);
-  if (bound_graphics_2d_platform_)
-    bound_graphics_2d_platform_->ViewFlushedPaint();
-  else if (bound_graphics_3d_.get())
-    bound_graphics_3d_->ViewFlushedPaint();
-  else if (bound_compositor_)
-    bound_compositor_->ViewFlushedPaint();
-}
-
 void PepperPluginInstanceImpl::SetSelectedText(
     const base::string16& selected_text) {
   selected_text_ = selected_text;
@@ -1650,10 +1641,17 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
   if (module()->is_crashed())
     return;
 
-  // When plugin is throttled, send ViewData indicating it's in the background.
-  const ppapi::ViewData& view_data = (throttler_ && throttler_->is_throttled())
-                                         ? throttler_->throttled_view_data()
-                                         : view_data_;
+  ppapi::ViewData view_data = view_data_;
+
+  // When plugin content is throttled, fake the page being offscreen. We cannot
+  // send empty view data here, as some plugins rely on accurate view data.
+  if (throttler_ && throttler_->is_throttled()) {
+    view_data.is_page_visible = false;
+    view_data.clip_rect.point.x = 0;
+    view_data.clip_rect.point.y = 0;
+    view_data.clip_rect.size.width = 0;
+    view_data.clip_rect.size.height = 0;
+  }
 
   if (view_change_weak_ptr_factory_.HasWeakPtrs() ||
       (sent_initial_did_change_view_ &&
@@ -2369,10 +2367,6 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
   } else {
     result = frame->executeScriptAndReturnValue(script);
   }
-
-  // Check for an exception due to the context being destroyed.
-  if (try_catch.HasException())
-    return PP_MakeUndefined();
 
   ScopedPPVar var_result = try_catch.FromV8(result);
   if (try_catch.HasException())

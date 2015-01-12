@@ -307,58 +307,58 @@ struct GenerateTraits<base::string16> {
 
 // Specializations to generate tuples.
 template <>
-struct GenerateTraits<Tuple0> {
-  static bool Generate(Tuple0* p, Generator* generator) {
+struct GenerateTraits<Tuple<>> {
+  static bool Generate(Tuple<>* p, Generator* generator) {
     return true;
   }
 };
 
 template <class A>
-struct GenerateTraits<Tuple1<A> > {
-  static bool Generate(Tuple1<A>* p, Generator* generator) {
-    return GenerateParam(&p->a, generator);
+struct GenerateTraits<Tuple<A>> {
+  static bool Generate(Tuple<A>* p, Generator* generator) {
+    return GenerateParam(&get<0>(*p), generator);
   }
 };
 
 template <class A, class B>
-struct GenerateTraits<Tuple2<A, B> > {
-  static bool Generate(Tuple2<A, B>* p, Generator* generator) {
+struct GenerateTraits<Tuple<A, B>> {
+  static bool Generate(Tuple<A, B>* p, Generator* generator) {
     return
-        GenerateParam(&p->a, generator) &&
-        GenerateParam(&p->b, generator);
+        GenerateParam(&get<0>(*p), generator) &&
+        GenerateParam(&get<1>(*p), generator);
   }
 };
 
 template <class A, class B, class C>
-struct GenerateTraits<Tuple3<A, B, C> > {
-  static bool Generate(Tuple3<A, B, C>* p, Generator* generator) {
+struct GenerateTraits<Tuple<A, B, C>> {
+  static bool Generate(Tuple<A, B, C>* p, Generator* generator) {
     return
-        GenerateParam(&p->a, generator) &&
-        GenerateParam(&p->b, generator) &&
-        GenerateParam(&p->c, generator);
+        GenerateParam(&get<0>(*p), generator) &&
+        GenerateParam(&get<1>(*p), generator) &&
+        GenerateParam(&get<2>(*p), generator);
   }
 };
 
 template <class A, class B, class C, class D>
-struct GenerateTraits<Tuple4<A, B, C, D> > {
-  static bool Generate(Tuple4<A, B, C, D>* p, Generator* generator) {
+struct GenerateTraits<Tuple<A, B, C, D>> {
+  static bool Generate(Tuple<A, B, C, D>* p, Generator* generator) {
     return
-        GenerateParam(&p->a, generator) &&
-        GenerateParam(&p->b, generator) &&
-        GenerateParam(&p->c, generator) &&
-        GenerateParam(&p->d, generator);
+        GenerateParam(&get<0>(*p), generator) &&
+        GenerateParam(&get<1>(*p), generator) &&
+        GenerateParam(&get<2>(*p), generator) &&
+        GenerateParam(&get<3>(*p), generator);
   }
 };
 
 template <class A, class B, class C, class D, class E>
-struct GenerateTraits<Tuple5<A, B, C, D, E> > {
-  static bool Generate(Tuple5<A, B, C, D, E>* p, Generator* generator) {
+struct GenerateTraits<Tuple<A, B, C, D, E>> {
+  static bool Generate(Tuple<A, B, C, D, E>* p, Generator* generator) {
     return
-        GenerateParam(&p->a, generator) &&
-        GenerateParam(&p->b, generator) &&
-        GenerateParam(&p->c, generator) &&
-        GenerateParam(&p->d, generator) &&
-        GenerateParam(&p->e, generator);
+        GenerateParam(&get<0>(*p), generator) &&
+        GenerateParam(&get<1>(*p), generator) &&
+        GenerateParam(&get<2>(*p), generator) &&
+        GenerateParam(&get<3>(*p), generator) &&
+        GenerateParam(&get<4>(*p), generator);
   }
 };
 
@@ -1254,11 +1254,12 @@ struct GenerateTraits<ppapi::SocketOptionData> {
 #define MAX_FAKE_ROUTING_ID 15
 
 #define IPC_MEMBERS_IN_0(p)
-#define IPC_MEMBERS_IN_1(p) p.a
-#define IPC_MEMBERS_IN_2(p) p.a, p.b
-#define IPC_MEMBERS_IN_3(p) p.a, p.b, p.c
-#define IPC_MEMBERS_IN_4(p) p.a, p.b, p.c, p.d
-#define IPC_MEMBERS_IN_5(p) p.a, p.b, p.c, p.d, p.e
+#define IPC_MEMBERS_IN_1(p) get<0>(p)
+#define IPC_MEMBERS_IN_2(p) get<0>(p), get<1>(p)
+#define IPC_MEMBERS_IN_3(p) get<0>(p), get<1>(p), get<2>(p)
+#define IPC_MEMBERS_IN_4(p) get<0>(p), get<1>(p), get<2>(p), get<3>(p)
+#define IPC_MEMBERS_IN_5(p) get<0>(p), get<1>(p), get<2>(p), get<3>(p), \
+                            get<4>(p)
 
 #define IPC_MEMBERS_OUT_0()
 #define IPC_MEMBERS_OUT_1() NULL
@@ -1285,9 +1286,9 @@ static const char kCountSwitch[] = "count";
 static const char kHelpSwitch[] = "help";
 
 int GenerateMain(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
-  CommandLine* cmd = CommandLine::ForCurrentProcess();
-  CommandLine::StringVector args = cmd->GetArgs();
+  base::CommandLine::Init(argc, argv);
+  base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
+  base::CommandLine::StringVector args = cmd->GetArgs();
 
   if (args.size() != 1 || cmd->HasSwitch(kHelpSwitch)) {
     std::cerr << "Usage: ipc_fuzzer_generate [--help] [--count=n] outfile\n";

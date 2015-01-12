@@ -161,6 +161,7 @@ const struct InputMethodNameMap {
        IDS_IME_NAME_KEYBOARD_NEPALI_INSCRIPT},
       {"__MSG_KEYBOARD_NEPALI_PHONETIC__",
        IDS_IME_NAME_KEYBOARD_NEPALI_PHONETIC},
+      {"__MSG_KEYBOARD_NETHERLANDS__", IDS_IME_NAME_KEYBOARD_NETHERLANDS},
       {"__MSG_KEYBOARD_NORWEGIAN__", IDS_IME_NAME_KEYBOARD_NORWEGIAN},
       {"__MSG_KEYBOARD_PERSIAN__", IDS_IME_NAME_KEYBOARD_PERSIAN},
       {"__MSG_KEYBOARD_POLISH__", IDS_IME_NAME_KEYBOARD_POLISH},
@@ -292,20 +293,9 @@ void ComponentExtensionIMEManagerImpl::Load(Profile* profile,
                                             const std::string& extension_id,
                                             const std::string& manifest,
                                             const base::FilePath& file_path) {
-  // For Athena, should always do async extension loading because the extension
-  // service may not be initialized yet.
-#if !defined(USE_ATHENA)
-  if (base::SysInfo::IsRunningOnChromeOS()) {
-    // In the case of real Chrome OS device, the no need to check the file path
-    // for preinstalled files existence.
-    DoLoadExtension(profile, extension_id, manifest, file_path);
-    return;
-  }
-#endif
-  // If current environment is linux_chromeos, check the existence of file path
-  // to avoid unnecessary extension loading and InputMethodEngine creation, so
-  // that the virtual keyboard web content url won't be override by IME
-  // component extensions.
+  // Check the existence of file path to avoid unnecessary extension loading
+  // and InputMethodEngine creation, so that the virtual keyboard web content
+  // url won't be override by IME component extensions.
   base::FilePath* copied_file_path = new base::FilePath(file_path);
   content::BrowserThread::PostTaskAndReplyWithResult(
       content::BrowserThread::FILE,

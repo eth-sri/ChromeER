@@ -7,6 +7,7 @@
 
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
+#include "ui/gfx/geometry/scroll_offset.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
 namespace cc {
@@ -46,37 +47,23 @@ class LayerTreeHostImpl;
 // of logic and state held directly inside LayerTreeHostImpl.
 class CC_EXPORT ScrollElasticityHelper {
  public:
-  explicit ScrollElasticityHelper(LayerTreeHostImpl* layer_tree);
-  ~ScrollElasticityHelper();
+  static ScrollElasticityHelper* CreateForLayerTreeHostImpl(
+      LayerTreeHostImpl* layer_tree_host_impl);
 
-  bool AllowsHorizontalStretching();
-  bool AllowsVerticalStretching();
+  virtual ~ScrollElasticityHelper() {}
+
   // The amount that the view is stretched past the normal allowable bounds.
-  // The "overhang" amount.
-  gfx::Vector2dF StretchAmount();
-  bool PinnedInDirection(const gfx::Vector2dF& direction);
-  bool CanScrollHorizontally();
-  bool CanScrollVertically();
+  virtual gfx::Vector2dF StretchAmount() const = 0;
+  virtual void SetStretchAmount(const gfx::Vector2dF& stretch_amount) = 0;
 
-  // Return the absolute scroll position, not relative to the scroll origin.
-  gfx::Vector2dF AbsoluteScrollPosition();
+  // Functions for the scrolling of the root scroll layer.
+  virtual gfx::ScrollOffset ScrollOffset() const = 0;
+  virtual gfx::ScrollOffset MaxScrollOffset() const = 0;
+  virtual void ScrollBy(const gfx::Vector2dF& delta) = 0;
 
-  void ImmediateScrollBy(const gfx::Vector2dF& scroll);
-  void ImmediateScrollByWithoutContentEdgeConstraints(
-      const gfx::Vector2dF& scroll);
-  void StartSnapRubberbandTimer();
-  void StopSnapRubberbandTimer();
-  void SnapRubberbandTimerFired();
-
-  // If the current scroll position is within the overhang area, this function
-  // will cause
-  // the page to scroll to the nearest boundary point.
-  void AdjustScrollPositionToBoundsIfNecessary();
-
- private:
-  LayerTreeHostImpl* layer_tree_host_impl_;
-  gfx::Vector2dF stretch_offset_;
-  bool timer_active_;
+  // Request that the controller have its Animate method called for the next
+  // frame.
+  virtual void RequestAnimate() = 0;
 };
 
 }  // namespace cc

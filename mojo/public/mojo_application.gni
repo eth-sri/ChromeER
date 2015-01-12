@@ -2,7 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//mojo/public/mojo.gni")
+import("mojo.gni")
+import("mojo_sdk.gni")
 
 # Generate a binary mojo application.The parameters of this template are those
 # of a shared library.
@@ -23,6 +24,14 @@ template("mojo_native_application") {
     library_name = "lib${library_target_name}.dylib"
   } else {
     assert(false, "Platform not supported.")
+  }
+
+  if (is_android) {
+    # On android, use the stripped version of the library, because applications
+    # are always fetched over the network.
+    library_dir = "${root_out_dir}/lib.stripped"
+  } else {
+    library_dir = root_out_dir
   }
 
   final_target_name = target_name
@@ -58,19 +67,33 @@ template("mojo_native_application") {
     if (defined(invoker.libs)) {
       libs = invoker.libs
     }
+
+    if (use_prebuilt_mojo_shell) {
+      copy_mojo_shell =
+          rebase_path("mojo/public/tools:copy_mojo_shell", ".", mojo_root)
+    }
+
     # Copy the prebuilt mojo_shell if using it.
     if (defined(invoker.datadeps)) {
       datadeps = invoker.datadeps
       if (use_prebuilt_mojo_shell) {
-        datadeps += [ "//mojo/public/tools:copy_mojo_shell" ]
+        datadeps += [ copy_mojo_shell ]
       }
     } else {
       if (use_prebuilt_mojo_shell) {
-        datadeps = [ "//mojo/public/tools:copy_mojo_shell" ]
+        datadeps = [
+          copy_mojo_shell,
+        ]
       }
     }
+    deps = rebase_path([
+                         "mojo/public/c/system",
+                         "mojo/public/platform/native:system",
+                       ],
+                       ".",
+                       mojo_root)
     if (defined(invoker.deps)) {
-      deps = invoker.deps
+      deps += invoker.deps
     }
     if (defined(invoker.forward_dependent_configs_from)) {
       forward_dependent_configs_from = invoker.forward_dependent_configs_from
@@ -106,9 +129,7 @@ template("mojo_native_application") {
       testonly = invoker.testonly
     }
 
-    visibility = [
-      ":${final_target_name}",
-    ]
+    visibility = [ ":${final_target_name}" ]
   }
 
   copy(final_target_name) {
@@ -121,7 +142,77 @@ template("mojo_native_application") {
     deps = [
       ":${library_target_name}",
     ]
-    sources = [ "${root_out_dir}/${library_name}" ]
-    outputs = [ "${root_out_dir}/${output}" ]
+
+    sources = [
+      "${library_dir}/${library_name}",
+    ]
+    outputs = [
+      "${root_out_dir}/${output}",
+    ]
+  }
+}
+
+if (is_android) {
+  # Declares an Android Mojo application consisting of an .so file and a
+  # corresponding .dex.jar file.
+  #
+  # Variables:
+  #   input_so: the .so file to bundle
+  #   input_dex_jar: the .dex.jar file to bundle
+  #   output_name (optional): override for the output file name
+  template("mojo_android_application") {
+    assert(defined(invoker.input_so))
+    assert(defined(invoker.input_dex_jar))
+
+    zip_action_name = "${target_name}_zip"
+    zip_action_output = "$target_gen_dir/${target_name}.zip"
+    action(zip_action_name) {
+      script = "//build/android/gn/zip.py"
+
+      inputs = [
+        invoker.input_so,
+        invoker.input_dex_jar,
+      ]
+
+      output = zip_action_output
+      outputs = [
+        output,
+      ]
+
+      rebase_inputs = rebase_path(inputs, root_build_dir)
+      rebase_output = rebase_path(output, root_build_dir)
+      args = [
+        "--inputs=$rebase_inputs",
+        "--output=$rebase_output",
+      ]
+    }
+
+    if (defined(invoker.output_name)) {
+      mojo_output = "$root_out_dir/" + invoker.output_name + ".mojo"
+    } else {
+      mojo_output = "$root_out_dir/" + target_name + ".mojo"
+    }
+
+    action(target_name) {
+      script = rebase_path("mojo/public/tools/prepend.py", ".", mojo_root)
+
+      input = zip_action_output
+      inputs = [
+        input,
+      ]
+
+      output = mojo_output
+      outputs = [
+        output,
+      ]
+
+      rebase_input = rebase_path(input, root_build_dir)
+      rebase_output = rebase_path(output, root_build_dir)
+      args = [
+        "--input=$rebase_input",
+        "--output=$rebase_output",
+        "--line=#!mojo:android_handler",
+      ]
+    }
   }
 }

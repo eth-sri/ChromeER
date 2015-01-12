@@ -71,21 +71,17 @@ BrowserCdmManager::BrowserCdmManager(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
   }
 
-  // This may overwrite an existing entry of |render_process_id| if the
-  // previous process crashed and didn't cleanup its child frames. For example,
-  // see FrameTreeBrowserTest.FrameTreeAfterCrash test.
+  DCHECK(!g_browser_cdm_manager_map.Get().count(render_process_id_))
+      << render_process_id_;
   g_browser_cdm_manager_map.Get()[render_process_id] = this;
 }
 
 BrowserCdmManager::~BrowserCdmManager() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(g_browser_cdm_manager_map.Get().count(render_process_id_));
+  DCHECK_EQ(this, g_browser_cdm_manager_map.Get()[render_process_id_]);
 
-  // If an entry of |render_process_id| was overwritten, we shouldn't remove
-  // the entry. For example, see FrameTreeBrowserTest.FrameTreeAfterCrash test,
-  // and http://crbug.com/430251.
-  if (g_browser_cdm_manager_map.Get()[render_process_id_] == this)
-    g_browser_cdm_manager_map.Get().erase(render_process_id_);
+  g_browser_cdm_manager_map.Get().erase(render_process_id_);
 }
 
 // Makes sure BrowserCdmManager is always deleted on the Browser UI thread.
@@ -226,8 +222,8 @@ void BrowserCdmManager::OnCreateSession(
   }
 
 #if defined(OS_ANDROID)
-  if (CommandLine::ForCurrentProcess()
-      ->HasSwitch(switches::kDisableInfobarForProtectedMediaIdentifier)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableInfobarForProtectedMediaIdentifier)) {
     CreateSessionIfPermitted(
         render_frame_id, cdm_id, session_id, mime_type, init_data, true);
     return;
@@ -250,25 +246,12 @@ void BrowserCdmManager::OnCreateSession(
   }
   GURL security_origin = iter->second;
 
-  RenderFrameHost* rfh =
-      RenderFrameHost::FromID(render_process_id_, render_frame_id);
-  WebContents* web_contents = WebContents::FromRenderFrameHost(rfh);
-  DCHECK(web_contents);
-  GetContentClient()->browser()->RequestPermission(
-      content::PERMISSION_PROTECTED_MEDIA,
-      web_contents,
-      0,  // bridge id
-      security_origin,
-      // Only implemented for Android infobars which do not support
-      // user gestures.
-      true,
-      base::Bind(&BrowserCdmManager::CreateSessionIfPermitted,
-                 this,
-                 render_frame_id,
-                 cdm_id,
-                 session_id,
-                 mime_type,
-                 init_data));
+  RequestSessionPermission(render_frame_id,
+                           security_origin,
+                           cdm_id,
+                           session_id,
+                           mime_type,
+                           init_data);
 }
 
 void BrowserCdmManager::OnUpdateSession(
@@ -369,6 +352,49 @@ void BrowserCdmManager::RemoveCdm(uint64 id) {
     cdm_cancel_permission_map_[id].Run();
     cdm_cancel_permission_map_.erase(id);
   }
+}
+
+void BrowserCdmManager::RequestSessionPermission(
+    int render_frame_id,
+    const GURL& security_origin,
+    int cdm_id,
+    uint32 session_id,
+    const std::string& content_type,
+    const std::vector<uint8>& init_data) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&BrowserCdmManager::RequestSessionPermission,
+                   this,
+                   render_frame_id,
+                   security_origin,
+                   cdm_id,
+                   session_id,
+                   content_type,
+                   init_data));
+    return;
+  }
+
+  RenderFrameHost* rfh =
+      RenderFrameHost::FromID(render_process_id_, render_frame_id);
+  WebContents* web_contents = WebContents::FromRenderFrameHost(rfh);
+  DCHECK(web_contents);
+  GetContentClient()->browser()->RequestPermission(
+      content::PERMISSION_PROTECTED_MEDIA,
+      web_contents,
+      0,  // bridge id
+      security_origin,
+      // Only implemented for Android infobars which do not support
+      // user gestures.
+      true,
+      base::Bind(&BrowserCdmManager::CreateSessionIfPermitted,
+                 this,
+                 render_frame_id,
+                 cdm_id,
+                 session_id,
+                 content_type,
+                 init_data));
 }
 
 void BrowserCdmManager::CreateSessionIfPermitted(

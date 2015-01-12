@@ -21,6 +21,7 @@
 #include "cc/layers/texture_layer_client.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/pepper_plugin_instance.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/mouse_lock_dispatcher.h"
 #include "gin/handle.h"
@@ -58,7 +59,7 @@
 #include "third_party/WebKit/public/web/WebUserGestureToken.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/events/latency_info.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 #include "v8/include/v8.h"
 
@@ -198,7 +199,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // PPP_Instance and PPP_Instance_Private.
   bool Initialize(const std::vector<std::string>& arg_names,
                   const std::vector<std::string>& arg_values,
-                  bool full_frame);
+                  bool full_frame,
+                  RenderFrame::PluginPowerSaverMode power_saver_mode);
   bool HandleDocumentLoad(const blink::WebURLResponse& response);
   bool HandleInputEvent(const blink::WebInputEvent& event,
                         blink::WebCursorInfo* cursor_info);
@@ -230,11 +232,9 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // Notification about page visibility. The default is "visible".
   void PageVisibilityChanged(bool is_visible);
 
-  // Notifications that the view has started painting, and has flushed the
-  // painted content to the screen. These messages are used to send Flush
-  // callbacks to the plugin for DeviceContext2D/3D.
+  // Notifications that the view has started painting. This message is used to
+  // send Flush callbacks to the plugin for Graphics2D/3D.
   void ViewInitiatedPaint();
-  void ViewFlushedPaint();
 
   // Tracks all live PluginObjects.
   void AddPluginObject(PluginObject* plugin_object);

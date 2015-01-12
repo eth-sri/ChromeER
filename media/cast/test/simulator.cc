@@ -100,7 +100,7 @@ const char kYuvOutputPath[] = "yuv-output";
 
 int GetIntegerSwitchValue(const char* switch_name, int default_value) {
   const std::string as_str =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switch_name);
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switch_name);
   if (as_str.empty())
     return default_value;
   int as_int;
@@ -387,12 +387,39 @@ void RunSimulation(const base::FilePath& source_path,
   LoopBackTransport receiver_to_sender(receiver_env);
   LoopBackTransport sender_to_receiver(sender_env);
 
+  struct PacketProxy {
+    PacketProxy() : receiver(NULL) {}
+    void ReceivePacket(scoped_ptr<Packet> packet) {
+      if (receiver)
+        receiver->ReceivePacket(packet.Pass());
+    }
+    CastReceiver* receiver;
+  };
+
+  PacketProxy packet_proxy;
+
   // Cast receiver.
+  scoped_ptr<CastTransportSender> transport_receiver(
+      new CastTransportSenderImpl(
+          NULL,
+          &testing_clock,
+          net::IPEndPoint(),
+          net::IPEndPoint(),
+          make_scoped_ptr(new base::DictionaryValue),
+          base::Bind(&UpdateCastTransportStatus),
+          base::Bind(&LogTransportEvents, receiver_env),
+          base::TimeDelta::FromSeconds(1),
+          task_runner,
+          base::Bind(&PacketProxy::ReceivePacket,
+                     base::Unretained(&packet_proxy)),
+          &receiver_to_sender));
   scoped_ptr<CastReceiver> cast_receiver(
       CastReceiver::Create(receiver_env,
                            audio_receiver_config,
                            video_receiver_config,
-                           &receiver_to_sender));
+                           transport_receiver.get()));
+
+  packet_proxy.receiver = cast_receiver.get();
 
   // Cast sender and transport sender.
   scoped_ptr<CastTransportSender> transport_sender(
@@ -400,11 +427,13 @@ void RunSimulation(const base::FilePath& source_path,
           NULL,
           &testing_clock,
           net::IPEndPoint(),
+          net::IPEndPoint(),
           make_scoped_ptr(new base::DictionaryValue),
           base::Bind(&UpdateCastTransportStatus),
           base::Bind(&LogTransportEvents, sender_env),
           base::TimeDelta::FromSeconds(1),
           task_runner,
+          PacketReceiverCallback(),
           &sender_to_receiver));
   scoped_ptr<CastSender> cast_sender(
       CastSender::Create(sender_env, transport_sender.get()));
@@ -429,7 +458,7 @@ void RunSimulation(const base::FilePath& source_path,
         task_runner, &testing_clock);
     sender_to_receiver.Initialize(
         ipp->NewBuffer(128 * 1024).Pass(),
-        cast_receiver->packet_receiver(), task_runner,
+        transport_receiver->PacketReceiverForTesting(), task_runner,
         &testing_clock);
   } else {
     LOG(INFO) << "No network simulation.";
@@ -439,7 +468,7 @@ void RunSimulation(const base::FilePath& source_path,
         task_runner, &testing_clock);
     sender_to_receiver.Initialize(
         scoped_ptr<test::PacketPipe>(),
-        cast_receiver->packet_receiver(), task_runner,
+        transport_receiver->PacketReceiverForTesting(), task_runner,
         &testing_clock);
   }
 
@@ -663,7 +692,7 @@ bool IsModelValid(const NetworkSimulationModel& model) {
 }
 
 NetworkSimulationModel LoadModel(const base::FilePath& model_path) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(kNoSimulation)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kNoSimulation)) {
     NetworkSimulationModel model;
     model.set_type(media::cast::proto::NO_SIMULATION);
     return model;
@@ -697,10 +726,10 @@ NetworkSimulationModel LoadModel(const base::FilePath& model_path) {
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   InitLogging(logging::LoggingSettings());
 
-  const CommandLine* cmd = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
   base::FilePath media_path = cmd->GetSwitchValuePath(media::cast::kLibDir);
   if (media_path.empty()) {
     if (!PathService::Get(base::DIR_MODULE, &media_path)) {

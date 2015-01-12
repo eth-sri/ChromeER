@@ -248,9 +248,9 @@ ContentViewCoreImpl::ContentViewCoreImpl(
       BuildUserAgentFromOSAndProduct(kLinuxInfoStr, product);
   web_contents->SetUserAgentOverride(spoofed_ua);
 
-  java_bridge_dispatcher_host_.reset(
+  java_bridge_dispatcher_host_ =
       new GinJavaBridgeDispatcherHost(web_contents,
-                                      java_bridge_retained_object_set));
+                                      java_bridge_retained_object_set);
 
   InitWebContents();
 }
@@ -589,7 +589,7 @@ void ContentViewCoreImpl::OnSelectionChanged(const std::string& text) {
   Java_ContentViewCore_onSelectionChanged(env, obj.obj(), jtext.obj());
 }
 
-void ContentViewCoreImpl::OnSelectionEvent(SelectionEventType event,
+void ContentViewCoreImpl::OnSelectionEvent(ui::SelectionEventType event,
                                            const gfx::PointF& position) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
@@ -599,15 +599,15 @@ void ContentViewCoreImpl::OnSelectionEvent(SelectionEventType event,
       env, j_obj.obj(), event, position.x(), position.y());
 }
 
-scoped_ptr<TouchHandleDrawable>
+scoped_ptr<ui::TouchHandleDrawable>
 ContentViewCoreImpl::CreatePopupTouchHandleDrawable() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null()) {
     NOTREACHED();
-    return scoped_ptr<TouchHandleDrawable>();
+    return scoped_ptr<ui::TouchHandleDrawable>();
   }
-  return scoped_ptr<TouchHandleDrawable>(new PopupTouchHandleDrawable(
+  return scoped_ptr<ui::TouchHandleDrawable>(new PopupTouchHandleDrawable(
       Java_ContentViewCore_createPopupTouchHandleDrawable(env, obj.obj()),
       dpi_scale_));
 }
@@ -716,7 +716,8 @@ ScopedJavaLocalRef<jobject> ContentViewCoreImpl::GetContext() const {
 
 gfx::Size ContentViewCoreImpl::GetViewSize() const {
   gfx::Size size = GetViewportSizeDip();
-  size.Enlarge(0, -GetTopControlsLayoutHeightDip());
+  if (DoTopControlsShrinkBlinkSize())
+    size.Enlarge(0, -GetTopControlsHeightDip());
   return size;
 }
 
@@ -740,12 +741,12 @@ gfx::Size ContentViewCoreImpl::GetViewportSizePix() const {
       Java_ContentViewCore_getViewportHeightPix(env, j_obj.obj()));
 }
 
-int ContentViewCoreImpl::GetTopControlsLayoutHeightPix() const {
+int ContentViewCoreImpl::GetTopControlsHeightPix() const {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
   if (j_obj.is_null())
     return 0;
-  return Java_ContentViewCore_getTopControlsLayoutHeightPix(env, j_obj.obj());
+  return Java_ContentViewCore_getTopControlsHeightPix(env, j_obj.obj());
 }
 
 gfx::Size ContentViewCoreImpl::GetViewportSizeDip() const {
@@ -753,8 +754,16 @@ gfx::Size ContentViewCoreImpl::GetViewportSizeDip() const {
       gfx::ScaleSize(GetViewportSizePix(), 1.0f / dpi_scale()));
 }
 
-float ContentViewCoreImpl::GetTopControlsLayoutHeightDip() const {
-  return GetTopControlsLayoutHeightPix() / dpi_scale();
+bool ContentViewCoreImpl::DoTopControlsShrinkBlinkSize() const {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> j_obj = java_ref_.get(env);
+  if (j_obj.is_null())
+    return false;
+  return Java_ContentViewCore_doTopControlsShrinkBlinkSize(env, j_obj.obj());
+}
+
+float ContentViewCoreImpl::GetTopControlsHeightDip() const {
+  return GetTopControlsHeightPix() / dpi_scale();
 }
 
 void ContentViewCoreImpl::AttachLayer(scoped_refptr<cc::Layer> layer) {
@@ -945,7 +954,8 @@ jboolean ContentViewCoreImpl::SendMouseWheelEvent(JNIEnv* env,
                                                   jlong time_ms,
                                                   jfloat x,
                                                   jfloat y,
-                                                  jfloat vertical_axis) {
+                                                  jfloat vertical_axis,
+                                                  jfloat horizontal_axis) {
   RenderWidgetHostViewAndroid* rwhv = GetRenderWidgetHostViewAndroid();
   if (!rwhv)
     return false;
@@ -955,6 +965,10 @@ jboolean ContentViewCoreImpl::SendMouseWheelEvent(JNIEnv* env,
     direction = WebMouseWheelEventBuilder::DIRECTION_UP;
   } else if (vertical_axis < 0) {
     direction = WebMouseWheelEventBuilder::DIRECTION_DOWN;
+  } else if (horizontal_axis > 0) {
+    direction = WebMouseWheelEventBuilder::DIRECTION_RIGHT;
+  } else if (horizontal_axis < 0) {
+    direction = WebMouseWheelEventBuilder::DIRECTION_LEFT;
   } else {
     return false;
   }
@@ -1022,6 +1036,8 @@ void ContentViewCoreImpl::FlingStart(JNIEnv* env, jobject obj, jlong time_ms,
 void ContentViewCoreImpl::FlingCancel(JNIEnv* env, jobject obj, jlong time_ms) {
   WebGestureEvent event = MakeGestureEvent(
       WebInputEvent::GestureFlingCancel, time_ms, 0, 0);
+  event.data.flingCancel.preventBoosting = true;
+
   SendGestureEvent(event);
 }
 

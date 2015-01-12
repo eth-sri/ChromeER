@@ -126,13 +126,12 @@ void UserCloudPolicyManagerChromeOS::Connect(
       new CloudPolicyClient(std::string(), std::string(),
                             kPolicyVerificationKeyHash, user_affiliation,
                             device_management_service, request_context));
+  CreateComponentCloudPolicyService(component_policy_cache_path_,
+                                    request_context, cloud_policy_client.get());
   core()->Connect(cloud_policy_client.Pass());
   client()->AddObserver(this);
 
   external_data_manager_->Connect(request_context);
-
-  CreateComponentCloudPolicyService(component_policy_cache_path_,
-                                    request_context);
 
   // Determine the next step after the CloudPolicyService initializes.
   if (service()->IsInitializationComplete()) {
@@ -321,7 +320,7 @@ void UserCloudPolicyManagerChromeOS::OnOAuth2PolicyTokenFetched(
     // Start client registration. Either OnRegistrationStateChanged() or
     // OnClientError() will be called back.
     client()->Register(em::DeviceRegisterRequest::USER, policy_token,
-                       std::string(), false, std::string(), std::string());
+                       std::string(), std::string(), std::string());
   } else {
     // Failed to get a token, stop waiting and use an empty policy.
     CancelWaitForPolicyFetch();

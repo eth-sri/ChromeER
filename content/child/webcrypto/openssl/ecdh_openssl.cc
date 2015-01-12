@@ -10,7 +10,7 @@
 #include "content/child/webcrypto/algorithm_implementation.h"
 #include "content/child/webcrypto/crypto_data.h"
 #include "content/child/webcrypto/generate_key_result.h"
-#include "content/child/webcrypto/openssl/ec_key_openssl.h"
+#include "content/child/webcrypto/openssl/ec_algorithm_openssl.h"
 #include "content/child/webcrypto/openssl/key_openssl.h"
 #include "content/child/webcrypto/openssl/util_openssl.h"
 #include "content/child/webcrypto/status.h"
@@ -49,7 +49,8 @@ class EcdhImplementation : public EcAlgorithm {
 
   Status DeriveBits(const blink::WebCryptoAlgorithm& algorithm,
                     const blink::WebCryptoKey& base_key,
-                    unsigned int length_bits,
+                    bool has_optional_length_bits,
+                    unsigned int optional_length_bits,
                     std::vector<uint8_t>* derived_bytes) const override {
     if (base_key.type() != blink::WebCryptoKeyTypePrivate)
       return Status::ErrorUnexpectedKeyType();
@@ -78,13 +79,6 @@ class EcdhImplementation : public EcAlgorithm {
       return Status::ErrorEcdhCurveMismatch();
     }
 
-    // Handle the empty length case now to avoid calling an undefined
-    // |&derived_bytes->front()| later.
-    if (length_bits == 0) {
-      derived_bytes->clear();
-      return Status::Success();
-    }
-
     crypto::ScopedEC_KEY public_key_ec(
         EVP_PKEY_get1_EC_KEY(AsymKeyOpenSsl::Cast(public_key)->key()));
 
@@ -97,15 +91,27 @@ class EcdhImplementation : public EcAlgorithm {
     // The size of the shared secret is the field size in bytes (rounded up).
     // Note that, if rounding was required, the most significant bits of the
     // secret are zero. So for P-521, the maximum length is 528 bits, not 521.
-    int field_size_bytes =
-        (EC_GROUP_get_degree(EC_KEY_get0_group(private_key_ec.get())) + 7) / 8;
+    int field_size_bytes = NumBitsToBytes(
+        EC_GROUP_get_degree(EC_KEY_get0_group(private_key_ec.get())));
+
+    // If a desired key length was not specified, default to the field size
+    // (rounded up to nearest byte).
+    unsigned int length_bits =
+        has_optional_length_bits ? optional_length_bits : field_size_bytes * 8;
+
+    // Handle the empty length case now to avoid calling an undefined
+    // |&derived_bytes->front()| later.
+    if (length_bits == 0) {
+      derived_bytes->clear();
+      return Status::Success();
+    }
 
     if (length_bits > static_cast<unsigned int>(field_size_bytes * 8))
       return Status::ErrorEcdhLengthTooBig(field_size_bytes * 8);
 
     // Resize to target length in bytes (BoringSSL can operate on a shorter
     // buffer than field_size_bytes).
-    derived_bytes->resize((length_bits + 7) / 8);
+    derived_bytes->resize(NumBitsToBytes(length_bits));
 
     int result =
         ECDH_compute_key(&derived_bytes->front(), derived_bytes->size(),
@@ -113,15 +119,7 @@ class EcdhImplementation : public EcAlgorithm {
     if (result < 0 || static_cast<size_t>(result) != derived_bytes->size())
       return Status::OperationError();
 
-    // Zero any "unused bits" in the resulting byte array.
-    // TODO(eroman): This is not described by the spec:
-    // https://www.w3.org/Bugs/Public/show_bug.cgi?id=27402
-    unsigned int remainder_bits = length_bits % 8;
-    if (remainder_bits) {
-      (*derived_bytes)[derived_bytes->size() - 1] &=
-          ~((0xFF) >> remainder_bits);
-    }
-
+    TruncateToBitLength(length_bits, derived_bytes);
     return Status::Success();
   }
 };

@@ -37,12 +37,14 @@
 #include "storage/browser/fileapi/file_writer_delegate.h"
 #include "storage/browser/fileapi/local_file_stream_writer.h"
 #include "storage/common/database/database_identifier.h"
+#include "storage/common/fileapi/file_system_mount_option.h"
 #include "third_party/WebKit/public/platform/WebIDBTypes.h"
 #include "third_party/WebKit/public/web/WebSerializedScriptValueVersion.h"
 #include "third_party/leveldatabase/env_chromium.h"
 
 using base::FilePath;
 using base::StringPiece;
+using std::string;
 using storage::FileWriterDelegate;
 
 namespace content {
@@ -2321,9 +2323,8 @@ class LocalWriteClosure : public FileWriterDelegate::DelegateWriteCallback,
             file_path,
             0,
             storage::FileStreamWriter::CREATE_NEW_FILE));
-    scoped_ptr<FileWriterDelegate> delegate(
-        new FileWriterDelegate(writer.Pass(),
-                               FileWriterDelegate::FLUSH_ON_COMPLETION));
+    scoped_ptr<FileWriterDelegate> delegate(new FileWriterDelegate(
+        writer.Pass(), storage::FlushPolicy::FLUSH_ON_COMPLETION));
 
     DCHECK(blob_url.is_valid());
     scoped_ptr<net::URLRequest> blob_request(request_context->CreateRequest(

@@ -43,6 +43,8 @@ class OffTheRecordProfileImpl : public Profile {
   bool HasOffTheRecordProfile() override;
   Profile* GetOriginalProfile() override;
   bool IsSupervised() override;
+  bool IsChild() override;
+  bool IsLegacySupervised() override;
   ExtensionSpecialStoragePolicy* GetExtensionSpecialStoragePolicy() override;
   PrefService* GetPrefs() override;
   PrefService* GetOffTheRecordPrefs() override;

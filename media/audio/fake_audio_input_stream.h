@@ -38,7 +38,7 @@ class MEDIA_EXPORT FakeAudioInputStream
   void SetVolume(double volume) override;
   double GetVolume() override;
   bool IsMuted() override;
-  void SetAutomaticGainControl(bool enabled) override;
+  bool SetAutomaticGainControl(bool enabled) override;
   bool GetAutomaticGainControl() override;
 
   // Generate one beep sound. This method is called by
@@ -65,7 +65,7 @@ class MEDIA_EXPORT FakeAudioInputStream
   // Returns true if the device is playing from a file; false if we're beeping.
   bool PlayingFromFile();
 
-  void PlayFileLooping();
+  void PlayFile();
   void PlayBeep();
 
   AudioManagerBase* audio_manager_;

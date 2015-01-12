@@ -29,8 +29,13 @@ void GLES2InterfaceStub::BindFramebuffer(GLenum /* target */,
 void GLES2InterfaceStub::BindRenderbuffer(GLenum /* target */,
                                           GLuint /* renderbuffer */) {
 }
+void GLES2InterfaceStub::BindSampler(GLuint /* unit */, GLuint /* sampler */) {
+}
 void GLES2InterfaceStub::BindTexture(GLenum /* target */,
                                      GLuint /* texture */) {
+}
+void GLES2InterfaceStub::BindTransformFeedback(GLenum /* target */,
+                                               GLuint /* transformfeedback */) {
 }
 void GLES2InterfaceStub::BlendColor(GLclampf /* red */,
                                     GLclampf /* green */,
@@ -143,10 +148,16 @@ void GLES2InterfaceStub::DeleteRenderbuffers(
     GLsizei /* n */,
     const GLuint* /* renderbuffers */) {
 }
+void GLES2InterfaceStub::DeleteSamplers(GLsizei /* n */,
+                                        const GLuint* /* samplers */) {
+}
 void GLES2InterfaceStub::DeleteShader(GLuint /* shader */) {
 }
 void GLES2InterfaceStub::DeleteTextures(GLsizei /* n */,
                                         const GLuint* /* textures */) {
+}
+void GLES2InterfaceStub::DeleteTransformFeedbacks(GLsizei /* n */,
+                                                  const GLuint* /* ids */) {
 }
 void GLES2InterfaceStub::DepthFunc(GLenum /* func */) {
 }
@@ -209,7 +220,12 @@ void GLES2InterfaceStub::GenFramebuffers(GLsizei /* n */,
 void GLES2InterfaceStub::GenRenderbuffers(GLsizei /* n */,
                                           GLuint* /* renderbuffers */) {
 }
+void GLES2InterfaceStub::GenSamplers(GLsizei /* n */, GLuint* /* samplers */) {
+}
 void GLES2InterfaceStub::GenTextures(GLsizei /* n */, GLuint* /* textures */) {
+}
+void GLES2InterfaceStub::GenTransformFeedbacks(GLsizei /* n */,
+                                               GLuint* /* ids */) {
 }
 void GLES2InterfaceStub::GetActiveAttrib(GLuint /* program */,
                                          GLuint /* index */,
@@ -275,6 +291,14 @@ void GLES2InterfaceStub::GetRenderbufferParameteriv(GLenum /* target */,
                                                     GLenum /* pname */,
                                                     GLint* /* params */) {
 }
+void GLES2InterfaceStub::GetSamplerParameterfv(GLuint /* sampler */,
+                                               GLenum /* pname */,
+                                               GLfloat* /* params */) {
+}
+void GLES2InterfaceStub::GetSamplerParameteriv(GLuint /* sampler */,
+                                               GLenum /* pname */,
+                                               GLint* /* params */) {
+}
 void GLES2InterfaceStub::GetShaderiv(GLuint /* shader */,
                                      GLenum /* pname */,
                                      GLint* /* params */) {
@@ -331,6 +355,20 @@ void GLES2InterfaceStub::GetVertexAttribPointerv(GLuint /* index */,
 }
 void GLES2InterfaceStub::Hint(GLenum /* target */, GLenum /* mode */) {
 }
+void GLES2InterfaceStub::InvalidateFramebuffer(
+    GLenum /* target */,
+    GLsizei /* count */,
+    const GLenum* /* attachments */) {
+}
+void GLES2InterfaceStub::InvalidateSubFramebuffer(
+    GLenum /* target */,
+    GLsizei /* count */,
+    const GLenum* /* attachments */,
+    GLint /* x */,
+    GLint /* y */,
+    GLsizei /* width */,
+    GLsizei /* height */) {
+}
 GLboolean GLES2InterfaceStub::IsBuffer(GLuint /* buffer */) {
   return 0;
 }
@@ -346,20 +384,31 @@ GLboolean GLES2InterfaceStub::IsProgram(GLuint /* program */) {
 GLboolean GLES2InterfaceStub::IsRenderbuffer(GLuint /* renderbuffer */) {
   return 0;
 }
+GLboolean GLES2InterfaceStub::IsSampler(GLuint /* sampler */) {
+  return 0;
+}
 GLboolean GLES2InterfaceStub::IsShader(GLuint /* shader */) {
   return 0;
 }
 GLboolean GLES2InterfaceStub::IsTexture(GLuint /* texture */) {
   return 0;
 }
+GLboolean GLES2InterfaceStub::IsTransformFeedback(
+    GLuint /* transformfeedback */) {
+  return 0;
+}
 void GLES2InterfaceStub::LineWidth(GLfloat /* width */) {
 }
 void GLES2InterfaceStub::LinkProgram(GLuint /* program */) {
+}
+void GLES2InterfaceStub::PauseTransformFeedback() {
 }
 void GLES2InterfaceStub::PixelStorei(GLenum /* pname */, GLint /* param */) {
 }
 void GLES2InterfaceStub::PolygonOffset(GLfloat /* factor */,
                                        GLfloat /* units */) {
+}
+void GLES2InterfaceStub::ReadBuffer(GLenum /* src */) {
 }
 void GLES2InterfaceStub::ReadPixels(GLint /* x */,
                                     GLint /* y */,
@@ -376,8 +425,26 @@ void GLES2InterfaceStub::RenderbufferStorage(GLenum /* target */,
                                              GLsizei /* width */,
                                              GLsizei /* height */) {
 }
+void GLES2InterfaceStub::ResumeTransformFeedback() {
+}
 void GLES2InterfaceStub::SampleCoverage(GLclampf /* value */,
                                         GLboolean /* invert */) {
+}
+void GLES2InterfaceStub::SamplerParameterf(GLuint /* sampler */,
+                                           GLenum /* pname */,
+                                           GLfloat /* param */) {
+}
+void GLES2InterfaceStub::SamplerParameterfv(GLuint /* sampler */,
+                                            GLenum /* pname */,
+                                            const GLfloat* /* params */) {
+}
+void GLES2InterfaceStub::SamplerParameteri(GLuint /* sampler */,
+                                           GLenum /* pname */,
+                                           GLint /* param */) {
+}
+void GLES2InterfaceStub::SamplerParameteriv(GLuint /* sampler */,
+                                            GLenum /* pname */,
+                                            const GLint* /* params */) {
 }
 void GLES2InterfaceStub::Scissor(GLint /* x */,
                                  GLint /* y */,
@@ -727,7 +794,11 @@ GLboolean GLES2InterfaceStub::IsQueryEXT(GLuint /* id */) {
 }
 void GLES2InterfaceStub::BeginQueryEXT(GLenum /* target */, GLuint /* id */) {
 }
+void GLES2InterfaceStub::BeginTransformFeedback(GLenum /* primitivemode */) {
+}
 void GLES2InterfaceStub::EndQueryEXT(GLenum /* target */) {
+}
+void GLES2InterfaceStub::EndTransformFeedback() {
 }
 void GLES2InterfaceStub::GetQueryivEXT(GLenum /* target */,
                                        GLenum /* pname */,
@@ -916,7 +987,8 @@ void GLES2InterfaceStub::BindTexImage2DCHROMIUM(GLenum /* target */,
 void GLES2InterfaceStub::ReleaseTexImage2DCHROMIUM(GLenum /* target */,
                                                    GLint /* imageId */) {
 }
-void GLES2InterfaceStub::TraceBeginCHROMIUM(const char* /* name */) {
+void GLES2InterfaceStub::TraceBeginCHROMIUM(const char* /* category_name */,
+                                            const char* /* trace_name */) {
 }
 void GLES2InterfaceStub::TraceEndCHROMIUM() {
 }
@@ -974,6 +1046,8 @@ void GLES2InterfaceStub::ScheduleOverlayPlaneCHROMIUM(
     GLfloat /* uv_y */,
     GLfloat /* uv_width */,
     GLfloat /* uv_height */) {
+}
+void GLES2InterfaceStub::SwapInterval(GLint /* interval */) {
 }
 void GLES2InterfaceStub::MatrixLoadfCHROMIUM(GLenum /* matrixMode */,
                                              const GLfloat* /* m */) {

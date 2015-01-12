@@ -6,6 +6,7 @@
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "skia/ext/benchmarking_canvas.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/utils/SkProxyCanvas.h"
 
 namespace skia {
@@ -24,9 +25,9 @@ class TimingCanvas : public SkProxyCanvas {
 public:
   TimingCanvas(int width, int height, const BenchmarkingCanvas* track_canvas)
       : tracking_canvas_(track_canvas) {
-    canvas_ = skia::AdoptRef(SkCanvas::NewRasterN32(width, height));
+    surface_ = skia::AdoptRef(SkSurface::NewRasterN32Premul(width, height));
 
-    setProxy(canvas_.get());
+    setProxy(surface_->getCanvas());
   }
 
   ~TimingCanvas() override {}
@@ -104,13 +105,6 @@ public:
                             DrawBitmapRectFlags flags) override {
     AutoStamper stamper(this);
     SkProxyCanvas::drawBitmapRectToRect(bitmap, src, dst, paint, flags);
-  }
-
-  void drawBitmapMatrix(const SkBitmap& bitmap,
-                        const SkMatrix& m,
-                        const SkPaint* paint = NULL) override {
-    AutoStamper stamper(this);
-    SkProxyCanvas::drawBitmapMatrix(bitmap, m, paint);
   }
 
   void drawSprite(const SkBitmap& bitmap,
@@ -213,7 +207,7 @@ private:
   typedef base::hash_map<size_t, base::TimeDelta> TimingsMap;
   TimingsMap timings_map_;
 
-  skia::RefPtr<SkCanvas> canvas_;
+  skia::RefPtr<SkSurface> surface_;
 
   friend class AutoStamper;
   const BenchmarkingCanvas* tracking_canvas_;

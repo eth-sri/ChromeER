@@ -21,6 +21,16 @@ function getScrollbarWidth() {
 }
 
 /**
+ * Return the filename component of a URL.
+ * @param {string} url The URL to get the filename from.
+ * @return {string} The filename component.
+ */
+function getFilenameFromURL(url) {
+  var components = url.split(/\/|\\/);
+  return components[components.length - 1];
+}
+
+/**
  * The minimum number of pixels to offset the toolbar by from the bottom and
  * right side of the screen.
  */
@@ -55,12 +65,18 @@ function PDFViewer(streamDetails) {
                                 this.beforeZoom_.bind(this),
                                 this.afterZoom_.bind(this),
                                 getScrollbarWidth());
-
+  var isPrintPreview =
+      this.streamDetails.originalUrl.indexOf('chrome://print') == 0;
   // Create the plugin object dynamically so we can set its src. The plugin
   // element is sized to fill the entire window and is set to be fixed
   // positioning, acting as a viewport. The plugin renders into this viewport
   // according to the scroll position of the window.
-  this.plugin_ = document.createElement('embed');
+  //
+  // TODO(sammc): Remove special casing for print preview. This is currently
+  // necessary because setting the src for an embed element triggers origin
+  // checking and the PDF extension is not allowed to embed URLs with a scheme
+  // of "chrome", which is used by print preview.
+  this.plugin_ = document.createElement(isPrintPreview ? 'object' : 'embed');
   // NOTE: The plugin's 'id' field must be set to 'plugin' since
   // chrome/renderer/printing/print_web_view_helper.cc actually references it.
   this.plugin_.id = 'plugin';
@@ -75,6 +91,7 @@ function PDFViewer(streamDetails) {
                           false);
   this.sendScriptingMessage_({type: 'readyToReceive'});
 
+  document.title = getFilenameFromURL(this.streamDetails.originalUrl);
   this.plugin_.setAttribute('src', this.streamDetails.originalUrl);
   this.plugin_.setAttribute('stream-url', this.streamDetails.streamUrl);
   var headers = '';
@@ -396,6 +413,7 @@ PDFViewer.prototype = {
       case 'setTranslatedStrings':
         this.passwordScreen_.text = message.data.getPasswordString;
         this.progressBar_.text = message.data.loadingString;
+        this.progressBar_.style.visibility = 'visible';
         this.errorScreen_.text = message.data.loadFailedString;
         break;
       case 'cancelStreamUrl':

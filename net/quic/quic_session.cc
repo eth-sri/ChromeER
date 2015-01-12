@@ -15,7 +15,9 @@ using base::StringPiece;
 using base::hash_map;
 using base::hash_set;
 using std::make_pair;
+using std::map;
 using std::max;
+using std::string;
 using std::vector;
 
 namespace net {
@@ -437,7 +439,7 @@ void QuicSession::UpdateFlowControlOnFinalReceivedByteOffset(
 
   DVLOG(1) << ENDPOINT << "Received final byte offset " << final_byte_offset
            << " for stream " << stream_id;
-  uint64 offset_diff = final_byte_offset - it->second;
+  QuicByteCount offset_diff = final_byte_offset - it->second;
   if (flow_controller_->UpdateHighestReceivedOffset(
       flow_controller_->highest_received_byte_offset() + offset_diff)) {
     // If the final offset violates flow control, close the connection now.
@@ -483,7 +485,8 @@ void QuicSession::OnConfigNegotiated() {
     if (config_.HasReceivedInitialFlowControlWindowBytes()) {
       // Streams which were created before the SHLO was received (0-RTT
       // requests) are now informed of the peer's initial flow control window.
-      uint32 new_window = config_.ReceivedInitialFlowControlWindowBytes();
+      QuicStreamOffset new_window =
+          config_.ReceivedInitialFlowControlWindowBytes();
       OnNewStreamFlowControlWindow(new_window);
       OnNewSessionFlowControlWindow(new_window);
     }
@@ -505,7 +508,7 @@ void QuicSession::OnConfigNegotiated() {
   }
 }
 
-void QuicSession::OnNewStreamFlowControlWindow(uint32 new_window) {
+void QuicSession::OnNewStreamFlowControlWindow(QuicStreamOffset new_window) {
   if (new_window < kDefaultFlowControlSendWindow) {
     LOG(ERROR)
         << "Peer sent us an invalid stream flow control send window: "
@@ -527,7 +530,7 @@ void QuicSession::OnNewStreamFlowControlWindow(uint32 new_window) {
   }
 }
 
-void QuicSession::OnNewSessionFlowControlWindow(uint32 new_window) {
+void QuicSession::OnNewSessionFlowControlWindow(QuicStreamOffset new_window) {
   if (new_window < kDefaultFlowControlSendWindow) {
     LOG(ERROR)
         << "Peer sent us an invalid session flow control send window: "
@@ -656,9 +659,9 @@ QuicDataStream* QuicSession::GetIncomingDataStream(QuicStreamId stream_id) {
     }
     if (largest_peer_created_stream_id_ == 0) {
       if (is_server()) {
-        largest_peer_created_stream_id_= 3;
+        largest_peer_created_stream_id_ = 3;
       } else {
-        largest_peer_created_stream_id_= 1;
+        largest_peer_created_stream_id_ = 1;
       }
     }
     for (QuicStreamId id = largest_peer_created_stream_id_ + 2;

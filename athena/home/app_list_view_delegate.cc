@@ -66,7 +66,7 @@ void AppListViewDelegate::GetShortcutPathForApp(
 
 void AppListViewDelegate::StartSearch() {
   if (search_controller_)
-    search_controller_->Start();
+    search_controller_->Start(false);
 }
 
 void AppListViewDelegate::StopSearch() {
@@ -149,6 +149,9 @@ std::vector<views::View*> AppListViewDelegate::CreateCustomPageWebViews(
 }
 
 void AppListViewDelegate::CustomLauncherPageAnimationChanged(double progress) {
+}
+
+void AppListViewDelegate::CustomLauncherPagePopSubpage() {
 }
 
 bool AppListViewDelegate::IsSpeechRecognitionEnabled() {

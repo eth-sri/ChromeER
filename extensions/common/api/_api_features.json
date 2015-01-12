@@ -77,9 +77,16 @@
     "contexts": ["blessed_extension"],
     "dependencies": ["permission:appview"]
   },
+  // Note that exposing this doesn't necessarily expose AppView,
+  // appViewEmbedderInternal is required for that.
+  // See http://crbug.com/437891.
   "appViewGuestInternal": {
     "internal": true,
-    "channel": "dev",
+    "channel": "stable",
+    "contexts": ["blessed_extension"]
+  },
+  "audio": {
+    "dependencies": ["permission:audio"],
     "contexts": ["blessed_extension"]
   },
   "bluetooth": {
@@ -102,8 +109,8 @@
     "dependencies": ["permission:declarativeWebRequest"],
     "contexts": ["blessed_extension"]
   },
-  "copresenceSocket": {
-    "channel" : "dev",
+  "copresenceEndpoints": {
+    "channel" : "canary",
     "dependencies": ["permission:copresence"],
     "contexts": ["blessed_extension"]
   },
@@ -141,9 +148,27 @@
         "chrome://chrome-signin/*",
         "chrome://oobe/*"
       ]
+    },
+    // This allows GuestViews to be created on regular web pages for the Worker
+    // Thread Frame prototype: http://crbug.com/434226.
+    {
+      "internal": true,
+      "channel": "trunk",
+      "contexts": "all",
+      "matches": ["<all_urls>"]
     }
   ],
   "hid": {
+    "dependencies": ["permission:hid"],
+    "contexts": ["blessed_extension"]
+  },
+  "hid.onDeviceAdded": {
+    "channel": "dev",
+    "dependencies": ["permission:hid"],
+    "contexts": ["blessed_extension"]
+  },
+  "hid.onDeviceRemoved": {
+    "channel": "dev",
     "dependencies": ["permission:hid"],
     "contexts": ["blessed_extension"]
   },
@@ -240,6 +265,12 @@
   "storage": {
     "dependencies": ["permission:storage"],
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
+  },
+  "surfaceWorkerInternal": {
+    "internal": true,
+    "channel": "trunk",
+    "contexts": "all",
+    "matches": ["<all_urls>"]
   },
   "system.cpu": {
     "dependencies": ["permission:system.cpu"],

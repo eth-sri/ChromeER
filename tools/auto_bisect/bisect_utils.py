@@ -333,17 +333,20 @@ def _CleanupPreviousGitRuns(cwd=os.getcwd()):
         os.remove(path_to_file)
 
 
-def RunGClientAndSync(cwd=None):
+def RunGClientAndSync(revision=None, cwd=None):
   """Runs gclient and does a normal sync.
 
   Args:
+    revision: Revision that need to be synced.
     cwd: Working directory to run from.
 
   Returns:
     The return code of the call.
   """
-  params = ['sync', '--verbose', '--nohooks', '--reset', '--force',
+  params = ['sync', '--verbose', '--nohooks', '--force',
             '--delete_unversioned_trees']
+  if revision:
+    params.extend(['--revision', revision])
   return RunGClient(params, cwd=cwd)
 
 
@@ -483,7 +486,8 @@ def RunProcessAndRetrieveOutput(command, cwd=None):
 
   # On Windows, use shell=True to get PATH interpretation.
   shell = IsWindowsHost()
-  proc = subprocess.Popen(command, shell=shell, stdout=subprocess.PIPE)
+  proc = subprocess.Popen(command, shell=shell, stdout=subprocess.PIPE,
+      stderr=subprocess.STDOUT)
   (output, _) = proc.communicate()
 
   if cwd:

@@ -92,9 +92,14 @@ class WebKitTestRunner : public RenderViewObserver,
                                       bool permission_granted) override;
   void ClearWebNotificationPermissions() override;
   void SimulateWebNotificationClick(const std::string& title) override;
+  void SetPushMessagingPermission(const GURL& origin, bool allowed) override;
+  void ClearPushMessagingPermissions() override;
   void SetDeviceScaleFactor(float factor) override;
   void SetDeviceColorProfile(const std::string& name) override;
   void SetBluetoothMockDataSet(const std::string& name) override;
+  void SetGeofencingMockProvider(bool service_available) override;
+  void ClearGeofencingMockProvider() override;
+  void SetGeofencingMockPosition(double latitude, double longitude) override;
   void SetFocus(WebTestProxyBase* proxy, bool focus) override;
   void SetAcceptAllCookies(bool accept) override;
   std::string PathToLocalResource(const std::string& resource) override;

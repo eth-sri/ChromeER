@@ -6,40 +6,14 @@
 #define UI_BASE_TOUCH_TOUCH_EDITING_CONTROLLER_H_
 
 #include "ui/base/models/simple_menu_model.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
+
+namespace gfx {
+class Point;
+class Rect;
+}
 
 namespace ui {
-
-// Bound of a selected region.
-struct UI_BASE_EXPORT SelectionBound {
- public:
-  enum Type {
-    LEFT,
-    RIGHT,
-    CENTER,
-    EMPTY,
-    LAST = EMPTY
-  };
-
-  SelectionBound();
-  ~SelectionBound();
-
-  int GetHeight() const;
-
-  Type type;
-
-  gfx::Point edge_top;
-  gfx::Point edge_bottom;
-};
-
-UI_BASE_EXPORT bool operator==(const SelectionBound& lhs,
-                               const SelectionBound& rhs);
-UI_BASE_EXPORT bool operator!=(const SelectionBound& lhs,
-                               const SelectionBound& rhs);
-
-UI_BASE_EXPORT gfx::Rect RectBetweenSelectionBounds(const SelectionBound& b1,
-                                                    const SelectionBound& b2);
+class SelectionBound;
 
 // An interface implemented by widget that has text that can be selected/edited
 // using touch.
@@ -80,7 +54,7 @@ class UI_BASE_EXPORT TouchEditable : public ui::SimpleMenuModel::Delegate {
   virtual void ConvertPointFromScreen(gfx::Point* point) = 0;
 
   // Returns true if the editable draws its own handles (hence, the
-  // TouchSelectionController need not draw handles).
+  // TouchEditingControllerDeprecated need not draw handles).
   virtual bool DrawsHandles() = 0;
 
   // Tells the editable to open context menu.
@@ -96,12 +70,13 @@ class UI_BASE_EXPORT TouchEditable : public ui::SimpleMenuModel::Delegate {
 
 // This defines the callback interface for other code to be notified of changes
 // in the state of a TouchEditable.
-class UI_BASE_EXPORT TouchSelectionController {
+class UI_BASE_EXPORT TouchEditingControllerDeprecated {
  public:
-  virtual ~TouchSelectionController() {}
+  virtual ~TouchEditingControllerDeprecated() {}
 
-  // Creates a TouchSelectionController. Caller owns the returned object.
-  static TouchSelectionController* create(
+  // Creates a TouchEditingControllerDeprecated. Caller owns the returned
+  // object.
+  static TouchEditingControllerDeprecated* Create(
       TouchEditable* client_view);
 
   // Notifies the controller that the selection has changed.
@@ -115,14 +90,15 @@ class UI_BASE_EXPORT TouchSelectionController {
   virtual void HideHandles(bool quick) = 0;
 };
 
-class UI_BASE_EXPORT TouchSelectionControllerFactory {
+class UI_BASE_EXPORT TouchEditingControllerFactory {
  public:
-  static void SetInstance(TouchSelectionControllerFactory* instance);
+  static void SetInstance(TouchEditingControllerFactory* instance);
 
-  virtual TouchSelectionController* create(TouchEditable* client_view) = 0;
+  virtual TouchEditingControllerDeprecated* Create(TouchEditable* client_view)
+      = 0;
 
  protected:
-  virtual ~TouchSelectionControllerFactory() {}
+  virtual ~TouchEditingControllerFactory() {}
 };
 
 }  // namespace ui

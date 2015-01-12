@@ -66,6 +66,7 @@ EventGenerator::EventGenerator(gfx::NativeWindow root_window)
       flags_(0),
       grab_(false),
       async_(false),
+      targeting_application_(false),
       tick_clock_(new base::DefaultTickClock()) {
   Init(root_window, NULL);
 }
@@ -77,6 +78,7 @@ EventGenerator::EventGenerator(gfx::NativeWindow root_window,
       flags_(0),
       grab_(false),
       async_(false),
+      targeting_application_(false),
       tick_clock_(new base::DefaultTickClock()) {
   Init(root_window, NULL);
 }
@@ -87,6 +89,7 @@ EventGenerator::EventGenerator(gfx::NativeWindow root_window,
       flags_(0),
       grab_(false),
       async_(false),
+      targeting_application_(false),
       tick_clock_(new base::DefaultTickClock()) {
   Init(root_window, window);
 }
@@ -97,6 +100,7 @@ EventGenerator::EventGenerator(EventGeneratorDelegate* delegate)
       flags_(0),
       grab_(false),
       async_(false),
+      targeting_application_(false),
       tick_clock_(new base::DefaultTickClock()) {
   Init(NULL, NULL);
 }
@@ -123,10 +127,11 @@ void EventGenerator::ClickLeftButton() {
 }
 
 void EventGenerator::DoubleClickLeftButton() {
+  flags_ &= ~ui::EF_IS_DOUBLE_CLICK;
+  ClickLeftButton();
   flags_ |= ui::EF_IS_DOUBLE_CLICK;
-  PressLeftButton();
-  flags_ ^= ui::EF_IS_DOUBLE_CLICK;
-  ReleaseLeftButton();
+  ClickLeftButton();
+  flags_ &= ~ui::EF_IS_DOUBLE_CLICK;
 }
 
 void EventGenerator::PressRightButton() {

@@ -19,6 +19,8 @@
 
 namespace leveldb_env {
 
+// These entries map to values in tools/metrics/histograms/histograms.xml. New
+// values should be appended at the end.
 enum MethodID {
   kSequentialFileRead,
   kSequentialFileSkip,
@@ -41,6 +43,7 @@ enum MethodID {
   kNewLogger,
   kSyncParent,
   kGetChildren,
+  kNewAppendableFile,
   kNumEntries
 };
 
@@ -61,7 +64,7 @@ enum ErrorParsingResult {
   NONE,
 };
 
-ErrorParsingResult ParseMethodAndError(const char* string,
+ErrorParsingResult ParseMethodAndError(const leveldb::Status& status,
                                        MethodID* method,
                                        int* error);
 int GetCorruptionCode(const leveldb::Status& status);
@@ -103,9 +106,6 @@ class ChromiumEnv : public leveldb::Env,
   typedef void(ScheduleFunc)(void*);
 
   static bool MakeBackup(const std::string& fname);
-  static base::FilePath CreateFilePath(const std::string& file_path);
-  static const char* FileErrorString(::base::File::Error error);
-  static bool HasTableExtension(const base::FilePath& path);
   virtual ~ChromiumEnv();
 
   virtual bool FileExists(const std::string& fname);
@@ -132,6 +132,8 @@ class ChromiumEnv : public leveldb::Env,
       leveldb::RandomAccessFile** result);
   virtual leveldb::Status NewWritableFile(const std::string& fname,
                                           leveldb::WritableFile** result);
+  virtual leveldb::Status NewAppendableFile(const std::string& fname,
+                                            leveldb::WritableFile** result);
   virtual leveldb::Status NewLogger(const std::string& fname,
                                     leveldb::Logger** result);
 
@@ -142,6 +144,8 @@ class ChromiumEnv : public leveldb::Env,
   bool make_backup_;
 
  private:
+  static const char* FileErrorString(base::File::Error error);
+
   virtual void DidCreateNewFile(const std::string& fname);
   virtual bool DoesDirNeedSync(const std::string& fname);
   virtual void RecordErrorAt(MethodID method) const;
@@ -194,8 +198,8 @@ class ChromiumEnv : public leveldb::Env,
 
   base::FilePath test_directory_;
 
-  ::base::Lock mu_;
-  ::base::ConditionVariable bgsignal_;
+  base::Lock mu_;
+  base::ConditionVariable bgsignal_;
   bool started_bgthread_;
 
   // Entry per Schedule() call

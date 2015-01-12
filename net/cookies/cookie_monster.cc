@@ -552,6 +552,9 @@ class CookieMonster::DeleteTask : public CookieMonsterTask {
   // CookieMonsterTask:
   virtual void Run() override;
 
+ protected:
+  ~DeleteTask() override;
+
  private:
   // Runs the delete task and returns a result.
   virtual Result RunDeleteTask() = 0;
@@ -564,8 +567,12 @@ class CookieMonster::DeleteTask : public CookieMonsterTask {
 };
 
 template <typename Result>
-base::Closure CookieMonster::DeleteTask<Result>::
-RunDeleteTaskAndBindCallback() {
+CookieMonster::DeleteTask<Result>::~DeleteTask() {
+}
+
+template <typename Result>
+base::Closure
+CookieMonster::DeleteTask<Result>::RunDeleteTaskAndBindCallback() {
   Result result = RunDeleteTask();
   if (callback_.is_null())
     return base::Closure();
@@ -1162,6 +1169,7 @@ CookieList CookieMonster::GetAllCookiesForURLWithOptions(
   std::sort(cookie_ptrs.begin(), cookie_ptrs.end(), CookieSorter);
 
   CookieList cookies;
+  cookies.reserve(cookie_ptrs.size());
   for (std::vector<CanonicalCookie*>::const_iterator it = cookie_ptrs.begin();
        it != cookie_ptrs.end(); it++)
     cookies.push_back(**it);

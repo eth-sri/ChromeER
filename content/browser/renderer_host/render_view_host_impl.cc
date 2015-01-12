@@ -53,6 +53,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/focused_node_details.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -293,6 +294,11 @@ bool RenderViewHostImpl::CreateRenderView(
   params.min_size = min_size_for_auto_resize();
   params.max_size = max_size_for_auto_resize();
   GetResizeParams(&params.initial_size);
+  if (!is_active_) {
+    params.replicated_frame_state =
+        static_cast<RenderFrameHostImpl*>(GetMainFrame())->frame_tree_node()
+            ->current_replication_state();
+  }
 
   if (!Send(new ViewMsg_New(params)))
     return false;
@@ -375,12 +381,6 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   prefs.allow_file_access_from_file_urls =
       command_line.HasSwitch(switches::kAllowFileAccessFromFiles);
 
-  prefs.layer_squashing_enabled = true;
-  if (command_line.HasSwitch(switches::kEnableLayerSquashing))
-      prefs.layer_squashing_enabled = true;
-  if (command_line.HasSwitch(switches::kDisableLayerSquashing))
-      prefs.layer_squashing_enabled = false;
-
   prefs.accelerated_2d_canvas_enabled =
       GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
@@ -391,8 +391,6 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   prefs.accelerated_2d_canvas_msaa_sample_count =
       atoi(command_line.GetSwitchValueASCII(
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
-  prefs.container_culling_enabled =
-      command_line.HasSwitch(switches::kEnableContainerCulling);
   // Text blobs rely on impl-side painting for proper LCD handling.
   prefs.text_blobs_enabled = command_line.HasSwitch(switches::kForceTextBlobs)
       || (content::IsImplSidePaintingEnabled() &&
@@ -424,6 +422,11 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   prefs.touch_enabled = ui::AreTouchEventsEnabled();
   prefs.device_supports_touch = prefs.touch_enabled &&
       ui::IsTouchDevicePresent();
+  prefs.available_pointer_types = ui::GetAvailablePointerTypes();
+  prefs.primary_pointer_type = ui::GetPrimaryPointerType();
+  prefs.available_hover_types = ui::GetAvailableHoverTypes();
+  prefs.primary_hover_type = ui::GetPrimaryHoverType();
+
 #if defined(OS_ANDROID)
   prefs.device_supports_mouse = false;
 #endif
@@ -504,22 +507,11 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
     prefs.v8_cache_options = V8_CACHE_OPTIONS_DEFAULT;
   }
 
-  std::string streaming_experiment_group =
-      base::FieldTrialList::FindFullName("V8ScriptStreaming");
-  prefs.v8_script_streaming_enabled =
-      command_line.HasSwitch(switches::kEnableV8ScriptStreaming);
-  if (streaming_experiment_group == "Enabled") {
-    prefs.v8_script_streaming_enabled = true;
-    prefs.v8_script_streaming_mode = V8_SCRIPT_STREAMING_MODE_ALL;
-  } else if (streaming_experiment_group == "OnlyAsyncAndDefer") {
-    prefs.v8_script_streaming_enabled = true;
-    prefs.v8_script_streaming_mode =
-        V8_SCRIPT_STREAMING_MODE_ONLY_ASYNC_AND_DEFER;
-  } else if (streaming_experiment_group == "AllPlusBlockParserBlocking") {
-    prefs.v8_script_streaming_enabled = true;
-    prefs.v8_script_streaming_mode =
-        V8_SCRIPT_STREAMING_MODE_ALL_PLUS_BLOCK_PARSER_BLOCKING;
-  }
+  // TODO(marja): Clean up preferences + command line flag after streaming has
+  // launched in stable.
+  prefs.v8_script_streaming_enabled = true;
+  prefs.v8_script_streaming_mode =
+      V8_SCRIPT_STREAMING_MODE_ONLY_ASYNC_AND_DEFER;
 
   GetContentClient()->browser()->OverrideWebkitPrefs(this, url, &prefs);
   return prefs;
@@ -760,8 +752,7 @@ void RenderViewHostImpl::SetWebUIProperty(const std::string& name,
   } else {
     RecordAction(
         base::UserMetricsAction("BindingsMismatchTerminate_RVH_WebUI"));
-    base::KillProcess(
-        GetProcess()->GetHandle(), content::RESULT_CODE_KILLED, false);
+    GetProcess()->Shutdown(content::RESULT_CODE_KILLED, false);
   }
 }
 
@@ -1227,7 +1218,9 @@ void RenderViewHostImpl::OnTakeFocus(bool reverse) {
     view->TakeFocus(reverse);
 }
 
-void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
+void RenderViewHostImpl::OnFocusedNodeChanged(
+    bool is_editable_node,
+    const gfx::Rect& node_bounds_in_viewport) {
   is_focused_element_editable_ = is_editable_node;
   if (view_)
     view_->FocusedNodeChanged(is_editable_node);
@@ -1241,10 +1234,18 @@ void RenderViewHostImpl::OnFocusedNodeChanged(bool is_editable_node) {
         TimeDelta::FromMilliseconds(kVirtualKeyboardDisplayWaitTimeoutMs));
   }
 #endif
-  NotificationService::current()->Notify(
-      NOTIFICATION_FOCUS_CHANGED_IN_PAGE,
-      Source<RenderViewHost>(this),
-      Details<const bool>(&is_editable_node));
+
+  // Convert node_bounds to screen coordinates.
+  gfx::Rect view_bounds_in_screen = view_->GetViewBounds();
+  gfx::Point origin = node_bounds_in_viewport.origin();
+  origin.Offset(view_bounds_in_screen.x(), view_bounds_in_screen.y());
+  gfx::Rect node_bounds_in_screen(origin.x(), origin.y(),
+                                  node_bounds_in_viewport.width(),
+                                  node_bounds_in_viewport.height());
+  FocusedNodeDetails details = {is_editable_node, node_bounds_in_screen};
+  NotificationService::current()->Notify(NOTIFICATION_FOCUS_CHANGED_IN_PAGE,
+                                         Source<RenderViewHost>(this),
+                                         Details<FocusedNodeDetails>(&details));
 }
 
 void RenderViewHostImpl::OnUserGesture() {
@@ -1466,12 +1467,22 @@ bool RenderViewHostImpl::CanAccessFilesOfPageState(
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   const std::vector<base::FilePath>& file_paths = state.GetReferencedFiles();
-  for (std::vector<base::FilePath>::const_iterator file = file_paths.begin();
-       file != file_paths.end(); ++file) {
-    if (!policy->CanReadFile(GetProcess()->GetID(), *file))
+  for (const auto& file : file_paths) {
+    if (!policy->CanReadFile(GetProcess()->GetID(), file))
       return false;
   }
   return true;
+}
+
+void RenderViewHostImpl::GrantFileAccessFromPageState(const PageState& state) {
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+
+  const std::vector<base::FilePath>& file_paths = state.GetReferencedFiles();
+  for (const auto& file : file_paths) {
+    if (!policy->CanReadFile(GetProcess()->GetID(), file))
+      policy->GrantReadFile(GetProcess()->GetID(), file);
+  }
 }
 
 void RenderViewHostImpl::AttachToFrameTree() {

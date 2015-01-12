@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_CHROMEOS_PREFERENCES_H_
 
 #include <string>
-#include <vector>
 
 #include "ash/shell_observer.h"
 #include "base/compiler_specific.h"
@@ -32,6 +31,7 @@ class User;
 
 namespace input_method {
 class InputMethodManager;
+class InputMethodSyncer;
 }
 
 // The Preferences class handles Chrome OS preferences. When the class
@@ -140,7 +140,7 @@ class Preferences : public PrefServiceSyncableObserver,
   IntegerPrefMember xkb_auto_repeat_delay_pref_;
   IntegerPrefMember xkb_auto_repeat_interval_pref_;
 
-  IntegerPrefMember wake_on_wifi_enabled_;
+  BooleanPrefMember wake_on_wifi_ssid_;
 
   // User owning these preferences.
   const user_manager::User* user_;
@@ -150,6 +150,8 @@ class Preferences : public PrefServiceSyncableObserver,
 
   // Input Methods state for this user.
   scoped_refptr<input_method::InputMethodManager::State> ime_state_;
+
+  scoped_ptr<input_method::InputMethodSyncer> input_method_syncer_;
 
   DISALLOW_COPY_AND_ASSIGN(Preferences);
 };

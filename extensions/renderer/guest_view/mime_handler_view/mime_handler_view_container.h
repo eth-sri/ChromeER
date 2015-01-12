@@ -5,10 +5,14 @@
 #ifndef EXTENSIONS_RENDERER_GUEST_VIEW_MIME_HANDLER_VIEW_CONTAINER_H_
 #define EXTENSIONS_RENDERER_GUEST_VIEW_MIME_HANDLER_VIEW_CONTAINER_H_
 
+#include "base/memory/linked_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "extensions/renderer/guest_view/guest_view_container.h"
+#include "extensions/renderer/scoped_persistent.h"
 #include "third_party/WebKit/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "url/gurl.h"
+#include "v8/include/v8.h"
 
 namespace extensions {
 
@@ -37,13 +41,11 @@ class MimeHandlerViewContainer : public GuestViewContainer,
   ~MimeHandlerViewContainer() override;
 
   // BrowserPluginDelegate implementation.
+  void Ready() override;
   void DidFinishLoading() override;
   void DidReceiveData(const char* data, int data_length) override;
-  void Ready() override;
-
-  // GuestViewContainer overrides.
-  bool HandlesMessage(const IPC::Message& message) override;
-  bool OnMessage(const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  v8::Local<v8::Object> V8ScriptableObject(v8::Isolate*) override;
 
   // WebURLLoaderClient overrides.
   void didReceiveData(blink::WebURLLoader* loader,
@@ -54,9 +56,16 @@ class MimeHandlerViewContainer : public GuestViewContainer,
                         double finish_time,
                         int64_t total_encoded_data_length) override;
 
+  // Post a JavaScript message to the guest.
+  void PostMessage(v8::Isolate* isolate,
+                   v8::Handle<v8::Value> message);
+
  private:
   // Message handlers.
   void OnCreateMimeHandlerViewGuestACK(int element_instance_id);
+  void OnGuestAttached(int element_instance_id,
+                       int guest_proxy_routing_id);
+  void OnMimeHandlerViewGuestOnLoadCompleted(int element_instance_id);
 
   void CreateMimeHandlerViewGuest();
 
@@ -72,9 +81,26 @@ class MimeHandlerViewContainer : public GuestViewContainer,
   // The original URL of the plugin.
   GURL original_url_;
 
+  // The RenderView routing ID of the guest.
+  int guest_proxy_routing_id_;
+
   // A URL loader to load the |original_url_| when the plugin is embedded. In
   // the embedded case, no URL request is made automatically.
   scoped_ptr<blink::WebURLLoader> loader_;
+
+  // The scriptable object that backs the plugin.
+  ScopedPersistent<v8::Object> scriptable_object_;
+
+  // Pending postMessage messages that need to be sent to the guest. These are
+  // queued while the guest is loading and once it is fully loaded they are
+  // delivered so that messages aren't lost.
+  std::vector<linked_ptr<ScopedPersistent<v8::Value>>> pending_messages_;
+
+  // True if the guest page has fully loaded and its JavaScript onload function
+  // has been called.
+  bool guest_loaded_;
+
+  base::WeakPtrFactory<MimeHandlerViewContainer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MimeHandlerViewContainer);
 };

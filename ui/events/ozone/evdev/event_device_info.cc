@@ -190,20 +190,11 @@ int32 EventDeviceInfo::GetSlotValue(unsigned int code,
 }
 
 bool EventDeviceInfo::HasAbsXY() const {
-  if (HasAbsEvent(ABS_X) && HasAbsEvent(ABS_Y))
-    return true;
-
-  if (HasAbsEvent(ABS_MT_POSITION_X) && HasAbsEvent(ABS_MT_POSITION_Y))
-    return true;
-
-  return false;
+  return HasAbsEvent(ABS_X) && HasAbsEvent(ABS_Y);
 }
 
 bool EventDeviceInfo::HasMTAbsXY() const {
-  if (HasAbsEvent(ABS_MT_POSITION_X) && HasAbsEvent(ABS_MT_POSITION_Y))
-    return true;
-
-  return false;
+  return HasAbsEvent(ABS_MT_POSITION_X) && HasAbsEvent(ABS_MT_POSITION_Y);
 }
 
 bool EventDeviceInfo::HasRelXY() const {
@@ -230,6 +221,19 @@ bool EventDeviceInfo::IsMappedToScreen() const {
     return false;
 
   // Touchscreens are mapped to the screen.
+  return true;
+}
+
+bool EventDeviceInfo::HasKeyboard() const {
+  if (!HasEventType(EV_KEY))
+    return false;
+
+  // Check first 31 keys: If we have all of them, consider it a full
+  // keyboard. This is exactly what udev does for ID_INPUT_KEYBOARD.
+  for (int key = KEY_ESC; key <= KEY_D; ++key)
+    if (!HasKeyEvent(key))
+      return false;
+
   return true;
 }
 

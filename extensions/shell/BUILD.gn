@@ -19,15 +19,15 @@ grit("resources") {
 }
 
 source_set("app_shell_lib") {
-  # This library is testonly because it depends on testonly libarries,
-  # namely //base:prefs_test_support and //content/shell:content_shell_lib
-  # TODO(jamescook): investigate and get rid of test dependencies.
+  # TODO(jamescook): investigate and get rid of test dependencies. This library
+  # is testonly because it depends on testonly libraries, namely
+  # //content/shell:content_shell_lib. See http://crbug.com/438283
   testonly = true
   deps = [
     ":resources",
     ":version_header",
     "//base",
-    "//base:prefs_test_support",
+    "//base:prefs",
     "//components/omaha_client",
     "//components/pref_registry",
     "//components/user_prefs",
@@ -66,6 +66,8 @@ source_set("app_shell_lib") {
     "browser/media_capture_util.h",
     "browser/shell_app_delegate.cc",
     "browser/shell_app_delegate.h",
+    "browser/shell_app_view_guest_delegate.cc",
+    "browser/shell_app_view_guest_delegate.h",
     "browser/shell_app_window_client.cc",
     "browser/shell_app_window_client.h",
     "browser/shell_app_window_client_aura.cc",
@@ -94,6 +96,8 @@ source_set("app_shell_lib") {
     "browser/shell_extension_system_factory.h",
     "browser/shell_extension_web_contents_observer.cc",
     "browser/shell_extension_web_contents_observer.h",
+    "browser/shell_extensions_api_client.cc",
+    "browser/shell_extensions_api_client.h",
     "browser/shell_extensions_browser_client.cc",
     "browser/shell_extensions_browser_client.h",
     "browser/shell_native_app_window.cc",
@@ -108,8 +112,12 @@ source_set("app_shell_lib") {
     "browser/shell_oauth2_token_service.h",
     "browser/shell_omaha_query_params_delegate.cc",
     "browser/shell_omaha_query_params_delegate.h",
+    "browser/shell_prefs.cc",
+    "browser/shell_prefs.h",
     "browser/shell_runtime_api_delegate.cc",
     "browser/shell_runtime_api_delegate.h",
+    "browser/shell_screen.cc",
+    "browser/shell_screen.h",
     "browser/shell_special_storage_policy.cc",
     "browser/shell_special_storage_policy.h",
     "browser/shell_speech_recognition_manager_delegate.cc",
@@ -139,6 +147,7 @@ source_set("app_shell_lib") {
     sources += [
       "browser/api/shell_gcd/shell_gcd_api.cc",
       "browser/api/shell_gcd/shell_gcd_api.h",
+      "browser/api/vpn_provider/vpn_service_factory.cc",
     ]
   }
 }

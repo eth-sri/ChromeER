@@ -134,8 +134,8 @@ static void ProxyLocaltimeCallToBrowser(time_t input, struct tm* output,
   Pickle reply(reinterpret_cast<char*>(reply_buf), r);
   PickleIterator iter(reply);
   std::string result, timezone;
-  if (!reply.ReadString(&iter, &result) ||
-      !reply.ReadString(&iter, &timezone) ||
+  if (!iter.ReadString(&result) ||
+      !iter.ReadString(&timezone) ||
       result.size() != sizeof(struct tm)) {
     memset(output, 0, sizeof(struct tm));
     return;
@@ -451,7 +451,8 @@ static bool EnterSuidSandbox(sandbox::SetuidSandboxClient* setuid_sandbox,
   // Note: a non-dumpable process can't be debugged. To debug sandbox-related
   // issues, one can specify --allow-sandbox-debugging to let the process be
   // dumpable.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kAllowSandboxDebugging)) {
     prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
     if (prctl(PR_GET_DUMPABLE, 0, 0, 0, 0)) {

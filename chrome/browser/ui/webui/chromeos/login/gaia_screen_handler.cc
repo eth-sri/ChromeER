@@ -16,6 +16,7 @@
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/policy/consumer_management_service.h"
+#include "chrome/browser/chromeos/policy/consumer_management_stage.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/io_thread.h"
@@ -80,7 +81,7 @@ void UpdateAuthParams(base::DictionaryValue* params,
           ->GetUsersAllowedForSupervisedUsersCreation()
           .empty()) {
     supervised_users_can_create = false;
-    message_id = IDS_CREATE_SUPERVISED_USER_NO_MANAGER_EXCEPT_SUPERVISED_TEXT;
+    message_id = IDS_CREATE_SUPERVISED_USER_NO_MANAGER_EXCEPT_KIDS_TEXT;
   }
 
   params->SetBoolean("supervisedUsersEnabled", supervised_users_allowed);
@@ -211,7 +212,7 @@ void GaiaScreenHandler::LoadGaia(const GaiaContext& context) {
     params.Set("localizedStrings", localized_strings);
   }
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   const GURL gaia_url =
       command_line->HasSwitch(::switches::kGaiaUrl)
@@ -454,13 +455,12 @@ void GaiaScreenHandler::OnSetOwnerDone(const std::string& gaia_id,
                                        bool success) {
   CHECK(consumer_management_);
   if (success) {
-    consumer_management_->SetEnrollmentStage(
-        policy::ConsumerManagementService::ENROLLMENT_STAGE_OWNER_STORED);
+    consumer_management_->SetStage(
+        policy::ConsumerManagementStage::EnrollmentOwnerStored());
   } else {
     LOG(ERROR) << "Failed to write owner e-mail to boot lockbox.";
-    consumer_management_->SetEnrollmentStage(
-        policy::ConsumerManagementService::
-            ENROLLMENT_STAGE_BOOT_LOCKBOX_FAILED);
+    consumer_management_->SetStage(
+        policy::ConsumerManagementStage::EnrollmentBootLockboxFailed());
     // We should continue logging in the user, as there's not much we can do
     // here.
   }
@@ -641,12 +641,12 @@ void GaiaScreenHandler::ShowGaiaScreenIfReady() {
 
   // Set Least Recently Used input method for the user.
   if (!populated_email_.empty()) {
-    signin_screen_handler_->SetUserInputMethod(populated_email_,
-                                               gaia_ime_state.get());
+    SigninScreenHandler::SetUserInputMethod(populated_email_,
+                                            gaia_ime_state.get());
   } else {
     std::vector<std::string> input_methods =
         imm->GetInputMethodUtil()->GetHardwareLoginInputMethodIds();
-    const std::string owner_im = signin_screen_handler_->GetUserLRUInputMethod(
+    const std::string owner_im = SigninScreenHandler::GetUserLRUInputMethod(
         user_manager::UserManager::Get()->GetOwnerEmail());
     const std::string system_im = g_browser_process->local_state()->GetString(
         language_prefs::kPreferredKeyboardLayout);
@@ -720,7 +720,7 @@ void GaiaScreenHandler::LoadAuthExtension(bool force,
   }
 
   context.embedded_signin_enabled =
-      CommandLine::ForCurrentProcess()->HasSwitch(
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kEnableEmbeddedSignin) ||
       embedded_signin_enabled_by_shortcut_;
 

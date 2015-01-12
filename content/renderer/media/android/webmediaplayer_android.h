@@ -35,7 +35,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/gpu/GrContext.h"
 #include "third_party/skia/include/gpu/SkGrPixelRef.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -45,6 +45,7 @@ namespace blink {
 class WebContentDecryptionModule;
 class WebContentDecryptionModuleResult;
 class WebFrame;
+class WebMediaPlayerClient;
 class WebURL;
 }
 
@@ -254,11 +255,8 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
 
   void OnMediaSourceOpened(blink::WebMediaSource* web_media_source);
 
-  void OnNeedKey(const std::string& type,
-                 const std::vector<uint8>& init_data);
-
-  // TODO(xhwang): Implement WebMediaPlayer::setContentDecryptionModule().
-  // See: http://crbug.com/224786
+  void OnEncryptedMediaInitData(const std::string& init_data_type,
+                                const std::vector<uint8>& init_data);
 
  protected:
   // Helper method to update the playing state.

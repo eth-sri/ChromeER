@@ -24,7 +24,7 @@
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/webdata/common/web_data_results.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 
 using base::ASCIIToUTF16;
@@ -45,24 +45,23 @@ class TestPersonalDataManager : public PersonalDataManager {
 
   // Overridden to avoid a trip to the database. This should be a no-op except
   // for the side-effect of logging the profile count.
-  virtual void LoadProfiles() override {
+  void LoadProfiles() override {
     std::vector<AutofillProfile*> profiles;
     web_profiles_.release(&profiles);
     WDResult<std::vector<AutofillProfile*> > result(AUTOFILL_PROFILES_RESULT,
                                                     profiles);
-    ReceiveLoadedProfiles(0, &result);
+    pending_profiles_query_ = 123;
+    OnWebDataServiceRequestDone(pending_profiles_query_, &result);
   }
 
   // Overridden to avoid a trip to the database.
-  virtual void LoadCreditCards() override {}
+  void LoadCreditCards() override {}
 
   void set_autofill_enabled(bool autofill_enabled) {
     autofill_enabled_ = autofill_enabled;
   }
 
-  virtual bool IsAutofillEnabled() const override {
-    return autofill_enabled_;
-  }
+  bool IsAutofillEnabled() const override { return autofill_enabled_; }
 
  private:
   void CreateTestAutofillProfiles(ScopedVector<AutofillProfile>* profiles) {
@@ -893,13 +892,12 @@ TEST_F(AutofillMetricsTest, UserHappinessFormInteraction) {
   // Simulate editing an autofilled field.
   {
     base::HistogramTester histogram_tester;
-    PersonalDataManager::GUIDPair guid(
+    SuggestionBackendID guid(
         "00000000-0000-0000-0000-000000000001", 0);
-    PersonalDataManager::GUIDPair empty(std::string(), 0);
     autofill_manager_->FillOrPreviewForm(
         AutofillDriver::FORM_DATA_ACTION_FILL,
         0, form, form.fields.front(),
-        autofill_manager_->PackGUIDs(empty, guid));
+        autofill_manager_->MakeFrontendID(SuggestionBackendID(), guid));
     autofill_manager_->OnTextFieldDidChange(form, form.fields.front(),
                                             TimeTicks());
     // Simulate a second keystroke; make sure we don't log the metric twice.

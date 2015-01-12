@@ -21,15 +21,15 @@
 #include "extensions/browser/app_window/app_window_registry.h"
 #include "extensions/browser/app_window/native_app_window.h"
 #include "extensions/browser/extensions_browser_client.h"
-#include "extensions/browser/image_util.h"
 #include "extensions/common/api/app_window.h"
 #include "extensions/common/features/simple_feature.h"
+#include "extensions/common/image_util.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ui_base_types.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 
 namespace app_window = extensions::core_api::app_window;
@@ -491,7 +491,7 @@ AppWindow::Frame AppWindowCreateFunction::GetFrameFromString(
   if (frame_string == kHtmlFrameOption &&
       (extension()->permissions_data()->HasAPIPermission(
            APIPermission::kExperimental) ||
-       CommandLine::ForCurrentProcess()->HasSwitch(
+       base::CommandLine::ForCurrentProcess()->HasSwitch(
            switches::kEnableExperimentalExtensionApis))) {
      inject_html_titlebar_ = true;
      return AppWindow::FRAME_NONE;

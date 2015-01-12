@@ -11,6 +11,7 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/native_window_tracker.h"
@@ -22,7 +23,9 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "ui/app_list/app_list_switches.h"
 
 using content::WebContents;
 using extensions::Extension;
@@ -90,8 +93,14 @@ bool CheckCommonLaunchCriteria(Profile* profile,
 
 // static
 bool EphemeralAppLauncher::IsFeatureEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableEphemeralApps);
+  return app_list::switches::IsExperimentalAppListEnabled();
+}
+
+// static
+bool EphemeralAppLauncher::IsFeatureEnabledInWebstore() {
+  return IsFeatureEnabled() &&
+         base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kEnableEphemeralAppsInWebstore);
 }
 
 // static
@@ -279,7 +288,8 @@ void EphemeralAppLauncher::LaunchApp(const Extension* extension) const {
          ExtensionRegistry::Get(profile())
              ->GetExtensionById(extension->id(), ExtensionRegistry::ENABLED));
 
-  AppLaunchParams params(profile(), extension, NEW_FOREGROUND_TAB);
+  AppLaunchParams params(profile(), extension, NEW_FOREGROUND_TAB,
+                         extensions::SOURCE_EPHEMERAL_APP);
   params.desktop_type =
       chrome::GetHostDesktopTypeForNativeWindow(parent_window_);
   OpenApplication(params);

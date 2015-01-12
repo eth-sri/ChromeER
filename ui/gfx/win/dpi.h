@@ -5,9 +5,9 @@
 #ifndef UI_GFX_DPI_WIN_H_
 #define UI_GFX_DPI_WIN_H_
 
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/gfx_export.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
 namespace gfx {

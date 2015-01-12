@@ -28,13 +28,7 @@ namespace base {
 class SequencedTaskRunner;
 }
 
-namespace wifi {
-class WiFiService;
-}
-
 namespace extensions {
-
-using wifi::WiFiService;
 
 // Windows / Mac NetworkingPrivateApi implementation. This implements
 // NetworkingPrivateDelegate, making WiFiService calls on the worker thead.
@@ -44,21 +38,6 @@ class NetworkingPrivateServiceClient
     : public NetworkingPrivateDelegate,
       net::NetworkChangeNotifier::NetworkChangeObserver {
  public:
-  // Interface for observing Network Events.
-  class Observer {
-   public:
-    Observer() {}
-    virtual ~Observer() {}
-
-    virtual void OnNetworksChangedEvent(
-        const std::vector<std::string>& network_guids) = 0;
-    virtual void OnNetworkListChangedEvent(
-        const std::vector<std::string>& network_guids) = 0;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(Observer);
-  };
-
   // Takes ownership of |wifi_service| which is accessed and deleted on the
   // worker thread. The deletion task is posted from the destructor.
   // |verify_delegate| is passed to NetworkingPrivateDelegate and may be NULL.
@@ -113,13 +92,8 @@ class NetworkingPrivateServiceClient
   bool EnableNetworkType(const std::string& type) override;
   bool DisableNetworkType(const std::string& type) override;
   bool RequestScan() override;
-
-  // Adds observer to network events.
-  void AddObserver(Observer* network_events_observer);
-
-  // Removes observer to network events. If there is no observers,
-  // then process can be shut down when there are no more calls pending return.
-  void RemoveObserver(Observer* network_events_observer);
+  void AddObserver(NetworkingPrivateDelegateObserver* observer) override;
+  void RemoveObserver(NetworkingPrivateDelegateObserver* observer) override;
 
   // NetworkChangeNotifier::NetworkChangeObserver implementation.
   void OnNetworkChanged(
@@ -166,9 +140,9 @@ class NetworkingPrivateServiceClient
                             const std::string* error);
 
   void OnNetworksChangedEventOnUIThread(
-      const WiFiService::NetworkGuidList& network_guid_list);
+      const wifi::WiFiService::NetworkGuidList& network_guid_list);
   void OnNetworkListChangedEventOnUIThread(
-      const WiFiService::NetworkGuidList& network_guid_list);
+      const wifi::WiFiService::NetworkGuidList& network_guid_list);
 
   // Add new |ServiceCallbacks| to |callbacks_map_|.
   ServiceCallbacks* AddServiceCallbacks();
@@ -178,7 +152,7 @@ class NetworkingPrivateServiceClient
   // Callbacks to run when callback is called from WiFiService.
   ServiceCallbacksMap callbacks_map_;
   // Observers to Network Events.
-  ObserverList<Observer> network_events_observers_;
+  ObserverList<NetworkingPrivateDelegateObserver> network_events_observers_;
   // Interface to WiFiService. Used and deleted on the worker thread.
   scoped_ptr<wifi::WiFiService> wifi_service_;
   // Sequence token associated with wifi tasks.

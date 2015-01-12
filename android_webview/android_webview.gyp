@@ -108,6 +108,7 @@
         '../components/components.gyp:web_contents_delegate_android',
         '../content/content.gyp:content_app_both',
         '../content/content.gyp:content_browser',
+        '../gpu/blink/gpu_blink.gyp:gpu_blink',
         '../gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
@@ -164,6 +165,8 @@
         'browser/aw_request_interceptor.h',
         'browser/aw_resource_context.cc',
         'browser/aw_resource_context.h',
+        'browser/aw_ssl_host_state_delegate.cc',
+        'browser/aw_ssl_host_state_delegate.h',
         'browser/aw_result_codes.h',
         'browser/aw_web_preferences_populater.cc',
         'browser/aw_web_preferences_populater.h',
@@ -266,7 +269,6 @@
     ['android_webview_build==0', {
       'includes': [
         'android_webview_tests.gypi',
-        '../third_party/android_webview_glue/android_webview_glue.gypi',
       ],
       'targets': [
         {
@@ -281,8 +283,42 @@
           ],
           'variables': {
             'java_in_dir': '../android_webview/java',
+            'has_java_resources': 1,
+            'R_package': 'org.chromium.android_webview',
+            'R_package_relpath': 'org/chromium/android_webview',
           },
           'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'system_webview_apk',
+          'variables': {
+            'android_sdk_jar': '<(DEPTH)/third_party/android_platform/webview/frameworks_1622219.jar',
+            'apk_name': 'SystemWebView',
+            'android_manifest_path': 'apk/java/AndroidManifest.xml',
+            'java_in_dir': '../android_webview/glue/java',
+            'resource_dir': 'apk/java/res',
+            'shared_resources': 1,
+          },
+          'includes': [ 'apk/system_webview_apk_common.gypi' ],
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)/android_webview_assets',
+              'files': [],
+              'conditions': [
+                ['icu_use_data_file_flag==1', {
+                  'files': [
+                    '<(PRODUCT_DIR)/icudtl.dat',
+                  ],
+                }],
+                ['v8_use_external_startup_data==1', {
+                  'files': [
+                    '<(PRODUCT_DIR)/natives_blob.bin',
+                    '<(PRODUCT_DIR)/snapshot_blob.bin',
+                  ],
+                }],
+              ],
+            },
+          ],
         },
       ],
      }, {  # android_webview_build==1

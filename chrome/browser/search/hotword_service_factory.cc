@@ -15,6 +15,10 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 
+#if defined(OS_CHROMEOS)
+#include "chromeos/audio/cras_audio_handler.h"
+#endif
+
 using content::BrowserContext;
 using content::BrowserThread;
 
@@ -43,11 +47,19 @@ bool HotwordServiceFactory::IsHotwordAllowed(BrowserContext* context) {
 
 // static
 bool HotwordServiceFactory::IsHotwordHardwareAvailable() {
-  // TODO(rlp, dgreid): return has_hotword_hardware()
-  // Fill in once the hardware has the correct interface implemented.
-  // In the meantime, this function can be used to get other parts moving
-  // based on a flag.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+#if defined(OS_CHROMEOS)
+  if (chromeos::CrasAudioHandler::IsInitialized()) {
+    chromeos::AudioDeviceList devices;
+    chromeos::CrasAudioHandler::Get()->GetAudioDevices(&devices);
+    for (size_t i = 0; i < devices.size(); ++i) {
+      if (devices[i].type == chromeos::AUDIO_TYPE_AOKR) {
+        DCHECK(devices[i].is_input);
+        return true;
+      }
+    }
+  }
+#endif
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   return command_line->HasSwitch(switches::kEnableExperimentalHotwordHardware);
 }
 
@@ -106,23 +118,20 @@ void HotwordServiceFactory::UpdateMicrophoneState() {
 
 void HotwordServiceFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* prefs) {
-  // Although this is default true, users will not send back information to
-  // Google unless they have opted-in to Hotwording at which point they must
-  // also confirm that they wish this preference to be true or opt out of it.
   prefs->RegisterBooleanPref(prefs::kHotwordAudioLoggingEnabled,
-                             true,
+                             false,
                              user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   prefs->RegisterStringPref(prefs::kHotwordPreviousLanguage,
                             std::string(),
                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-  prefs->RegisterBooleanPref(prefs::kHotwordAudioHistoryEnabled,
-                             false,
-                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   // Per-device settings (do not sync).
   prefs->RegisterBooleanPref(prefs::kHotwordSearchEnabled,
                              false,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kHotwordAlwaysOnSearchEnabled,
+                             false,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kHotwordAlwaysOnNotificationSeen,
                              false,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }

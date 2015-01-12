@@ -12,6 +12,7 @@
 
 #include "ash/ash_switches.h"
 #include "ash/display/display_layout_store.h"
+#include "ash/display/display_util.h"
 #include "ash/display/screen_ash.h"
 #include "ash/screen_util.h"
 #include "ash/shell.h"
@@ -28,9 +29,9 @@
 #include "ui/gfx/display.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/font_render_params.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size_conversions.h"
 
 #if defined(USE_X11)
 #include "ui/base/x/x11_util.h"
@@ -59,16 +60,6 @@ gfx::Screen* screen_for_shutdown = NULL;
 // in case that the offset value is too large.
 const int kMinimumOverlapForInvalidOffset = 100;
 
-// List of value UI Scale values. Scales for 2x are equivalent to 640,
-// 800, 1024, 1280, 1440, 1600 and 1920 pixel width respectively on
-// 2560 pixel width 2x density display. Please see crbug.com/233375
-// for the full list of resolutions.
-const float kUIScalesFor2x[] =
-    {0.5f, 0.625f, 0.8f, 1.0f, 1.125f, 1.25f, 1.5f, 2.0f};
-const float kUIScalesFor1_25x[] = {0.5f, 0.625f, 0.8f, 1.0f, 1.25f };
-const float kUIScalesFor1280[] = {0.5f, 0.625f, 0.8f, 1.0f, 1.125f };
-const float kUIScalesFor1366[] = {0.5f, 0.6f, 0.75f, 1.0f, 1.125f };
-
 struct DisplaySortFunctor {
   bool operator()(const gfx::Display& a, const gfx::Display& b) {
     return a.id() < b.id();
@@ -90,25 +81,26 @@ struct DisplayModeMatcher {
   DisplayMode target_mode;
 };
 
-struct ScaleComparator {
-  explicit ScaleComparator(float s) : scale(s) {}
-
-  bool operator()(float s) const {
-    const float kEpsilon = 0.0001f;
-    return std::abs(scale - s) < kEpsilon;
-  }
-  float scale;
-};
-
 gfx::Display& GetInvalidDisplay() {
   static gfx::Display* invalid_display = new gfx::Display();
   return *invalid_display;
 }
 
-void MaybeInitInternalDisplay(int64 id) {
+void SetInternalDisplayModeList(DisplayInfo* info) {
+  DisplayMode native_mode;
+  native_mode.size = info->bounds_in_native().size();
+  native_mode.device_scale_factor = info->device_scale_factor();
+  native_mode.ui_scale = 1.0f;
+  info->SetDisplayModes(CreateInternalDisplayModeList(native_mode));
+}
+
+void MaybeInitInternalDisplay(DisplayInfo* info) {
+  int64 id = info->id();
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kAshUseFirstDisplayAsInternal))
+  if (command_line->HasSwitch(switches::kAshUseFirstDisplayAsInternal)) {
     gfx::Display::SetInternalDisplayId(id);
+    SetInternalDisplayModeList(info);
+  }
 }
 
 }  // namespace
@@ -158,54 +150,6 @@ DisplayManager::~DisplayManager() {
 #endif
 }
 
-// static
-std::vector<float> DisplayManager::GetScalesForDisplay(
-    const DisplayInfo& info) {
-
-#define ASSIGN_ARRAY(v, a) v.assign(a, a + arraysize(a))
-
-  std::vector<float> ret;
-  if (info.device_scale_factor() == 2.0f) {
-    ASSIGN_ARRAY(ret, kUIScalesFor2x);
-    return ret;
-  } else if (info.device_scale_factor() == 1.25f) {
-    ASSIGN_ARRAY(ret, kUIScalesFor1_25x);
-    return ret;
-  }
-  switch (info.bounds_in_native().width()) {
-    case 1280:
-      ASSIGN_ARRAY(ret, kUIScalesFor1280);
-      break;
-    case 1366:
-      ASSIGN_ARRAY(ret, kUIScalesFor1366);
-      break;
-    default:
-      ASSIGN_ARRAY(ret, kUIScalesFor1280);
-#if defined(OS_CHROMEOS)
-      if (base::SysInfo::IsRunningOnChromeOS())
-        NOTREACHED() << "Unknown resolution:" << info.ToString();
-#endif
-  }
-  return ret;
-}
-
-// static
-float DisplayManager::GetNextUIScale(const DisplayInfo& info, bool up) {
-  float scale = info.configured_ui_scale();
-  std::vector<float> scales = GetScalesForDisplay(info);
-  for (size_t i = 0; i < scales.size(); ++i) {
-    if (ScaleComparator(scales[i])(scale)) {
-      if (up && i != scales.size() - 1)
-        return scales[i + 1];
-      if (!up && i != 0)
-        return scales[i - 1];
-      return scales[i];
-    }
-  }
-  // Fallback to 1.0f if the |scale| wasn't in the list.
-  return 1.0f;
-}
-
 bool DisplayManager::InitFromCommandLine() {
   DisplayInfoList info_list;
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
@@ -220,7 +164,7 @@ bool DisplayManager::InitFromCommandLine() {
     info_list.push_back(DisplayInfo::CreateFromSpec(*iter));
     info_list.back().set_native(true);
   }
-  MaybeInitInternalDisplay(info_list[0].id());
+  MaybeInitInternalDisplay(&info_list[0]);
   if (info_list.size() > 1 &&
       command_line->HasSwitch(switches::kAshEnableSoftwareMirroring)) {
     SetSecondDisplayMode(MIRRORING);
@@ -233,31 +177,19 @@ void DisplayManager::InitDefaultDisplay() {
   DisplayInfoList info_list;
   info_list.push_back(DisplayInfo::CreateFromSpec(std::string()));
   info_list.back().set_native(true);
-  MaybeInitInternalDisplay(info_list[0].id());
+  MaybeInitInternalDisplay(&info_list[0]);
   OnNativeDisplaysChanged(info_list);
 }
 
-void DisplayManager::InitFontParams() {
+void DisplayManager::RefreshFontParams() {
 #if defined(OS_CHROMEOS)
-  if (!HasInternalDisplay())
-    return;
-  const DisplayInfo& display_info =
-      GetDisplayInfo(gfx::Display::InternalDisplayId());
-  gfx::SetFontRenderParamsDeviceScaleFactor(
-      display_info.GetEffectiveDeviceScaleFactor());
+  float device_scale_factor = 1.0f;
+  if (HasInternalDisplay()) {
+    device_scale_factor = GetDisplayInfo(gfx::Display::InternalDisplayId())
+                              .GetEffectiveDeviceScaleFactor();
+  }
+  gfx::SetFontRenderParamsDeviceScaleFactor(device_scale_factor);
 #endif  // OS_CHROMEOS
-}
-
-// static
-void DisplayManager::UpdateDisplayBoundsForLayoutById(
-    const DisplayLayout& layout,
-    const gfx::Display& primary_display,
-    int64 secondary_display_id) {
-  DCHECK_NE(gfx::Display::kInvalidDisplayID, secondary_display_id);
-  UpdateDisplayBoundsForLayout(
-      layout, primary_display,
-      Shell::GetInstance()->display_manager()->
-      FindDisplayForId(secondary_display_id));
 }
 
 bool DisplayManager::IsActiveDisplay(const gfx::Display& display) const {
@@ -278,11 +210,15 @@ bool DisplayManager::IsInternalDisplayId(int64 id) const {
 }
 
 DisplayLayout DisplayManager::GetCurrentDisplayLayout() {
-  DCHECK_EQ(2U, num_connected_displays());
+  DCHECK_LE(2U, num_connected_displays());
   // Invert if the primary was swapped.
-  if (num_connected_displays() > 1) {
+  if (num_connected_displays() == 2) {
     DisplayIdPair pair = GetCurrentDisplayIdPair();
     return layout_store_->ComputeDisplayLayoutForDisplayIdPair(pair);
+  } else if (num_connected_displays() > 2) {
+    // Return fixed horizontal layout for >= 3 displays.
+    DisplayLayout layout(DisplayLayout::RIGHT, 0);
+    return layout;
   }
   NOTREACHED() << "DisplayLayout is requested for single display";
   // On release build, just fallback to default instead of blowing up.
@@ -302,7 +238,7 @@ DisplayIdPair DisplayManager::GetCurrentDisplayIdPair() const {
     }
     return std::make_pair(displays_[0].id(), mirrored_display_id_);
   } else {
-    CHECK_GE(2u, displays_.size());
+    CHECK_LE(2u, displays_.size());
     int64 id_at_zero = displays_[0].id();
     if (id_at_zero == gfx::Display::InternalDisplayId() ||
         id_at_zero == first_display_id()) {
@@ -315,8 +251,7 @@ DisplayIdPair DisplayManager::GetCurrentDisplayIdPair() const {
 
 void DisplayManager::SetLayoutForCurrentDisplays(
     const DisplayLayout& layout_relative_to_primary) {
-  DCHECK_EQ(2U, GetNumDisplays());
-  if (GetNumDisplays() < 2)
+  if (GetNumDisplays() != 2)
     return;
   const gfx::Display& primary = screen_->GetPrimaryDisplay();
   const DisplayIdPair pair = GetCurrentDisplayIdPair();
@@ -336,9 +271,9 @@ void DisplayManager::SetLayoutForCurrentDisplays(
     // PreDisplayConfigurationChange(false);
     // TODO(oshima): Call UpdateDisplays instead.
     const DisplayLayout layout = GetCurrentDisplayLayout();
-    UpdateDisplayBoundsForLayoutById(
+    UpdateDisplayBoundsForLayout(
         layout, primary,
-        ScreenUtil::GetSecondaryDisplay().id());
+        FindDisplayForId(ScreenUtil::GetSecondaryDisplay().id()));
 
     // Primary's bounds stay the same. Just notify bounds change
     // on the secondary.
@@ -379,14 +314,28 @@ bool DisplayManager::UpdateWorkAreaOfDisplay(int64 display_id,
 
 void DisplayManager::SetOverscanInsets(int64 display_id,
                                        const gfx::Insets& insets_in_dip) {
-  display_info_[display_id].SetOverscanInsets(insets_in_dip);
+  bool update = false;
   DisplayInfoList display_info_list;
   for (DisplayList::const_iterator iter = displays_.begin();
        iter != displays_.end(); ++iter) {
-    display_info_list.push_back(GetDisplayInfo(iter->id()));
+    DisplayInfo info = GetDisplayInfo(iter->id());
+    if (info.id() == display_id) {
+      if (insets_in_dip.empty()) {
+        info.set_clear_overscan_insets(true);
+      } else {
+        info.set_clear_overscan_insets(false);
+        info.SetOverscanInsets(insets_in_dip);
+      }
+      update = true;
+    }
+    display_info_list.push_back(info);
   }
-  AddMirrorDisplayInfoIfAny(&display_info_list);
-  UpdateDisplays(display_info_list);
+  if (update) {
+    AddMirrorDisplayInfoIfAny(&display_info_list);
+    UpdateDisplays(display_info_list);
+  } else {
+    display_info_[display_id].SetOverscanInsets(insets_in_dip);
+  }
 }
 
 void DisplayManager::SetDisplayRotation(int64 display_id,
@@ -406,33 +355,34 @@ void DisplayManager::SetDisplayRotation(int64 display_id,
   UpdateDisplays(display_info_list);
 }
 
-void DisplayManager::SetDisplayUIScale(int64 display_id,
+bool DisplayManager::SetDisplayUIScale(int64 display_id,
                                        float ui_scale) {
   if (!IsDisplayUIScalingEnabled() ||
       gfx::Display::InternalDisplayId() != display_id) {
-    return;
+    return false;
   }
-
+  bool found = false;
   // TODO(mukai): merge this implementation into SetDisplayMode().
   DisplayInfoList display_info_list;
   for (DisplayList::const_iterator iter = displays_.begin();
        iter != displays_.end(); ++iter) {
     DisplayInfo info = GetDisplayInfo(iter->id());
     if (info.id() == display_id) {
+      found = true;
       if (info.configured_ui_scale() == ui_scale)
-        return;
-      std::vector<float> scales = GetScalesForDisplay(info);
-      ScaleComparator comparator(ui_scale);
-      if (std::find_if(scales.begin(), scales.end(), comparator) ==
-          scales.end()) {
-        return;
-      }
+        return true;
+      if (!HasDisplayModeForUIScale(info, ui_scale))
+        return false;
       info.set_configured_ui_scale(ui_scale);
     }
     display_info_list.push_back(info);
   }
-  AddMirrorDisplayInfoIfAny(&display_info_list);
-  UpdateDisplays(display_info_list);
+  if (found) {
+    AddMirrorDisplayInfoIfAny(&display_info_list);
+    UpdateDisplays(display_info_list);
+    return true;
+  }
+  return false;
 }
 
 void DisplayManager::SetDisplayResolution(int64 display_id,
@@ -624,7 +574,7 @@ void DisplayManager::OnNativeDisplaysChanged(
     if (displays_.empty()) {
       std::vector<DisplayInfo> init_displays;
       init_displays.push_back(DisplayInfo::CreateFromSpec(std::string()));
-      MaybeInitInternalDisplay(init_displays[0].id());
+      MaybeInitInternalDisplay(&init_displays[0]);
       OnNativeDisplaysChanged(init_displays);
     } else {
       // Otherwise don't update the displays when all displays are disconnected.
@@ -801,8 +751,8 @@ void DisplayManager::UpdateDisplays(
       if (force_bounds_changed_ ||
           (current_display_info.bounds_in_native() !=
            new_display_info.bounds_in_native()) ||
-          (current_display_info.size_in_pixel() !=
-           new_display.GetSizeInPixel()) ||
+          (current_display_info.GetOverscanInsetsInPixel() !=
+           new_display_info.GetOverscanInsetsInPixel()) ||
           current_display.size() != new_display.size()) {
         metrics |= gfx::DisplayObserver::DISPLAY_METRIC_BOUNDS |
             gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA;
@@ -867,21 +817,27 @@ void DisplayManager::UpdateDisplays(
     return;
   }
 
-  size_t updated_index;
-  if (UpdateSecondaryDisplayBoundsForLayout(&new_displays, &updated_index) &&
-      std::find(added_display_indices.begin(),
-                added_display_indices.end(),
-                updated_index) == added_display_indices.end()) {
-    uint32_t metrics = gfx::DisplayObserver::DISPLAY_METRIC_BOUNDS |
-                       gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA;
-    if (display_changes.find(updated_index) != display_changes.end())
-      metrics |= display_changes[updated_index];
+  std::vector<size_t> updated_indices;
+  if (UpdateNonPrimaryDisplayBoundsForLayout(&new_displays, &updated_indices)) {
+    for (std::vector<size_t>::iterator it = updated_indices.begin();
+         it != updated_indices.end(); ++it) {
+      size_t updated_index = *it;
+      if (std::find(added_display_indices.begin(),
+                    added_display_indices.end(),
+                    updated_index) == added_display_indices.end()) {
+        uint32_t metrics = gfx::DisplayObserver::DISPLAY_METRIC_BOUNDS |
+                           gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA;
+        if (display_changes.find(updated_index) != display_changes.end())
+          metrics |= display_changes[updated_index];
 
-    display_changes[updated_index] = metrics;
+        display_changes[updated_index] = metrics;
+      }
+    }
   }
 
   displays_ = new_displays;
 
+  RefreshFontParams();
   base::AutoReset<bool> resetter(&change_display_upon_host_resize_, false);
 
   // Temporarily add displays to be removed because display object
@@ -961,7 +917,7 @@ const gfx::Display& DisplayManager::GetDisplayAt(size_t index) const {
 }
 
 const gfx::Display& DisplayManager::GetPrimaryDisplayCandidate() const {
-  if (GetNumDisplays() == 1)
+  if (GetNumDisplays() != 2)
     return displays_[0];
   DisplayLayout layout = layout_store_->GetRegisteredDisplayLayout(
       GetCurrentDisplayIdPair());
@@ -1122,6 +1078,13 @@ void DisplayManager::CreateScreenForShutdown() const {
   }
 }
 
+void DisplayManager::UpdateInternalDisplayModeListForTest() {
+  if (display_info_.count(gfx::Display::InternalDisplayId()) == 0)
+    return;
+  DisplayInfo* info = &display_info_[gfx::Display::InternalDisplayId()];
+  SetInternalDisplayModeList(info);
+}
+
 gfx::Display* DisplayManager::FindDisplayForId(int64 id) {
   for (DisplayList::iterator iter = displays_.begin();
        iter != displays_.end(); ++iter) {
@@ -1148,7 +1111,6 @@ void DisplayManager::InsertAndUpdateDisplayInfo(const DisplayInfo& new_info) {
     display_info_[new_info.id()].set_native(false);
   }
   display_info_[new_info.id()].UpdateDisplaySize();
-
   OnDisplayInfoUpdated(display_info_[new_info.id()]);
 }
 
@@ -1171,8 +1133,8 @@ gfx::Display DisplayManager::CreateDisplayFromDisplayInfoById(int64 id) {
   float device_scale_factor = display_info.GetEffectiveDeviceScaleFactor();
 
   // Simply set the origin to (0,0).  The primary display's origin is
-  // always (0,0) and the secondary display's bounds will be updated
-  // in |UpdateSecondaryDisplayBoundsForLayout| called in |UpdateDisplay|.
+  // always (0,0) and the bounds of non-primary display(s) will be updated
+  // in |UpdateNonPrimaryDisplayBoundsForLayout| called in |UpdateDisplay|.
   new_display.SetScaleAndBounds(
       device_scale_factor, gfx::Rect(bounds_in_native.size()));
   new_display.set_rotation(display_info.rotation());
@@ -1180,11 +1142,28 @@ gfx::Display DisplayManager::CreateDisplayFromDisplayInfoById(int64 id) {
   return new_display;
 }
 
-bool DisplayManager::UpdateSecondaryDisplayBoundsForLayout(
+bool DisplayManager::UpdateNonPrimaryDisplayBoundsForLayout(
     DisplayList* displays,
-    size_t* updated_index) const {
-  if (displays->size() != 2U)
+    std::vector<size_t>* updated_indices) const {
+
+  if (displays->size() < 2U)
     return false;
+
+  if (displays->size() > 2U) {
+    // For more than 2 displays, always use horizontal layout.
+    int x_offset = displays->at(0).bounds().width();
+    for (size_t i = 1; i < displays->size(); ++i) {
+      gfx::Display& display = displays->at(i);
+      const gfx::Rect& bounds = display.bounds();
+      gfx::Point origin = gfx::Point(x_offset, 0);
+      gfx::Insets insets = display.GetWorkAreaInsets();
+      display.set_bounds(gfx::Rect(origin, bounds.size()));
+      display.UpdateWorkAreaFromInsets(insets);
+      x_offset += bounds.width();
+      updated_indices->push_back(i);
+    }
+    return true;
+  }
 
   int64 id_at_zero = displays->at(0).id();
   DisplayIdPair pair =
@@ -1213,7 +1192,7 @@ bool DisplayManager::UpdateSecondaryDisplayBoundsForLayout(
         GetDisplayForId(displays->at(secondary_index).id()).bounds();
     UpdateDisplayBoundsForLayout(
         layout, displays->at(primary_index), &displays->at(secondary_index));
-    *updated_index = secondary_index;
+    updated_indices->push_back(secondary_index);
     return bounds != displays->at(secondary_index).bounds();
   }
   return false;

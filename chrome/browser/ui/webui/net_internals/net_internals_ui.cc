@@ -37,12 +37,16 @@
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
 #include "chrome/browser/net/connection_tester.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_settings.h"
+#include "chrome/browser/net/spdyproxy/data_reduction_proxy_chrome_settings_factory.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_network_delegate.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_event_store.h"
 #include "components/onc/onc_constants.h"
 #include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
@@ -214,6 +218,7 @@ class NetInternalsMessageHandler
   void OnGetPrerenderInfo(const base::ListValue* list);
   void OnGetHistoricNetworkStats(const base::ListValue* list);
   void OnGetExtensionInfo(const base::ListValue* list);
+  void OnGetDataReductionProxyInfo(const base::ListValue* list);
 #if defined(OS_CHROMEOS)
   void OnRefreshSystemLogs(const base::ListValue* list);
   void OnGetSystemLog(const base::ListValue* list);
@@ -578,6 +583,10 @@ void NetInternalsMessageHandler::RegisterMessages() {
       "getExtensionInfo",
       base::Bind(&NetInternalsMessageHandler::OnGetExtensionInfo,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getDataReductionProxyInfo",
+      base::Bind(&NetInternalsMessageHandler::OnGetDataReductionProxyInfo,
+                 base::Unretained(this)));
 #if defined(OS_CHROMEOS)
   web_ui()->RegisterMessageCallback(
       "refreshSystemLogs",
@@ -652,8 +661,8 @@ void NetInternalsMessageHandler::OnGetHistoricNetworkStats(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   Profile* profile = Profile::FromWebUI(web_ui());
   base::Value* historic_network_info =
-      ChromeNetworkDelegate::HistoricNetworkStatsInfoToValue(
-          profile->GetPrefs());
+      data_reduction_proxy::DataReductionProxyNetworkDelegate::
+          HistoricNetworkStatsInfoToValue(profile->GetPrefs());
   SendJavascriptCommand("receivedHistoricNetworkStats", historic_network_info);
 }
 
@@ -682,6 +691,20 @@ void NetInternalsMessageHandler::OnGetExtensionInfo(
   }
 #endif
   SendJavascriptCommand("receivedExtensionInfo", extension_list);
+}
+
+void NetInternalsMessageHandler::OnGetDataReductionProxyInfo(
+    const base::ListValue* list) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  DataReductionProxyChromeSettings* data_reduction_proxy_settings =
+      DataReductionProxyChromeSettingsFactory::GetForBrowserContext(profile);
+  data_reduction_proxy::DataReductionProxyEventStore* event_store =
+      (data_reduction_proxy_settings == nullptr) ? nullptr :
+          data_reduction_proxy_settings->GetEventStore();
+  SendJavascriptCommand(
+      "receivedDataReductionProxyInfo",
+      (event_store == nullptr) ? nullptr : event_store->GetSummaryValue());
 }
 
 #if defined(OS_CHROMEOS)
@@ -1065,8 +1088,8 @@ void NetInternalsMessageHandler::IOThreadImpl::OnGetSessionNetworkStats(
 
   base::Value* network_info = NULL;
   if (http_network_session) {
-    ChromeNetworkDelegate* net_delegate =
-        static_cast<ChromeNetworkDelegate*>(
+    data_reduction_proxy::DataReductionProxyNetworkDelegate* net_delegate =
+        static_cast<data_reduction_proxy::DataReductionProxyNetworkDelegate*>(
             http_network_session->network_delegate());
     if (net_delegate) {
       network_info = net_delegate->SessionNetworkStatsInfoToValue();
@@ -1426,10 +1449,14 @@ base::Value* NetInternalsUI::GetConstants() {
     dict->SetString("official",
                     version_info.IsOfficialBuild() ? "official" : "unofficial");
     dict->SetString("os_type", version_info.OSType());
-    dict->SetString("command_line",
-                    CommandLine::ForCurrentProcess()->GetCommandLineString());
+    dict->SetString(
+        "command_line",
+        base::CommandLine::ForCurrentProcess()->GetCommandLineString());
 
     constants_dict->Set("clientInfo", dict);
+
+    data_reduction_proxy::DataReductionProxyEventStore::AddConstants(
+        constants_dict.get());
   }
 
   return constants_dict.release();

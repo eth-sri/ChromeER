@@ -54,10 +54,6 @@ void WebLayerTreeViewImplForTesting::Initialize() {
   DCHECK(layer_tree_host_);
 }
 
-void WebLayerTreeViewImplForTesting::setSurfaceReady() {
-  layer_tree_host_->SetLayerTreeHostClientReady();
-}
-
 void WebLayerTreeViewImplForTesting::setRootLayer(
     const blink::WebLayer& root) {
   layer_tree_host_->SetRootLayer(
@@ -147,20 +143,25 @@ void WebLayerTreeViewImplForTesting::Layout() {
 void WebLayerTreeViewImplForTesting::ApplyViewportDeltas(
     const gfx::Vector2d& inner_delta,
     const gfx::Vector2d& outer_delta,
+    const gfx::Vector2dF& elastic_overscroll_delta,
     float page_scale,
-    float top_controls_delta) {}
+    float top_controls_delta) {
+}
 
 void WebLayerTreeViewImplForTesting::ApplyViewportDeltas(
     const gfx::Vector2d& scroll_delta,
     float page_scale,
     float top_controls_delta) {}
 
-void WebLayerTreeViewImplForTesting::RequestNewOutputSurface(
-    bool fallback) {
+void WebLayerTreeViewImplForTesting::RequestNewOutputSurface() {
   bool flipped_output_surface = false;
   layer_tree_host_->SetOutputSurface(
       make_scoped_ptr(new cc::PixelTestOutputSurface(
           cc::TestContextProvider::Create(), flipped_output_surface)));
+}
+
+void WebLayerTreeViewImplForTesting::DidFailToInitializeOutputSurface() {
+  RequestNewOutputSurface();
 }
 
 void WebLayerTreeViewImplForTesting::registerViewportLayers(

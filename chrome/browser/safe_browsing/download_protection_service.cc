@@ -37,6 +37,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/page_navigator.h"
+#include "crypto/sha2.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
@@ -138,6 +139,22 @@ enum SBStatsType {
   // ALWAYS ADD NEW VALUES BEFORE THIS ONE.
   DOWNLOAD_CHECKS_MAX
 };
+
+// Prepares URLs to be put into a ping message. Currently this just shortens
+// data: URIs, other URLs are included verbatim.
+std::string SanitizeUrl(const GURL& url) {
+  std::string spec = url.spec();
+  if (url.SchemeIs(url::kDataScheme)) {
+    size_t comma_pos = spec.find(',');
+    if (comma_pos != std::string::npos && comma_pos != spec.size() - 1) {
+      std::string hash_value = crypto::SHA256HashString(spec);
+      spec.erase(comma_pos + 1);
+      spec += base::HexEncode(hash_value.data(), hash_value.size());
+    }
+  }
+  return spec;
+}
+
 }  // namespace
 
 // Parent SafeBrowsing::Client class used to lookup the bad binary
@@ -293,8 +310,8 @@ class DownloadProtectionService::CheckClientDownloadRequest
         pingback_enabled_(service_->enabled()),
         finished_(false),
         type_(ClientDownloadRequest::WIN_EXECUTABLE),
-        weakptr_factory_(this),
-        start_time_(base::TimeTicks::Now()) {
+        start_time_(base::TimeTicks::Now()),
+        weakptr_factory_(this) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     item_->AddObserver(this);
   }
@@ -312,6 +329,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
       switch (reason) {
         case REASON_EMPTY_URL_CHAIN:
         case REASON_INVALID_URL:
+        case REASON_UNSUPPORTED_URL_SCHEME:
           PostFinishTask(UNKNOWN, reason);
           return;
 
@@ -462,9 +480,14 @@ class DownloadProtectionService::CheckClientDownloadRequest
       return false;
     }
     const GURL& final_url = item.GetUrlChain().back();
-    if (!final_url.is_valid() || final_url.is_empty() ||
-        !final_url.IsStandard() || final_url.SchemeIsFile()) {
+    if (!final_url.is_valid() || final_url.is_empty()) {
       *reason = REASON_INVALID_URL;
+      return false;
+    }
+    if ((!final_url.IsStandard() && !final_url.SchemeIsBlob() &&
+         !final_url.SchemeIs(url::kDataScheme)) ||
+        final_url.SchemeIsFile()) {
+      *reason = REASON_UNSUPPORTED_URL_SCHEME;
       return false;
     }
     if (!download_protection_util::IsBinaryFile(target_path)) {
@@ -692,16 +715,16 @@ class DownloadProtectionService::CheckClientDownloadRequest
       return;
 
     ClientDownloadRequest request;
-    request.set_url(item_->GetUrlChain().back().spec());
+    request.set_url(SanitizeUrl(item_->GetUrlChain().back()));
     request.mutable_digests()->set_sha256(item_->GetHash());
     request.set_length(item_->GetReceivedBytes());
     for (size_t i = 0; i < item_->GetUrlChain().size(); ++i) {
       ClientDownloadRequest::Resource* resource = request.add_resources();
-      resource->set_url(item_->GetUrlChain()[i].spec());
+      resource->set_url(SanitizeUrl(item_->GetUrlChain()[i]));
       if (i == item_->GetUrlChain().size() - 1) {
         // The last URL in the chain is the download URL.
         resource->set_type(ClientDownloadRequest::DOWNLOAD_URL);
-        resource->set_referrer(item_->GetReferrerUrl().spec());
+        resource->set_referrer(SanitizeUrl(item_->GetReferrerUrl()));
         DVLOG(2) << "dl url " << resource->url();
         if (!item_->GetRemoteAddress().empty()) {
           resource->set_remote_ip(item_->GetRemoteAddress());
@@ -718,16 +741,16 @@ class DownloadProtectionService::CheckClientDownloadRequest
     for (size_t i = 0; i < tab_redirects_.size(); ++i) {
       ClientDownloadRequest::Resource* resource = request.add_resources();
       DVLOG(2) << "tab redirect " << i << " " << tab_redirects_[i].spec();
-      resource->set_url(tab_redirects_[i].spec());
+      resource->set_url(SanitizeUrl(tab_redirects_[i]));
       resource->set_type(ClientDownloadRequest::TAB_REDIRECT);
     }
     if (tab_url_.is_valid()) {
       ClientDownloadRequest::Resource* resource = request.add_resources();
-      resource->set_url(tab_url_.spec());
+      resource->set_url(SanitizeUrl(tab_url_));
       DVLOG(2) << "tab url " << resource->url();
       resource->set_type(ClientDownloadRequest::TAB_URL);
       if (tab_referrer_url_.is_valid()) {
-        resource->set_referrer(tab_referrer_url_.spec());
+        resource->set_referrer(SanitizeUrl(tab_referrer_url_));
         DVLOG(2) << "tab referrer " << resource->referrer();
       }
     }
@@ -900,10 +923,10 @@ class DownloadProtectionService::CheckClientDownloadRequest
   ClientDownloadRequest::DownloadType type_;
   std::string client_download_request_data_;
   base::CancelableTaskTracker request_tracker_;  // For HistoryService lookup.
-  base::WeakPtrFactory<CheckClientDownloadRequest> weakptr_factory_;
   base::TimeTicks start_time_;  // Used for stats.
   base::TimeTicks timeout_start_time_;
   base::TimeTicks request_start_time_;
+  base::WeakPtrFactory<CheckClientDownloadRequest> weakptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CheckClientDownloadRequest);
 };

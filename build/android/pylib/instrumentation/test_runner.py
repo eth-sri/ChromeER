@@ -299,8 +299,8 @@ class TestRunner(base_test_runner.BaseTestRunner):
     if 'SmallTest' in annotations:
       return 1 * 60
 
-    logging.warn(("Test size not found in annotations for test '{0}', using " +
-                  "1 minute for timeout.").format(test))
+    logging.warn(("Test size not found in annotations for test '%s', using " +
+                  "1 minute for timeout.") % test)
     return 1 * 60
 
   def _RunTest(self, test, timeout):
@@ -443,7 +443,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     timeout = (self._GetIndividualTestTimeoutSecs(test) *
                self._GetIndividualTestTimeoutScale(test) *
                self.tool.GetTimeoutScale())
-    if (self.device.GetProp('ro.build.version.sdk')
+    if (self.device.build_version_sdk
         < constants.ANDROID_SDK_VERSION_CODES.JELLY_BEAN):
       timeout *= 10
 

@@ -10,6 +10,7 @@
 #include "android_webview/browser/scoped_app_gl_state_restore.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/bind.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 
@@ -22,8 +23,8 @@ class RequestDrawGLTracker {
   RequestDrawGLTracker();
   bool ShouldRequestOnNonUiThread(SharedRendererState* state);
   bool ShouldRequestOnUiThread(SharedRendererState* state);
-  void DidRequestOnUiThread();
   void ResetPending();
+  void SetQueuedFunctorOnUi(SharedRendererState* state);
 
  private:
   base::Lock lock_;
@@ -50,6 +51,9 @@ bool RequestDrawGLTracker::ShouldRequestOnUiThread(SharedRendererState* state) {
     pending_non_ui_->ResetRequestDrawGLCallback();
     pending_non_ui_ = NULL;
   }
+  // At this time, we could have already called RequestDrawGL on the UI thread,
+  // but the corresponding GL mode process hasn't happened yet. In this case,
+  // don't schedule another requestDrawGL on the UI thread.
   if (pending_ui_)
     return false;
   pending_ui_ = state;
@@ -60,6 +64,14 @@ void RequestDrawGLTracker::ResetPending() {
   base::AutoLock lock(lock_);
   pending_non_ui_ = NULL;
   pending_ui_ = NULL;
+}
+
+void RequestDrawGLTracker::SetQueuedFunctorOnUi(SharedRendererState* state) {
+  base::AutoLock lock(lock_);
+  DCHECK(state);
+  DCHECK(pending_ui_ == state || pending_non_ui_ == state);
+  pending_ui_ = state;
+  pending_non_ui_ = NULL;
 }
 
 }  // namespace internal
@@ -124,6 +136,7 @@ void SharedRendererState::ResetRequestDrawGLCallback() {
 void SharedRendererState::ClientRequestDrawGLOnUI() {
   DCHECK(ui_loop_->BelongsToCurrentThread());
   ResetRequestDrawGLCallback();
+  g_request_draw_gl_tracker.Get().SetQueuedFunctorOnUi(this);
   if (!browser_view_renderer_->RequestDrawGL(false)) {
     g_request_draw_gl_tracker.Get().ResetPending();
     LOG(ERROR) << "Failed to request GL process. Deadlock likely";
@@ -257,10 +270,23 @@ bool SharedRendererState::ReturnedResourcesEmptyOnUI() const {
 }
 
 void SharedRendererState::DrawGL(AwDrawGLInfo* draw_info) {
+  TRACE_EVENT0("android_webview", "DrawFunctor");
   if (draw_info->mode == AwDrawGLInfo::kModeSync) {
+    TRACE_EVENT_INSTANT0("android_webview", "kModeSync",
+                         TRACE_EVENT_SCOPE_THREAD);
     if (hardware_renderer_)
       hardware_renderer_->CommitFrame();
     return;
+  }
+
+  // kModeProcessNoContext should never happen because we tear down hardware
+  // in onTrimMemory. However that guarantee is maintained outside of chromium
+  // code. Not notifying shared state in kModeProcessNoContext can lead to
+  // immediate deadlock, which is slightly more catastrophic than leaks or
+  // corruption.
+  if (draw_info->mode == AwDrawGLInfo::kModeProcess ||
+      draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
+    DidDrawGLProcess();
   }
 
   {
@@ -279,16 +305,6 @@ void SharedRendererState::DrawGL(AwDrawGLInfo* draw_info) {
 
   if (draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
     LOG(ERROR) << "Received unexpected kModeProcessNoContext";
-  }
-
-  // kModeProcessNoContext should never happen because we tear down hardware
-  // in onTrimMemory. However that guarantee is maintained outside of chromium
-  // code. Not notifying shared state in kModeProcessNoContext can lead to
-  // immediate deadlock, which is slightly more catastrophic than leaks or
-  // corruption.
-  if (draw_info->mode == AwDrawGLInfo::kModeProcess ||
-      draw_info->mode == AwDrawGLInfo::kModeProcessNoContext) {
-    DidDrawGLProcess();
   }
 
   if (IsInsideHardwareRelease()) {

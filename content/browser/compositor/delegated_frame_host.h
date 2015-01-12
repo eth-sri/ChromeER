@@ -21,7 +21,7 @@
 #include "ui/compositor/compositor_vsync_manager.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_owner_delegate.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace cc {
 class SurfaceFactory;
@@ -212,6 +212,7 @@ class CONTENT_EXPORT DelegatedFrameHost
       uint32 sync_point);
 
   void SendDelegatedFrameAck(uint32 output_surface_id);
+  void SurfaceDrawn(uint32 output_surface_id, bool drawn);
   void SendReturnedDelegatedResources(uint32 output_surface_id);
 
   // DelegatedFrameEvictorClient implementation.

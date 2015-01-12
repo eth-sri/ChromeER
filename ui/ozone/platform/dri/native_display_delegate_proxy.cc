@@ -47,27 +47,28 @@ NativeDisplayDelegateProxy::NativeDisplayDelegateProxy(
     DisplayManager* display_manager)
     : proxy_(proxy),
       device_manager_(device_manager),
-      display_manager_(display_manager) {
+      display_manager_(display_manager),
+      has_dummy_display_(false) {
   proxy_->RegisterHandler(this);
 }
 
 NativeDisplayDelegateProxy::~NativeDisplayDelegateProxy() {
-  if (device_manager_)
-    device_manager_->RemoveObserver(this);
-
+  device_manager_->RemoveObserver(this);
   proxy_->UnregisterHandler(this);
 }
 
 void NativeDisplayDelegateProxy::Initialize() {
-  if (device_manager_)
-    device_manager_->AddObserver(this);
+  device_manager_->AddObserver(this);
+  device_manager_->ScanDevices(this);
 
   if (!displays_.empty())
     return;
 
   DisplaySnapshot_Params params = CreateSnapshotFromCommandLine();
-  if (params.type != DISPLAY_CONNECTION_TYPE_NONE)
+  if (params.type != DISPLAY_CONNECTION_TYPE_NONE) {
     displays_.push_back(new DriDisplaySnapshotProxy(params, display_manager_));
+    has_dummy_display_ = true;
+  }
 }
 
 void NativeDisplayDelegateProxy::GrabServer() {
@@ -97,28 +98,42 @@ void NativeDisplayDelegateProxy::ForceDPMSOn() {
   proxy_->Send(new OzoneGpuMsg_ForceDPMSOn());
 }
 
-std::vector<DisplaySnapshot*> NativeDisplayDelegateProxy::GetDisplays() {
+void NativeDisplayDelegateProxy::GetDisplays(
+    const GetDisplaysCallback& callback) {
+  get_displays_callback_ = callback;
   // GetDisplays() is supposed to force a refresh of the display list.
-  proxy_->Send(new OzoneGpuMsg_RefreshNativeDisplays(
-      std::vector<DisplaySnapshot_Params>()));
-  return displays_.get();
+  if (!proxy_->Send(new OzoneGpuMsg_RefreshNativeDisplays())) {
+    get_displays_callback_.Run(displays_.get());
+    get_displays_callback_.Reset();
+  }
 }
 
 void NativeDisplayDelegateProxy::AddMode(const DisplaySnapshot& output,
                                          const DisplayMode* mode) {
 }
 
-bool NativeDisplayDelegateProxy::Configure(const DisplaySnapshot& output,
+void NativeDisplayDelegateProxy::Configure(const DisplaySnapshot& output,
                                            const DisplayMode* mode,
-                                           const gfx::Point& origin) {
-  // TODO(dnicoara) Should handle an asynchronous response.
-  if (mode)
-    proxy_->Send(new OzoneGpuMsg_ConfigureNativeDisplay(
-        output.display_id(), GetDisplayModeParams(*mode), origin));
-  else
-    proxy_->Send(new OzoneGpuMsg_DisableNativeDisplay(output.display_id()));
+                                           const gfx::Point& origin,
+                                           const ConfigureCallback& callback) {
+  if (has_dummy_display_) {
+    callback.Run(true);
+    return;
+  }
 
-  return true;
+  configure_callback_map_[output.display_id()] = callback;
+
+  bool status = false;
+  if (mode) {
+    status = proxy_->Send(new OzoneGpuMsg_ConfigureNativeDisplay(
+        output.display_id(), GetDisplayModeParams(*mode), origin));
+  } else {
+    status =
+        proxy_->Send(new OzoneGpuMsg_DisableNativeDisplay(output.display_id()));
+  }
+
+  if (!status)
+    OnDisplayConfigured(output.display_id(), false);
 }
 
 void NativeDisplayDelegateProxy::CreateFrameBuffer(const gfx::Size& size) {
@@ -163,26 +178,43 @@ void NativeDisplayDelegateProxy::OnDeviceEvent(const DeviceEvent& event) {
   if (event.device_type() != DeviceEvent::DISPLAY)
     return;
 
-  if (event.action_type() == DeviceEvent::CHANGE) {
-    VLOG(1) << "Got display changed event";
-    proxy_->Send(new OzoneGpuMsg_RefreshNativeDisplays(
-        std::vector<DisplaySnapshot_Params>()));
+  switch (event.action_type()) {
+    case DeviceEvent::ADD:
+      VLOG(1) << "Got display added event for " << event.path().value();
+      proxy_->Send(new OzoneGpuMsg_AddGraphicsDevice(event.path()));
+      break;
+    case DeviceEvent::CHANGE:
+      VLOG(1) << "Got display changed event for " << event.path().value();
+      break;
+    case DeviceEvent::REMOVE:
+      VLOG(1) << "Got display removed event for " << event.path().value();
+      proxy_->Send(new OzoneGpuMsg_RemoveGraphicsDevice(event.path()));
+      break;
   }
+
+  FOR_EACH_OBSERVER(NativeDisplayObserver, observers_,
+                    OnConfigurationChanged());
 }
 
 void NativeDisplayDelegateProxy::OnChannelEstablished(int host_id,
                                                       IPC::Sender* sender) {
-  std::vector<DisplaySnapshot_Params> display_params;
-  for (size_t i = 0; i < displays_.size(); ++i)
-    display_params.push_back(GetDisplaySnapshotParams(*displays_[i]));
-
-  // Force an initial configure such that the browser process can get the actual
-  // state. Pass in the current display state since the GPU process may have
-  // crashed and we want to re-synchronize the state between processes.
-  proxy_->Send(new OzoneGpuMsg_RefreshNativeDisplays(display_params));
+  FOR_EACH_OBSERVER(NativeDisplayObserver, observers_,
+                    OnConfigurationChanged());
 }
 
 void NativeDisplayDelegateProxy::OnChannelDestroyed(int host_id) {
+  // If the channel got destroyed in the middle of a configuration then just
+  // respond with failure.
+  if (!get_displays_callback_.is_null()) {
+    get_displays_callback_.Run(std::vector<DisplaySnapshot*>());
+    get_displays_callback_.Reset();
+  }
+
+  for (const auto& pair : configure_callback_map_) {
+    pair.second.Run(false);
+  }
+
+  configure_callback_map_.clear();
 }
 
 bool NativeDisplayDelegateProxy::OnMessageReceived(
@@ -191,6 +223,7 @@ bool NativeDisplayDelegateProxy::OnMessageReceived(
 
   IPC_BEGIN_MESSAGE_MAP(NativeDisplayDelegateProxy, message)
   IPC_MESSAGE_HANDLER(OzoneHostMsg_UpdateNativeDisplays, OnUpdateNativeDisplays)
+  IPC_MESSAGE_HANDLER(OzoneHostMsg_DisplayConfigured, OnDisplayConfigured)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -199,29 +232,25 @@ bool NativeDisplayDelegateProxy::OnMessageReceived(
 
 void NativeDisplayDelegateProxy::OnUpdateNativeDisplays(
     const std::vector<DisplaySnapshot_Params>& displays) {
-  bool has_new_displays = displays.size() != displays_.size();
-  if (!has_new_displays) {
-    for (DisplaySnapshot* display : displays_) {
-      auto it = std::find_if(displays.begin(), displays.end(),
-                             FindDisplayById(display->display_id()));
-      if (it == displays.end()) {
-        has_new_displays = true;
-        break;
-      }
-    }
-  }
-
-  // If the configuration hasn't changed do not update.
-  if (!has_new_displays)
-    return;
-
+  has_dummy_display_ = false;
   displays_.clear();
   for (size_t i = 0; i < displays.size(); ++i)
     displays_.push_back(
         new DriDisplaySnapshotProxy(displays[i], display_manager_));
 
-  FOR_EACH_OBSERVER(NativeDisplayObserver, observers_,
-                    OnConfigurationChanged());
+  if (!get_displays_callback_.is_null()) {
+    get_displays_callback_.Run(displays_.get());
+    get_displays_callback_.Reset();
+  }
+}
+
+void NativeDisplayDelegateProxy::OnDisplayConfigured(int64_t display_id,
+                                                     bool status) {
+  auto it = configure_callback_map_.find(display_id);
+  if (it != configure_callback_map_.end()) {
+    it->second.Run(status);
+    configure_callback_map_.erase(it);
+  }
 }
 
 }  // namespace ui

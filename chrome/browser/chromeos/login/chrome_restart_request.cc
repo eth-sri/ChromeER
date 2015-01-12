@@ -66,13 +66,14 @@ const char kSwitchFormatString[] = " --%s=\"%s\"";
 // - Set start url if given;
 // - Append/override switches using |new_switches|;
 std::string DeriveCommandLine(const GURL& start_url,
-                              const CommandLine& base_command_line,
+                              const base::CommandLine& base_command_line,
                               const base::DictionaryValue& new_switches,
-                              CommandLine* command_line) {
+                              base::CommandLine* command_line) {
   DCHECK_NE(&base_command_line, command_line);
 
   static const char* const kForwardSwitches[] = {
     ::switches::kDisableAccelerated2dCanvas,
+    ::switches::kDisableAcceleratedJpegDecoding,
     ::switches::kDisableAcceleratedVideoDecode,
     ::switches::kDisableCastStreamingHWEncoding,
     ::switches::kDisableDelegatedRenderer,
@@ -95,7 +96,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kDisableThreadedScrolling,
     ::switches::kDisableTouchDragDrop,
     ::switches::kDisableTouchEditing,
-    ::switches::kEnableAcceleratedJpegDecoding,
     ::switches::kEnableBeginFrameScheduling,
     ::switches::kEnablePreferCompositingToLCDText,
     ::switches::kEnableDelegatedRenderer,
@@ -104,7 +104,6 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kForceDisplayList2dCanvas,
     ::switches::kEnableEncryptedMedia,
     ::switches::kDisableGpuSandbox,
-    ::switches::kEnableContainerCulling,
     ::switches::kEnableDistanceFieldText,
     ::switches::kEnableGpuRasterization,
     ::switches::kEnableImageColorProfiles,
@@ -114,6 +113,7 @@ std::string DeriveCommandLine(const GURL& start_url,
     ::switches::kEnableOneCopy,
     ::switches::kEnablePinch,
     ::switches::kEnablePluginPlaceholderShadowDom,
+    ::switches::kEnableSlimmingPaint,
     ::switches::kEnableTouchDragDrop,
     ::switches::kEnableTouchEditing,
     ::switches::kEnableViewport,
@@ -150,6 +150,7 @@ std::string DeriveCommandLine(const GURL& start_url,
 #endif
     ::switches::kUseDiscardableMemory,
     ::switches::kUseGL,
+    ::switches::kUseNormalPriorityForTileTaskWorkerThreads,
     ::switches::kUserDataDir,
     ::switches::kV,
     ::switches::kVModule,
@@ -171,13 +172,13 @@ std::string DeriveCommandLine(const GURL& start_url,
     app_list::switches::kDisableSyncAppList,
     app_list::switches::kEnableSyncAppList,
 #if !defined(USE_ATHENA)
-    ash::switches::kAshDefaultWallpaperLarge,
-    ash::switches::kAshDefaultWallpaperSmall,
-    ash::switches::kAshGuestWallpaperLarge,
-    ash::switches::kAshGuestWallpaperSmall,
     ash::switches::kAshHostWindowBounds,
     ash::switches::kAshTouchHud,
     ash::switches::kAuraLegacyPowerButton,
+    chromeos::switches::kDefaultWallpaperLarge,
+    chromeos::switches::kDefaultWallpaperSmall,
+    chromeos::switches::kGuestWallpaperLarge,
+    chromeos::switches::kGuestWallpaperSmall,
 #endif
     // Please keep these in alphabetical order. Non-UI Compositor switches
     // here should also be added to
@@ -342,8 +343,8 @@ void ChromeRestartRequest::RestartJob() {
 std::string GetOffTheRecordCommandLine(
     const GURL& start_url,
     bool is_oobe_completed,
-    const CommandLine& base_command_line,
-    CommandLine* command_line) {
+    const base::CommandLine& base_command_line,
+    base::CommandLine* command_line) {
   base::DictionaryValue otr_switches;
   otr_switches.SetString(switches::kGuestSession, std::string());
   otr_switches.SetString(::switches::kIncognito, std::string());

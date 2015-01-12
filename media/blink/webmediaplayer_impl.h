@@ -14,11 +14,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread.h"
-#include "media/base/audio_renderer_sink.h"
 #include "media/base/cdm_factory.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline.h"
-#include "media/base/renderer.h"
+#include "media/base/renderer_factory.h"
 #include "media/base/text_track.h"
 #include "media/blink/buffered_data_source.h"
 #include "media/blink/buffered_data_source_host_impl.h"
@@ -71,7 +70,7 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   WebMediaPlayerImpl(blink::WebLocalFrame* frame,
                      blink::WebMediaPlayerClient* client,
                      base::WeakPtr<WebMediaPlayerDelegate> delegate,
-                     scoped_ptr<Renderer> renderer,
+                     scoped_ptr<RendererFactory> renderer_factory,
                      scoped_ptr<CdmFactory> cdm_factory,
                      const WebMediaPlayerParams& params);
   virtual ~WebMediaPlayerImpl();
@@ -209,6 +208,10 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // compositor can return the frame.
   scoped_refptr<VideoFrame> GetCurrentFrameFromCompositor();
 
+  // Called when the demuxer encounters encrypted streams.
+  void OnEncryptedMediaInitData(const std::string& init_data_type,
+                                const std::vector<uint8>& init_data);
+
   void SetCdm(CdmContext* cdm_context, const CdmAttachedCB& cdm_attached_cb);
 
   // Called when a CDM has been attached to the |pipeline_|.
@@ -277,9 +280,6 @@ class MEDIA_EXPORT WebMediaPlayerImpl
 
   base::Callback<void(const base::Closure&)> defer_load_cb_;
 
-  // Factories for supporting video accelerators. May be null.
-  scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories_;
-
   // Routes audio playback to either AudioRendererSink or WebAudio.
   scoped_refptr<WebAudioSourceProviderImpl> audio_source_provider_;
 
@@ -306,14 +306,9 @@ class MEDIA_EXPORT WebMediaPlayerImpl
   // playback.
   scoped_ptr<cc_blink::WebLayerImpl> video_weblayer_;
 
-  // Text track objects get a unique index value when they're created.
-  int text_track_index_;
-
   EncryptedMediaPlayerSupport encrypted_media_support_;
 
-  const AudioHardwareConfig& audio_hardware_config_;
-
-  scoped_ptr<Renderer> renderer_;
+  scoped_ptr<RendererFactory> renderer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerImpl);
 };

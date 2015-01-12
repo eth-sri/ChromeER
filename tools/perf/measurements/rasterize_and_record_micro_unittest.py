@@ -5,11 +5,11 @@
 import logging
 
 from measurements import rasterize_and_record_micro
+from telemetry import decorators
 from telemetry.core import wpr_modes
 from telemetry.page import page_test
 from telemetry.unittest_util import options_for_unittests
 from telemetry.unittest_util import page_test_test_case
-from telemetry.unittest_util import test
 
 
 class RasterizeAndRecordMicroUnitTest(page_test_test_case.PageTestTestCase):
@@ -24,7 +24,7 @@ class RasterizeAndRecordMicroUnitTest(page_test_test_case.PageTestTestCase):
     self._options = options_for_unittests.GetCopy()
     self._options.browser_options.wpr_mode = wpr_modes.WPR_OFF
 
-  @test.Disabled('win', 'chromeos')
+  @decorators.Disabled('win', 'chromeos')
   def testRasterizeAndRecordMicro(self):
     ps = self.CreatePageSetFromFileInUnittestDataDir('blank.html')
     measurement = rasterize_and_record_micro.RasterizeAndRecordMicro(
@@ -32,7 +32,7 @@ class RasterizeAndRecordMicroUnitTest(page_test_test_case.PageTestTestCase):
         report_detailed_results=True)
     try:
       results = self.RunMeasurement(measurement, ps, options=self._options)
-    except page_test.TestNotSupportedOnPlatformFailure as failure:
+    except page_test.TestNotSupportedOnPlatformError as failure:
       logging.warning(str(failure))
       return
     self.assertEquals(0, len(results.failures))
@@ -89,3 +89,16 @@ class RasterizeAndRecordMicroUnitTest(page_test_test_case.PageTestTestCase):
     self.assertEquals(len(total_picture_layers_off_screen), 1)
     self.assertEqual(
         total_picture_layers_off_screen[0].GetRepresentativeNumber(), 0)
+
+    viewport_picture_size = \
+        results.FindAllPageSpecificValuesNamed('viewport_picture_size')
+    self.assertEquals(len(viewport_picture_size), 1)
+    self.assertGreater(
+        viewport_picture_size[0].GetRepresentativeNumber(), 0)
+
+    total_size_of_pictures_in_piles = \
+        results.FindAllPageSpecificValuesNamed(
+            'total_size_of_pictures_in_piles')
+    self.assertEquals(len(total_size_of_pictures_in_piles), 1)
+    self.assertGreater(
+        total_size_of_pictures_in_piles[0].GetRepresentativeNumber(), 0)

@@ -12,6 +12,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
@@ -24,7 +25,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
-#include "chrome/browser/ui/sync/one_click_signin_histogram.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/signin/inline_login_ui.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
@@ -34,6 +34,7 @@
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_ui.h"
@@ -129,18 +130,20 @@ void InlineSigninHelper::OnClientOAuthSuccess(const ClientOAuthResult& result) {
   // Prime the account tracker with this combination of gaia id/display email.
   account_tracker->SeedAccountInfo(gaia_id_, email_);
 
-  signin::Source source = signin::GetSourceForPromoURL(current_url_);
+  signin_metrics::Source source = signin::GetSourceForPromoURL(current_url_);
 
   std::string primary_email =
       SigninManagerFactory::GetForProfile(profile_)->GetAuthenticatedUsername();
   if (gaia::AreEmailsSame(email_, primary_email) &&
-      source == signin::SOURCE_REAUTH &&
-      switches::IsNewProfileManagement() && !password_.empty()) {
+      source == signin_metrics::SOURCE_REAUTH &&
+      switches::IsNewProfileManagement() &&
+      !password_.empty() &&
+      profiles::IsLockAvailable(profile_)) {
     chrome::SetLocalAuthCredentials(profile_, password_);
   }
 
-  if (source == signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT ||
-      source == signin::SOURCE_REAUTH) {
+  if (source == signin_metrics::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT ||
+      source == signin_metrics::SOURCE_REAUTH) {
     ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
         UpdateCredentials(account_id, result.refresh_token);
 
@@ -163,7 +166,7 @@ void InlineSigninHelper::OnClientOAuthSuccess(const ClientOAuthResult& result) {
     bool is_new_avatar_menu = switches::IsNewAvatarMenu();
 
     OneClickSigninSyncStarter::StartSyncMode start_mode;
-    if (source == signin::SOURCE_SETTINGS || choose_what_to_sync_) {
+    if (source == signin_metrics::SOURCE_SETTINGS || choose_what_to_sync_) {
       bool show_settings_without_configure =
           error_controller->HasError() &&
           sync_service &&
@@ -185,7 +188,7 @@ void InlineSigninHelper::OnClientOAuthSuccess(const ClientOAuthResult& result) {
       confirmation_required = OneClickSigninSyncStarter::CONFIRM_AFTER_SIGNIN;
     } else {
       confirmation_required =
-          source == signin::SOURCE_SETTINGS ||
+          source == signin_metrics::SOURCE_SETTINGS ||
           choose_what_to_sync_ ?
               OneClickSigninSyncStarter::NO_CONFIRMATION :
               OneClickSigninSyncStarter::CONFIRM_AFTER_SIGNIN;
@@ -273,10 +276,7 @@ void InlineLoginHandlerImpl::SetExtraInitParams(base::DictionaryValue& params) {
   net::GetValueForKeyInQuery(current_url, "constrained", &is_constrained);
 
   content::WebContentsObserver::Observe(contents);
-
-  signin::Source source = signin::GetSourceForPromoURL(current_url);
-  OneClickSigninHelper::LogHistogramValue(
-      source, one_click_signin::HISTOGRAM_SHOWN);
+  OneClickSigninHelper::LogHistogramValue(signin_metrics::HISTOGRAM_SHOWN);
 }
 
 void InlineLoginHandlerImpl::CompleteLogin(const base::ListValue* args) {
@@ -332,23 +332,21 @@ void InlineLoginHandlerImpl::CompleteLogin(const base::ListValue* args) {
   bool choose_what_to_sync = false;
   dict->GetBoolean("chooseWhatToSync", &choose_what_to_sync);
 
-  signin::Source source = signin::GetSourceForPromoURL(current_url);
-  OneClickSigninHelper::LogHistogramValue(
-      source, one_click_signin::HISTOGRAM_ACCEPTED);
+  signin_metrics::Source source = signin::GetSourceForPromoURL(current_url);
+  OneClickSigninHelper::LogHistogramValue(signin_metrics::HISTOGRAM_ACCEPTED);
   bool switch_to_advanced =
-      choose_what_to_sync && (source != signin::SOURCE_SETTINGS);
+      choose_what_to_sync && (source != signin_metrics::SOURCE_SETTINGS);
   OneClickSigninHelper::LogHistogramValue(
-      source,
-      switch_to_advanced ? one_click_signin::HISTOGRAM_WITH_ADVANCED :
-                           one_click_signin::HISTOGRAM_WITH_DEFAULTS);
+      switch_to_advanced ? signin_metrics::HISTOGRAM_WITH_ADVANCED :
+                           signin_metrics::HISTOGRAM_WITH_DEFAULTS);
 
   OneClickSigninHelper::CanOfferFor can_offer_for =
       OneClickSigninHelper::CAN_OFFER_FOR_ALL;
   switch (source) {
-    case signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT:
+    case signin_metrics::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT:
       can_offer_for = OneClickSigninHelper::CAN_OFFER_FOR_SECONDARY_ACCOUNT;
       break;
-    case signin::SOURCE_REAUTH: {
+    case signin_metrics::SOURCE_REAUTH: {
       std::string primary_username =
           SigninManagerFactory::GetForProfile(
               Profile::FromWebUI(web_ui()))->GetAuthenticatedUsername();
@@ -424,7 +422,7 @@ void InlineLoginHandlerImpl::SyncStarterCallback(
   }
 
   const GURL& current_url = contents->GetLastCommittedURL();
-  signin::Source source = signin::GetSourceForPromoURL(current_url);
+  signin_metrics::Source source = signin::GetSourceForPromoURL(current_url);
   bool auto_close = signin::IsAutoCloseEnabledInURL(current_url);
 
   if (result == OneClickSigninSyncStarter::SYNC_SETUP_FAILURE) {

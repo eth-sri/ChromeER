@@ -30,8 +30,14 @@ void GLES2BindFramebuffer(GLenum target, GLuint framebuffer) {
 void GLES2BindRenderbuffer(GLenum target, GLuint renderbuffer) {
   gles2::GetGLContext()->BindRenderbuffer(target, renderbuffer);
 }
+void GLES2BindSampler(GLuint unit, GLuint sampler) {
+  gles2::GetGLContext()->BindSampler(unit, sampler);
+}
 void GLES2BindTexture(GLenum target, GLuint texture) {
   gles2::GetGLContext()->BindTexture(target, texture);
+}
+void GLES2BindTransformFeedback(GLenum target, GLuint transformfeedback) {
+  gles2::GetGLContext()->BindTransformFeedback(target, transformfeedback);
 }
 void GLES2BlendColor(GLclampf red,
                      GLclampf green,
@@ -167,11 +173,17 @@ void GLES2DeleteProgram(GLuint program) {
 void GLES2DeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers) {
   gles2::GetGLContext()->DeleteRenderbuffers(n, renderbuffers);
 }
+void GLES2DeleteSamplers(GLsizei n, const GLuint* samplers) {
+  gles2::GetGLContext()->DeleteSamplers(n, samplers);
+}
 void GLES2DeleteShader(GLuint shader) {
   gles2::GetGLContext()->DeleteShader(shader);
 }
 void GLES2DeleteTextures(GLsizei n, const GLuint* textures) {
   gles2::GetGLContext()->DeleteTextures(n, textures);
+}
+void GLES2DeleteTransformFeedbacks(GLsizei n, const GLuint* ids) {
+  gles2::GetGLContext()->DeleteTransformFeedbacks(n, ids);
 }
 void GLES2DepthFunc(GLenum func) {
   gles2::GetGLContext()->DepthFunc(func);
@@ -250,8 +262,14 @@ void GLES2GenFramebuffers(GLsizei n, GLuint* framebuffers) {
 void GLES2GenRenderbuffers(GLsizei n, GLuint* renderbuffers) {
   gles2::GetGLContext()->GenRenderbuffers(n, renderbuffers);
 }
+void GLES2GenSamplers(GLsizei n, GLuint* samplers) {
+  gles2::GetGLContext()->GenSamplers(n, samplers);
+}
 void GLES2GenTextures(GLsizei n, GLuint* textures) {
   gles2::GetGLContext()->GenTextures(n, textures);
+}
+void GLES2GenTransformFeedbacks(GLsizei n, GLuint* ids) {
+  gles2::GetGLContext()->GenTransformFeedbacks(n, ids);
 }
 void GLES2GetActiveAttrib(GLuint program,
                           GLuint index,
@@ -326,6 +344,12 @@ void GLES2GetRenderbufferParameteriv(GLenum target,
                                      GLint* params) {
   gles2::GetGLContext()->GetRenderbufferParameteriv(target, pname, params);
 }
+void GLES2GetSamplerParameterfv(GLuint sampler, GLenum pname, GLfloat* params) {
+  gles2::GetGLContext()->GetSamplerParameterfv(sampler, pname, params);
+}
+void GLES2GetSamplerParameteriv(GLuint sampler, GLenum pname, GLint* params) {
+  gles2::GetGLContext()->GetSamplerParameteriv(sampler, pname, params);
+}
 void GLES2GetShaderiv(GLuint shader, GLenum pname, GLint* params) {
   gles2::GetGLContext()->GetShaderiv(shader, pname, params);
 }
@@ -378,6 +402,21 @@ void GLES2GetVertexAttribPointerv(GLuint index, GLenum pname, void** pointer) {
 void GLES2Hint(GLenum target, GLenum mode) {
   gles2::GetGLContext()->Hint(target, mode);
 }
+void GLES2InvalidateFramebuffer(GLenum target,
+                                GLsizei count,
+                                const GLenum* attachments) {
+  gles2::GetGLContext()->InvalidateFramebuffer(target, count, attachments);
+}
+void GLES2InvalidateSubFramebuffer(GLenum target,
+                                   GLsizei count,
+                                   const GLenum* attachments,
+                                   GLint x,
+                                   GLint y,
+                                   GLsizei width,
+                                   GLsizei height) {
+  gles2::GetGLContext()->InvalidateSubFramebuffer(target, count, attachments, x,
+                                                  y, width, height);
+}
 GLboolean GLES2IsBuffer(GLuint buffer) {
   return gles2::GetGLContext()->IsBuffer(buffer);
 }
@@ -393,11 +432,17 @@ GLboolean GLES2IsProgram(GLuint program) {
 GLboolean GLES2IsRenderbuffer(GLuint renderbuffer) {
   return gles2::GetGLContext()->IsRenderbuffer(renderbuffer);
 }
+GLboolean GLES2IsSampler(GLuint sampler) {
+  return gles2::GetGLContext()->IsSampler(sampler);
+}
 GLboolean GLES2IsShader(GLuint shader) {
   return gles2::GetGLContext()->IsShader(shader);
 }
 GLboolean GLES2IsTexture(GLuint texture) {
   return gles2::GetGLContext()->IsTexture(texture);
+}
+GLboolean GLES2IsTransformFeedback(GLuint transformfeedback) {
+  return gles2::GetGLContext()->IsTransformFeedback(transformfeedback);
 }
 void GLES2LineWidth(GLfloat width) {
   gles2::GetGLContext()->LineWidth(width);
@@ -405,11 +450,17 @@ void GLES2LineWidth(GLfloat width) {
 void GLES2LinkProgram(GLuint program) {
   gles2::GetGLContext()->LinkProgram(program);
 }
+void GLES2PauseTransformFeedback() {
+  gles2::GetGLContext()->PauseTransformFeedback();
+}
 void GLES2PixelStorei(GLenum pname, GLint param) {
   gles2::GetGLContext()->PixelStorei(pname, param);
 }
 void GLES2PolygonOffset(GLfloat factor, GLfloat units) {
   gles2::GetGLContext()->PolygonOffset(factor, units);
+}
+void GLES2ReadBuffer(GLenum src) {
+  gles2::GetGLContext()->ReadBuffer(src);
 }
 void GLES2ReadPixels(GLint x,
                      GLint y,
@@ -430,8 +481,27 @@ void GLES2RenderbufferStorage(GLenum target,
   gles2::GetGLContext()->RenderbufferStorage(target, internalformat, width,
                                              height);
 }
+void GLES2ResumeTransformFeedback() {
+  gles2::GetGLContext()->ResumeTransformFeedback();
+}
 void GLES2SampleCoverage(GLclampf value, GLboolean invert) {
   gles2::GetGLContext()->SampleCoverage(value, invert);
+}
+void GLES2SamplerParameterf(GLuint sampler, GLenum pname, GLfloat param) {
+  gles2::GetGLContext()->SamplerParameterf(sampler, pname, param);
+}
+void GLES2SamplerParameterfv(GLuint sampler,
+                             GLenum pname,
+                             const GLfloat* params) {
+  gles2::GetGLContext()->SamplerParameterfv(sampler, pname, params);
+}
+void GLES2SamplerParameteri(GLuint sampler, GLenum pname, GLint param) {
+  gles2::GetGLContext()->SamplerParameteri(sampler, pname, param);
+}
+void GLES2SamplerParameteriv(GLuint sampler,
+                             GLenum pname,
+                             const GLint* params) {
+  gles2::GetGLContext()->SamplerParameteriv(sampler, pname, params);
 }
 void GLES2Scissor(GLint x, GLint y, GLsizei width, GLsizei height) {
   gles2::GetGLContext()->Scissor(x, y, width, height);
@@ -781,8 +851,14 @@ GLboolean GLES2IsQueryEXT(GLuint id) {
 void GLES2BeginQueryEXT(GLenum target, GLuint id) {
   gles2::GetGLContext()->BeginQueryEXT(target, id);
 }
+void GLES2BeginTransformFeedback(GLenum primitivemode) {
+  gles2::GetGLContext()->BeginTransformFeedback(primitivemode);
+}
 void GLES2EndQueryEXT(GLenum target) {
   gles2::GetGLContext()->EndQueryEXT(target);
+}
+void GLES2EndTransformFeedback() {
+  gles2::GetGLContext()->EndTransformFeedback();
 }
 void GLES2GetQueryivEXT(GLenum target, GLenum pname, GLint* params) {
   gles2::GetGLContext()->GetQueryivEXT(target, pname, params);
@@ -992,8 +1068,9 @@ void GLES2BindTexImage2DCHROMIUM(GLenum target, GLint imageId) {
 void GLES2ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) {
   gles2::GetGLContext()->ReleaseTexImage2DCHROMIUM(target, imageId);
 }
-void GLES2TraceBeginCHROMIUM(const char* name) {
-  gles2::GetGLContext()->TraceBeginCHROMIUM(name);
+void GLES2TraceBeginCHROMIUM(const char* category_name,
+                             const char* trace_name) {
+  gles2::GetGLContext()->TraceBeginCHROMIUM(category_name, trace_name);
 }
 void GLES2TraceEndCHROMIUM() {
   gles2::GetGLContext()->TraceEndCHROMIUM();
@@ -1064,6 +1141,9 @@ void GLES2ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
       plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
       bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height);
 }
+void GLES2SwapInterval(GLint interval) {
+  gles2::GetGLContext()->SwapInterval(interval);
+}
 void GLES2MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) {
   gles2::GetGLContext()->MatrixLoadfCHROMIUM(matrixMode, m);
 }
@@ -1102,8 +1182,16 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glBindRenderbuffer),
     },
     {
+     "glBindSampler",
+     reinterpret_cast<GLES2FunctionPointer>(glBindSampler),
+    },
+    {
      "glBindTexture",
      reinterpret_cast<GLES2FunctionPointer>(glBindTexture),
+    },
+    {
+     "glBindTransformFeedback",
+     reinterpret_cast<GLES2FunctionPointer>(glBindTransformFeedback),
     },
     {
      "glBlendColor",
@@ -1210,12 +1298,20 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glDeleteRenderbuffers),
     },
     {
+     "glDeleteSamplers",
+     reinterpret_cast<GLES2FunctionPointer>(glDeleteSamplers),
+    },
+    {
      "glDeleteShader",
      reinterpret_cast<GLES2FunctionPointer>(glDeleteShader),
     },
     {
      "glDeleteTextures",
      reinterpret_cast<GLES2FunctionPointer>(glDeleteTextures),
+    },
+    {
+     "glDeleteTransformFeedbacks",
+     reinterpret_cast<GLES2FunctionPointer>(glDeleteTransformFeedbacks),
     },
     {
      "glDepthFunc",
@@ -1298,8 +1394,16 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGenRenderbuffers),
     },
     {
+     "glGenSamplers",
+     reinterpret_cast<GLES2FunctionPointer>(glGenSamplers),
+    },
+    {
      "glGenTextures",
      reinterpret_cast<GLES2FunctionPointer>(glGenTextures),
+    },
+    {
+     "glGenTransformFeedbacks",
+     reinterpret_cast<GLES2FunctionPointer>(glGenTransformFeedbacks),
     },
     {
      "glGetActiveAttrib",
@@ -1359,6 +1463,14 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetRenderbufferParameteriv),
     },
     {
+     "glGetSamplerParameterfv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetSamplerParameterfv),
+    },
+    {
+     "glGetSamplerParameteriv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetSamplerParameteriv),
+    },
+    {
      "glGetShaderiv",
      reinterpret_cast<GLES2FunctionPointer>(glGetShaderiv),
     },
@@ -1415,6 +1527,14 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glHint),
     },
     {
+     "glInvalidateFramebuffer",
+     reinterpret_cast<GLES2FunctionPointer>(glInvalidateFramebuffer),
+    },
+    {
+     "glInvalidateSubFramebuffer",
+     reinterpret_cast<GLES2FunctionPointer>(glInvalidateSubFramebuffer),
+    },
+    {
      "glIsBuffer",
      reinterpret_cast<GLES2FunctionPointer>(glIsBuffer),
     },
@@ -1435,12 +1555,20 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glIsRenderbuffer),
     },
     {
+     "glIsSampler",
+     reinterpret_cast<GLES2FunctionPointer>(glIsSampler),
+    },
+    {
      "glIsShader",
      reinterpret_cast<GLES2FunctionPointer>(glIsShader),
     },
     {
      "glIsTexture",
      reinterpret_cast<GLES2FunctionPointer>(glIsTexture),
+    },
+    {
+     "glIsTransformFeedback",
+     reinterpret_cast<GLES2FunctionPointer>(glIsTransformFeedback),
     },
     {
      "glLineWidth",
@@ -1451,12 +1579,20 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glLinkProgram),
     },
     {
+     "glPauseTransformFeedback",
+     reinterpret_cast<GLES2FunctionPointer>(glPauseTransformFeedback),
+    },
+    {
      "glPixelStorei",
      reinterpret_cast<GLES2FunctionPointer>(glPixelStorei),
     },
     {
      "glPolygonOffset",
      reinterpret_cast<GLES2FunctionPointer>(glPolygonOffset),
+    },
+    {
+     "glReadBuffer",
+     reinterpret_cast<GLES2FunctionPointer>(glReadBuffer),
     },
     {
      "glReadPixels",
@@ -1471,8 +1607,28 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glRenderbufferStorage),
     },
     {
+     "glResumeTransformFeedback",
+     reinterpret_cast<GLES2FunctionPointer>(glResumeTransformFeedback),
+    },
+    {
      "glSampleCoverage",
      reinterpret_cast<GLES2FunctionPointer>(glSampleCoverage),
+    },
+    {
+     "glSamplerParameterf",
+     reinterpret_cast<GLES2FunctionPointer>(glSamplerParameterf),
+    },
+    {
+     "glSamplerParameterfv",
+     reinterpret_cast<GLES2FunctionPointer>(glSamplerParameterfv),
+    },
+    {
+     "glSamplerParameteri",
+     reinterpret_cast<GLES2FunctionPointer>(glSamplerParameteri),
+    },
+    {
+     "glSamplerParameteriv",
+     reinterpret_cast<GLES2FunctionPointer>(glSamplerParameteriv),
     },
     {
      "glScissor",
@@ -1786,8 +1942,16 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glBeginQueryEXT),
     },
     {
+     "glBeginTransformFeedback",
+     reinterpret_cast<GLES2FunctionPointer>(glBeginTransformFeedback),
+    },
+    {
      "glEndQueryEXT",
      reinterpret_cast<GLES2FunctionPointer>(glEndQueryEXT),
+    },
+    {
+     "glEndTransformFeedback",
+     reinterpret_cast<GLES2FunctionPointer>(glEndTransformFeedback),
     },
     {
      "glGetQueryivEXT",
@@ -2038,6 +2202,10 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
      "glScheduleOverlayPlaneCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glScheduleOverlayPlaneCHROMIUM),
+    },
+    {
+     "glSwapInterval",
+     reinterpret_cast<GLES2FunctionPointer>(glSwapInterval),
     },
     {
      "glMatrixLoadfCHROMIUM",

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/gtest_prod_util.h"
+#include "base/version.h"
 #include "net/cert/ct_ev_whitelist.h"
 
 namespace base {
@@ -30,7 +31,8 @@ class PackedEVCertsWhitelist : public net::ct::EVCertsWhitelist {
  public:
   // Unpacks the given |compressed_whitelist|. See the class documentation
   // for description of the |compressed_whitelist| format.
-  explicit PackedEVCertsWhitelist(const std::string& compressed_whitelist);
+  PackedEVCertsWhitelist(const std::string& compressed_whitelist,
+                         const base::Version& version);
 
   // Returns true if the |certificate_hash| appears in the EV certificate hashes
   // whitelist. Must not be called if IsValid for this instance returned false.
@@ -40,6 +42,9 @@ class PackedEVCertsWhitelist : public net::ct::EVCertsWhitelist {
   // Returns true if the EV certificate hashes whitelist provided in the c'tor
   // was valid, false otherwise.
   bool IsValid() const override;
+
+  // Returns the version of the whitelist in use, if available.
+  base::Version Version() const override;
 
  protected:
   ~PackedEVCertsWhitelist() override;
@@ -67,17 +72,14 @@ class PackedEVCertsWhitelist : public net::ct::EVCertsWhitelist {
   // shows that bsearch is about twice as fast as std::set lookups (and std::set
   // has additional memory overhead).
   std::vector<uint64_t> whitelist_;
+  base::Version version_;
 
   DISALLOW_COPY_AND_ASSIGN(PackedEVCertsWhitelist);
 };
 
-// Sets the EV certificate hashes whitelist from |compressed_whitelist_file|
-// in |ssl_config_service|, after uncompressing it.
-// If the data in |compressed_whitelist_file| is not a valid compressed
-// whitelist, does nothing.
-// As this function performs file operations, it should be called from a
-// blocking pool worker or a file worker.
+// Sets the EV certificate hashes whitelist in the SSLConfigService
+// to the provided |whitelist|, if valid. Otherwise, does nothing.
 // To set the new whitelist, this function dispatches a task to the IO thread.
-void SetEVWhitelistFromFile(const base::FilePath& compressed_whitelist_file);
+void SetEVCertsWhitelist(scoped_refptr<net::ct::EVCertsWhitelist> whitelist);
 
 #endif  // CHROME_BROWSER_NET_PACKED_CT_EV_WHITELIST_H_

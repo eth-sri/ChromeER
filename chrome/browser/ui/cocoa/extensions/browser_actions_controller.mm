@@ -8,11 +8,14 @@
 
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
+#import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_action_button.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_container_view.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
+#import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_action_view_controller.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_bar.h"
@@ -70,6 +73,12 @@ const CGFloat kBrowserActionBubbleYOffset = 3.0;
 // position of the button.
 - (void)updateButtonOpacity;
 
+// When the container is resizing, there's a chance that the buttons' frames
+// need to be adjusted (for instance, if an action is added to the left, the
+// frames of the actions to the right should gradually move right in the
+// container). Adjust the frames accordingly.
+- (void)updateButtonPositions;
+
 // Returns the existing button associated with the given id; nil if it cannot be
 // found.
 - (BrowserActionButton*)buttonForId:(const std::string&)id;
@@ -96,6 +105,9 @@ const CGFloat kBrowserActionBubbleYOffset = 3.0;
 // when _any_ Browser Action button is done dragging to keep all open windows in
 // sync visually.
 - (void)actionButtonDragFinished:(NSNotification*)notification;
+
+// Returns the frame that the button with the given |index| should have.
+- (NSRect)frameForIndex:(NSUInteger)index;
 
 // Moves the given button both visually and within the toolbar model to the
 // specified index.
@@ -136,6 +148,8 @@ class ToolbarActionsBarBridge : public ToolbarActionsBarDelegate {
  public:
   explicit ToolbarActionsBarBridge(BrowserActionsController* controller);
   ~ToolbarActionsBarBridge() override;
+
+  BrowserActionsController* controller_for_test() { return controller_; }
 
  private:
   // ToolbarActionsBarDelegate:
@@ -223,20 +237,28 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 @implementation BrowserActionsController
 
 @synthesize containerView = containerView_;
+@synthesize browser = browser_;
+@synthesize isOverflow = isOverflow_;
 
 #pragma mark -
 #pragma mark Public Methods
 
 - (id)initWithBrowser:(Browser*)browser
-        containerView:(BrowserActionsContainerView*)container {
+        containerView:(BrowserActionsContainerView*)container
+       mainController:(BrowserActionsController*)mainController {
   DCHECK(browser && container);
 
   if ((self = [super init])) {
     browser_ = browser;
+    isOverflow_ = mainController != nil;
 
     toolbarActionsBarBridge_.reset(new ToolbarActionsBarBridge(self));
+    ToolbarActionsBar* mainBar =
+        mainController ? [mainController toolbarActionsBar] : nullptr;
     toolbarActionsBar_.reset(
-        new ToolbarActionsBar(toolbarActionsBarBridge_.get(), browser_, false));
+        new ToolbarActionsBar(toolbarActionsBarBridge_.get(),
+                              browser_,
+                              mainBar));
 
     containerView_ = container;
     [containerView_ setPostsFrameChangedNotifications:YES];
@@ -264,16 +286,21 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
            object:nil];
 
     suppressChevron_ = NO;
-    chevronAnimation_.reset([[NSViewAnimation alloc] init]);
-    [chevronAnimation_ gtm_setDuration:kAnimationDuration
-                             eventMask:NSLeftMouseUpMask];
-    [chevronAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
+    if (toolbarActionsBar_->platform_settings().chevron_enabled) {
+      chevronAnimation_.reset([[NSViewAnimation alloc] init]);
+      [chevronAnimation_ gtm_setDuration:kAnimationDuration
+                               eventMask:NSLeftMouseUpMask];
+      [chevronAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
+    }
+
+    if (isOverflow_)
+      toolbarActionsBar_->SetOverflowRowWidth(NSWidth([containerView_ frame]));
 
     buttons_.reset([[NSMutableArray alloc] init]);
     toolbarActionsBar_->CreateActions();
     [self showChevronIfNecessaryInFrame:[containerView_ frame]];
     [self updateGrippyCursors];
-    [container setResizable:YES];
+    [container setResizable:!isOverflow_];
   }
 
   return self;
@@ -291,8 +318,7 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 }
 
 - (void)update {
-  for (BrowserActionButton* button in buttons_.get())
-    [button updateState];
+  toolbarActionsBar_->Update();
 }
 
 - (NSUInteger)buttonCount {
@@ -306,8 +332,8 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
   return visibleCount;
 }
 
-- (CGFloat)savedWidth {
-  return toolbarActionsBar_->GetPreferredSize().width();
+- (gfx::Size)preferredSize {
+  return toolbarActionsBar_->GetPreferredSize();
 }
 
 - (NSPoint)popupPointForId:(const std::string&)id {
@@ -316,10 +342,18 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
     return NSZeroPoint;
 
   NSRect bounds;
-  NSButton* referenceButton = button;
-  if ([button superview] != containerView_) {
-    bounds = [chevronMenuButton_ bounds];
-    referenceButton = chevronMenuButton_.get();
+  NSView* referenceButton = button;
+  if ([button superview] != containerView_ || isOverflow_) {
+    if (toolbarActionsBar_->platform_settings().chevron_enabled) {
+      referenceButton = chevronMenuButton_.get();
+    } else {
+      referenceButton =
+          [[[BrowserWindowController
+              browserWindowControllerForWindow:browser_->
+                  window()->GetNativeWindow()]
+                  toolbarController] wrenchButton];
+    }
+    bounds = [referenceButton bounds];
   } else {
     bounds = [button convertRect:[button frameAfterAnimation]
                         fromView:[button superview]];
@@ -329,7 +363,13 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
   DCHECK([referenceButton isFlipped]);
   NSPoint anchor = NSMakePoint(NSMidX(bounds),
                                NSMaxY(bounds) - kBrowserActionBubbleYOffset);
-  return [referenceButton convertPoint:anchor toView:nil];
+  // Convert the point to the container view's frame, and adjust for animation.
+  NSPoint anchorInContainer =
+      [containerView_ convertPoint:anchor fromView:referenceButton];
+  anchorInContainer.x -= NSMinX([containerView_ frame]) -
+      NSMinX([containerView_ animationEndFrame]);
+
+  return [containerView_ convertPoint:anchorInContainer toView:nil];
 }
 
 - (BOOL)chevronIsHidden {
@@ -427,9 +467,32 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
   }
 
   [self showChevronIfNecessaryInFrame:[containerView_ frame]];
+  NSUInteger minIndex = isOverflow_ ?
+      [buttons_ count] - toolbarActionsBar_->GetIconCount() : 0;
+  NSUInteger maxIndex = isOverflow_ ?
+      [buttons_ count] : toolbarActionsBar_->GetIconCount();
   for (NSUInteger i = 0; i < [buttons_ count]; ++i) {
-    if (![[buttons_ objectAtIndex:i] isBeingDragged])
-      [self moveButton:[buttons_ objectAtIndex:i] toIndex:i];
+    BrowserActionButton* button = [buttons_ objectAtIndex:i];
+    if ([button isBeingDragged])
+      continue;
+
+    [self moveButton:[buttons_ objectAtIndex:i] toIndex:i - minIndex];
+
+    if (i >= minIndex && i < maxIndex) {
+      // Make sure the button is within the visible container.
+      if ([button superview] != containerView_) {
+        // We add the subview under the sibling views so that when it
+        // "slides in", it does so under its neighbors.
+        [containerView_ addSubview:button
+                        positioned:NSWindowBelow
+                        relativeTo:nil];
+      }
+      // We need to set the alpha value in case the container has resized.
+      [button setAlphaValue:1.0];
+    } else if ([button superview] == containerView_) {
+      [button removeFromSuperview];
+      [button setAlphaValue:0.0];
+    }
   }
 }
 
@@ -496,6 +559,25 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
   }
 }
 
+- (void)updateButtonPositions {
+  for (NSUInteger index = 0; index < [buttons_ count]; ++index) {
+    BrowserActionButton* button = [buttons_ objectAtIndex:index];
+    NSRect buttonFrame = [self frameForIndex:index];
+
+    // If the button is at the proper position (or animating to it), then we
+    // don't need to update its position.
+    if (NSMinX([button frameAfterAnimation]) == NSMinX(buttonFrame))
+      continue;
+
+    // We set the x-origin by calculating the proper distance from the right
+    // edge in the container so that, if the container is animating, the
+    // button appears stationary.
+    buttonFrame.origin.x = NSWidth([containerView_ frame]) -
+        (toolbarActionsBar_->GetPreferredSize().width() - NSMinX(buttonFrame));
+    [button setFrame:buttonFrame animate:NO];
+  }
+}
+
 - (BrowserActionButton*)buttonForId:(const std::string&)id {
   for (BrowserActionButton* button in buttons_.get()) {
     if ([button viewController]->GetId() == id)
@@ -505,6 +587,7 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 }
 
 - (void)containerFrameChanged:(NSNotification*)notification {
+  [self updateButtonPositions];
   [self updateButtonOpacity];
   [[containerView_ window] invalidateCursorRectsForView:containerView_];
   [self updateChevronPositionInFrame:[containerView_ frame]];
@@ -551,25 +634,34 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 
   // Determine what index the dragged button should lie in, alter the model and
   // reposition the buttons.
-  CGFloat dragThreshold = ToolbarActionsBar::IconWidth(false) / 2;
   BrowserActionButton* draggedButton = [notification object];
   NSRect draggedButtonFrame = [draggedButton frame];
+  // Find the mid-point. We flip the y-coordinates so that y = 0 is at the
+  // top of the container to make row calculation more logical.
+  NSPoint midPoint =
+      NSMakePoint(NSMidX(draggedButtonFrame),
+                  NSMaxY([containerView_ bounds]) - NSMidY(draggedButtonFrame));
 
-  NSUInteger index = 0;
-  for (BrowserActionButton* button in buttons_.get()) {
-    CGFloat intersectionWidth =
-        NSWidth(NSIntersectionRect(draggedButtonFrame, [button frame]));
+  // Calculate the row index and the index in the row. We bound the latter
+  // because the view can go farther right than the right-most icon in the last
+  // row of the overflow menu.
+  NSInteger rowIndex = midPoint.y / ToolbarActionsBar::IconHeight();
+  int icons_per_row = isOverflow_ ?
+      toolbarActionsBar_->platform_settings().icons_per_overflow_menu_row :
+      toolbarActionsBar_->GetIconCount();
+  NSInteger indexInRow = std::min(icons_per_row - 1,
+      static_cast<int>(midPoint.x / ToolbarActionsBar::IconWidth(true)));
 
-    if (intersectionWidth > dragThreshold && button != draggedButton &&
-        ![button isAnimating] && index < [self visibleButtonCount]) {
-      toolbarActionsBar_->OnDragDrop(
-          [buttons_ indexOfObject:draggedButton],
-          index,
-          ToolbarActionsBar::DRAG_TO_SAME);
-      return;
-    }
-    ++index;
-  }
+  // Find the desired index for the button.
+  NSInteger maxIndex = [buttons_ count] - 1;
+  NSInteger offset = isOverflow_ ?
+      [buttons_ count] - toolbarActionsBar_->GetIconCount() : 0;
+  NSInteger index =
+      std::min(maxIndex, offset + rowIndex * icons_per_row + indexInRow);
+
+  toolbarActionsBar_->OnDragDrop([buttons_ indexOfObject:draggedButton],
+                                 index,
+                                 ToolbarActionsBar::DRAG_TO_SAME);
 }
 
 - (void)actionButtonDragFinished:(NSNotification*)notification {
@@ -577,31 +669,49 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
   [self redraw];
 }
 
-- (void)moveButton:(BrowserActionButton*)button
-           toIndex:(NSUInteger)index {
+- (NSRect)frameForIndex:(NSUInteger)index {
   const ToolbarActionsBar::PlatformSettings& platformSettings =
       toolbarActionsBar_->platform_settings();
-  CGFloat xOffset = platformSettings.left_padding +
-      (index * ToolbarActionsBar::IconWidth(true));
-  NSRect buttonFrame = [button frame];
-  buttonFrame.origin.x = xOffset;
-  [button setFrame:buttonFrame
-           animate:!toolbarActionsBar_->suppress_animation()];
+  int icons_per_overflow_row = platformSettings.icons_per_overflow_menu_row;
+  NSUInteger rowIndex = isOverflow_ ? index / icons_per_overflow_row : 0;
+  NSUInteger indexInRow = isOverflow_ ? index % icons_per_overflow_row : index;
 
-  if (index < toolbarActionsBar_->GetIconCount()) {
-    // Make sure the button is within the visible container.
-    if ([button superview] != containerView_) {
-      // We add the subview under the sibling views so that when it "slides in",
-      // it does so under its neighbors.
-      [containerView_ addSubview:button
-                      positioned:NSWindowBelow
-                      relativeTo:nil];
-    }
-    // We need to set the alpha value in case the container has resized.
-    [button setAlphaValue:1.0];
-  } else if ([button superview] == containerView_) {
-    [button removeFromSuperview];
-    [button setAlphaValue:0.0];
+  CGFloat xOffset = platformSettings.left_padding +
+      (indexInRow * ToolbarActionsBar::IconWidth(true));
+  CGFloat yOffset = NSHeight([containerView_ frame]) -
+       (ToolbarActionsBar::IconHeight() * (rowIndex + 1));
+
+  return NSMakeRect(xOffset,
+                    yOffset,
+                    ToolbarActionsBar::IconWidth(false),
+                    ToolbarActionsBar::IconHeight());
+}
+
+- (void)moveButton:(BrowserActionButton*)button
+           toIndex:(NSUInteger)index {
+  NSRect buttonFrame = [self frameForIndex:index];
+
+  CGFloat currentX = NSMinX([button frame]);
+  CGFloat xLeft = toolbarActionsBar_->GetPreferredSize().width() -
+      NSMinX(buttonFrame);
+  // We check if the button is already in the correct place for the toolbar's
+  // current size. This could mean that the button could be the correct distance
+  // from the left or from the right edge. If it has the correct distance, we
+  // don't move it, and it will be updated when the container frame changes.
+  // This way, if the user has extensions A and C installed, and installs
+  // extension B between them, extension C appears to stay stationary on the
+  // screen while the toolbar expands to the left (even though C's bounds within
+  // the container change).
+  if ((currentX == NSMinX(buttonFrame) ||
+       currentX == NSWidth([containerView_ frame]) - xLeft) &&
+      NSMinY([button frame]) == NSMinY(buttonFrame))
+    return;
+
+  // It's possible the button is already animating to the right place. Don't
+  // call move again, because it will stop the current animation.
+  if (!NSEqualRects(buttonFrame, [button frameAfterAnimation])) {
+    [button setFrame:buttonFrame
+             animate:!toolbarActionsBar_->suppress_animation() && !isOverflow_];
   }
 }
 
@@ -610,6 +720,8 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 }
 
 - (void)showChevronIfNecessaryInFrame:(NSRect)frame {
+  if (!toolbarActionsBar_->platform_settings().chevron_enabled)
+    return;
   bool hidden = suppressChevron_ ||
       toolbarActionsBar_->GetIconCount() == [self buttonCount];
   [self setChevronHidden:hidden inFrame:frame];
@@ -627,7 +739,8 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 
 - (void)setChevronHidden:(BOOL)hidden
                  inFrame:(NSRect)frame {
-  if (hidden == [self chevronIsHidden])
+  if (!toolbarActionsBar_->platform_settings().chevron_enabled ||
+      hidden == [self chevronIsHidden])
     return;
 
   if (!chevronMenuButton_.get()) {
@@ -693,6 +806,15 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 
 - (BrowserActionButton*)buttonWithIndex:(NSUInteger)index {
   return index < [buttons_ count] ? [buttons_ objectAtIndex:index] : nil;
+}
+
+- (ToolbarActionsBar*)toolbarActionsBar {
+  return toolbarActionsBar_.get();
+}
+
++ (BrowserActionsController*)fromToolbarActionsBarDelegate:
+    (ToolbarActionsBarDelegate*)delegate {
+  return static_cast<ToolbarActionsBarBridge*>(delegate)->controller_for_test();
 }
 
 @end

@@ -64,12 +64,12 @@ class TestBrowserWindow : public BrowserWindow {
   void Minimize() override {}
   void Restore() override {}
   void EnterFullscreen(const GURL& url,
-                       FullscreenExitBubbleType type,
+                       ExclusiveAccessBubbleType type,
                        bool with_toolbar) override {}
   void ExitFullscreen() override {}
   void UpdateFullscreenExitBubbleContent(
       const GURL& url,
-      FullscreenExitBubbleType bubble_type) override {}
+      ExclusiveAccessBubbleType bubble_type) override {}
   bool ShouldHideUIForFullscreen() const override;
   bool IsFullscreen() const override;
   bool IsFullscreenBubbleVisible() const override;
@@ -140,8 +140,6 @@ class TestBrowserWindow : public BrowserWindow {
   FindBar* CreateFindBar() override;
   web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHost()
       override;
-  void ShowAvatarBubble(content::WebContents* web_contents,
-                        const gfx::Rect& rect) override {}
   void ShowAvatarBubbleFromAvatarButton(
       AvatarBubbleMode mode,
       const signin::ManageAccountsParams& manage_accounts_params) override {}
@@ -169,7 +167,6 @@ class TestBrowserWindow : public BrowserWindow {
     void UpdateContentSettingsIcons() override {}
     void UpdateManagePasswordsIconAndBubble() override {}
     void UpdatePageActions() override {}
-    void InvalidatePageActions() override {}
     void UpdateBookmarkStarVisibility() override {}
     bool ShowPageActionPopup(const extensions::Extension* extension,
                              bool grant_active_tab) override;

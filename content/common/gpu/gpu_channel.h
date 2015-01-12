@@ -19,6 +19,7 @@
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_result_codes.h"
 #include "content/common/message_router.h"
+#include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
@@ -34,6 +35,11 @@ class WaitableEvent;
 
 namespace gpu {
 class PreemptionFlag;
+union ValueState;
+class ValueStateMap;
+namespace gles2 {
+class SubscriptionRefSet;
+}
 }
 
 namespace IPC {
@@ -48,7 +54,8 @@ class GpuWatchdog;
 
 // Encapsulates an IPC channel between the GPU process and one renderer
 // process. On the renderer side there's a corresponding GpuChannelHost.
-class GpuChannel : public IPC::Listener, public IPC::Sender {
+class GpuChannel : public IPC::Listener, public IPC::Sender,
+                   public gpu::gles2::SubscriptionRefSet::Observer {
  public:
   // Takes ownership of the renderer process handle.
   GpuChannel(GpuChannelManager* gpu_channel_manager,
@@ -94,6 +101,10 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
   // the queue. Used when the processing of a message gets aborted because of
   // unscheduling conditions.
   void RequeueMessage();
+
+  // SubscriptionRefSet::Observer implementation
+  void OnAddSubscription(unsigned int target) override;
+  void OnRemoveSubscription(unsigned int target) override;
 
   // This is called when a command buffer transitions from the unscheduled
   // state to the scheduled state, which potentially means the channel
@@ -151,6 +162,14 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
 
   bool allow_future_sync_points() const { return allow_future_sync_points_; }
 
+  void HandleUpdateValueState(unsigned int target,
+                              const gpu::ValueState& state);
+
+  // Visible for testing.
+  const gpu::ValueStateMap* pending_valuebuffer_state() const {
+    return pending_valuebuffer_state_.get();
+  }
+
  private:
   friend class GpuChannelMessageFilter;
 
@@ -206,6 +225,10 @@ class GpuChannel : public IPC::Listener, public IPC::Sender {
   scoped_refptr<gfx::GLShareGroup> share_group_;
 
   scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
+
+  scoped_refptr<gpu::gles2::SubscriptionRefSet> subscription_ref_set_;
+
+  scoped_refptr<gpu::ValueStateMap> pending_valuebuffer_state_;
 
   typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
   StubMap stubs_;

@@ -49,6 +49,7 @@ group("root") {
     "//device/battery",
     "//device/bluetooth",
     "//device/nfc",
+    "//device/vibration",
     "//extensions/browser",
     "//extensions/common",
     "//extensions/common/api",
@@ -94,7 +95,6 @@ group("root") {
     "//third_party/libpng",
     "//third_party/libsrtp",
     "//third_party/libusb",
-    "//third_party/libwebm",
     "//third_party/libwebp",
     "//third_party/libxslt",
     "//third_party/libvpx",
@@ -132,12 +132,14 @@ group("root") {
     "//ui/snapshot",
     "//ui/strings",
     "//ui/surface",
+    "//ui/touch_selection",
     "//ui/views",
     "//ui/views/controls/webview",
     "//ui/web_dialogs",
     "//url",
     "//v8:v8",
-  ] + root_extra_deps
+  ]
+  deps += root_extra_deps
 
   if (!is_win) {
     deps += [ "//breakpad:symupload" ]
@@ -160,16 +162,12 @@ group("root") {
   }
 
   if (is_win) {
-    deps += [
-      "//ui/metro_viewer",
-    ]
+    deps += [ "//ui/metro_viewer" ]
   }
 
   if (is_win || is_mac || is_chromeos) {
     # RLZ works on these platforms.
-    deps += [
-      "//rlz:rlz_lib",
-    ]
+    deps += [ "//rlz:rlz_lib" ]
   }
 
   if (cpu_arch == "x86" || cpu_arch == "x64") {
@@ -185,6 +183,7 @@ group("root") {
       "//third_party/openmax_dl/dl",
       "//content/shell/android:content_shell_apk",
       "//chrome/android:chrome_shell_apk",
+      "//chrome/test:test_support_unit",
       "//chrome/test/chromedriver/test/webview_shell:chromedriver_webview_shell_apk",
       "//ui/android:ui_java",
       "//third_party/android_tools:android_gcm_java",
@@ -192,13 +191,11 @@ group("root") {
       "//third_party/android_tools:android_support_v13_java",
       "//third_party/android_tools:android_support_v7_appcompat_java",
       "//third_party/android_tools:android_support_v7_mediarouter_java",
-      "//third_party/eyesfree:eyesfree_java",
+      "//third_party/mockito:mockito_java",
     ]
 
     if (has_chrome_android_internal) {
-      deps += [
-        "//clank",
-      ]
+      deps += [ "//clank" ]
     }
 
     # TODO(GYP): Move the targets in the rest of this block that still
@@ -268,7 +265,7 @@ group("root") {
     ]
   }
 
-  # 
+  #
   # TODO(GYP): Make everything below this work in the GN build.
   #
 
@@ -301,6 +298,12 @@ group("root") {
     ]
   }
 
+  if (is_mac || is_ios) {
+    deps -= [
+      "//ui/touch_selection",
+    ]
+  }
+
   if (is_win) {
     deps -= [
       "//apps",
@@ -323,7 +326,6 @@ group("root") {
       "//extensions/common",
       "//extensions/common/api",
       "//extensions/renderer",
-      "//gpu",
       "//google_apis",
       "//google_apis/gcm",
       "//jingle:notifier",
@@ -336,7 +338,6 @@ group("root") {
       "//ppapi:ppapi_c",
       "//printing",
       "//remoting/client/plugin",
-      "//sandbox",
       "//storage/browser",
       "//sync",
       "//third_party/WebKit/public:all_blink",
@@ -349,15 +350,11 @@ group("root") {
       "//ui/accessibility",
       "//ui/app_list",
       "//ui/aura",
-      "//ui/base",
-      "//ui/display",
-      "//ui/events",
-      "//ui/gfx",
-      "//ui/gl",
       "//ui/keyboard",
       "//ui/native_theme",
       "//ui/snapshot",
       "//ui/surface",
+      "//ui/touch_selection",
       "//ui/views",
       "//ui/views/controls/webview",
       "//ui/web_dialogs",

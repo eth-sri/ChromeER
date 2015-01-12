@@ -51,6 +51,12 @@ source_set("dri_common") {
     "dri_wrapper.h",
     "hardware_display_controller.cc",
     "hardware_display_controller.h",
+    "hardware_display_plane.cc",
+    "hardware_display_plane.h",
+    "hardware_display_plane_manager.cc",
+    "hardware_display_plane_manager.h",
+    "hardware_display_plane_manager_legacy.cc",
+    "hardware_display_plane_manager_legacy.h",
     "native_display_delegate_dri.cc",
     "native_display_delegate_dri.h",
     "native_display_delegate_proxy.cc",
@@ -72,13 +78,12 @@ source_set("dri_common") {
     "//ui/display/types",
     "//ui/events",
     "//ui/events/ozone:events_ozone_evdev",
+    "//ui/events/ozone:events_ozone_layout",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
 
-  public_configs = [
-    ":libdrm",
-  ]
+  public_configs = [ ":libdrm" ]
 }
 
 if (ozone_platform_dri) {
@@ -93,16 +98,17 @@ if (ozone_platform_dri) {
       "//base",
       "//skia",
       "//ui/events/ozone:events_ozone_evdev",
+      "//ui/events/ozone:events_ozone_layout",
     ]
   }
 
   source_set("dri_unittests") {
     testonly = true
     sources = [
-      "dri_surface_factory_unittest.cc",
       "dri_surface_unittest.cc",
       "dri_window_delegate_impl_unittest.cc",
       "hardware_display_controller_unittest.cc",
+      "hardware_display_manager_unittest.cc",
       "screen_manager_unittest.cc",
       "test/mock_dri_wrapper.cc",
       "test/mock_dri_wrapper.h",
@@ -142,10 +148,9 @@ if (ozone_platform_gbm) {
       "//base",
       "//skia",
       "//ui/events/ozone:events_ozone_evdev",
+      "//ui/events/ozone:events_ozone_layout",
     ]
 
-    public_configs = [
-      ":libgbm",
-    ]
+    public_configs = [ ":libgbm" ]
   }
 }

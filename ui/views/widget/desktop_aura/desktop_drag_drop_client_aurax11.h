@@ -5,9 +5,9 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_DRAG_DROP_CLIENT_AURAX11_H_
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_DRAG_DROP_CLIENT_AURAX11_H_
 
+#include <X11/Xlib.h>
 #include <set>
 #include <vector>
-#include <X11/Xlib.h>
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -16,7 +16,7 @@
 #include "ui/aura/window_observer.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/x/x11_atom_cache.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/x11_move_loop_delegate.h"
@@ -204,6 +204,8 @@ class VIEWS_EXPORT DesktopDragDropClientAuraX11
 
   aura::Window* root_window_;
 
+  DesktopNativeCursorManager* cursor_manager_;
+
   Display* xdisplay_;
   ::Window xwindow_;
 
@@ -276,11 +278,6 @@ class VIEWS_EXPORT DesktopDragDropClientAuraX11
 
   // The offset of |drag_widget_| relative to the mouse position.
   gfx::Vector2d drag_widget_offset_;
-
-  // We use these cursors while dragging.
-  gfx::NativeCursor grab_cursor_;
-  gfx::NativeCursor copy_grab_cursor_;
-  gfx::NativeCursor move_grab_cursor_;
 
   base::WeakPtrFactory<DesktopDragDropClientAuraX11> weak_ptr_factory_;
 

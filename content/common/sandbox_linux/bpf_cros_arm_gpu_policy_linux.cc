@@ -48,7 +48,7 @@ inline bool IsChromeOS() {
 }
 
 inline bool IsArchitectureArm() {
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
   return true;
 #else
   return false;
@@ -59,17 +59,19 @@ void AddArmMaliGpuWhitelist(std::vector<BrokerFilePermission>* permissions) {
   // Device file needed by the ARM GPU userspace.
   static const char kMali0Path[] = "/dev/mali0";
 
-  // Devices needed for video decode acceleration on ARM.
-  static const char kDevMfcDecPath[] = "/dev/mfc-dec";
+  // Device nodes for V4L2 video decode accelerator drivers.
+  static const char kDevVideoDecPath[] = "/dev/video-dec";
+
+  // Video processor used on ARM Exynos platforms.
   static const char kDevGsc1Path[] = "/dev/gsc1";
 
-  // Devices needed for video encode acceleration on ARM.
-  static const char kDevMfcEncPath[] = "/dev/mfc-enc";
+  // Device nodes for V4L2 video encode accelerator drivers.
+  static const char kDevVideoEncPath[] = "/dev/video-enc";
 
   permissions->push_back(BrokerFilePermission::ReadWrite(kMali0Path));
-  permissions->push_back(BrokerFilePermission::ReadWrite(kDevMfcDecPath));
+  permissions->push_back(BrokerFilePermission::ReadWrite(kDevVideoDecPath));
   permissions->push_back(BrokerFilePermission::ReadWrite(kDevGsc1Path));
-  permissions->push_back(BrokerFilePermission::ReadWrite(kDevMfcEncPath));
+  permissions->push_back(BrokerFilePermission::ReadWrite(kDevVideoEncPath));
 }
 
 void AddArmGpuWhitelist(std::vector<BrokerFilePermission>* permissions) {
@@ -108,8 +110,11 @@ class CrosArmGpuBrokerProcessPolicy : public CrosArmGpuProcessPolicy {
 // openat allowed.
 ResultExpr CrosArmGpuBrokerProcessPolicy::EvaluateSyscall(int sysno) const {
   switch (sysno) {
+#if !defined(__aarch64__)
     case __NR_access:
     case __NR_open:
+#endif  // !defined(__aarch64__)
+    case __NR_faccessat:
     case __NR_openat:
       return Allow();
     default:
@@ -125,13 +130,13 @@ CrosArmGpuProcessPolicy::CrosArmGpuProcessPolicy(bool allow_shmat)
 CrosArmGpuProcessPolicy::~CrosArmGpuProcessPolicy() {}
 
 ResultExpr CrosArmGpuProcessPolicy::EvaluateSyscall(int sysno) const {
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
   if (allow_shmat_ && sysno == __NR_shmat)
     return Allow();
-#endif  // defined(__arm__)
+#endif  // defined(__arm__) || defined(__aarch64__)
 
   switch (sysno) {
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
     // ARM GPU sandbox is started earlier so we need to allow networking
     // in the sandbox.
     case __NR_connect:
@@ -146,7 +151,7 @@ ResultExpr CrosArmGpuProcessPolicy::EvaluateSyscall(int sysno) const {
       const Arg<int> domain(0);
       return If(domain == AF_UNIX, Allow()).Else(Error(EPERM));
     }
-#endif  // defined(__arm__)
+#endif  // defined(__arm__) || defined(__aarch64__)
     default:
       // Default to the generic GPU policy.
       return GpuProcessPolicy::EvaluateSyscall(sysno);

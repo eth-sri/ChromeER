@@ -37,6 +37,10 @@ class CreditCard : public AutofillDataModel {
              int expiration_month,
              int expiration_year);
 
+  // Creates a wallet card. This sets the wallet-specific records. To set the
+  // rest, use SetRawInfo like a normal card.
+  CreditCard(const std::string& wallet_id, RecordType type);
+
   // For use in STL containers.
   CreditCard();
   CreditCard(const CreditCard& credit_card);
@@ -64,6 +68,9 @@ class CreditCard : public AutofillDataModel {
   // the invalid card "4garbage" will be Visa, which has an IIN of 4.
   static const char* GetCreditCardType(const base::string16& number);
 
+  // Type strings are defined at the bottom of this file, e.g. kVisaCard.
+  void SetTypeForMaskedCard(const char* type);
+
   // FormGroup:
   void GetMatchingTypes(const base::string16& text,
                         const std::string& app_locale,
@@ -76,14 +83,14 @@ class CreditCard : public AutofillDataModel {
                const base::string16& value,
                const std::string& app_locale) override;
 
-  // Credit card preview summary, for example: ******1234, Exp: 01/2020
+  // Credit card preview summary, for example: Visa - 1234, Exp: 01/2020
+  // Used for settings and the requestAutocomplete dialog, but not
+  // the autofill dropdown.
   const base::string16 Label() const;
 
   // Special method to set value for HTML5 month input type.
   void SetInfoForMonthInputType(const base::string16& value);
 
-  // The number altered for display, for example: ******1234
-  base::string16 ObfuscatedNumber() const;
   // The last four digits of the credit card number (or possibly less if there
   // aren't enough characters).
   base::string16 LastFourDigits() const;
@@ -96,6 +103,8 @@ class CreditCard : public AutofillDataModel {
 
   int expiration_month() const { return expiration_month_; }
   int expiration_year() const { return expiration_year_; }
+
+  const std::string& wallet_id() const { return wallet_id_; }
 
   // For use in STL containers.
   void operator=(const CreditCard& credit_card);
@@ -142,6 +151,9 @@ class CreditCard : public AutofillDataModel {
   // FormGroup:
   void GetSupportedTypes(ServerFieldTypeSet* supported_types) const override;
 
+  // The type of the card to fill in to the page, e.g. 'Mastercard'.
+  base::string16 TypeForFill() const;
+
   // The month and year are zero if not present.
   int Expiration4DigitYear() const { return expiration_year_; }
   int Expiration2DigitYear() const { return expiration_year_ % 100; }
@@ -180,6 +192,10 @@ class CreditCard : public AutofillDataModel {
   // These members are zero if not present.
   int expiration_month_;
   int expiration_year_;
+
+  // For wallet cards (both MASKED and UNMASKED) this is the ID assigned by the
+  // server to uniquely identify this card.
+  std::string wallet_id_;
 };
 
 // So we can compare CreditCards with EXPECT_EQ().

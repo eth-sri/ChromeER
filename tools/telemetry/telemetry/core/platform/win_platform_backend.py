@@ -104,16 +104,6 @@ class WinPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
     self._msr_server_handle = None
     self._msr_server_port = None
 
-  # pylint: disable=W0613
-  def StartRawDisplayFrameRateMeasurement(self):
-    raise NotImplementedError()
-
-  def StopRawDisplayFrameRateMeasurement(self):
-    raise NotImplementedError()
-
-  def GetRawDisplayFrameRateMeasurements(self):
-    raise NotImplementedError()
-
   def IsThermallyThrottled(self):
     raise NotImplementedError()
 
@@ -147,13 +137,6 @@ class WinPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
             'VMPeak': memory_info['PeakPagefileUsage'],
             'WorkingSetSize': memory_info['WorkingSetSize'],
             'WorkingSetSizePeak': memory_info['PeakWorkingSetSize']}
-
-  def GetIOStats(self, pid):
-    io_stats = self._GetWin32ProcessInfo(win32process.GetProcessIoCounters, pid)
-    return {'ReadOperationCount': io_stats['ReadOperationCount'],
-            'WriteOperationCount': io_stats['WriteOperationCount'],
-            'ReadTransferCount': io_stats['ReadTransferCount'],
-            'WriteTransferCount': io_stats['WriteTransferCount']}
 
   def KillProcess(self, pid, kill_process_tree=False):
     # os.kill for Windows is Python 2.7.

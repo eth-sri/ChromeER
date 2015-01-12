@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_SUPERVISED_USER_SUPERVISED_USER_SERVICE_H_
 
 #include <map>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -24,7 +23,6 @@
 #include "chrome/browser/sync/sync_type_preference_provider.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "content/public/browser/web_contents.h"
 
 #if defined(ENABLE_EXTENSIONS)
 #include "extensions/browser/extension_registry_observer.h"
@@ -41,9 +39,14 @@ class SupervisedUserServiceObserver;
 class SupervisedUserSettingsService;
 class SupervisedUserSiteList;
 class SupervisedUserURLFilter;
+class SupervisedUserWhitelistService;
 
 namespace base {
 class FilePath;
+}
+
+namespace content {
+class WebContents;
 }
 
 namespace extensions {
@@ -68,7 +71,8 @@ class SupervisedUserService : public KeyedService,
 #endif
                               public SyncTypePreferenceProvider,
                               public ProfileSyncServiceObserver,
-                              public chrome::BrowserListObserver {
+                              public chrome::BrowserListObserver,
+                              public SupervisedUserURLFilter::Observer {
  public:
   typedef std::vector<base::string16> CategoryList;
   typedef base::Callback<void(content::WebContents*)> NavigationBlockedCallback;
@@ -109,6 +113,9 @@ class SupervisedUserService : public KeyedService,
   // Returns the URL filter for the UI thread, for filtering navigations and
   // classifying sites in the history view.
   SupervisedUserURLFilter* GetURLFilterForUIThread();
+
+  // Returns the whitelist service.
+  SupervisedUserWhitelistService* GetWhitelistService();
 
   // Returns the URL's category, obtained from the installed content packs.
   int GetCategory(const GURL& url);
@@ -170,8 +177,8 @@ class SupervisedUserService : public KeyedService,
   void AddObserver(SupervisedUserServiceObserver* observer);
   void RemoveObserver(SupervisedUserServiceObserver* observer);
 
-  // Will take ownership of |creator|.
-  void AddPermissionRequestCreatorForTesting(PermissionRequestCreator* creator);
+  void AddPermissionRequestCreator(
+      scoped_ptr<PermissionRequestCreator> creator);
 
 #if defined(ENABLE_EXTENSIONS)
   // extensions::ManagementPolicy::Provider implementation:
@@ -199,6 +206,9 @@ class SupervisedUserService : public KeyedService,
   // chrome::BrowserListObserver implementation:
   void OnBrowserSetLastActive(Browser* browser) override;
 
+  // SupervisedUserURLFilter::Observer implementation:
+  void OnSiteListUpdated() override;
+
  private:
   friend class SupervisedUserServiceExtensionTestBase;
   friend class SupervisedUserServiceFactory;
@@ -222,7 +232,8 @@ class SupervisedUserService : public KeyedService,
     void SetDefaultFilteringBehavior(
         SupervisedUserURLFilter::FilteringBehavior behavior);
     void LoadWhitelists(ScopedVector<SupervisedUserSiteList> site_lists);
-    void LoadBlacklist(const base::FilePath& path);
+    void LoadBlacklist(const base::FilePath& path,
+                       const base::Closure& callback);
     void SetManualHosts(scoped_ptr<std::map<std::string, bool> > host_map);
     void SetManualURLs(scoped_ptr<std::map<GURL, bool> > url_map);
 
@@ -230,7 +241,7 @@ class SupervisedUserService : public KeyedService,
                              const std::string& cx);
 
    private:
-    void OnBlacklistLoaded();
+    void OnBlacklistLoaded(const base::Closure& callback);
 
     // SupervisedUserURLFilter is refcounted because the IO thread filter is
     // used both by ProfileImplIOData and OffTheRecordProfileIOData (to filter
@@ -311,6 +322,8 @@ class SupervisedUserService : public KeyedService,
 
   void OnBlacklistDownloadDone(const base::FilePath& path, bool success);
 
+  void OnBlacklistLoaded();
+
   // Updates the manual overrides for hosts in the URL filters when the
   // corresponding preference is changed.
   void UpdateManualHosts();
@@ -367,6 +380,8 @@ class SupervisedUserService : public KeyedService,
 
   URLFilterContext url_filter_context_;
   scoped_ptr<SupervisedUserBlacklistDownloader> blacklist_downloader_;
+
+  scoped_ptr<SupervisedUserWhitelistService> whitelist_service_;
 
   // Used to create permission requests.
   ScopedVector<PermissionRequestCreator> permissions_creators_;

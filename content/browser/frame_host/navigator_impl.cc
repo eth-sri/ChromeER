@@ -38,7 +38,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "net/base/load_flags.h"
-#include "net/http/http_response_headers.h"
+#include "net/http/http_request_headers.h"
 
 namespace content {
 
@@ -107,8 +107,23 @@ FrameHostMsg_BeginNavigation_Params MakeDefaultBeginNavigation(
   begin_navigation_params.load_flags =
       LoadFlagFromNavigationType(navigation_type);
 
-  // TODO(clamy): Post data from the browser should be put in the request body.
-  // Headers should be filled in as well.
+  // Copy existing headers and add necessary headers that may not be present
+  // in the RequestNavigationParams.
+  net::HttpRequestHeaders headers;
+  headers.AddHeadersFromString(request_params.extra_headers);
+  headers.SetHeaderIfMissing(net::HttpRequestHeaders::kUserAgent,
+                             GetContentClient()->GetUserAgent());
+  headers.SetHeaderIfMissing("Accept", "*/*");
+  begin_navigation_params.headers = headers.ToString();
+
+  // Fill POST data from the browser in the request body.
+  if (request_params.is_post) {
+    begin_navigation_params.request_body = new ResourceRequestBody();
+    begin_navigation_params.request_body->AppendBytes(
+        reinterpret_cast<const char *>(
+            &request_params.browser_initiated_post_data.front()),
+        request_params.browser_initiated_post_data.size());
+  }
 
   begin_navigation_params.has_user_gesture = false;
   return begin_navigation_params;
@@ -377,8 +392,8 @@ bool NavigatorImpl::NavigateToEntry(
       render_frame_host->frame_tree_node()->render_manager();
 
   // PlzNavigate: the RenderFrameHosts are no longer asked to navigate.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableBrowserSideNavigation)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
     navigation_data_.reset(new NavigationMetricsData(
         navigation_start, entry.GetURL(), entry.restore_type()));
     return RequestNavigation(render_frame_host->frame_tree_node(),
@@ -467,8 +482,8 @@ void NavigatorImpl::DidNavigate(
   // PlzNavigate
   // The navigation request has been committed so the browser process doesn't
   // need to care about it anymore.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableBrowserSideNavigation)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
     navigation_request_map_.erase(
         render_frame_host->frame_tree_node()->frame_tree_node_id());
   }
@@ -517,14 +532,24 @@ void NavigatorImpl::DidNavigate(
     }
 
     if (!use_site_per_process)
-      frame_tree->root()->render_manager()->DidNavigateFrame(render_frame_host);
+      frame_tree->root()->render_manager()->DidNavigateFrame(
+          render_frame_host, params.gesture == NavigationGestureUser);
   }
+
+  // Save the origin of the new page.  Do this before calling
+  // DidNavigateFrame(), because the origin needs to be included in the SwapOut
+  // message, which is sent inside DidNavigateFrame().  SwapOut needs the
+  // origin because it creates a RenderFrameProxy that needs this to initialize
+  // its security context. This origin will also be sent to RenderFrameProxies
+  // created via ViewMsg_New and FrameMsg_NewFrameProxy.
+  render_frame_host->frame_tree_node()->set_current_origin(params.origin);
 
   // When using --site-per-process, we notify the RFHM for all navigations,
   // not just main frame navigations.
   if (use_site_per_process) {
     FrameTreeNode* frame = render_frame_host->frame_tree_node();
-    frame->render_manager()->DidNavigateFrame(render_frame_host);
+    frame->render_manager()->DidNavigateFrame(
+        render_frame_host, params.gesture == NavigationGestureUser);
   }
 
   // Update the site of the SiteInstance if it doesn't have one yet, unless
@@ -616,13 +641,13 @@ bool NavigatorImpl::ShouldAssignSiteForURL(const GURL& url) {
   return GetContentClient()->browser()->ShouldAssignSiteForURL(url);
 }
 
-void NavigatorImpl::RequestOpenURL(
-    RenderFrameHostImpl* render_frame_host,
-    const GURL& url,
-    const Referrer& referrer,
-    WindowOpenDisposition disposition,
-    bool should_replace_current_entry,
-    bool user_gesture) {
+void NavigatorImpl::RequestOpenURL(RenderFrameHostImpl* render_frame_host,
+                                   const GURL& url,
+                                   SiteInstance* source_site_instance,
+                                   const Referrer& referrer,
+                                   WindowOpenDisposition disposition,
+                                   bool should_replace_current_entry,
+                                   bool user_gesture) {
   SiteInstance* current_site_instance =
       GetRenderManager(render_frame_host)->current_frame_host()->
           GetSiteInstance();
@@ -640,20 +665,16 @@ void NavigatorImpl::RequestOpenURL(
   // TODO(creis): Pass the redirect_chain into this method to support client
   // redirects.  http://crbug.com/311721.
   std::vector<GURL> redirect_chain;
-  RequestTransferURL(render_frame_host,
-                     url,
-                     redirect_chain,
-                     referrer,
-                     ui::PAGE_TRANSITION_LINK,
-                     disposition,
-                     GlobalRequestID(),
-                     should_replace_current_entry,
-                     user_gesture);
+  RequestTransferURL(render_frame_host, url, source_site_instance,
+                     redirect_chain, referrer, ui::PAGE_TRANSITION_LINK,
+                     disposition, GlobalRequestID(),
+                     should_replace_current_entry, user_gesture);
 }
 
 void NavigatorImpl::RequestTransferURL(
     RenderFrameHostImpl* render_frame_host,
     const GURL& url,
+    SiteInstance* source_site_instance,
     const std::vector<GURL>& redirect_chain,
     const Referrer& referrer,
     ui::PageTransition page_transition,
@@ -679,6 +700,7 @@ void NavigatorImpl::RequestTransferURL(
   OpenURLParams params(
       dest_url, referrer, frame_tree_node_id, disposition, page_transition,
       true /* is_renderer_initiated */);
+  params.source_site_instance = source_site_instance;
   if (redirect_chain.size() > 0)
     params.redirect_chain = redirect_chain;
   params.transferred_global_request_id = transferred_global_request_id;
@@ -715,7 +737,7 @@ void NavigatorImpl::OnBeginNavigation(
     FrameTreeNode* frame_tree_node,
     const FrameHostMsg_BeginNavigation_Params& params,
     const CommonNavigationParams& common_params) {
-  CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
   DCHECK(frame_tree_node);
 
@@ -764,7 +786,7 @@ void NavigatorImpl::OnBeginNavigation(
 void NavigatorImpl::CommitNavigation(FrameTreeNode* frame_tree_node,
                                      ResourceResponse* response,
                                      scoped_ptr<StreamHandle> body) {
-  CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
 
   // HTTP 204 (No Content) and HTTP 205 (Reset Content) responses should not
@@ -795,7 +817,7 @@ void NavigatorImpl::CommitNavigation(FrameTreeNode* frame_tree_node,
 
 // PlzNavigate
 void NavigatorImpl::CancelNavigation(FrameTreeNode* frame_tree_node) {
-  CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
   navigation_request_map_.erase(frame_tree_node->frame_tree_node_id());
 }
@@ -850,7 +872,7 @@ bool NavigatorImpl::RequestNavigation(
     const NavigationEntryImpl& entry,
     NavigationController::ReloadType reload_type,
     base::TimeTicks navigation_start) {
-  CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
   DCHECK(frame_tree_node);
   int64 frame_tree_node_id = frame_tree_node->frame_tree_node_id();
@@ -876,10 +898,12 @@ bool NavigatorImpl::RequestNavigation(
   navigation_request_map_.set(frame_tree_node_id, navigation_request.Pass());
 
   if (frame_tree_node->current_frame_host()->IsRenderFrameLive()) {
+    NavigationRequest* request_to_send =
+        navigation_request_map_.get(frame_tree_node_id);
     frame_tree_node->current_frame_host()->Send(new FrameMsg_RequestNavigation(
         frame_tree_node->current_frame_host()->GetRoutingID(),
-        navigation_request_map_.get(frame_tree_node_id)->common_params(),
-        request_params));
+        request_to_send->common_params(), request_params));
+    request_to_send->SetWaitingForRendererResponse();
     return true;
   }
 

@@ -306,8 +306,7 @@ X509Certificate* X509Certificate::CreateFromBytes(const char* data,
 }
 
 // static
-X509Certificate* X509Certificate::CreateFromPickle(const Pickle& pickle,
-                                                   PickleIterator* pickle_iter,
+X509Certificate* X509Certificate::CreateFromPickle(PickleIterator* pickle_iter,
                                                    PickleType type) {
   if (type == PICKLETYPE_CERTIFICATE_CHAIN_V3) {
     int chain_length = 0;
@@ -629,27 +628,16 @@ bool X509Certificate::VerifyHostname(
     if (presented_domain != reference_domain)
       continue;
 
-    base::StringPiece pattern_begin, pattern_end;
-    SplitOnChar(presented_host, '*', &pattern_begin, &pattern_end);
-
-    if (pattern_end.empty()) {  // No '*' in the presented_host
+    if (presented_host != "*") {
       if (presented_host == reference_host)
         return true;
       continue;
     }
-    pattern_end.remove_prefix(1);  // move past the *
 
     if (!allow_wildcards)
       continue;
 
-    // * must not match a substring of an IDN A label; just a whole fragment.
-    if (reference_host.starts_with("xn--") &&
-        !(pattern_begin.empty() && pattern_end.empty()))
-      continue;
-
-    if (reference_host.starts_with(pattern_begin) &&
-        reference_host.ends_with(pattern_end))
-      return true;
+    return true;
   }
   return false;
 }

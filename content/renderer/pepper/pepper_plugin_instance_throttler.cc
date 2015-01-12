@@ -4,17 +4,14 @@
 
 #include "content/renderer/pepper/pepper_plugin_instance_throttler.h"
 
-#include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/time/time.h"
 #include "content/public/common/content_constants.h"
-#include "content/public/common/content_switches.h"
-#include "content/renderer/pepper/plugin_power_saver_helper.h"
-#include "content/renderer/render_thread_impl.h"
+#include "content/public/renderer/render_thread.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/color_utils.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -33,15 +30,6 @@ enum PluginFlashTinyContentSize {
   TINY_CONTENT_SIZE_10_10 = 2,
   TINY_CONTENT_SIZE_LARGE = 3,
   TINY_CONTENT_SIZE_NUM_ITEMS
-};
-
-// How the throttled power saver is unthrottled, if ever.
-// These numeric values are used in UMA logs; do not change them.
-enum PowerSaverUnthrottleMethod {
-  UNTHROTTLE_METHOD_NEVER = 0,
-  UNTHROTTLE_METHOD_BY_CLICK = 1,
-  UNTHROTTLE_METHOD_BY_WHITELIST = 2,
-  UNTHROTTLE_METHOD_NUM_ITEMS
 };
 
 const char kFlashClickSizeAspectRatioHistogram[] =
@@ -66,9 +54,11 @@ void RecordFlashSizeMetric(int width, int height) {
                             TINY_CONTENT_SIZE_NUM_ITEMS);
 }
 
-void RecordUnthrottleMethodMetric(PowerSaverUnthrottleMethod method) {
-  UMA_HISTOGRAM_ENUMERATION(kPowerSaverUnthrottleHistogram, method,
-                            UNTHROTTLE_METHOD_NUM_ITEMS);
+void RecordUnthrottleMethodMetric(
+    PepperPluginInstanceThrottler::PowerSaverUnthrottleMethod method) {
+  UMA_HISTOGRAM_ENUMERATION(
+      kPowerSaverUnthrottleHistogram, method,
+      PepperPluginInstanceThrottler::UNTHROTTLE_METHOD_NUM_ITEMS);
 }
 
 // Records size metrics for Flash instances that are clicked.
@@ -107,10 +97,11 @@ const int kMinimumConsecutiveInterestingFrames = 4;
 }  // namespace
 
 PepperPluginInstanceThrottler::PepperPluginInstanceThrottler(
-    PluginPowerSaverHelper* power_saver_helper,
+    RenderFrame* frame,
     const blink::WebRect& bounds,
     const std::string& module_name,
     const GURL& plugin_url,
+    RenderFrame::PluginPowerSaverMode power_saver_mode,
     const base::Closure& throttle_change_callback)
     : bounds_(bounds),
       throttle_change_callback_(throttle_change_callback),
@@ -119,44 +110,37 @@ PepperPluginInstanceThrottler::PepperPluginInstanceThrottler(
       consecutive_interesting_frames_(0),
       has_been_clicked_(false),
       power_saver_enabled_(false),
-      is_peripheral_content_(false),
+      is_peripheral_content_(power_saver_mode !=
+                             RenderFrame::POWER_SAVER_MODE_ESSENTIAL),
       plugin_throttled_(false),
       weak_factory_(this) {
-  GURL content_origin = plugin_url.GetOrigin();
-
   if (is_flash_plugin_ && RenderThread::Get()) {
     RenderThread::Get()->RecordAction(
         base::UserMetricsAction("Flash.PluginInstanceCreated"));
     RecordFlashSizeMetric(bounds.width, bounds.height);
   }
 
-  bool cross_origin = false;
-  is_peripheral_content_ =
+  power_saver_enabled_ =
       is_flash_plugin_ &&
-      power_saver_helper->ShouldThrottleContent(content_origin, bounds.width,
-                                                bounds.height, &cross_origin);
+      power_saver_mode == RenderFrame::POWER_SAVER_MODE_PERIPHERAL_THROTTLED;
 
-  power_saver_enabled_ = is_peripheral_content_ &&
-                         base::CommandLine::ForCurrentProcess()->HasSwitch(
-                             switches::kEnablePluginPowerSaver);
+  GURL content_origin = plugin_url.GetOrigin();
 
-  if (is_peripheral_content_) {
-    // To collect UMAs, register peripheral content even if we don't throttle.
-    power_saver_helper->RegisterPeripheralPlugin(
-        content_origin, base::Bind(&PepperPluginInstanceThrottler::
-                                       DisablePowerSaverByRetroactiveWhitelist,
-                                   weak_factory_.GetWeakPtr()));
+  // To collect UMAs, register peripheral content even if power saver disabled.
+  if (frame) {
+    frame->RegisterPeripheralPlugin(
+        content_origin,
+        base::Bind(&PepperPluginInstanceThrottler::DisablePowerSaver,
+                   weak_factory_.GetWeakPtr(), UNTHROTTLE_METHOD_BY_WHITELIST));
+  }
 
-    if (power_saver_enabled_) {
-      needs_representative_keyframe_ = true;
-      base::MessageLoop::current()->PostDelayedTask(
-          FROM_HERE,
-          base::Bind(&PepperPluginInstanceThrottler::SetPluginThrottled,
-                     weak_factory_.GetWeakPtr(), true /* throttled */),
-          base::TimeDelta::FromMilliseconds(kThrottleTimeout));
-    }
-  } else if (cross_origin) {
-    power_saver_helper->WhitelistContentOrigin(content_origin);
+  if (power_saver_enabled_) {
+    needs_representative_keyframe_ = true;
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PepperPluginInstanceThrottler::SetPluginThrottled,
+                   weak_factory_.GetWeakPtr(), true /* throttled */),
+        base::TimeDelta::FromMilliseconds(kThrottleTimeout));
   }
 }
 
@@ -179,15 +163,25 @@ void PepperPluginInstanceThrottler::OnImageFlush(const SkBitmap* bitmap) {
 
 bool PepperPluginInstanceThrottler::ConsumeInputEvent(
     const blink::WebInputEvent& event) {
+  // Always allow right-clicks through so users may verify it's a plug-in.
+  // TODO(tommycli): We should instead show a custom context menu (probably
+  // using PluginPlaceholder) so users aren't confused and try to click the
+  // Flash-internal 'Play' menu item. This is a stopgap solution.
+  if (event.modifiers & blink::WebInputEvent::Modifiers::RightButtonDown)
+    return false;
+
   if (!has_been_clicked_ && is_flash_plugin_ &&
-      event.type == blink::WebInputEvent::MouseDown) {
+      event.type == blink::WebInputEvent::MouseDown &&
+      (event.modifiers & blink::WebInputEvent::LeftButtonDown)) {
     has_been_clicked_ = true;
     RecordFlashClickSizeMetric(bounds_.width, bounds_.height);
   }
 
-  if (event.type == blink::WebInputEvent::MouseUp && is_peripheral_content_) {
+  if (is_peripheral_content_ && event.type == blink::WebInputEvent::MouseUp &&
+      (event.modifiers & blink::WebInputEvent::LeftButtonDown)) {
     is_peripheral_content_ = false;
     power_saver_enabled_ = false;
+    needs_representative_keyframe_ = false;
 
     RecordUnthrottleMethodMetric(UNTHROTTLE_METHOD_BY_CLICK);
 
@@ -200,6 +194,18 @@ bool PepperPluginInstanceThrottler::ConsumeInputEvent(
   return plugin_throttled_;
 }
 
+void PepperPluginInstanceThrottler::DisablePowerSaver(
+    PowerSaverUnthrottleMethod method) {
+  if (!is_peripheral_content_)
+    return;
+
+  is_peripheral_content_ = false;
+  power_saver_enabled_ = false;
+  SetPluginThrottled(false);
+
+  RecordUnthrottleMethodMetric(method);
+}
+
 void PepperPluginInstanceThrottler::SetPluginThrottled(bool throttled) {
   // Do not throttle if we've already disabled power saver.
   if (!power_saver_enabled_ && throttled)
@@ -210,17 +216,6 @@ void PepperPluginInstanceThrottler::SetPluginThrottled(bool throttled) {
 
   plugin_throttled_ = throttled;
   throttle_change_callback_.Run();
-}
-
-void PepperPluginInstanceThrottler::DisablePowerSaverByRetroactiveWhitelist() {
-  if (!is_peripheral_content_)
-    return;
-
-  is_peripheral_content_ = false;
-  power_saver_enabled_ = false;
-  SetPluginThrottled(false);
-
-  RecordUnthrottleMethodMetric(UNTHROTTLE_METHOD_BY_WHITELIST);
 }
 
 }  // namespace content

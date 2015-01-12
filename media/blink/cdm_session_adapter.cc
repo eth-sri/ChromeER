@@ -13,7 +13,6 @@
 #include "media/base/key_systems.h"
 #include "media/base/media_keys.h"
 #include "media/blink/webcontentdecryptionmodulesession_impl.h"
-#include "media/cdm/aes_decryptor.h"
 #include "url/gurl.h"
 
 namespace media {
@@ -33,23 +32,13 @@ bool CdmSessionAdapter::Initialize(CdmFactory* cdm_factory,
       kMediaEME + GetKeySystemNameForUMA(key_system) + kDot;
 
   base::WeakPtr<CdmSessionAdapter> weak_this = weak_ptr_factory_.GetWeakPtr();
-
-  if (CanUseAesDecryptor(key_system)) {
-    media_keys_.reset(new AesDecryptor(
-        base::Bind(&CdmSessionAdapter::OnSessionMessage, weak_this),
-        base::Bind(&CdmSessionAdapter::OnSessionClosed, weak_this),
-        base::Bind(&CdmSessionAdapter::OnSessionKeysChange, weak_this)));
-  } else if (cdm_factory) {
-    media_keys_ = cdm_factory->Create(
-        key_system, security_origin,
-        base::Bind(&CdmSessionAdapter::OnSessionMessage, weak_this),
-        base::Bind(&CdmSessionAdapter::OnSessionReady, weak_this),
-        base::Bind(&CdmSessionAdapter::OnSessionClosed, weak_this),
-        base::Bind(&CdmSessionAdapter::OnSessionError, weak_this),
-        base::Bind(&CdmSessionAdapter::OnSessionKeysChange, weak_this),
-        base::Bind(&CdmSessionAdapter::OnSessionExpirationUpdate, weak_this));
-  }
-
+  media_keys_ = cdm_factory->Create(
+      key_system, security_origin,
+      base::Bind(&CdmSessionAdapter::OnSessionMessage, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionClosed, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionError, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionKeysChange, weak_this),
+      base::Bind(&CdmSessionAdapter::OnSessionExpirationUpdate, weak_this));
   return media_keys_.get() != nullptr;
 }
 
@@ -121,12 +110,6 @@ void CdmSessionAdapter::RemoveSession(
   media_keys_->RemoveSession(web_session_id, promise.Pass());
 }
 
-void CdmSessionAdapter::GetUsableKeyIds(
-    const std::string& web_session_id,
-    scoped_ptr<KeyIdsPromise> promise) {
-  media_keys_->GetUsableKeyIds(web_session_id, promise.Pass());
-}
-
 CdmContext* CdmSessionAdapter::GetCdmContext() {
   return media_keys_->GetCdmContext();
 }
@@ -162,11 +145,6 @@ void CdmSessionAdapter::OnSessionExpirationUpdate(
                              << web_session_id;
   if (session)
     session->OnSessionExpirationUpdate(new_expiry_time);
-}
-
-void CdmSessionAdapter::OnSessionReady(const std::string& web_session_id) {
-  // Ready events not used by unprefixed EME.
-  // TODO(jrummell): Remove when prefixed EME removed.
 }
 
 void CdmSessionAdapter::OnSessionClosed(const std::string& web_session_id) {

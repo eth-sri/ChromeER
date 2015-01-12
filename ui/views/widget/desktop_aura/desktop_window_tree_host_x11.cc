@@ -31,9 +31,9 @@
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/display.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
-#include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/path_x11.h"
 #include "ui/gfx/screen.h"
@@ -1034,10 +1034,10 @@ void DesktopWindowTreeHostX11::InitX11Window(
   // use the ARGB visual. Otherwise, just use our parent's visual.
   Visual* visual = CopyFromParent;
   int depth = CopyFromParent;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableTransparentVisuals) &&
-      XGetSelectionOwner(xdisplay_,
-                         atom_cache_.GetAtom("_NET_WM_CM_S0")) != None) {
+      XGetSelectionOwner(xdisplay_, atom_cache_.GetAtom("_NET_WM_CM_S0")) !=
+          None) {
     Visual* rgba_visual = GetARGBVisual();
     if (rgba_visual) {
       visual = rgba_visual;
@@ -1225,8 +1225,9 @@ gfx::Size DesktopWindowTreeHostX11::AdjustSize(
 
 void DesktopWindowTreeHostX11::OnWMStateUpdated() {
   std::vector< ::Atom> atom_list;
-  if (!ui::GetAtomArrayProperty(xwindow_, "_NET_WM_STATE", &atom_list))
-    return;
+  // Ignore the return value of ui::GetAtomArrayProperty(). Fluxbox removes the
+  // _NET_WM_STATE property when no _NET_WM_STATE atoms are set.
+  ui::GetAtomArrayProperty(xwindow_, "_NET_WM_STATE", &atom_list);
 
   bool was_minimized = IsMinimized();
 

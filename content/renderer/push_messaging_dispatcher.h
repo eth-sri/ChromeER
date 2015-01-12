@@ -19,10 +19,6 @@ namespace IPC {
 class Message;
 }  // namespace IPC
 
-namespace blink {
-class WebServiceWorkerProvider;
-}  // namespace blink
-
 namespace content {
 
 struct Manifest;
@@ -39,30 +35,23 @@ class PushMessagingDispatcher : public RenderFrameObserver,
 
   // WebPushClient implementation.
   virtual void registerPushMessaging(
+      blink::WebServiceWorkerRegistration* service_worker_registration,
+      blink::WebPushRegistrationCallbacks* callbacks);  // override
+
+  void DoRegister(
+      blink::WebServiceWorkerRegistration* service_worker_registration,
       blink::WebPushRegistrationCallbacks* callbacks,
-      blink::WebServiceWorkerProvider* service_worker_provider);  // override
-  virtual void getPermissionStatus(
-      blink::WebPushPermissionStatusCallback* callback,
-      blink::WebServiceWorkerProvider* service_worker_provider);  // override
+      const Manifest& manifest);
 
-  void DoRegister(blink::WebPushRegistrationCallbacks* callbacks,
-                  blink::WebServiceWorkerProvider* service_worker_provider,
-                  const Manifest& manifest);
+  void OnRegisterFromDocumentSuccess(int32 request_id,
+                                     const GURL& endpoint,
+                                     const std::string& registration_id);
 
-  void OnRegisterSuccess(int32 callbacks_id,
-                         const GURL& endpoint,
-                         const std::string& registration_id);
-
-  void OnRegisterError(int32 callbacks_id, PushRegistrationStatus status);
-
-  void OnPermissionStatus(int32 callback_id,
-                          blink::WebPushPermissionStatus status);
-  void OnPermissionStatusFailure(int32 callback_id);
+  void OnRegisterFromDocumentError(int32 request_id,
+                                   PushRegistrationStatus status);
 
   IDMap<blink::WebPushRegistrationCallbacks, IDMapOwnPointer>
       registration_callbacks_;
-  IDMap<blink::WebPushPermissionStatusCallback, IDMapOwnPointer>
-      permission_check_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(PushMessagingDispatcher);
 };

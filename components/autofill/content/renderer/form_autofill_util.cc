@@ -9,20 +9,17 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
-#include "base/metrics/field_trial.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/autofill_data_validation.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
-#include "components/autofill/core/common/web_element_descriptor.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebElementCollection.h"
-#include "third_party/WebKit/public/web/WebExceptionCode.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
@@ -37,7 +34,6 @@
 using blink::WebDocument;
 using blink::WebElement;
 using blink::WebElementCollection;
-using blink::WebExceptionCode;
 using blink::WebFormControlElement;
 using blink::WebFormElement;
 using blink::WebFrame;
@@ -72,6 +68,11 @@ RequirementsMask ExtractionRequirements() {
              : REQUIRE_NONE;
 }
 
+void TruncateString(base::string16* str, size_t max_length) {
+  if (str->length() > max_length)
+    str->resize(max_length);
+}
+
 bool IsOptionElement(const WebElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kOption, ("option"));
   return element.hasHTMLTagName(kOption);
@@ -96,6 +97,34 @@ bool IsAutofillableElement(const WebFormControlElement& element) {
   return IsAutofillableInputElement(input_element) ||
          IsSelectElement(element) ||
          IsTextAreaElement(element);
+}
+
+bool IsElementInControlElementSet(
+    const WebElement& element,
+    const std::vector<WebFormControlElement>& control_elements) {
+  if (!element.isFormControlElement())
+    return false;
+  const WebFormControlElement form_control_element =
+      element.toConst<WebFormControlElement>();
+  return std::find(control_elements.begin(),
+                   control_elements.end(),
+                   form_control_element) != control_elements.end();
+}
+
+bool IsElementInsideFormOrFieldSet(const WebElement& element) {
+  for (WebNode parent_node = element.parentNode();
+       !parent_node.isNull();
+       parent_node = parent_node.parentNode()) {
+    if (!parent_node.isElementNode())
+      continue;
+
+    WebElement cur_element = parent_node.to<WebElement>();
+    if (cur_element.hasHTMLTagName("form") ||
+        cur_element.hasHTMLTagName("fieldset")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Check whether the given field satisfies the REQUIRE_AUTOCOMPLETE requirement.
@@ -493,19 +522,15 @@ typedef void (*Callback)(const FormFieldData&,
                          bool, /* is_initiating_element */
                          blink::WebFormControlElement*);
 
-// For each autofillable field in |data| that matches a field in the |form|,
-// the |callback| is invoked with the corresponding |form| field data.
-void ForEachMatchingFormField(const WebFormElement& form_element,
-                              const WebElement& initiating_element,
-                              const FormData& data,
-                              FieldFilterMask filters,
-                              bool force_override,
-                              Callback callback) {
-  std::vector<WebFormControlElement> control_elements;
-  ExtractAutofillableElements(
-      form_element, ExtractionRequirements(), &control_elements);
-
-  if (control_elements.size() != data.fields.size()) {
+void ForEachMatchingFormFieldCommon(
+    std::vector<WebFormControlElement>* control_elements,
+    const WebElement& initiating_element,
+    const FormData& data,
+    FieldFilterMask filters,
+    bool force_override,
+    Callback callback) {
+  DCHECK(control_elements);
+  if (control_elements->size() != data.fields.size()) {
     // This case should be reachable only for pathological websites and tests,
     // which add or remove form fields while the user is interacting with the
     // Autofill popup.
@@ -517,8 +542,8 @@ void ForEachMatchingFormField(const WebFormElement& form_element,
   // elements is equal to the size of the fields in |form|.  Fortunately, the
   // one case in the wild where this happens, paypal.com signup form, the fields
   // are appended to the end of the form and are not visible.
-  for (size_t i = 0; i < control_elements.size(); ++i) {
-    WebFormControlElement* element = &control_elements[i];
+  for (size_t i = 0; i < control_elements->size(); ++i) {
+    WebFormControlElement* element = &(*control_elements)[i];
 
     if (base::string16(element->nameForAutofill()) != data.fields[i].name) {
       // This case should be reachable only for pathological websites, which
@@ -550,6 +575,41 @@ void ForEachMatchingFormField(const WebFormElement& form_element,
   }
 }
 
+// For each autofillable field in |data| that matches a field in the |form|,
+// the |callback| is invoked with the corresponding |form| field data.
+void ForEachMatchingFormField(const WebFormElement& form_element,
+                              const WebElement& initiating_element,
+                              const FormData& data,
+                              FieldFilterMask filters,
+                              bool force_override,
+                              Callback callback) {
+  std::vector<WebFormControlElement> control_elements =
+      ExtractAutofillableElementsInForm(form_element, ExtractionRequirements());
+  ForEachMatchingFormFieldCommon(&control_elements, initiating_element, data,
+                                 filters, force_override, callback);
+}
+
+// For each autofillable field in |data| that matches a field in the set of
+// unowned autofillable form fields, the |callback| is invoked with the
+// corresponding |data| field.
+void ForEachMatchingUnownedFormField(const WebElement& initiating_element,
+                                     const FormData& data,
+                                     FieldFilterMask filters,
+                                     bool force_override,
+                                     Callback callback) {
+  if (initiating_element.isNull())
+    return;
+
+  std::vector<WebFormControlElement> control_elements =
+      GetUnownedAutofillableFormFieldElements(
+          initiating_element.document().all(), nullptr);
+  if (!IsElementInControlElementSet(initiating_element, control_elements))
+    return;
+
+  ForEachMatchingFormFieldCommon(&control_elements, initiating_element, data,
+                                 filters, force_override, callback);
+}
+
 // Sets the |field|'s value to the value in |data|.
 // Also sets the "autofilled" attribute, causing the background to be yellow.
 void FillFormField(const FormFieldData& data,
@@ -570,7 +630,7 @@ void FillFormField(const FormFieldData& data,
     if (IsTextInput(input_element) || IsMonthInput(input_element)) {
       // If the maxlength attribute contains a negative value, maxLength()
       // returns the default maxlength value.
-      value = value.substr(0, input_element->maxLength());
+      TruncateString(&value, input_element->maxLength());
     }
     field->setValue(value, true);
   }
@@ -623,20 +683,6 @@ void PreviewFormField(const FormFieldData& data,
   }
 }
 
-std::string RetrievalMethodToString(
-    const WebElementDescriptor::RetrievalMethod& method) {
-  switch (method) {
-    case WebElementDescriptor::CSS_SELECTOR:
-      return "CSS_SELECTOR";
-    case WebElementDescriptor::ID:
-      return "ID";
-    case WebElementDescriptor::NONE:
-      return "NONE";
-  }
-  NOTREACHED();
-  return "UNKNOWN";
-}
-
 // Recursively checks whether |node| or any of its children have a non-empty
 // bounding box. The recursion depth is bounded by |depth|.
 bool IsWebNodeVisibleImpl(const blink::WebNode& node, const int depth) {
@@ -656,6 +702,175 @@ bool IsWebNodeVisibleImpl(const blink::WebNode& node, const int depth) {
       return true;
   }
   return false;
+}
+
+bool ExtractFieldsFromControlElements(
+    const WebVector<WebFormControlElement>& control_elements,
+    RequirementsMask requirements,
+    ExtractMask extract_mask,
+    ScopedVector<FormFieldData>* form_fields,
+    std::vector<bool>* fields_extracted,
+    std::map<base::string16, FormFieldData*>* name_map) {
+  for (size_t i = 0; i < control_elements.size(); ++i) {
+    const WebFormControlElement& control_element = control_elements[i];
+
+    if (!IsAutofillableElement(control_element))
+      continue;
+
+    const WebInputElement* input_element = toWebInputElement(&control_element);
+    if (requirements & REQUIRE_AUTOCOMPLETE &&
+        IsAutofillableInputElement(input_element) &&
+        !SatisfiesRequireAutocomplete(*input_element))
+      continue;
+
+    // Create a new FormFieldData, fill it out and map it to the field's name.
+    FormFieldData* form_field = new FormFieldData;
+    WebFormControlElementToFormField(control_element, extract_mask, form_field);
+    form_fields->push_back(form_field);
+    // TODO(jhawkins): A label element is mapped to a form control element's id.
+    // field->name() will contain the id only if the name does not exist.  Add
+    // an id() method to WebFormControlElement and use that here.
+    (*name_map)[form_field->name] = form_field;
+    (*fields_extracted)[i] = true;
+  }
+
+  // If we failed to extract any fields, give up.  Also, to avoid overly
+  // expensive computation, we impose a maximum number of allowable fields.
+  if (form_fields->empty() || form_fields->size() > kMaxParseableFields)
+    return false;
+  return true;
+}
+
+// For each label element, get the corresponding form control element, use the
+// form control element's name as a key into the <name, FormFieldData> map to
+// find the previously created FormFieldData and set the FormFieldData's label
+// to the label.firstChild().nodeValue() of the label element.
+void MatchLabelsAndFields(const WebElementCollection& labels,
+                          std::map<base::string16, FormFieldData*>* name_map) {
+  CR_DEFINE_STATIC_LOCAL(WebString, kFor, ("for"));
+  CR_DEFINE_STATIC_LOCAL(WebString, kHidden, ("hidden"));
+
+  for (WebElement item = labels.firstItem(); !item.isNull();
+       item = labels.nextItem()) {
+    WebLabelElement label = item.to<WebLabelElement>();
+    WebFormControlElement field_element =
+        label.correspondingControl().to<WebFormControlElement>();
+
+    base::string16 element_name;
+    if (field_element.isNull()) {
+      // Sometimes site authors will incorrectly specify the corresponding
+      // field element's name rather than its id, so we compensate here.
+      element_name = label.getAttribute(kFor);
+    } else if (!field_element.isFormControlElement() ||
+               field_element.formControlType() == kHidden) {
+      continue;
+    } else {
+      element_name = field_element.nameForAutofill();
+    }
+
+    auto iter = name_map->find(element_name);
+    if (iter == name_map->end())
+      continue;
+
+    base::string16 label_text = FindChildText(label);
+
+    // Concatenate labels because some sites might have multiple label
+    // candidates.
+    if (!iter->second->label.empty() && !label_text.empty())
+      iter->second->label += base::ASCIIToUTF16(" ");
+    iter->second->label += label_text;
+  }
+}
+
+// Common function shared by WebFormElementToFormData() and
+// UnownedFormElementsAndFieldSetsToFormData(). Either pass in:
+// 1) |form_element| and an empty |fieldsets|.
+// or
+// 2) a NULL |form_element|.
+//
+// If |field| is not NULL, then |form_control_element| should be not NULL.
+bool FormOrFieldsetsToFormData(
+    const blink::WebFormElement* form_element,
+    const blink::WebFormControlElement* form_control_element,
+    const std::vector<blink::WebElement>& fieldsets,
+    const WebVector<WebFormControlElement>& control_elements,
+    RequirementsMask requirements,
+    ExtractMask extract_mask,
+    FormData* form,
+    FormFieldData* field) {
+  CR_DEFINE_STATIC_LOCAL(WebString, kLabel, ("label"));
+
+  if (form_element)
+    DCHECK(fieldsets.empty());
+  if (field)
+    DCHECK(form_control_element);
+
+  // A map from a FormFieldData's name to the FormFieldData itself.
+  std::map<base::string16, FormFieldData*> name_map;
+
+  // The extracted FormFields.  We use pointers so we can store them in
+  // |name_map|.
+  ScopedVector<FormFieldData> form_fields;
+
+  // A vector of bools that indicate whether each field in the form meets the
+  // requirements and thus will be in the resulting |form|.
+  std::vector<bool> fields_extracted(control_elements.size(), false);
+
+  if (!ExtractFieldsFromControlElements(control_elements,
+                                        requirements,
+                                        extract_mask,
+                                        &form_fields,
+                                        &fields_extracted,
+                                        &name_map)) {
+    return false;
+  }
+
+  if (form_element) {
+    // Loop through the label elements inside the form element.  For each label
+    // element, get the corresponding form control element, use the form control
+    // element's name as a key into the <name, FormFieldData> map to find the
+    // previously created FormFieldData and set the FormFieldData's label to the
+    // label.firstChild().nodeValue() of the label element.
+    WebElementCollection labels =
+        form_element->getElementsByHTMLTagName(kLabel);
+    DCHECK(!labels.isNull());
+    MatchLabelsAndFields(labels, &name_map);
+  } else {
+    // Same as the if block, but for all the labels in fieldsets.
+    for (size_t i = 0; i < fieldsets.size(); ++i) {
+      WebElementCollection labels =
+          fieldsets[i].getElementsByHTMLTagName(kLabel);
+      DCHECK(!labels.isNull());
+      MatchLabelsAndFields(labels, &name_map);
+    }
+  }
+
+  // Loop through the form control elements, extracting the label text from
+  // the DOM.  We use the |fields_extracted| vector to make sure we assign the
+  // extracted label to the correct field, as it's possible |form_fields| will
+  // not contain all of the elements in |control_elements|.
+  for (size_t i = 0, field_idx = 0;
+       i < control_elements.size() && field_idx < form_fields.size(); ++i) {
+    // This field didn't meet the requirements, so don't try to find a label
+    // for it.
+    if (!fields_extracted[i])
+      continue;
+
+    const WebFormControlElement& control_element = control_elements[i];
+    if (form_fields[field_idx]->label.empty())
+      form_fields[field_idx]->label = InferLabelForElement(control_element);
+    TruncateString(&form_fields[field_idx]->label, kMaxDataLength);
+
+    if (field && *form_control_element == control_element)
+      *field = *form_fields[field_idx];
+
+    ++field_idx;
+  }
+
+  // Copy the created FormFields into the resulting FormData object.
+  for (const auto& iter : form_fields)
+    form->fields.push_back(*iter);
+  return true;
 }
 
 }  // namespace
@@ -714,49 +929,10 @@ bool IsWebNodeVisible(const blink::WebNode& node) {
   return IsWebNodeVisibleImpl(node, kNodeSearchDepth);
 }
 
-bool ClickElement(const WebDocument& document,
-                  const WebElementDescriptor& element_descriptor) {
-  WebString web_descriptor = WebString::fromUTF8(element_descriptor.descriptor);
-  blink::WebElement element;
-
-  switch (element_descriptor.retrieval_method) {
-    case WebElementDescriptor::CSS_SELECTOR: {
-      WebExceptionCode ec = 0;
-      element = document.querySelector(web_descriptor, ec);
-      if (ec)
-        DVLOG(1) << "Query selector failed. Error code: " << ec << ".";
-      break;
-    }
-    case WebElementDescriptor::ID:
-      element = document.getElementById(web_descriptor);
-      break;
-    case WebElementDescriptor::NONE:
-      return true;
-  }
-
-  if (element.isNull()) {
-    DVLOG(1) << "Could not find "
-             << element_descriptor.descriptor
-             << " by "
-             << RetrievalMethodToString(element_descriptor.retrieval_method)
-             << ".";
-    return false;
-  }
-
-  element.simulateClick();
-  return true;
-}
-
-// Fills |autofillable_elements| with all the auto-fillable form control
-// elements in |form_element|.
-void ExtractAutofillableElements(
-    const WebFormElement& form_element,
-    RequirementsMask requirements,
-    std::vector<WebFormControlElement>* autofillable_elements) {
-  WebVector<WebFormControlElement> control_elements;
-  form_element.getFormControlElements(control_elements);
-
-  autofillable_elements->clear();
+std::vector<blink::WebFormControlElement> ExtractAutofillableElementsFromSet(
+    const WebVector<WebFormControlElement>& control_elements,
+    RequirementsMask requirements) {
+  std::vector<blink::WebFormControlElement> autofillable_elements;
   for (size_t i = 0; i < control_elements.size(); ++i) {
     WebFormControlElement element = control_elements[i];
     if (!IsAutofillableElement(element))
@@ -765,14 +941,25 @@ void ExtractAutofillableElements(
     if (requirements & REQUIRE_AUTOCOMPLETE) {
       // TODO(isherman): WebKit currently doesn't handle the autocomplete
       // attribute for select or textarea elements, but it probably should.
-      WebInputElement* input_element = toWebInputElement(&control_elements[i]);
+      const WebInputElement* input_element =
+          toWebInputElement(&control_elements[i]);
       if (IsAutofillableInputElement(input_element) &&
           !SatisfiesRequireAutocomplete(*input_element))
         continue;
     }
 
-    autofillable_elements->push_back(element);
+    autofillable_elements.push_back(element);
   }
+  return autofillable_elements;
+}
+
+std::vector<WebFormControlElement> ExtractAutofillableElementsInForm(
+    const WebFormElement& form_element,
+    RequirementsMask requirements) {
+  WebVector<WebFormControlElement> control_elements;
+  form_element.getFormControlElements(control_elements);
+
+  return ExtractAutofillableElementsFromSet(control_elements, requirements);
 }
 
 void WebFormControlElementToFormField(const WebFormControlElement& element,
@@ -781,6 +968,7 @@ void WebFormControlElementToFormField(const WebFormControlElement& element,
   DCHECK(field);
   DCHECK(!element.isNull());
   CR_DEFINE_STATIC_LOCAL(WebString, kAutocomplete, ("autocomplete"));
+  CR_DEFINE_STATIC_LOCAL(WebString, kRole, ("role"));
 
   // The label is not officially part of a WebFormControlElement; however, the
   // labels for all form control elements are scraped from the DOM and set in
@@ -795,6 +983,8 @@ void WebFormControlElementToFormField(const WebFormControlElement& element,
     // attribute was present.
     field->autocomplete_attribute = "x-max-data-length-exceeded";
   }
+  if (LowerCaseEqualsASCII(element.getAttribute(kRole), "presentation"))
+    field->role = FormFieldData::ROLE_ATTRIBUTE_PRESENTATION;
 
   if (!IsAutofillableElement(element))
     return;
@@ -849,8 +1039,7 @@ void WebFormControlElementToFormField(const WebFormControlElement& element,
 
   // Constrain the maximum data length to prevent a malicious site from DOS'ing
   // the browser: http://crbug.com/49332
-  if (value.size() > kMaxDataLength)
-    value = value.substr(0, kMaxDataLength);
+  TruncateString(&value, kMaxDataLength);
 
   field->value = value;
 }
@@ -862,10 +1051,6 @@ bool WebFormElementToFormData(
     ExtractMask extract_mask,
     FormData* form,
     FormFieldData* field) {
-  CR_DEFINE_STATIC_LOCAL(WebString, kLabel, ("label"));
-  CR_DEFINE_STATIC_LOCAL(WebString, kFor, ("for"));
-  CR_DEFINE_STATIC_LOCAL(WebString, kHidden, ("hidden"));
-
   const WebFrame* frame = form_element.document().frame();
   if (!frame)
     return false;
@@ -883,117 +1068,53 @@ bool WebFormElementToFormData(
   if (!form->action.is_valid())
     form->action = GURL(form_element.action());
 
-  // A map from a FormFieldData's name to the FormFieldData itself.
-  std::map<base::string16, FormFieldData*> name_map;
-
-  // The extracted FormFields.  We use pointers so we can store them in
-  // |name_map|.
-  ScopedVector<FormFieldData> form_fields;
-
   WebVector<WebFormControlElement> control_elements;
   form_element.getFormControlElements(control_elements);
 
-  // A vector of bools that indicate whether each field in the form meets the
-  // requirements and thus will be in the resulting |form|.
-  std::vector<bool> fields_extracted(control_elements.size(), false);
+  std::vector<blink::WebElement> dummy_fieldset;
+  return FormOrFieldsetsToFormData(&form_element, &form_control_element,
+                                   dummy_fieldset, control_elements,
+                                   requirements, extract_mask, form, field);
+}
 
-  for (size_t i = 0; i < control_elements.size(); ++i) {
-    const WebFormControlElement& control_element = control_elements[i];
-
-    if (!IsAutofillableElement(control_element))
-      continue;
-
-    const WebInputElement* input_element = toWebInputElement(&control_element);
-    if (requirements & REQUIRE_AUTOCOMPLETE &&
-        IsAutofillableInputElement(input_element) &&
-        !SatisfiesRequireAutocomplete(*input_element))
-      continue;
-
-    // Create a new FormFieldData, fill it out and map it to the field's name.
-    FormFieldData* form_field = new FormFieldData;
-    WebFormControlElementToFormField(control_element, extract_mask, form_field);
-    form_fields.push_back(form_field);
-    // TODO(jhawkins): A label element is mapped to a form control element's id.
-    // field->name() will contain the id only if the name does not exist.  Add
-    // an id() method to WebFormControlElement and use that here.
-    name_map[form_field->name] = form_field;
-    fields_extracted[i] = true;
-  }
-
-  // If we failed to extract any fields, give up.  Also, to avoid overly
-  // expensive computation, we impose a maximum number of allowable fields.
-  if (form_fields.empty() || form_fields.size() > kMaxParseableFields)
-    return false;
-
-  // Loop through the label elements inside the form element.  For each label
-  // element, get the corresponding form control element, use the form control
-  // element's name as a key into the <name, FormFieldData> map to find the
-  // previously created FormFieldData and set the FormFieldData's label to the
-  // label.firstChild().nodeValue() of the label element.
-  WebElementCollection labels = form_element.getElementsByHTMLTagName(kLabel);
-  DCHECK(!labels.isNull());
-  for (WebElement item = labels.firstItem(); !item.isNull();
-       item = labels.nextItem()) {
-    WebLabelElement label = item.to<WebLabelElement>();
-    WebFormControlElement field_element =
-        label.correspondingControl().to<WebFormControlElement>();
-
-    base::string16 element_name;
-    if (field_element.isNull()) {
-      // Sometimes site authors will incorrectly specify the corresponding
-      // field element's name rather than its id, so we compensate here.
-      element_name = label.getAttribute(kFor);
-    } else if (
-        !field_element.isFormControlElement() ||
-        field_element.formControlType() == kHidden) {
-      continue;
-    } else {
-      element_name = field_element.nameForAutofill();
+std::vector<WebFormControlElement>
+GetUnownedAutofillableFormFieldElements(
+    const WebElementCollection& elements,
+    std::vector<WebElement>* fieldsets) {
+  std::vector<WebFormControlElement> unowned_fieldset_children;
+  for (WebElement element = elements.firstItem();
+       !element.isNull();
+       element = elements.nextItem()) {
+    if (element.isFormControlElement()) {
+      WebFormControlElement control = element.to<WebFormControlElement>();
+      if (control.form().isNull())
+        unowned_fieldset_children.push_back(control);
     }
 
-    std::map<base::string16, FormFieldData*>::iterator iter =
-        name_map.find(element_name);
-    if (iter != name_map.end()) {
-      base::string16 label_text = FindChildText(label);
-
-      // Concatenate labels because some sites might have multiple label
-      // candidates.
-      if (!iter->second->label.empty() && !label_text.empty())
-        iter->second->label += base::ASCIIToUTF16(" ");
-      iter->second->label += label_text;
+    if (fieldsets && element.hasHTMLTagName("fieldset") &&
+        !IsElementInsideFormOrFieldSet(element)) {
+      fieldsets->push_back(element);
     }
   }
+  return ExtractAutofillableElementsFromSet(unowned_fieldset_children,
+                                            REQUIRE_NONE);
+}
 
-  // Loop through the form control elements, extracting the label text from
-  // the DOM.  We use the |fields_extracted| vector to make sure we assign the
-  // extracted label to the correct field, as it's possible |form_fields| will
-  // not contain all of the elements in |control_elements|.
-  for (size_t i = 0, field_idx = 0;
-       i < control_elements.size() && field_idx < form_fields.size(); ++i) {
-    // This field didn't meet the requirements, so don't try to find a label
-    // for it.
-    if (!fields_extracted[i])
-      continue;
+bool UnownedFormElementsAndFieldSetsToFormData(
+    const std::vector<blink::WebElement>& fieldsets,
+    const std::vector<blink::WebFormControlElement>& control_elements,
+    const blink::WebFormControlElement* element,
+    const GURL& origin,
+    RequirementsMask requirements,
+    ExtractMask extract_mask,
+    FormData* form,
+    FormFieldData* field) {
+  form->origin = origin;
+  form->user_submitted = false;
 
-    const WebFormControlElement& control_element = control_elements[i];
-    if (form_fields[field_idx]->label.empty())
-      form_fields[field_idx]->label = InferLabelForElement(control_element);
-    form_fields[field_idx]->label =
-        form_fields[field_idx]->label.substr(0, kMaxDataLength);
-
-    if (field && form_control_element == control_element)
-      *field = *form_fields[field_idx];
-
-    ++field_idx;
-  }
-
-  // Copy the created FormFields into the resulting FormData object.
-  for (ScopedVector<FormFieldData>::const_iterator iter = form_fields.begin();
-       iter != form_fields.end(); ++iter) {
-    form->fields.push_back(**iter);
-  }
-
-  return true;
+  return FormOrFieldsetsToFormData(nullptr, element, fieldsets,
+                                   control_elements, requirements, extract_mask,
+                                   form, field);
 }
 
 bool FindFormAndFieldForFormControlElement(const WebFormControlElement& element,
@@ -1003,12 +1124,20 @@ bool FindFormAndFieldForFormControlElement(const WebFormControlElement& element,
   if (!IsAutofillableElement(element))
     return false;
 
-  const WebFormElement form_element = element.form();
-  if (form_element.isNull())
-    return false;
-
   ExtractMask extract_mask =
       static_cast<ExtractMask>(EXTRACT_VALUE | EXTRACT_OPTIONS);
+  const WebFormElement form_element = element.form();
+  if (form_element.isNull()) {
+    // No associated form, try the synthetic form for unowned form elements.
+    WebDocument document = element.document();
+    std::vector<WebElement> fieldsets;
+    std::vector<WebFormControlElement> control_elements =
+        GetUnownedAutofillableFormFieldElements(document.all(), &fieldsets);
+    return UnownedFormElementsAndFieldSetsToFormData(
+        fieldsets, control_elements, &element, document.url(), requirements,
+        extract_mask, form, field);
+  }
+
   return WebFormElementToFormData(form_element,
                                   element,
                                   requirements,
@@ -1019,8 +1148,14 @@ bool FindFormAndFieldForFormControlElement(const WebFormControlElement& element,
 
 void FillForm(const FormData& form, const WebFormControlElement& element) {
   WebFormElement form_element = element.form();
-  if (form_element.isNull())
+  if (form_element.isNull()) {
+    ForEachMatchingUnownedFormField(element,
+                                    form,
+                                    FILTER_ALL_NON_EDITABLE_ELEMENTS,
+                                    false, /* dont force override */
+                                    &FillFormField);
     return;
+  }
 
   ForEachMatchingFormField(form_element,
                            element,
@@ -1032,8 +1167,10 @@ void FillForm(const FormData& form, const WebFormControlElement& element) {
 
 void FillFormIncludingNonFocusableElements(const FormData& form_data,
                                            const WebFormElement& form_element) {
-  if (form_element.isNull())
+  if (form_element.isNull()) {
+    NOTREACHED();
     return;
+  }
 
   FieldFilterMask filter_mask = static_cast<FieldFilterMask>(
       FILTER_DISABLED_ELEMENTS | FILTER_READONLY_ELEMENTS);
@@ -1045,23 +1182,16 @@ void FillFormIncludingNonFocusableElements(const FormData& form_data,
                            &FillFormField);
 }
 
-void FillFormForAllElements(const FormData& form_data,
-                            const WebFormElement& form_element) {
-  if (form_element.isNull())
-    return;
-
-  ForEachMatchingFormField(form_element,
-                           WebInputElement(),
-                           form_data,
-                           FILTER_NONE,
-                           true, /* force override */
-                           &FillFormField);
-}
-
 void PreviewForm(const FormData& form, const WebFormControlElement& element) {
   WebFormElement form_element = element.form();
-  if (form_element.isNull())
+  if (form_element.isNull()) {
+    ForEachMatchingUnownedFormField(element,
+                                    form,
+                                    FILTER_ALL_NON_EDITABLE_ELEMENTS,
+                                    false, /* dont force override */
+                                    &PreviewFormField);
     return;
+  }
 
   ForEachMatchingFormField(form_element,
                            element,
@@ -1074,12 +1204,17 @@ void PreviewForm(const FormData& form, const WebFormControlElement& element) {
 bool ClearPreviewedFormWithElement(const WebFormControlElement& element,
                                    bool was_autofilled) {
   WebFormElement form_element = element.form();
-  if (form_element.isNull())
-    return false;
-
   std::vector<WebFormControlElement> control_elements;
-  ExtractAutofillableElements(
-      form_element, ExtractionRequirements(), &control_elements);
+  if (form_element.isNull()) {
+    control_elements = GetUnownedAutofillableFormFieldElements(
+        element.document().all(), nullptr);
+    if (!IsElementInControlElementSet(element, control_elements))
+      return false;
+  } else {
+    control_elements = ExtractAutofillableElementsInForm(
+        form_element, ExtractionRequirements());
+  }
+
   for (size_t i = 0; i < control_elements.size(); ++i) {
     // There might be unrelated elements in this form which have already been
     // auto-filled.  For example, the user might have already filled the address

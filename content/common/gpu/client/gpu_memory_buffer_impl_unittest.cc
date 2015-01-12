@@ -32,7 +32,8 @@ class GpuMemoryBufferImplTest
       gfx::GpuMemoryBuffer::Format format,
       gfx::GpuMemoryBuffer::Usage usage) {
     ++buffer_count_;
-    return factory_->CreateGpuMemoryBuffer(id, size, format, usage, kClientId);
+    return factory_->CreateGpuMemoryBuffer(id, size, format, usage, kClientId,
+                                           gfx::kNullPluginWindow);
   }
 
   void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id, uint32 sync_point) {

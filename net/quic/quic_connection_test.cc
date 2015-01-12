@@ -31,6 +31,7 @@
 
 using base::StringPiece;
 using std::map;
+using std::string;
 using std::vector;
 using testing::AnyNumber;
 using testing::AtLeast;
@@ -611,7 +612,7 @@ class FecQuicConnectionDebugVisitor
 
 class MockPacketWriterFactory : public QuicConnection::PacketWriterFactory {
  public:
-  MockPacketWriterFactory(QuicPacketWriter* writer) {
+  explicit MockPacketWriterFactory(QuicPacketWriter* writer) {
     ON_CALL(*this, Create(_)).WillByDefault(Return(writer));
   }
   ~MockPacketWriterFactory() override {}
@@ -1166,8 +1167,8 @@ TEST_P(QuicConnectionTest, TruncatedAck) {
   }
   EXPECT_CALL(*loss_algorithm_, DetectLostPackets(_, _, _, _))
       .WillOnce(Return(lost_packets));
-  EXPECT_CALL(entropy_calculator_,
-              EntropyHash(511)).WillOnce(testing::Return(0));
+  EXPECT_CALL(entropy_calculator_, EntropyHash(511))
+      .WillOnce(Return(static_cast<QuicPacketEntropyHash>(0)));
   EXPECT_CALL(*send_algorithm_, OnCongestionEvent(true, _, _, _));
   ProcessAckPacket(&frame);
 
@@ -1345,11 +1346,8 @@ TEST_P(QuicConnectionTest, TooManySentPackets) {
 
   // Ack packet 1, which leaves more than the limit outstanding.
   EXPECT_CALL(*send_algorithm_, OnCongestionEvent(true, _, _, _));
-  if (FLAGS_quic_too_many_outstanding_packets) {
-    EXPECT_CALL(visitor_,
-                OnConnectionClosed(QUIC_TOO_MANY_OUTSTANDING_SENT_PACKETS,
-                                   false));
-  }
+  EXPECT_CALL(visitor_, OnConnectionClosed(
+                            QUIC_TOO_MANY_OUTSTANDING_SENT_PACKETS, false));
   // We're receive buffer limited, so the connection won't try to write more.
   EXPECT_CALL(visitor_, OnCanWrite()).Times(0);
 
@@ -1363,12 +1361,8 @@ TEST_P(QuicConnectionTest, TooManySentPackets) {
 
 TEST_P(QuicConnectionTest, TooManyReceivedPackets) {
   EXPECT_CALL(visitor_, OnSuccessfulVersionNegotiation(_));
-
-  if (FLAGS_quic_too_many_outstanding_packets) {
-    EXPECT_CALL(visitor_,
-                OnConnectionClosed(QUIC_TOO_MANY_OUTSTANDING_RECEIVED_PACKETS,
-                                   false));
-  }
+  EXPECT_CALL(visitor_, OnConnectionClosed(
+                            QUIC_TOO_MANY_OUTSTANDING_RECEIVED_PACKETS, false));
 
   // Miss every other packet for 1000 packets.
   for (QuicPacketSequenceNumber i = 1; i < 1000; ++i) {
@@ -2542,8 +2536,6 @@ TEST_P(QuicConnectionTest, RetransmitPacketsWithInitialEncryption) {
 }
 
 TEST_P(QuicConnectionTest, DelayForwardSecureEncryptionUntilClientIsReady) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_delay_forward_security, true);
-
   // A TaggingEncrypter puts kTagSize copies of the given byte (0x02 here) at
   // the end of the packet. We can test this to check which encrypter was used.
   use_tagging_decrypter();
@@ -2567,8 +2559,6 @@ TEST_P(QuicConnectionTest, DelayForwardSecureEncryptionUntilClientIsReady) {
 }
 
 TEST_P(QuicConnectionTest, DelayForwardSecureEncryptionUntilManyPacketSent) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_delay_forward_security, true);
-
   // Set a congestion window of 10 packets.
   QuicPacketCount congestion_window = 10;
   EXPECT_CALL(*send_algorithm_, GetCongestionWindow()).WillRepeatedly(
@@ -2987,6 +2977,7 @@ TEST_P(QuicConnectionTest, TimeoutAfterSend) {
   EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _, _));
   QuicConfig config;
   connection_.SetFromConfig(config);
+  EXPECT_FALSE(QuicConnectionPeer::IsSilentCloseEnabled(&connection_));
 
   const QuicTime::Delta initial_idle_timeout =
       QuicTime::Delta::FromSeconds(kInitialIdleTimeoutSecs - 1);
@@ -3014,6 +3005,67 @@ TEST_P(QuicConnectionTest, TimeoutAfterSend) {
   // This time, we should time out.
   EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_CONNECTION_TIMED_OUT, false));
   EXPECT_CALL(*send_algorithm_, OnPacketSent(_, _, _, _, _));
+  clock_.AdvanceTime(five_ms);
+  EXPECT_EQ(default_timeout.Add(five_ms), clock_.ApproximateNow());
+  connection_.GetTimeoutAlarm()->Fire();
+  EXPECT_FALSE(connection_.GetTimeoutAlarm()->IsSet());
+  EXPECT_FALSE(connection_.connected());
+}
+
+TEST_P(QuicConnectionTest, TimeoutAfterSendSilentClose) {
+  // Same test as above, but complete a handshake which enables silent close,
+  // causing no connection close packet to be sent.
+  ValueRestore<bool> old_flag(&FLAGS_quic_allow_silent_close, true);
+  EXPECT_TRUE(connection_.connected());
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _, _));
+  QuicConfig config;
+
+  // Create a handshake message that also enables silent close.
+  CryptoHandshakeMessage msg;
+  string error_details;
+  QuicConfig client_config;
+  client_config.SetInitialFlowControlWindowToSend(
+      kInitialSessionFlowControlWindowForTest);
+  client_config.SetInitialStreamFlowControlWindowToSend(
+      kInitialStreamFlowControlWindowForTest);
+  client_config.SetInitialSessionFlowControlWindowToSend(
+      kInitialSessionFlowControlWindowForTest);
+  client_config.SetIdleConnectionStateLifetime(
+      QuicTime::Delta::FromSeconds(kDefaultIdleTimeoutSecs),
+      QuicTime::Delta::FromSeconds(kDefaultIdleTimeoutSecs));
+  client_config.ToHandshakeMessage(&msg);
+  const QuicErrorCode error =
+      config.ProcessPeerHello(msg, CLIENT, &error_details);
+  EXPECT_EQ(QUIC_NO_ERROR, error);
+
+  connection_.SetFromConfig(config);
+  EXPECT_TRUE(QuicConnectionPeer::IsSilentCloseEnabled(&connection_));
+
+  const QuicTime::Delta default_idle_timeout =
+      QuicTime::Delta::FromSeconds(kDefaultIdleTimeoutSecs - 1);
+  const QuicTime::Delta five_ms = QuicTime::Delta::FromMilliseconds(5);
+  QuicTime default_timeout = clock_.ApproximateNow().Add(default_idle_timeout);
+
+  // When we send a packet, the timeout will change to 5ms +
+  // kInitialIdleTimeoutSecs.
+  clock_.AdvanceTime(five_ms);
+
+  // Send an ack so we don't set the retransmission alarm.
+  SendAckPacketToPeer();
+  EXPECT_EQ(default_timeout, connection_.GetTimeoutAlarm()->deadline());
+
+  // The original alarm will fire.  We should not time out because we had a
+  // network event at t=5ms.  The alarm will reregister.
+  clock_.AdvanceTime(default_idle_timeout.Subtract(five_ms));
+  EXPECT_EQ(default_timeout, clock_.ApproximateNow());
+  connection_.GetTimeoutAlarm()->Fire();
+  EXPECT_TRUE(connection_.GetTimeoutAlarm()->IsSet());
+  EXPECT_TRUE(connection_.connected());
+  EXPECT_EQ(default_timeout.Add(five_ms),
+            connection_.GetTimeoutAlarm()->deadline());
+
+  // This time, we should time out.
+  EXPECT_CALL(visitor_, OnConnectionClosed(QUIC_CONNECTION_TIMED_OUT, false));
   clock_.AdvanceTime(five_ms);
   EXPECT_EQ(default_timeout.Add(five_ms), clock_.ApproximateNow());
   connection_.GetTimeoutAlarm()->Fire();

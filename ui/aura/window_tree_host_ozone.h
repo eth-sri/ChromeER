@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/events/event_source.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/platform_window/platform_window_delegate.h"
 
 namespace ui {
@@ -23,6 +23,10 @@ class AURA_EXPORT WindowTreeHostOzone : public WindowTreeHost,
  public:
   explicit WindowTreeHostOzone(const gfx::Rect& bounds);
   virtual ~WindowTreeHostOzone();
+
+ protected:
+  // WindowTreeHost:
+  virtual gfx::Rect GetBounds() const override;
 
  private:
   // ui::PlatformWindowDelegate:
@@ -42,7 +46,6 @@ class AURA_EXPORT WindowTreeHostOzone : public WindowTreeHost,
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() override;
   virtual void Show() override;
   virtual void Hide() override;
-  virtual gfx::Rect GetBounds() const override;
   virtual void SetBounds(const gfx::Rect& bounds) override;
   virtual gfx::Point GetLocationOnNativeScreen() const override;
   virtual void SetCapture() override;

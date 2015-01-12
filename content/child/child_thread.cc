@@ -37,8 +37,10 @@
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/geofencing/geofencing_message_filter.h"
 #include "content/child/mojo/mojo_application.h"
+#include "content/child/navigator_connect/navigator_connect_dispatcher.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/power_monitor_broadcast_source.h"
+#include "content/child/push_messaging/push_dispatcher.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
 #include "content/child/resource_dispatcher.h"
@@ -86,9 +88,8 @@ class WaitAndExitDelegate : public base::PlatformThread::Delegate {
  public:
   explicit WaitAndExitDelegate(base::TimeDelta duration)
       : duration_(duration) {}
-  virtual ~WaitAndExitDelegate() override {}
 
-  virtual void ThreadMain() override {
+  void ThreadMain() override {
     base::PlatformThread::Sleep(duration_);
     _exit(0);
   }
@@ -275,7 +276,8 @@ void ChildThread::Init(const Options& options) {
   thread_safe_sender_ = new ThreadSafeSender(
       base::MessageLoopProxy::current().get(), sync_message_filter_.get());
 
-  resource_dispatcher_.reset(new ResourceDispatcher(this));
+  resource_dispatcher_.reset(new ResourceDispatcher(
+      this, message_loop()->task_runner()));
   websocket_dispatcher_.reset(new WebSocketDispatcher);
   file_system_dispatcher_.reset(new FileSystemDispatcher());
 
@@ -296,14 +298,20 @@ void ChildThread::Init(const Options& options) {
       new BluetoothMessageFilter(thread_safe_sender_.get());
   notification_dispatcher_ =
       new NotificationDispatcher(thread_safe_sender_.get());
+  push_dispatcher_ = new PushDispatcher(thread_safe_sender_.get());
+  navigator_connect_dispatcher_ =
+      new NavigatorConnectDispatcher(thread_safe_sender_.get());
+
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
   channel_->AddFilter(resource_message_filter_.get());
   channel_->AddFilter(quota_message_filter_->GetFilter());
   channel_->AddFilter(notification_dispatcher_->GetFilter());
+  channel_->AddFilter(push_dispatcher_->GetFilter());
   channel_->AddFilter(service_worker_message_filter_->GetFilter());
   channel_->AddFilter(geofencing_message_filter_->GetFilter());
   channel_->AddFilter(bluetooth_message_filter_->GetFilter());
+  channel_->AddFilter(navigator_connect_dispatcher_->GetFilter());
 
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kSingleProcess)) {
@@ -426,18 +434,20 @@ MessageRouter* ChildThread::GetRouter() {
   return &router_;
 }
 
-base::SharedMemory* ChildThread::AllocateSharedMemory(size_t buf_size) {
+scoped_ptr<base::SharedMemory> ChildThread::AllocateSharedMemory(
+    size_t buf_size) {
+  DCHECK(base::MessageLoop::current() == message_loop());
   return AllocateSharedMemory(buf_size, this);
 }
 
 // static
-base::SharedMemory* ChildThread::AllocateSharedMemory(
+scoped_ptr<base::SharedMemory> ChildThread::AllocateSharedMemory(
     size_t buf_size,
     IPC::Sender* sender) {
   scoped_ptr<base::SharedMemory> shared_buf;
 #if defined(OS_WIN)
   shared_buf.reset(new base::SharedMemory);
-  if (!shared_buf->CreateAndMapAnonymous(buf_size)) {
+  if (!shared_buf->CreateAnonymous(buf_size)) {
     NOTREACHED();
     return NULL;
   }
@@ -449,10 +459,6 @@ base::SharedMemory* ChildThread::AllocateSharedMemory(
                            buf_size, &shared_mem_handle))) {
     if (base::SharedMemory::IsHandleValid(shared_mem_handle)) {
       shared_buf.reset(new base::SharedMemory(shared_mem_handle, false));
-      if (!shared_buf->Map(buf_size)) {
-        NOTREACHED() << "Map failed";
-        return NULL;
-      }
     } else {
       NOTREACHED() << "Browser failed to allocate shared memory";
       return NULL;
@@ -462,7 +468,7 @@ base::SharedMemory* ChildThread::AllocateSharedMemory(
     return NULL;
   }
 #endif
-  return shared_buf.release();
+  return shared_buf;
 }
 
 bool ChildThread::OnMessageReceived(const IPC::Message& msg) {

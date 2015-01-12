@@ -1,8 +1,20 @@
 {
   "Mac10.6 Tests": {
     "gtest_tests": [
-      "accessibility_unittests",
-      "app_list_unittests",
+      {
+        "test": "accessibility_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      {
+        "test": "app_list_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      "app_shell_browsertests",
+      "app_shell_unittests",
       {
         "test": "base_unittests",
         "swarming": {
@@ -13,7 +25,7 @@
         "test": "browser_tests",
         "swarming": {
           "can_use_on_swarming_builders": true,
-          "shards": 5
+          "shards": 10
         }
       },
       "cacheinvalidation_unittests",
@@ -36,7 +48,12 @@
       "crypto_unittests",
       "extensions_unittests",
       "gcm_unit_tests",
-      "gfx_unittests",
+      {
+        "test": "gfx_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "gpu_unittests",
       "google_apis_unittests",
       {
@@ -48,7 +65,12 @@
       "ipc_tests",
       "jingle_unittests",
       "media_unittests",
-      "message_center_unittests",
+      {
+        "test": "message_center_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "mojo_common_unittests",
       "mojo_public_bindings_unittests",
       "mojo_public_environment_unittests",
@@ -73,7 +95,12 @@
         }
       },
       "sync_unit_tests",
-      "ui_base_unittests",
+      {
+        "test": "ui_base_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       {
         "test": "unit_tests",
         "swarming": {
@@ -99,8 +126,20 @@
   },
   "Mac10.8 Tests": {
     "gtest_tests": [
-      "accessibility_unittests",
-      "app_list_unittests",
+      {
+        "test": "accessibility_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      {
+        "test": "app_list_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      "app_shell_browsertests",
+      "app_shell_unittests",
       {
         "test": "base_unittests",
         "swarming": {
@@ -111,7 +150,7 @@
         "test": "browser_tests",
         "swarming": {
           "can_use_on_swarming_builders": true,
-          "shards": 5
+          "shards": 10
         }
       },
       "cacheinvalidation_unittests",
@@ -134,7 +173,12 @@
       "crypto_unittests",
       "extensions_unittests",
       "gcm_unit_tests",
-      "gfx_unittests",
+      {
+        "test": "gfx_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "gpu_unittests",
       "google_apis_unittests",
       {
@@ -146,7 +190,12 @@
       "ipc_tests",
       "jingle_unittests",
       "media_unittests",
-      "message_center_unittests",
+      {
+        "test": "message_center_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "mojo_common_unittests",
       "mojo_public_bindings_unittests",
       "mojo_public_environment_unittests",
@@ -171,7 +220,12 @@
         }
       },
       "sync_unit_tests",
-      "ui_base_unittests",
+      {
+        "test": "ui_base_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       {
         "test": "unit_tests",
         "swarming": {
@@ -197,8 +251,20 @@
   },
   "Mac10.9 Tests": {
     "gtest_tests": [
-      "accessibility_unittests",
-      "app_list_unittests",
+      {
+        "test": "accessibility_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      {
+        "test": "app_list_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      "app_shell_browsertests",
+      "app_shell_unittests",
       {
         "test": "base_unittests",
         "swarming": {
@@ -232,7 +298,12 @@
       "crypto_unittests",
       "extensions_unittests",
       "gcm_unit_tests",
-      "gfx_unittests",
+      {
+        "test": "gfx_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "gpu_unittests",
       "google_apis_unittests",
       {
@@ -244,7 +315,12 @@
       "ipc_tests",
       "jingle_unittests",
       "media_unittests",
-      "message_center_unittests",
+      {
+        "test": "message_center_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "mojo_common_unittests",
       "mojo_public_bindings_unittests",
       "mojo_public_environment_unittests",
@@ -269,7 +345,12 @@
         }
       },
       "sync_unit_tests",
-      "ui_base_unittests",
+      {
+        "test": "ui_base_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       {
         "test": "unit_tests",
         "swarming": {
@@ -280,6 +361,14 @@
     ],
     "scripts": [
       {
+        "name": "telemetry_unittests",
+        "script": "telemetry_unittests.py"
+      },
+      {
+        "name": "telemetry_perf_unittests",
+        "script": "telemetry_perf_unittests.py"
+      },
+      {
         "name": "nacl_integration",
         "script": "nacl_integration.py"
       }
@@ -287,8 +376,20 @@
   },
   "Mac10.9 Tests (dbg)": {
     "gtest_tests": [
-      "accessibility_unittests",
-      "app_list_unittests",
+      {
+        "test": "accessibility_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      {
+        "test": "app_list_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
+      "app_shell_browsertests",
+      "app_shell_unittests",
       {
         "test": "base_unittests",
         "swarming": {
@@ -322,7 +423,12 @@
       "crypto_unittests",
       "extensions_unittests",
       "gcm_unit_tests",
-      "gfx_unittests",
+      {
+        "test": "gfx_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "gpu_unittests",
       "google_apis_unittests",
       {
@@ -335,7 +441,12 @@
       "ipc_tests",
       "jingle_unittests",
       "media_unittests",
-      "message_center_unittests",
+      {
+        "test": "message_center_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       "mojo_common_unittests",
       "mojo_public_bindings_unittests",
       "mojo_public_environment_unittests",
@@ -360,7 +471,12 @@
         }
       },
       "sync_unit_tests",
-      "ui_base_unittests",
+      {
+        "test": "ui_base_unittests",
+        "swarming": {
+          "can_use_on_swarming_builders": true
+        }
+      },
       {
         "test": "unit_tests",
         "swarming": {
@@ -370,6 +486,14 @@
       "url_unittests"
     ],
     "scripts": [
+      {
+        "name": "telemetry_unittests",
+        "script": "telemetry_unittests.py"
+      },
+      {
+        "name": "telemetry_perf_unittests",
+        "script": "telemetry_perf_unittests.py"
+      },
       {
         "name": "nacl_integration",
         "script": "nacl_integration.py"

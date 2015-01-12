@@ -94,11 +94,11 @@ class USER_MANAGER_EXPORT User : public UserInfo {
   const gfx::ImageSkia& GetImage() const override;
   std::string GetUserID() const override;
 
-  // Allows managing supervised status of the user. Used for RegularUser.
-  virtual void SetIsSupervised(bool is_supervised);
+  // Allows managing child status of the user. Used for RegularUser.
+  virtual void SetIsChild(bool is_child);
 
   // Returns true if user has gaia account. True for users of types
-  // USER_TYPE_REGULAR and USER_TYPE_REGULAR_SUPERVISED.
+  // USER_TYPE_REGULAR and USER_TYPE_CHILD.
   virtual bool HasGaiaAccount() const;
 
   // Returns true if user is supervised.
@@ -179,7 +179,6 @@ class USER_MANAGER_EXPORT User : public UserInfo {
   static User* CreateGuestUser();
   static User* CreateKioskAppUser(const std::string& kiosk_app_username);
   static User* CreateSupervisedUser(const std::string& username);
-  static User* CreateRetailModeUser();
   static User* CreatePublicAccountUser(const std::string& email);
 
   explicit User(const std::string& email);

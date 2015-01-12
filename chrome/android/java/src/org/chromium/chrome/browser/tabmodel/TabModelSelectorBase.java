@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.tabmodel;
 
+import org.chromium.base.ObserverList;
 import org.chromium.chrome.browser.Tab;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
@@ -21,7 +22,8 @@ public abstract class TabModelSelectorBase implements TabModelSelector {
 
     private List<TabModel> mTabModels = Collections.emptyList();
     private int mActiveModelIndex = NORMAL_TAB_MODEL_INDEX;
-    private final ArrayList<ChangeListener> mChangeListeners = new ArrayList<ChangeListener>();
+    private final ObserverList<TabModelSelectorObserver> mObservers =
+            new ObserverList<TabModelSelectorObserver>();
 
     protected final void initialize(boolean startIncognito, TabModel... models) {
         // Only normal and incognito supported for now.
@@ -58,6 +60,7 @@ public abstract class TabModelSelectorBase implements TabModelSelector {
         for (TabModel model : models) {
             model.addObserver(tabModelObserver);
         }
+        notifyChanged();
     }
 
     @Override
@@ -170,13 +173,13 @@ public abstract class TabModelSelectorBase implements TabModelSelector {
     }
 
     @Override
-    public void registerChangeListener(ChangeListener changeListener) {
-        if (!mChangeListeners.contains(changeListener)) mChangeListeners.add(changeListener);
+    public void addObserver(TabModelSelectorObserver observer) {
+        if (!mObservers.hasObserver(observer)) mObservers.addObserver(observer);
     }
 
     @Override
-    public void unregisterChangeListener(ChangeListener changeListener) {
-        mChangeListeners.remove(changeListener);
+    public void removeObserver(TabModelSelectorObserver observer) {
+        mObservers.removeObserver(observer);
     }
 
     /**
@@ -184,8 +187,8 @@ public abstract class TabModelSelectorBase implements TabModelSelector {
      * changed.
      */
     protected void notifyChanged() {
-        for (int i = 0; i < mChangeListeners.size(); i++) {
-            mChangeListeners.get(i).onChange();
+        for (TabModelSelectorObserver listener : mObservers) {
+            listener.onChange();
         }
     }
 
@@ -194,8 +197,8 @@ public abstract class TabModelSelectorBase implements TabModelSelector {
      * @param tab The tab that has been created.
      */
     private void notifyNewTabCreated(Tab tab) {
-        for (int i = 0; i < mChangeListeners.size(); i++) {
-            mChangeListeners.get(i).onNewTabCreated(tab);
+        for (TabModelSelectorObserver listener : mObservers) {
+            listener.onNewTabCreated(tab);
         }
     }
 }

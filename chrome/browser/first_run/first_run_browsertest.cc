@@ -101,7 +101,7 @@ class FirstRunMasterPrefsBrowserTestBase : public InProcessBrowserTest {
     InProcessBrowserTest::TearDown();
   }
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     InProcessBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(switches::kForceFirstRun);
     EXPECT_EQ(first_run::AUTO_IMPORT_NONE, first_run::auto_import_state());
@@ -229,9 +229,7 @@ typedef FirstRunMasterPrefsBrowserTestT<kImportNothing>
 IN_PROC_BROWSER_TEST_F(FirstRunMasterPrefsImportNothing,
                        MAYBE_ImportNothingAndShowNewTabPage) {
   EXPECT_EQ(first_run::AUTO_IMPORT_CALLED, first_run::auto_import_state());
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), GURL(chrome::kChromeUINewTabURL), CURRENT_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
   content::WebContents* tab = browser()->tab_strip_model()->GetWebContentsAt(0);
   EXPECT_EQ(1, tab->GetMaxPageID());
 }
@@ -249,7 +247,7 @@ class FirstRunMasterPrefsWithTrackedPreferences
     : public FirstRunMasterPrefsBrowserTestT<kWithTrackedPrefs>,
       public testing::WithParamInterface<std::string> {
  public:
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     FirstRunMasterPrefsBrowserTestT::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(
         switches::kForceFieldTrials,

@@ -106,7 +106,8 @@ class SourceState {
   void Init(const StreamParser::InitCB& init_cb,
             bool allow_audio,
             bool allow_video,
-            const StreamParser::NeedKeyCB& need_key_cb,
+            const StreamParser::EncryptedMediaInitDataCB&
+                encrypted_media_init_data_cb,
             const NewTextTrackCB& new_text_track_cb);
 
   // Appends new data to the StreamParser.
@@ -281,23 +282,21 @@ SourceState::~SourceState() {
   STLDeleteValues(&text_stream_map_);
 }
 
-void SourceState::Init(const StreamParser::InitCB& init_cb,
-                       bool allow_audio,
-                       bool allow_video,
-                       const StreamParser::NeedKeyCB& need_key_cb,
-                       const NewTextTrackCB& new_text_track_cb) {
+void SourceState::Init(
+    const StreamParser::InitCB& init_cb,
+    bool allow_audio,
+    bool allow_video,
+    const StreamParser::EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
+    const NewTextTrackCB& new_text_track_cb) {
   new_text_track_cb_ = new_text_track_cb;
   init_cb_ = init_cb;
 
   stream_parser_->Init(
       base::Bind(&SourceState::OnSourceInitDone, base::Unretained(this)),
-      base::Bind(&SourceState::OnNewConfigs,
-                 base::Unretained(this),
-                 allow_audio,
-                 allow_video),
+      base::Bind(&SourceState::OnNewConfigs, base::Unretained(this),
+                 allow_audio, allow_video),
       base::Bind(&SourceState::OnNewBuffers, base::Unretained(this)),
-      new_text_track_cb_.is_null(),
-      need_key_cb,
+      new_text_track_cb_.is_null(), encrypted_media_init_data_cb,
       base::Bind(&SourceState::OnNewMediaSegment, base::Unretained(this)),
       base::Bind(&SourceState::OnEndOfMediaSegment, base::Unretained(this)),
       log_cb_);
@@ -1000,6 +999,7 @@ void ChunkDemuxerStream::Read(const ReadCB& read_cb) {
 DemuxerStream::Type ChunkDemuxerStream::type() const { return type_; }
 
 DemuxerStream::Liveness ChunkDemuxerStream::liveness() const {
+  base::AutoLock auto_lock(lock_);
   return liveness_;
 }
 
@@ -1017,14 +1017,19 @@ VideoDecoderConfig ChunkDemuxerStream::video_decoder_config() {
 
 bool ChunkDemuxerStream::SupportsConfigChanges() { return true; }
 
+VideoRotation ChunkDemuxerStream::video_rotation() {
+  return VIDEO_ROTATION_0;
+}
+
 TextTrackConfig ChunkDemuxerStream::text_track_config() {
   CHECK_EQ(type_, TEXT);
   base::AutoLock auto_lock(lock_);
   return stream_->GetCurrentTextTrackConfig();
 }
 
-VideoRotation ChunkDemuxerStream::video_rotation() {
-  return VIDEO_ROTATION_0;
+void ChunkDemuxerStream::SetLiveness(Liveness liveness) {
+  base::AutoLock auto_lock(lock_);
+  liveness_ = liveness;
 }
 
 void ChunkDemuxerStream::ChangeState_Locked(State state) {
@@ -1052,19 +1057,29 @@ void ChunkDemuxerStream::CompletePendingReadIfPossible_Locked() {
       switch (stream_->GetNextBuffer(&buffer)) {
         case SourceBufferStream::kSuccess:
           status = DemuxerStream::kOk;
+          DVLOG(2) << __FUNCTION__ << ": returning kOk, type " << type_
+                   << ", dts " << buffer->GetDecodeTimestamp().InSecondsF()
+                   << ", pts " << buffer->timestamp().InSecondsF()
+                   << ", dur " << buffer->duration().InSecondsF()
+                   << ", key " << buffer->is_key_frame();
           break;
         case SourceBufferStream::kNeedBuffer:
           // Return early without calling |read_cb_| since we don't have
           // any data to return yet.
+          DVLOG(2) << __FUNCTION__ << ": returning kNeedBuffer, type "
+                   << type_;
           return;
         case SourceBufferStream::kEndOfStream:
           status = DemuxerStream::kOk;
           buffer = StreamParserBuffer::CreateEOSBuffer();
+          DVLOG(2) << __FUNCTION__ << ": returning kOk with EOS buffer, type "
+                   << type_;
           break;
         case SourceBufferStream::kConfigChange:
-          DVLOG(2) << "Config change reported to ChunkDemuxerStream.";
           status = kConfigChanged;
           buffer = NULL;
+          DVLOG(2) << __FUNCTION__ << ": returning kConfigChange, type "
+                   << type_;
           break;
       }
       break;
@@ -1074,26 +1089,30 @@ void ChunkDemuxerStream::CompletePendingReadIfPossible_Locked() {
       // because they are associated with the seek.
       status = DemuxerStream::kAborted;
       buffer = NULL;
+      DVLOG(2) << __FUNCTION__ << ": returning kAborted, type " << type_;
       break;
     case SHUTDOWN:
       status = DemuxerStream::kOk;
       buffer = StreamParserBuffer::CreateEOSBuffer();
+      DVLOG(2) << __FUNCTION__ << ": returning kOk with EOS buffer, type "
+               << type_;
       break;
   }
 
   base::ResetAndReturn(&read_cb_).Run(status, buffer);
 }
 
-ChunkDemuxer::ChunkDemuxer(const base::Closure& open_cb,
-                           const NeedKeyCB& need_key_cb,
-                           const LogCB& log_cb,
-                           const scoped_refptr<MediaLog>& media_log,
-                           bool splice_frames_enabled)
+ChunkDemuxer::ChunkDemuxer(
+    const base::Closure& open_cb,
+    const EncryptedMediaInitDataCB& encrypted_media_init_data_cb,
+    const LogCB& log_cb,
+    const scoped_refptr<MediaLog>& media_log,
+    bool splice_frames_enabled)
     : state_(WAITING_FOR_INIT),
       cancel_next_seek_(false),
       host_(NULL),
       open_cb_(open_cb),
-      need_key_cb_(need_key_cb),
+      encrypted_media_init_data_cb_(encrypted_media_init_data_cb),
       enable_text_(false),
       log_cb_(log_cb),
       media_log_(media_log),
@@ -1102,7 +1121,7 @@ ChunkDemuxer::ChunkDemuxer(const base::Closure& open_cb,
       liveness_(DemuxerStream::LIVENESS_UNKNOWN),
       splice_frames_enabled_(splice_frames_enabled) {
   DCHECK(!open_cb_.is_null());
-  DCHECK(!need_key_cb_.is_null());
+  DCHECK(!encrypted_media_init_data_cb_.is_null());
 }
 
 void ChunkDemuxer::Initialize(
@@ -1267,10 +1286,7 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
 
   source_state->Init(
       base::Bind(&ChunkDemuxer::OnSourceInitDone, base::Unretained(this)),
-      has_audio,
-      has_video,
-      need_key_cb_,
-      new_text_track_cb);
+      has_audio, has_video, encrypted_media_init_data_cb_, new_text_track_cb);
 
   source_state_map_[id] = source_state.release();
   return kOk;
@@ -1673,7 +1689,13 @@ void ChunkDemuxer::OnSourceInitDone(
       return;
     }
 
-    liveness_ = params.liveness;
+    if (liveness_ != params.liveness) {
+      liveness_ = params.liveness;
+      if (audio_)
+        audio_->SetLiveness(liveness_);
+      if (video_)
+        video_->SetLiveness(liveness_);
+    }
   }
 
   // Wait until all streams have initialized.

@@ -40,12 +40,25 @@ class ManagePasswordsBubbleModel : public content::WebContentsObserver {
   // Called by the view code when the bubble is hidden.
   void OnBubbleHidden();
 
+  // Called by the view code when the "Never for this site." button in clicked
+  // by the user and user gets confirmation bubble.
+  void OnConfirmationForNeverForThisSite();
+  // Call by the view code when user agreed to |url| collection.
+  void OnCollectURLClicked(const std::string& url);
+
+  // Called by the view code when user didn't allow to collect URL.
+  void OnDoNotCollectURLClicked();
+
   // Called by the view code when the "Nope" button in clicked by the user.
   void OnNopeClicked();
 
   // Called by the view code when the "Never for this site." button in clicked
   // by the user.
   void OnNeverForThisSiteClicked();
+
+  // Called by the view code when the "Undo" button is clicked in
+  // "Never for this site." confirmation bubble by the user.
+  void OnUndoNeverForThisSite();
 
   // Called by the view code when the site is unblacklisted.
   void OnUnblacklistClicked();
@@ -70,6 +83,15 @@ class ManagePasswordsBubbleModel : public content::WebContentsObserver {
   // Called by the view code to notify about chosen credential.
   void OnChooseCredentials(const autofill::PasswordForm& password_form);
 
+  // Called by the view code to open the Help Center about setting up an OS
+  // password.
+  void OnShowOSPasswordHelpArticle();
+
+  // Called by the view code before hiding the OS password bubble.
+  void OnHideOSPasswordBubble(bool permanently);
+
+  GURL origin() const { return origin_; }
+
   password_manager::ui::State state() const { return state_; }
 
   const base::string16& title() const { return title_; }
@@ -83,6 +105,7 @@ class ManagePasswordsBubbleModel : public content::WebContentsObserver {
     return pending_credentials_;
   }
   const base::string16& manage_link() const { return manage_link_; }
+  bool never_save_passwords() const { return never_save_passwords_; }
   const base::string16& save_confirmation_text() const {
     return save_confirmation_text_;
   }
@@ -106,11 +129,17 @@ class ManagePasswordsBubbleModel : public content::WebContentsObserver {
   void set_state(password_manager::ui::State state) { state_ = state; }
 #endif
 
-// Upper limits on the size of the username and password fields.
+  // Upper limits on the size of the username and password fields.
   static int UsernameFieldWidth();
   static int PasswordFieldWidth();
 
  private:
+  // Returns true if the user should see "You don't have an OS password" bubble
+  // once he saves a password.
+  bool ShouldShowOSPasswordBubble();
+
+  // URL of the page from where this bubble was triggered.
+  GURL origin_;
   password_manager::ui::State state_;
   base::string16 title_;
   autofill::PasswordForm pending_password_;
@@ -119,7 +148,9 @@ class ManagePasswordsBubbleModel : public content::WebContentsObserver {
   base::string16 manage_link_;
   base::string16 save_confirmation_text_;
   gfx::Range save_confirmation_link_range_;
-
+  // If true upon destruction, the user has confirmed that she never wants to
+  // save passwords for a particular site.
+  bool never_save_passwords_;
   password_manager::metrics_util::UIDisplayDisposition display_disposition_;
   password_manager::metrics_util::UIDismissalReason dismissal_reason_;
 

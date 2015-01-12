@@ -36,14 +36,26 @@ class CONTENT_EXPORT BrowserPluginGuestDelegate {
   virtual WebContents* CreateNewGuestWindow(
       const WebContents::CreateParams& create_params);
 
+  // Asks the delegate whether this guest can run while detached from a
+  // container. A detached guest is a WebContents that has no visual surface
+  // into which it can composite its content. Detached guests can be thought
+  // of as workers with a DOM.
+  virtual bool CanRunInDetachedState() const;
+
   // Notification that the embedder has completed attachment. The
   // |guest_proxy_routing_id| is the routing ID for the RenderView in the
   // embedder that will serve as a contentWindow proxy for the guest.
   virtual void DidAttach(int guest_proxy_routing_id) {}
 
+  // Notification that the guest has detached from its container.
+  virtual void DidDetach() {}
+
   // Notification that the BrowserPlugin has resized.
   virtual void ElementSizeChanged(const gfx::Size& old_size,
                                   const gfx::Size& new_size) {}
+
+  // Returns the WebContents that currently owns this guest.
+  virtual WebContents* GetOwnerWebContents() const;
 
   // Notifies that the content size of the guest has changed.
   // Note: In autosize mode, it si possible that the guest size may not match

@@ -117,6 +117,7 @@ enum SSLBlockingPageEvent {
   DEPRECATED_CAPTIVE_PORTAL_NO_RESPONSE_OVERRIDABLE,
   DEPRECATED_CAPTIVE_PORTAL_DETECTED,
   DEPRECATED_CAPTIVE_PORTAL_DETECTED_OVERRIDABLE,
+  DISPLAYED_CLOCK_INTERSTITIAL,
   UNUSED_BLOCKING_PAGE_EVENT,
 };
 
@@ -256,7 +257,7 @@ void LaunchDateAndTimeSettings() {
     { "/opt/bin/kcmshell4", "clock" },
   };
 
-  CommandLine command(base::FilePath(""));
+  base::CommandLine command(base::FilePath(""));
   for (size_t i = 0; i < arraysize(kClockCommands); ++i) {
     base::FilePath pathname(kClockCommands[i].pathname);
     if (base::PathExists(pathname)) {
@@ -273,28 +274,28 @@ void LaunchDateAndTimeSettings() {
   base::LaunchOptions options;
   options.wait = false;
   options.allow_new_privs = true;
-  base::LaunchProcess(command, options, NULL);
+  base::LaunchProcess(command, options);
 
 #elif defined(OS_MACOSX)
-  CommandLine command(base::FilePath("/usr/bin/open"));
+  base::CommandLine command(base::FilePath("/usr/bin/open"));
   command.AppendArg("/System/Library/PreferencePanes/DateAndTime.prefPane");
 
   base::LaunchOptions options;
   options.wait = false;
-  base::LaunchProcess(command, options, NULL);
+  base::LaunchProcess(command, options);
 
 #elif defined(OS_WIN)
   base::FilePath path;
   PathService::Get(base::DIR_SYSTEM, &path);
   static const base::char16 kControlPanelExe[] = L"control.exe";
   path = path.Append(base::string16(kControlPanelExe));
-  CommandLine command(path);
+  base::CommandLine command(path);
   command.AppendArg(std::string("/name"));
   command.AppendArg(std::string("Microsoft.DateAndTime"));
 
   base::LaunchOptions options;
   options.wait = false;
-  base::LaunchProcess(command, options, NULL);
+  base::LaunchProcess(command, options);
 
 #else
   NOTREACHED();
@@ -452,6 +453,8 @@ void SSLBlockingPage::PopulateInterstitialStrings(
 
   // Conditional UI configuration.
   if (bad_clock) {
+    RecordSSLBlockingPageEventStats(DISPLAYED_CLOCK_INTERSTITIAL);
+
     load_time_data->SetBoolean("bad_clock", true);
     load_time_data->SetBoolean("overridable", false);
 
@@ -511,7 +514,7 @@ void SSLBlockingPage::PopulateInterstitialStrings(
           SSLErrorInfo::CreateError(
               SSLErrorInfo::NetErrorToErrorType(cert_error_),
               ssl_info_.cert.get(),
-              request_url_);
+              request_url());
       load_time_data->SetString("explanationParagraph", error_info.details());
       load_time_data->SetString(
           "primaryButtonText",

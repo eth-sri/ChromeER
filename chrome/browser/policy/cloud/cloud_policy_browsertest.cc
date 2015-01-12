@@ -209,7 +209,7 @@ class CloudPolicyTest : public InProcessBrowserTest,
 
     std::string url = test_server_->GetServiceURL().spec();
 
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitchASCII(switches::kDeviceManagementUrl, url);
 
     invalidation::ProfileInvalidationProviderFactory::GetInstance()->
@@ -265,9 +265,9 @@ class CloudPolicyTest : public InProcessBrowserTest,
 #else
         em::DeviceRegisterRequest::BROWSER;
 #endif
-    policy_manager->core()->client()->Register(
-        registration_type, "bogus", std::string(), false, std::string(),
-        std::string());
+    policy_manager->core()->client()->Register(registration_type, "bogus",
+                                               std::string(), std::string(),
+                                               std::string());
     run_loop.Run();
     Mock::VerifyAndClearExpectations(&observer);
     policy_manager->core()->client()->RemoveObserver(&observer);

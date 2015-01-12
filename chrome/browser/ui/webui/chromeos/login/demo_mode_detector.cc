@@ -35,7 +35,8 @@ DemoModeDetector::~DemoModeDetector() {
 // Public methods.
 
 void DemoModeDetector::InitDetection() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableDemoMode))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableDemoMode))
     return;
 
   if (base::SysInfo::IsRunningOnChromeOS()) {
@@ -54,6 +55,7 @@ void DemoModeDetector::InitDetection() {
 }
 
 void DemoModeDetector::StopDetection() {
+  oobe_timer_.Stop();
   idle_detector_.reset();
 }
 
@@ -103,7 +105,7 @@ void DemoModeDetector::OnOobeTimerUpdate() {
 }
 
 void DemoModeDetector::SetupTimeouts() {
-  CommandLine* cmdline = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   DCHECK(cmdline);
 
   PrefService* prefs = g_browser_process->local_state();

@@ -20,7 +20,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "ui/gfx/image/image.h"
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_service_observer.h"
 #endif
 
@@ -38,7 +38,7 @@ class SupervisedUserService;
 // data changes, and the view for this model should forward actions
 // back to it in response to user events.
 class AvatarMenu :
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
     public SupervisedUserServiceObserver,
 #endif
     public content::NotificationObserver {
@@ -91,6 +91,13 @@ class AvatarMenu :
 
   // True if avatar menu should be displayed.
   static bool ShouldShowAvatarMenu();
+
+  // Sets |image| to the avatar corresponding to the profile at |profile_path|
+  // and sets |is_rectangle| to true unless |image| is a built-in profile
+  // avatar. For built-in profile avatars, returns the non-high res version.
+  static void GetImageForMenuButton(const base::FilePath& profile_path,
+                                    gfx::Image* image,
+                                    bool* is_rectangle);
 
   // Compare items by name.
   static bool CompareItems(const Item* item1, const Item* item2);
@@ -146,7 +153,7 @@ class AvatarMenu :
                const content::NotificationDetails& details) override;
 
  private:
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
   // SupervisedUserServiceObserver:
   void OnCustodianInfoChanged() override;
 #endif
@@ -157,7 +164,7 @@ class AvatarMenu :
   // The controller for avatar menu actions.
   scoped_ptr<AvatarMenuActions> menu_actions_;
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
   // Observes changes to a supervised user's custodian info.
   ScopedObserver<SupervisedUserService, SupervisedUserServiceObserver>
       supervised_user_observer_;

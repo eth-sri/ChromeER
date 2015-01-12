@@ -82,10 +82,13 @@ void ViewEventTestBase::SetUp() {
   bool enable_pixel_output = false;
   ui::ContextFactory* context_factory =
       ui::InitializeContextFactoryForTests(enable_pixel_output);
+  views_delegate_.set_context_factory(context_factory);
+  views_delegate_.set_use_desktop_native_widgets(true);
 
   platform_part_.reset(ViewEventTestPlatformPart::Create(context_factory));
   gfx::NativeWindow context = platform_part_->GetContext();
   window_ = views::Widget::CreateWindowWithContext(this, context);
+  window_->Show();
 }
 
 void ViewEventTestBase::TearDown() {

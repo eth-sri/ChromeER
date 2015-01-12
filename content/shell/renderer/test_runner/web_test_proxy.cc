@@ -19,7 +19,6 @@
 #include "content/shell/renderer/test_runner/mock_color_chooser.h"
 #include "content/shell/renderer/test_runner/mock_credential_manager_client.h"
 #include "content/shell/renderer/test_runner/mock_screen_orientation_client.h"
-#include "content/shell/renderer/test_runner/mock_web_push_client.h"
 #include "content/shell/renderer/test_runner/mock_web_speech_recognizer.h"
 #include "content/shell/renderer/test_runner/mock_web_user_media_client.h"
 #include "content/shell/renderer/test_runner/spell_check_client.h"
@@ -1214,9 +1213,7 @@ void WebTestProxyBase::DidFinishResourceLoad(blink::WebLocalFrame* frame,
     delegate_->PrintMessage(" - didFinishLoading\n");
   }
   resource_identifier_map_.erase(identifier);
-#if !defined(ENABLE_LOAD_COMPLETION_HACKS)
   CheckDone(frame, ResourceLoadCompleted);
-#endif
 }
 
 void WebTestProxyBase::DidAddMessageToConsole(
@@ -1265,17 +1262,9 @@ void WebTestProxyBase::CheckDone(blink::WebLocalFrame* frame,
                                  CheckDoneReason reason) {
   if (frame != test_interfaces_->GetTestRunner()->topLoadingFrame())
     return;
-
-#if !defined(ENABLE_LOAD_COMPLETION_HACKS)
-  // Quirk for MHTML prematurely completing on resource load completion.
-  std::string mime_type = frame->dataSource()->response().mimeType().utf8();
-  if (reason == ResourceLoadCompleted && mime_type == "multipart/related")
-    return;
-
   if (reason != MainResourceLoadFailed &&
       (frame->isResourceLoadInProgress() || frame->isLoading()))
     return;
-#endif
   test_interfaces_->GetTestRunner()->setTopLoadingFrame(frame, true);
 }
 
@@ -1328,16 +1317,6 @@ void WebTestProxyBase::ResetInputMethod() {
 
 blink::WebString WebTestProxyBase::acceptLanguages() {
   return blink::WebString::fromUTF8(accept_languages_);
-}
-
-MockWebPushClient* WebTestProxyBase::GetPushClientMock() {
-  if (!push_client_.get())
-    push_client_.reset(new MockWebPushClient);
-  return push_client_.get();
-}
-
-blink::WebPushClient* WebTestProxyBase::GetWebPushClient() {
-  return GetPushClientMock();
 }
 
 }  // namespace content

@@ -107,7 +107,7 @@
     "messages": [12500],
   },
   "content/app/strings/content_strings.grd": {
-    "messages": [18500],
+    "messages": [19000],
   },
   "components/policy/resources/policy_templates.grd": {
     "structures": [20500],
@@ -233,6 +233,9 @@
   },
   "third_party/WebKit/public/blink_resources.grd": {
     "includes": [30500],
+  },
+  "chrome/browser/devtools/device/webrtc/resources.grd": {
+    "includes": [30800],
   },
 
   # These files don't need to reserve resource ids, but are listed here so that

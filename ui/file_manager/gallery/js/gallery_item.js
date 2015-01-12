@@ -31,7 +31,7 @@ Gallery.Item = function(
    * @type {!Object}
    * @private
    */
-  this.metadata_ = Object.freeze(metadata);
+  this.metadata_ = Object.preventExtensions(metadata);
 
   /**
    * @type {!MetadataCache}
@@ -46,7 +46,7 @@ Gallery.Item = function(
    * The content cache is used for prefetching the next image when going through
    * the images sequentially. The real life photos can be large (18Mpix = 72Mb
    * pixel array) so we want only the minimum amount of caching.
-   * @type {HTMLCanvasElement}
+   * @type {(HTMLCanvasElement|HTMLImageElement)}
    */
   this.contentImage = null;
 
@@ -71,8 +71,6 @@ Gallery.Item = function(
    * @private
    */
   this.original_ = original;
-
-  Object.seal(this);
 };
 
 /**
@@ -118,7 +116,7 @@ Gallery.Item.prototype.getFetchedMedia = function() {
  * @param {!Object} metadata New metadata.
  */
 Gallery.Item.prototype.setMetadata = function(metadata) {
-  this.metadata_ = Object.freeze(metadata);
+  this.metadata_ = Object.preventExtensions(metadata);
 };
 
 /**
@@ -270,7 +268,12 @@ Gallery.Item.prototype.saveToFile = function(
     fileEntry.createWriter(function(fileWriter) {
       function writeContent() {
         fileWriter.onwriteend = onSuccess.bind(null, fileEntry);
-        fileWriter.write(ImageEncoder.getBlob(canvas, metadataEncoder));
+        // Contrary to what one might think 1.0 is not a good default. Opening
+        // and saving an typical photo taken with consumer camera increases its
+        // file size by 50-100%. Experiments show that 0.9 is much better. It
+        // shrinks some photos a bit, keeps others about the same size, but does
+        // not visibly lower the quality.
+        fileWriter.write(ImageEncoder.getBlob(canvas, metadataEncoder, 0.9));
       }
       fileWriter.onerror = function(error) {
         onError(error);

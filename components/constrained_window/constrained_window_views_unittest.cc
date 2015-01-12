@@ -5,9 +5,9 @@
 #include "components/constrained_window/constrained_window_views.h"
 
 #include "components/web_modal/test_web_contents_modal_dialog_host.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/views/border.h"
 #include "ui/views/test/views_test_base.h"
@@ -41,17 +41,14 @@ class DialogContents : public views::DialogDelegateView {
 
 class ConstrainedWindowViewsTest : public views::ViewsTestBase {
  public:
-  ConstrainedWindowViewsTest() : contents_(NULL) {}
+  ConstrainedWindowViewsTest() : contents_(nullptr), dialog_(nullptr) {}
   ~ConstrainedWindowViewsTest() override {}
 
   void SetUp() override {
     views::ViewsTestBase::SetUp();
     contents_ = new DialogContents;
-    Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
-    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    params.delegate = contents_;
-    dialog_.reset(new Widget);
-    dialog_->Init(params);
+    dialog_ = views::DialogDelegate::CreateDialogWidget(
+        contents_, GetContext(), nullptr);
     dialog_host_.reset(new web_modal::TestWebContentsModalDialogHost(
         dialog_->GetNativeView()));
     dialog_host_->set_max_dialog_size(gfx::Size(5000, 5000));
@@ -64,10 +61,10 @@ class ConstrainedWindowViewsTest : public views::ViewsTestBase {
   }
 
   void TearDown() override {
-    ViewsTestBase::TearDown();
-    contents_ = NULL;
+    contents_ = nullptr;
     dialog_host_.reset();
-    dialog_.reset();
+    dialog_->CloseNow();
+    ViewsTestBase::TearDown();
   }
 
   gfx::Size GetDialogSize() {
@@ -78,12 +75,12 @@ class ConstrainedWindowViewsTest : public views::ViewsTestBase {
   web_modal::TestWebContentsModalDialogHost* dialog_host() {
     return dialog_host_.get();
   }
-  Widget* dialog() { return dialog_.get(); }
+  Widget* dialog() { return dialog_; }
 
  private:
   DialogContents* contents_;
   scoped_ptr<web_modal::TestWebContentsModalDialogHost> dialog_host_;
-  scoped_ptr<Widget> dialog_;
+  Widget* dialog_;
 
   DISALLOW_COPY_AND_ASSIGN(ConstrainedWindowViewsTest);
 };

@@ -745,6 +745,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Contains the connection close packet if the connection has been closed.
   scoped_ptr<QuicEncryptedPacket> connection_close_packet_;
 
+  // When true, the connection does not send a close packet on timeout.
+  bool silent_close_enabled_;
+
   FecGroupMap group_map_;
 
   QuicReceivedPacketManager received_packet_manager_;
@@ -753,7 +756,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Indicates whether an ack should be sent the next time we try to write.
   bool ack_queued_;
   // Indicates how many consecutive packets have arrived without sending an ack.
-  uint32 num_packets_received_since_last_ack_sent_;
+  QuicPacketCount num_packets_received_since_last_ack_sent_;
   // Indicates how many consecutive times an ack has arrived which indicates
   // the peer needs to stop waiting for some packets.
   int stop_waiting_count_;

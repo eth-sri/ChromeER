@@ -19,6 +19,7 @@ import zipfile
 
 import pylib.android_commands
 from pylib import cmd_helper
+from pylib import constants
 from pylib.device import adb_wrapper
 from pylib.device import decorators
 from pylib.device import device_errors
@@ -33,6 +34,11 @@ from pylib.utils import timeout_retry
 _DEFAULT_TIMEOUT = 30
 _DEFAULT_RETRIES = 3
 
+# A sentinel object for default values
+# TODO(jbudorick,perezju): revisit how default values are handled by
+# the timeout_retry decorators.
+DEFAULT = object()
+
 
 @decorators.WithExplicitTimeoutAndRetries(
     _DEFAULT_TIMEOUT, _DEFAULT_RETRIES)
@@ -42,7 +48,17 @@ def GetAVDs():
   Returns:
     A list containing the configured AVDs.
   """
-  return pylib.android_commands.GetAVDs()
+  lines = cmd_helper.GetCmdOutput([
+      os.path.join(constants.ANDROID_SDK_ROOT, 'tools', 'android'),
+      'list', 'avd']).splitlines()
+  avds = []
+  for line in lines:
+    if 'Name:' not in line:
+      continue
+    key, value = (s.strip() for s in line.split(':', 1))
+    if key == 'Name':
+      avds.append(value)
+  return avds
 
 
 @decorators.WithExplicitTimeoutAndRetries(
@@ -56,6 +72,11 @@ def RestartServer():
   pylib.android_commands.AndroidCommands().RestartAdbServer()
 
 
+def _GetTimeStamp():
+  """Return a basic ISO 8601 time stamp with the current local time."""
+  return time.strftime('%Y%m%dT%H%M%S', time.localtime())
+
+
 class DeviceUtils(object):
 
   _VALID_SHELL_VARIABLE = re.compile('^[a-zA-Z_][a-zA-Z0-9_]*$')
@@ -65,8 +86,8 @@ class DeviceUtils(object):
     """DeviceUtils constructor.
 
     Args:
-      device: Either a device serial, an existing AdbWrapper instance, an
-              an existing AndroidCommands instance, or nothing.
+      device: Either a device serial, an existing AdbWrapper instance, or an
+              an existing AndroidCommands instance.
       default_timeout: An integer containing the default number of seconds to
                        wait for an operation to complete if no explicit value
                        is provided.
@@ -85,11 +106,8 @@ class DeviceUtils(object):
     elif isinstance(device, pylib.android_commands.AndroidCommands):
       self.adb = adb_wrapper.AdbWrapper(device.GetDevice())
       self.old_interface = device
-    elif not device:
-      self.adb = adb_wrapper.AdbWrapper('')
-      self.old_interface = pylib.android_commands.AndroidCommands()
     else:
-      raise ValueError('Unsupported type passed for argument "device"')
+      raise ValueError('Unsupported device value: %r' % device)
     self._commands_installed = None
     self._default_timeout = default_timeout
     self._default_retries = default_retries
@@ -138,7 +156,7 @@ class DeviceUtils(object):
     except device_errors.AdbCommandFailedError:
       return False
 
-  def NeedsSU(self, timeout=None, retries=None):
+  def NeedsSU(self, timeout=DEFAULT, retries=DEFAULT):
     """Checks whether 'su' is needed to access protected resources.
 
     Args:
@@ -157,8 +175,10 @@ class DeviceUtils(object):
     """
     if 'needs_su' not in self._cache:
       try:
-        self.RunShellCommand('su -c ls /root && ! ls /root', check_return=True,
-                             timeout=timeout, retries=retries)
+        self.RunShellCommand(
+            'su -c ls /root && ! ls /root', check_return=True,
+            timeout=self._default_timeout if timeout is DEFAULT else timeout,
+            retries=self._default_retries if retries is DEFAULT else retries)
         self._cache['needs_su'] = True
       except device_errors.AdbCommandFailedError:
         self._cache['needs_su'] = False
@@ -177,11 +197,13 @@ class DeviceUtils(object):
       CommandFailedError if root could not be enabled.
       CommandTimeoutError on timeout.
     """
+    if self.IsUserBuild():
+      raise device_errors.CommandFailedError(
+          'Cannot enable root in user builds.', str(self))
     if 'needs_su' in self._cache:
       del self._cache['needs_su']
-    if not self.old_interface.EnableAdbRoot():
-      raise device_errors.CommandFailedError(
-          'Could not enable root.', str(self))
+    self.adb.Root()
+    self.adb.WaitForDevice()
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def IsUserBuild(self, timeout=None, retries=None):
@@ -239,8 +261,14 @@ class DeviceUtils(object):
     Returns:
       Path to the apk on the device if it exists, None otherwise.
     """
+    # 'pm path' is liable to incorrectly exit with a nonzero number starting
+    # in Lollipop.
+    # TODO(jbudorick): Check if this is fixed as new Android versions are
+    # released to put an upper bound on this.
+    should_check_return = (self.build_version_sdk <
+                           constants.ANDROID_SDK_VERSION_CODES.LOLLIPOP)
     output = self.RunShellCommand(['pm', 'path', package], single_line=True,
-                                  check_return=True)
+                                  check_return=should_check_return)
     if not output:
       return None
     if not output.startswith('package:'):
@@ -344,30 +372,15 @@ class DeviceUtils(object):
       DeviceUnreachableError on missing device.
     """
     package_name = apk_helper.GetPackageName(apk_path)
-    device_path = self.old_interface.GetApplicationPath(package_name)
+    device_path = self.GetApplicationPath(package_name)
     if device_path is not None:
-      files_changed = self.old_interface.GetFilesChanged(
-          apk_path, device_path, ignore_filenames=True)
-      if len(files_changed) > 0:
-        should_install = True
-        if not reinstall:
-          out = self.old_interface.Uninstall(package_name)
-          for line in out.splitlines():
-            if 'Failure' in line:
-              raise device_errors.CommandFailedError(line.strip(), str(self))
-      else:
-        should_install = False
+      should_install = bool(self._GetChangedFilesImpl(apk_path, device_path))
+      if should_install and not reinstall:
+        self.adb.Uninstall(package_name)
     else:
       should_install = True
     if should_install:
-      try:
-        out = self.old_interface.Install(apk_path, reinstall=reinstall)
-        for line in out.splitlines():
-          if 'Failure' in line:
-            raise device_errors.CommandFailedError(line.strip(), str(self))
-      except AssertionError as e:
-        raise device_errors.CommandFailedError(
-            str(e), str(self)), None, sys.exc_info()[2]
+      self.adb.Install(apk_path, reinstall=reinstall)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def RunShellCommand(self, cmd, check_return=False, cwd=None, env=None,
@@ -497,12 +510,12 @@ class DeviceUtils(object):
     return len(pids)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
-  def StartActivity(self, intent, blocking=False, trace_file_name=None,
+  def StartActivity(self, intent_obj, blocking=False, trace_file_name=None,
                     force_stop=False, timeout=None, retries=None):
     """Start package's activity on the device.
 
     Args:
-      intent: An Intent to send.
+      intent_obj: An Intent object to send.
       blocking: A boolean indicating whether we should wait for the activity to
                 finish launching.
       trace_file_name: If present, a string that both indicates that we want to
@@ -518,16 +531,17 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    single_category = (intent.category[0] if isinstance(intent.category, list)
-                                          else intent.category)
-    output = self.old_interface.StartActivity(
-        intent.package, intent.activity, wait_for_completion=blocking,
-        action=intent.action, category=single_category, data=intent.data,
-        extras=intent.extras, trace_file_name=trace_file_name,
-        force_stop=force_stop, flags=intent.flags)
-    for l in output:
-      if l.startswith('Error:'):
-        raise device_errors.CommandFailedError(l, str(self))
+    cmd = ['am', 'start']
+    if blocking:
+      cmd.append('-W')
+    if trace_file_name:
+      cmd.extend(['--start-profiler', trace_file_name])
+    if force_stop:
+      cmd.append('-S')
+    cmd.extend(intent_obj.am_args)
+    for line in self.RunShellCommand(cmd, check_return=True):
+      if line.startswith('Error:'):
+        raise device_errors.CommandFailedError(line, str(self))
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def StartInstrumentation(self, component, finish=True, raw=False,
@@ -546,7 +560,7 @@ class DeviceUtils(object):
     return self.RunShellCommand(cmd, check_return=True)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
-  def BroadcastIntent(self, intent, timeout=None, retries=None):
+  def BroadcastIntent(self, intent_obj, timeout=None, retries=None):
     """Send a broadcast intent.
 
     Args:
@@ -558,13 +572,8 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    package, old_intent = intent.action.rsplit('.', 1)
-    if intent.extras is None:
-      args = []
-    else:
-      args = ['-e %s%s' % (k, ' "%s"' % v if v else '')
-              for k, v in intent.extras.items() if len(k) > 0]
-    self.old_interface.BroadcastIntent(package, old_intent, *args)
+    cmd = ['am', 'broadcast'] + intent_obj.am_args
+    self.RunShellCommand(cmd, check_return=True)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def GoHome(self, timeout=None, retries=None):
@@ -593,7 +602,7 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    self.old_interface.CloseApplication(package)
+    self.RunShellCommand(['am', 'force-stop', package], check_return=True)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def ClearApplicationState(self, package, timeout=None, retries=None):
@@ -608,7 +617,10 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    self.old_interface.ClearApplicationState(package)
+    # Check that the package exists before clearing it. Necessary because
+    # calling pm clear on a package that doesn't exist may never return.
+    if self.GetApplicationPath(package):
+      self.RunShellCommand(['pm', 'clear', package], check_return=True)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def SendKeyEvent(self, keycode, timeout=None, retries=None):
@@ -625,7 +637,8 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    self.old_interface.SendKeyEvent(keycode)
+    self.RunShellCommand(['input', 'keyevent', format(keycode, 'd')],
+                         check_return=True)
 
   PUSH_CHANGED_FILES_DEFAULT_TIMEOUT = 10 * _DEFAULT_TIMEOUT
   PUSH_CHANGED_FILES_DEFAULT_RETRIES = _DEFAULT_RETRIES
@@ -851,11 +864,11 @@ class DeviceUtils(object):
       CommandFailedError on failure.
       CommandTimeoutError on timeout.
     """
-    try:
-      self.old_interface.PullFileFromDevice(device_path, host_path)
-    except AssertionError as e:
-      raise device_errors.CommandFailedError(
-          str(e), str(self)), None, sys.exc_info()[2]
+    # Create the base dir if it doesn't exist already
+    dirname = os.path.dirname(host_path)
+    if dirname and not os.path.exists(dirname):
+      os.makedirs(dirname)
+    self.adb.Pull(device_path, host_path)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def ReadFile(self, device_path, as_root=False, timeout=None, retries=None):
@@ -918,7 +931,7 @@ class DeviceUtils(object):
         host_temp.write(contents)
         host_temp.flush()
         if as_root and self.NeedsSU():
-          with device_temp_file.DeviceTempFile(self) as device_temp:
+          with device_temp_file.DeviceTempFile(self.adb) as device_temp:
             self.adb.Push(host_temp.name, device_temp.name)
             # Here we need 'cp' rather than 'mv' because the temp and
             # destination files might be on different file systems (e.g.
@@ -939,13 +952,41 @@ class DeviceUtils(object):
       retries: number of retries
 
     Returns:
-      The contents of the directory specified by |device_path|.
+      A list of pairs (filename, stat) for each file found in the directory,
+      where the stat object has the properties: st_mode, st_size, and st_time.
 
     Raises:
+      AdbCommandFailedError if |device_path| does not specify a valid and
+          accessible directory in the device.
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    return self.old_interface.ListPathContents(device_path)
+    return self.adb.Ls(device_path)
+
+  @decorators.WithTimeoutAndRetriesFromInstance()
+  def Stat(self, device_path, timeout=None, retries=None):
+    """Get the stat attributes of a file or directory on the device.
+
+    Args:
+      device_path: A string containing the path of from which to get attributes
+                   on the device.
+      timeout: timeout in seconds
+      retries: number of retries
+
+    Returns:
+      A stat object with the properties: st_mode, st_size, and st_time
+
+    Raises:
+      CommandFailedError if device_path cannot be found on the device.
+      CommandTimeoutError on timeout.
+      DeviceUnreachableError on missing device.
+    """
+    dirname, target = device_path.rsplit('/', 1)
+    for filename, stat in self.adb.Ls(dirname):
+      if filename == target:
+        return stat
+    raise device_errors.CommandFailedError(
+        'Cannot find file or directory: %r' % device_path, str(self))
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def SetJavaAsserts(self, enabled, timeout=None, retries=None):
@@ -966,12 +1007,77 @@ class DeviceUtils(object):
     """
     return self.old_interface.SetJavaAssertsEnabled(enabled)
 
+
+  @property
+  def build_description(self):
+    """Returns the build description of the system.
+
+    For example:
+      nakasi-user 4.4.4 KTU84P 1227136 release-keys
+    """
+    return self.GetProp('ro.build.description', cache=True)
+
+  @property
+  def build_fingerprint(self):
+    """Returns the build fingerprint of the system.
+
+    For example:
+      google/nakasi/grouper:4.4.4/KTU84P/1227136:user/release-keys
+    """
+    return self.GetProp('ro.build.fingerprint', cache=True)
+
+  @property
+  def build_id(self):
+    """Returns the build ID of the system (e.g. 'KTU84P')."""
+    return self.GetProp('ro.build.id', cache=True)
+
+  @property
+  def build_product(self):
+    """Returns the build product of the system (e.g. 'grouper')."""
+    return self.GetProp('ro.build.product', cache=True)
+
   @property
   def build_type(self):
-    """Returns the build type of the system (e.g. userdebug)."""
+    """Returns the build type of the system (e.g. 'user')."""
     return self.GetProp('ro.build.type', cache=True)
 
-  def GetProp(self, property_name, cache=False, timeout=None, retries=None):
+  @property
+  def build_version_sdk(self):
+    """Returns the build version sdk of the system as a number (e.g. 19).
+
+    For version code numbers see:
+    http://developer.android.com/reference/android/os/Build.VERSION_CODES.html
+
+    For named constants see:
+    pylib.constants.ANDROID_SDK_VERSION_CODES
+
+    Raises:
+      CommandFailedError if the build version sdk is not a number.
+    """
+    value = self.GetProp('ro.build.version.sdk', cache=True)
+    try:
+      return int(value)
+    except ValueError:
+      raise device_errors.CommandFailedError(
+          'Invalid build version sdk: %r' % value)
+
+  @property
+  def product_cpu_abi(self):
+    """Returns the product cpu abi of the device (e.g. 'armeabi-v7a')."""
+    return self.GetProp('ro.product.cpu.abi', cache=True)
+
+  @property
+  def product_model(self):
+    """Returns the name of the product model (e.g. 'Nexus 7')."""
+    return self.GetProp('ro.product.model', cache=True)
+
+  @property
+  def product_name(self):
+    """Returns the product name of the device (e.g. 'nakasi')."""
+    return self.GetProp('ro.product.name', cache=True)
+
+  def GetProp(self, property_name, cache=False, timeout=DEFAULT,
+              retries=DEFAULT):
     """Gets a property from the device.
 
     Args:
@@ -996,9 +1102,10 @@ class DeviceUtils(object):
     else:
       # timeout and retries are handled down at run shell, because we don't
       # want to apply them in the other branch when reading from the cache
-      value = self.RunShellCommand(['getprop', property_name],
-                                   single_line=True, check_return=True,
-                                   timeout=timeout, retries=retries)
+      value = self.RunShellCommand(
+          ['getprop', property_name], single_line=True, check_return=True,
+          timeout=self._default_timeout if timeout is DEFAULT else timeout,
+          retries=self._default_retries if retries is DEFAULT else retries)
       if cache or cache_key in self._cache:
         self._cache[cache_key] = value
       return value
@@ -1091,7 +1198,8 @@ class DeviceUtils(object):
 
     Args:
       host_path: A string containing the path on the host to save the
-                 screenshot to. If None, a file name will be generated.
+                 screenshot to. If None, a file name in the current
+                 directory will be generated.
       timeout: timeout in seconds
       retries: number of retries
 
@@ -1103,7 +1211,13 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    return self.old_interface.TakeScreenshot(host_path)
+    if not host_path:
+      host_path = os.path.abspath('screenshot-%s.png' % _GetTimeStamp())
+    with device_temp_file.DeviceTempFile(self.adb, suffix='.png') as device_tmp:
+      self.RunShellCommand(['/system/bin/screencap', '-p', device_tmp.name],
+                           check_return=True)
+      self.PullFile(device_tmp.name, host_path)
+    return host_path
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def GetIOStats(self, timeout=None, retries=None):
@@ -1143,15 +1257,10 @@ class DeviceUtils(object):
 
   def __str__(self):
     """Returns the device serial."""
-    s = self.old_interface.GetDevice()
-    if not s:
-      s = self.old_interface.Adb().GetSerialNumber()
-      if s == 'unknown':
-        raise device_errors.NoDevicesError()
-    return s
+    return self.adb.GetDeviceSerial()
 
-  @staticmethod
-  def parallel(devices=None, async=False):
+  @classmethod
+  def parallel(cls, devices=None, async=False):
     """Creates a Parallelizer to operate over the provided list of devices.
 
     If |devices| is either |None| or an empty list, the Parallelizer will
@@ -1167,10 +1276,10 @@ class DeviceUtils(object):
     Returns:
       A Parallelizer operating over |devices|.
     """
-    if not devices or len(devices) == 0:
-      devices = pylib.android_commands.GetAttachedDevices()
-    parallelizer_type = (parallelizer.Parallelizer if async
-                         else parallelizer.SyncParallelizer)
-    return parallelizer_type([
-        d if isinstance(d, DeviceUtils) else DeviceUtils(d)
-        for d in devices])
+    if not devices:
+      devices = adb_wrapper.AdbWrapper.GetDevices()
+    devices = [d if isinstance(d, cls) else cls(d) for d in devices]
+    if async:
+      return parallelizer.Parallelizer(devices)
+    else:
+      return parallelizer.SyncParallelizer(devices)

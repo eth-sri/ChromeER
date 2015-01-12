@@ -188,6 +188,13 @@ void ResourceLoader::MarkAsTransferring() {
   CHECK(IsResourceTypeFrame(GetRequestInfo()->GetResourceType()))
       << "Can only transfer for navigations";
   is_transferring_ = true;
+
+  int child_id = GetRequestInfo()->GetChildID();
+  AppCacheInterceptor::PrepareForCrossSiteTransfer(request(), child_id);
+  ServiceWorkerRequestHandler* handler =
+      ServiceWorkerRequestHandler::GetHandler(request());
+  if (handler)
+    handler->PrepareForCrossSiteTransfer(child_id);
 }
 
 void ResourceLoader::CompleteTransfer() {
@@ -197,6 +204,18 @@ void ResourceLoader::CompleteTransfer() {
   // a later read stage.
   DCHECK(DEFERRED_READ == deferred_stage_ ||
          DEFERRED_RESPONSE_COMPLETE == deferred_stage_);
+  DCHECK(is_transferring_);
+
+  // In some cases, a process transfer doesn't really happen and the
+  // request is resumed in the original process. Real transfers to a new process
+  // are completed via ResourceDispatcherHostImpl::UpdateRequestForTransfer.
+  int child_id = GetRequestInfo()->GetChildID();
+  AppCacheInterceptor::MaybeCompleteCrossSiteTransferInOldProcess(
+      request(), child_id);
+  ServiceWorkerRequestHandler* handler =
+      ServiceWorkerRequestHandler::GetHandler(request());
+  if (handler)
+    handler->MaybeCompleteCrossSiteTransferInOldProcess(child_id);
 
   is_transferring_ = false;
   GetRequestInfo()->cross_site_handler()->ResumeResponse();
@@ -290,11 +309,9 @@ void ResourceLoader::OnCertificateRequested(
   DCHECK(!ssl_client_auth_handler_)
       << "OnCertificateRequested called with ssl_client_auth_handler pending";
   ssl_client_auth_handler_.reset(new SSLClientAuthHandler(
-      GetRequestInfo()->GetContext()->CreateClientCertStore(),
-      request_.get(),
-      cert_info,
-      base::Bind(&ResourceLoader::ContinueWithCertificate,
-                 weak_ptr_factory_.GetWeakPtr())));
+      GetRequestInfo()->GetContext()->CreateClientCertStore(), request_.get(),
+      cert_info, base::Bind(&ResourceLoader::ContinueWithCertificate,
+                            weak_ptr_factory_.GetWeakPtr())));
   ssl_client_auth_handler_->SelectCertificate();
 }
 
@@ -598,12 +615,27 @@ void ResourceLoader::StoreSignedCertificateTimestamps(
 }
 
 void ResourceLoader::CompleteResponseStarted() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 ResourceLoader::CompleteResponseStarted1"));
+
   ResourceRequestInfoImpl* info = GetRequestInfo();
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 ResourceLoader::CompleteResponseStarted2"));
 
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
   PopulateResourceResponse(info, request_.get(), response.get());
 
   if (request_->ssl_info().cert.get()) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile3(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 ResourceLoader::CompleteResponseStarted3"));
+
     int cert_id = CertStore::GetInstance()->StoreCert(
         request_->ssl_info().cert.get(), info->GetChildID());
 
@@ -626,6 +658,11 @@ void ResourceLoader::CompleteResponseStarted() {
            !request_->ssl_info().connection_status);
   }
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile5(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 ResourceLoader::CompleteResponseStarted5"));
+
   delegate_->DidReceiveResponse(this);
 
   // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
@@ -643,6 +680,10 @@ void ResourceLoader::CompleteResponseStarted() {
 }
 
 void ResourceLoader::StartReading(bool is_continuation) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("423948 ResourceLoader::StartReading"));
+
   int bytes_read = 0;
   ReadMore(&bytes_read);
 
@@ -680,6 +721,10 @@ void ResourceLoader::ResumeReading() {
 }
 
 void ResourceLoader::ReadMore(int* bytes_read) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("423948 ResourceLoader::ReadMore1"));
+
   DCHECK(!is_deferred());
 
   // Make sure we track the buffer in at least one place.  This ensures it gets
@@ -689,8 +734,8 @@ void ResourceLoader::ReadMore(int* bytes_read) {
   int buf_size;
   {
     // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
-    tracked_objects::ScopedTracker tracking_profile(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("423948 ResourceLoader::ReadMore"));
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("423948 ResourceLoader::ReadMore2"));
 
     if (!handler_->OnWillRead(&buf, &buf_size, -1)) {
       Cancel();

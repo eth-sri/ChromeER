@@ -10,6 +10,7 @@
 
 #include "build/build_config.h"
 
+#include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/common/password_form.h"
@@ -32,7 +33,7 @@ class PasswordFormManager : public PasswordStoreConsumer {
   //           used to filter login results from database.
   PasswordFormManager(PasswordManager* password_manager,
                       PasswordManagerClient* client,
-                      PasswordManagerDriver* driver,
+                      const base::WeakPtr<PasswordManagerDriver>& driver,
                       const autofill::PasswordForm& observed_form,
                       bool ssl_valid);
   ~PasswordFormManager() override;
@@ -105,9 +106,11 @@ class PasswordFormManager : public PasswordStoreConsumer {
   bool HasGeneratedPassword();
   void SetHasGeneratedPassword();
 
-  // Determines if we need to autofill given the results of the query.
-  // Takes ownership of the elements in |result|.
-  void OnRequestDone(const std::vector<autofill::PasswordForm*>& result);
+  // Through |driver|, supply the associated frame with appropriate information
+  // (fill data, whether to allow password generation, etc.). If this is called
+  // before |this| has data from the PasswordStore, the execution will be
+  // delayed until the data arrives.
+  void ProcessFrame(const base::WeakPtr<PasswordManagerDriver>& driver);
 
   void OnGetPasswordStoreResults(
       const std::vector<autofill::PasswordForm*>& results) override;
@@ -211,6 +214,10 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // This is used when recording the actions taken by the form in UMA.
   static const int kMaxNumActionsTaken = kManagerActionMax * kUserActionMax *
                                          kSubmitResultMax;
+
+  // Determines if we need to autofill given the results of the query.
+  // Takes ownership of the elements in |result|.
+  void OnRequestDone(const std::vector<autofill::PasswordForm*>& result);
 
   // Helper for OnGetPasswordStoreResults to determine whether or not
   // the given result form is worth scoring.
@@ -323,8 +330,14 @@ class PasswordFormManager : public PasswordStoreConsumer {
   // The client which implements embedder-specific PasswordManager operations.
   PasswordManagerClient* client_;
 
-  // The driver which implements platform-specific PasswordManager operations.
-  PasswordManagerDriver* driver_;
+  // When |this| is created, it is because a form has been found in a frame,
+  // represented by a driver. For that frame, and for all others with an
+  // equivalent form, the associated drivers are needed to perform
+  // frame-specific operations (filling etc.). While |this| waits for the
+  // matching credentials from the PasswordStore, the drivers for frames needing
+  // fill information are buffered in |drivers_|, and served once the results
+  // arrive, if the drivers are still valid.
+  std::vector<base::WeakPtr<PasswordManagerDriver>> drivers_;
 
   // These three fields record the "ActionsTaken" by the browser and
   // the user with this form, and the result. They are combined and

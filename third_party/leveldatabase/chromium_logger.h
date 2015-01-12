@@ -18,8 +18,7 @@ class ChromiumLogger : public Logger {
   explicit ChromiumLogger(base::File* f) : file_(f) {}
   virtual ~ChromiumLogger() {}
   virtual void Logv(const char* format, va_list ap) {
-    const base::PlatformThreadId thread_id =
-        ::base::PlatformThread::CurrentId();
+    const base::PlatformThreadId thread_id = base::PlatformThread::CurrentId();
 
     // We try twice: the first time with a fixed-size stack allocated buffer,
     // and the second time with a much larger dynamically allocated buffer.
@@ -37,10 +36,10 @@ class ChromiumLogger : public Logger {
       char* p = base;
       char* limit = base + bufsize;
 
-      ::base::Time::Exploded t;
-      ::base::Time::Now().LocalExplode(&t);
+      base::Time::Exploded t;
+      base::Time::Now().LocalExplode(&t);
 
-      p += ::base::snprintf(p, limit - p,
+      p += base::snprintf(p, limit - p,
                     "%04d/%02d/%02d-%02d:%02d:%02d.%03d %" PRIu64 " ",
                     t.year,
                     t.month,
@@ -54,7 +53,7 @@ class ChromiumLogger : public Logger {
       // Print the message
       if (p < limit) {
         va_list backup_ap;
-        GG_VA_COPY(backup_ap, ap);
+        va_copy(backup_ap, ap);
         p += vsnprintf(p, limit - p, format, backup_ap);
         va_end(backup_ap);
       }

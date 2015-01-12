@@ -22,7 +22,7 @@
 #include "components/search_engines/template_url_service_observer.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/drag_controller.h"
 
@@ -301,13 +301,18 @@ class LocationBarView : public LocationBar,
   // of at least one of the views in |content_setting_views_| changed.
   bool RefreshContentSettingViews();
 
-  // Deletes all page action views that we have created.
+  // Clears |page_action_views_| and removes the elements from the view
+  // hierarchy.
   void DeletePageActionViews();
 
   // Updates the views for the Page Actions, to reflect state changes for
   // PageActions. Returns true if the visibility of a PageActionWithBadgeView
   // changed, or PageActionWithBadgeView were created/destroyed.
   bool RefreshPageActionViews();
+
+  // Whether the page actions represented by |page_action_views_| differ
+  // in ordering or value from |page_actions|.
+  bool PageActionsDiffer(const PageActions& page_actions) const;
 
   // Updates the view for the zoom icon based on the current tab's zoom. Returns
   // true if the visibility of the view changed.
@@ -351,7 +356,6 @@ class LocationBarView : public LocationBar,
   void UpdateContentSettingsIcons() override;
   void UpdateManagePasswordsIconAndBubble() override;
   void UpdatePageActions() override;
-  void InvalidatePageActions() override;
   void UpdateBookmarkStarVisibility() override;
   bool ShowPageActionPopup(const extensions::Extension* extension,
                            bool grant_active_tab) override;
@@ -473,9 +477,6 @@ class LocationBarView : public LocationBar,
   // The manage passwords icon.
   ManagePasswordsIconView* manage_passwords_icon_view_;
 
-  // The current page actions.
-  PageActions page_actions_;
-
   // The page action icon views.
   PageActionViews page_action_views_;
 
@@ -548,6 +549,10 @@ class LocationBarView : public LocationBar,
   // from the width of the hostname to the ending value.
   int current_omnibox_width_;
   int ending_omnibox_width_;
+
+  // This is a debug state variable that stores if the WebContents was null
+  // during the last RefreshPageAction.
+  bool web_contents_null_at_last_refresh_;
 
   DISALLOW_COPY_AND_ASSIGN(LocationBarView);
 };

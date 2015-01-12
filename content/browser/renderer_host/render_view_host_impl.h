@@ -368,7 +368,8 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnUpdateDragCursor(blink::WebDragOperation drag_operation);
   void OnTargetDropACK();
   void OnTakeFocus(bool reverse);
-  void OnFocusedNodeChanged(bool is_editable_node);
+  void OnFocusedNodeChanged(bool is_editable_node,
+                            const gfx::Rect& node_bounds_in_viewport);
   void OnClosePageACK();
   void OnDidZoomURL(double zoom_level, const GURL& url);
   void OnRunFileChooser(const FileChooserParams& params);
@@ -388,7 +389,15 @@ class CONTENT_EXPORT RenderViewHostImpl
   // to fire.
   static const int64 kUnloadTimeoutMS;
 
+  // Returns whether the current RenderProcessHost has read access to the files
+  // reported in |state|.
   bool CanAccessFilesOfPageState(const PageState& state) const;
+
+  // Grants the current RenderProcessHost read access to any file listed in
+  // |validated_state|.  It is important that the PageState has been validated
+  // upon receipt from the renderer process to prevent it from forging access to
+  // files without the user's consent.
+  void GrantFileAccessFromPageState(const PageState& validated_state);
 
   // The number of RenderFrameHosts which have a reference to this RVH.
   int frames_ref_count_;

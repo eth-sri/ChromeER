@@ -8,10 +8,9 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/prefs/pref_service.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/incognito_mode_prefs.h"
+#include "chrome/browser/component_updater/supervised_user_whitelist_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -20,7 +19,6 @@
 #include "chrome/browser/supervised_user/custodian_profile_downloader_service.h"
 #include "chrome/browser/supervised_user/custodian_profile_downloader_service_factory.h"
 #include "chrome/browser/supervised_user/experimental/supervised_user_blacklist_downloader.h"
-#include "chrome/browser/supervised_user/permission_request_creator_apiary.h"
 #include "chrome/browser/supervised_user/permission_request_creator_sync.h"
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "chrome/browser/supervised_user/supervised_user_pref_mapping_service.h"
@@ -31,8 +29,7 @@
 #include "chrome/browser/supervised_user/supervised_user_settings_service_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_shared_settings_service_factory.h"
 #include "chrome/browser/supervised_user/supervised_user_site_list.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_whitelist_service.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -59,7 +56,6 @@
 #include "chrome/common/extensions/api/supervised_user_private/supervised_user_handler.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/common/extension_set.h"
 #endif
 
 #if defined(ENABLE_THEMES)
@@ -126,14 +122,15 @@ void SupervisedUserService::URLFilterContext::LoadWhitelists(
 }
 
 void SupervisedUserService::URLFilterContext::LoadBlacklist(
-    const base::FilePath& path) {
+    const base::FilePath& path,
+    const base::Closure& callback) {
   // For now, support loading only once. If we want to support re-load, we'll
   // have to clear the blacklist pointer in the url filters first.
   DCHECK_EQ(0u, blacklist_.GetEntryCount());
   blacklist_.ReadFromFile(
       path,
       base::Bind(&SupervisedUserService::URLFilterContext::OnBlacklistLoaded,
-                 base::Unretained(this)));
+                 base::Unretained(this), callback));
 }
 
 void SupervisedUserService::URLFilterContext::SetManualHosts(
@@ -156,7 +153,8 @@ void SupervisedUserService::URLFilterContext::SetManualURLs(
                  io_url_filter_, base::Owned(url_map.release())));
 }
 
-void SupervisedUserService::URLFilterContext::OnBlacklistLoaded() {
+void SupervisedUserService::URLFilterContext::OnBlacklistLoaded(
+    const base::Closure& callback) {
   ui_url_filter_->SetBlacklist(&blacklist_);
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -164,6 +162,7 @@ void SupervisedUserService::URLFilterContext::OnBlacklistLoaded() {
       base::Bind(&SupervisedUserURLFilter::SetBlacklist,
                  io_url_filter_,
                  &blacklist_));
+  callback.Run();
 }
 
 void SupervisedUserService::URLFilterContext::InitAsyncURLChecker(
@@ -191,10 +190,12 @@ SupervisedUserService::SupervisedUserService(Profile* profile)
       did_init_(false),
       did_shutdown_(false),
       weak_ptr_factory_(this) {
+  url_filter_context_.ui_url_filter()->AddObserver(this);
 }
 
 SupervisedUserService::~SupervisedUserService() {
   DCHECK(!did_init_ || did_shutdown_);
+  url_filter_context_.ui_url_filter()->RemoveObserver(this);
 }
 
 void SupervisedUserService::Shutdown() {
@@ -285,6 +286,10 @@ SupervisedUserURLFilter* SupervisedUserService::GetURLFilterForUIThread() {
   return url_filter_context_.ui_url_filter();
 }
 
+SupervisedUserWhitelistService* SupervisedUserService::GetWhitelistService() {
+  return whitelist_service_.get();
+}
+
 // Items not on any list must return -1 (CATEGORY_NOT_ON_LIST in history.js).
 // Items on a list, but with no category, must return 0 (CATEGORY_OTHER).
 #define CATEGORY_NOT_ON_LIST -1;
@@ -364,9 +369,9 @@ void SupervisedUserService::RemoveObserver(
   observer_list_.RemoveObserver(observer);
 }
 
-void SupervisedUserService::AddPermissionRequestCreatorForTesting(
-    PermissionRequestCreator* creator) {
-  permissions_creators_.push_back(creator);
+void SupervisedUserService::AddPermissionRequestCreator(
+    scoped_ptr<PermissionRequestCreator> creator) {
+  permissions_creators_.push_back(creator.release());
 }
 
 #if defined(ENABLE_EXTENSIONS)
@@ -627,9 +632,7 @@ void SupervisedUserService::OnPermissionRequestIssued(
 }
 
 void SupervisedUserService::OnSupervisedUserIdChanged() {
-  std::string supervised_user_id =
-      profile_->GetPrefs()->GetString(prefs::kSupervisedUserId);
-  SetActive(!supervised_user_id.empty());
+  SetActive(ProfileIsSupervised());
 }
 
 void SupervisedUserService::OnDefaultFilteringBehaviorChanged() {
@@ -648,10 +651,12 @@ void SupervisedUserService::OnDefaultFilteringBehaviorChanged() {
 void SupervisedUserService::UpdateSiteLists() {
 #if defined(ENABLE_EXTENSIONS)
   url_filter_context_.LoadWhitelists(GetActiveSiteLists());
+#endif
+}
 
+void SupervisedUserService::OnSiteListUpdated() {
   FOR_EACH_OBSERVER(
       SupervisedUserServiceObserver, observer_list_, OnURLFilterChanged());
-#endif
 }
 
 void SupervisedUserService::LoadBlacklist(const base::FilePath& path,
@@ -661,7 +666,7 @@ void SupervisedUserService::LoadBlacklist(const base::FilePath& path,
     return;
   }
 
-  DCHECK(!blacklist_downloader_.get());
+  DCHECK(!blacklist_downloader_);
   blacklist_downloader_.reset(new SupervisedUserBlacklistDownloader(
       url,
       path,
@@ -671,10 +676,11 @@ void SupervisedUserService::LoadBlacklist(const base::FilePath& path,
 }
 
 void SupervisedUserService::LoadBlacklistFromFile(const base::FilePath& path) {
-  url_filter_context_.LoadBlacklist(path);
-
-  FOR_EACH_OBSERVER(
-      SupervisedUserServiceObserver, observer_list_, OnURLFilterChanged());
+  // This object is guaranteed to outlive the URLFilterContext, so we can bind a
+  // raw pointer to it in the callback.
+  url_filter_context_.LoadBlacklist(
+      path, base::Bind(&SupervisedUserService::OnBlacklistLoaded,
+                       base::Unretained(this)));
 }
 
 void SupervisedUserService::OnBlacklistDownloadDone(const base::FilePath& path,
@@ -685,6 +691,11 @@ void SupervisedUserService::OnBlacklistDownloadDone(const base::FilePath& path,
     LOG(WARNING) << "Blacklist download failed";
   }
   blacklist_downloader_.reset();
+}
+
+void SupervisedUserService::OnBlacklistLoaded() {
+  FOR_EACH_OBSERVER(
+      SupervisedUserServiceObserver, observer_list_, OnURLFilterChanged());
 }
 
 bool SupervisedUserService::AccessRequestsEnabled() {
@@ -729,6 +740,13 @@ void SupervisedUserService::Init() {
   if (sync_service)
     sync_service->AddPreferenceProvider(this);
 
+  component_updater::ComponentUpdateService* component_updater =
+      g_browser_process->component_updater();
+  whitelist_service_.reset(new SupervisedUserWhitelistService(
+      profile_->GetPrefs(),
+      component_updater::SupervisedUserWhitelistInstaller::Create(
+          component_updater)));
+
   SetActive(ProfileIsSupervised());
 }
 
@@ -742,7 +760,7 @@ void SupervisedUserService::SetActive(bool active) {
       SupervisedUserPrefMappingServiceFactory::GetForBrowserContext(profile_)
           ->Init();
 
-      CommandLine* command_line = CommandLine::ForCurrentProcess();
+      base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
       if (command_line->HasSwitch(switches::kSupervisedUserSyncToken)) {
         InitSync(
             command_line->GetSwitchValueASCII(
@@ -753,6 +771,14 @@ void SupervisedUserService::SetActive(bool active) {
           ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
       token_service->LoadCredentials(
           supervised_users::kSupervisedUserPseudoEmail);
+
+      permissions_creators_.push_back(new PermissionRequestCreatorSync(
+          GetSettingsService(),
+          SupervisedUserSharedSettingsServiceFactory::GetForBrowserContext(
+              profile_),
+          ProfileSyncServiceFactory::GetForProfile(profile_),
+          GetSupervisedUserName(),
+          profile_->GetPrefs()->GetString(prefs::kSupervisedUserId)));
 
       SetupSync();
     }
@@ -779,28 +805,6 @@ void SupervisedUserService::SetActive(bool active) {
 #endif
 
   if (active_) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kPermissionRequestApiUrl)) {
-      GURL url(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kPermissionRequestApiUrl));
-      if (url.is_valid()) {
-        scoped_ptr<PermissionRequestCreator> creator =
-            PermissionRequestCreatorApiary::CreateWithProfile(profile_, url);
-        permissions_creators_.push_back(creator.release());
-      } else {
-        LOG(WARNING) << "Got invalid URL for "
-                     << switches::kPermissionRequestApiUrl;
-      }
-    } else {
-      permissions_creators_.push_back(new PermissionRequestCreatorSync(
-          GetSettingsService(),
-          SupervisedUserSharedSettingsServiceFactory::GetForBrowserContext(
-              profile_),
-          ProfileSyncServiceFactory::GetForProfile(profile_),
-          GetSupervisedUserName(),
-          profile_->GetPrefs()->GetString(prefs::kSupervisedUserId)));
-    }
-
     pref_change_registrar_.Add(
         prefs::kDefaultSupervisedUserFilteringBehavior,
         base::Bind(&SupervisedUserService::OnDefaultFilteringBehaviorChanged,
@@ -840,19 +844,18 @@ void SupervisedUserService::SetActive(bool active) {
     // Initialize the filter.
     OnDefaultFilteringBehaviorChanged();
     UpdateSiteLists();
+    whitelist_service_->Init();
     UpdateManualHosts();
     UpdateManualURLs();
-    bool use_blacklist =
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableSupervisedUserBlacklist);
+    bool use_blacklist = base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableSupervisedUserBlacklist);
     if (delegate_ && use_blacklist) {
       base::FilePath blacklist_path = delegate_->GetBlacklistPath();
       if (!blacklist_path.empty())
         LoadBlacklist(blacklist_path, delegate_->GetBlacklistURL());
     }
-    bool use_safesites =
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableSupervisedUserSafeSites);
+    bool use_safesites = base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kEnableSupervisedUserSafeSites);
     if (delegate_ && use_safesites) {
       const std::string& cx = delegate_->GetSafeSitesCx();
       if (!cx.empty()) {

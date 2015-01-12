@@ -173,7 +173,7 @@ TEST(WebCryptoAesCbcTest, GenerateKeyIsRandom) {
       ASSERT_EQ(Status::Success(),
                 GenerateSecretKey(
                     CreateAesCbcKeyGenAlgorithm(kKeyLength[key_length_i]), true,
-                    0, &key));
+                    blink::WebCryptoKeyUsageEncrypt, &key));
       EXPECT_TRUE(key.handle());
       EXPECT_EQ(blink::WebCryptoKeyTypeSecret, key.type());
       ASSERT_EQ(Status::Success(),
@@ -195,8 +195,17 @@ TEST(WebCryptoAesCbcTest, GenerateKeyBadLength) {
     SCOPED_TRACE(i);
     EXPECT_EQ(Status::ErrorGenerateAesKeyLength(),
               GenerateSecretKey(CreateAesCbcKeyGenAlgorithm(kKeyLen[i]), true,
-                                0, &key));
+                                blink::WebCryptoKeyUsageEncrypt, &key));
   }
+}
+
+TEST(WebCryptoAesCbcTest, ImportKeyEmptyUsage) {
+  blink::WebCryptoKey key;
+  ASSERT_EQ(Status::ErrorCreateKeyEmptyUsages(),
+            ImportKey(blink::WebCryptoKeyFormatRaw,
+                      CryptoData(std::vector<uint8_t>(16)),
+                      CreateAlgorithm(blink::WebCryptoAlgorithmIdAesCbc),
+                      true, 0, &key));
 }
 
 // If key_ops is specified but empty, no key usages are allowed for the key.
@@ -207,13 +216,6 @@ TEST(WebCryptoAesCbcTest, ImportKeyJwkEmptyKeyOps) {
   dict.SetBoolean("ext", false);
   dict.SetString("k", "GADWrMRHwQfoNaXU5fZvTg");
   dict.Set("key_ops", new base::ListValue);  // Takes ownership.
-
-  EXPECT_EQ(Status::Success(),
-            ImportKeyJwkFromDict(
-                dict, CreateAlgorithm(blink::WebCryptoAlgorithmIdAesCbc), false,
-                0, &key));
-
-  EXPECT_EQ(0, key.usages());
 
   // The JWK does not contain encrypt usages.
   EXPECT_EQ(Status::ErrorJwkKeyopsInconsistent(),
@@ -332,7 +334,7 @@ TEST(WebCryptoAesCbcTest, ImportJwkInvalidJson) {
   blink::WebCryptoKey key;
   // Fail on empty JSON.
   EXPECT_EQ(
-      Status::ErrorImportEmptyKeyData(),
+      Status::ErrorJwkNotDictionary(),
       ImportKey(blink::WebCryptoKeyFormatJwk, CryptoData(MakeJsonVector("")),
                 CreateAlgorithm(blink::WebCryptoAlgorithmIdAesCbc), false,
                 blink::WebCryptoKeyUsageEncrypt, &key));
@@ -463,6 +465,14 @@ TEST(WebCryptoAesCbcTest, GenerateKeyBadUsages) {
   }
 }
 
+// Generate an AES-CBC key with no usages.
+TEST(WebCryptoAesCbcTest, GenerateKeyEmptyUsages) {
+  blink::WebCryptoKey key;
+
+  ASSERT_EQ(Status::ErrorCreateKeyEmptyUsages(),
+            GenerateSecretKey(CreateAesCbcKeyGenAlgorithm(128), true, 0, &key));
+}
+
 // Generate an AES-CBC key and an RSA key pair. Use the AES-CBC key to wrap the
 // key pair (using SPKI format for public key, PKCS8 format for private key).
 // Then unwrap the wrapped key pair and verify that the key data is the same.
@@ -489,7 +499,8 @@ TEST(WebCryptoAesCbcTest, WrapUnwrapRoundtripSpkiPkcs8) {
                                 blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
                                 blink::WebCryptoAlgorithmIdSha256,
                                 modulus_length, public_exponent),
-                            true, 0, &public_key, &private_key));
+                            true, blink::WebCryptoKeyUsageSign, &public_key,
+                            &private_key));
 
   // Export key pair as SPKI + PKCS8
   std::vector<uint8_t> public_key_spki;
@@ -524,16 +535,16 @@ TEST(WebCryptoAesCbcTest, WrapUnwrapRoundtripSpkiPkcs8) {
   ASSERT_EQ(
       Status::Success(),
       UnwrapKey(blink::WebCryptoKeyFormatSpki, CryptoData(wrapped_public_key),
-                wrapping_key, wrap_algorithm, rsa_import_algorithm, true, 0,
-                &unwrapped_public_key));
+                wrapping_key, wrap_algorithm, rsa_import_algorithm, true,
+                blink::WebCryptoKeyUsageVerify, &unwrapped_public_key));
 
   blink::WebCryptoKey unwrapped_private_key;
 
   ASSERT_EQ(
       Status::Success(),
       UnwrapKey(blink::WebCryptoKeyFormatPkcs8, CryptoData(wrapped_private_key),
-                wrapping_key, wrap_algorithm, rsa_import_algorithm, true, 0,
-                &unwrapped_private_key));
+                wrapping_key, wrap_algorithm, rsa_import_algorithm, true,
+                blink::WebCryptoKeyUsageSign, &unwrapped_private_key));
 
   // Export unwrapped key pair as SPKI + PKCS8
   std::vector<uint8_t> unwrapped_public_key_spki;

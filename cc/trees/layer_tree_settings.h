@@ -54,7 +54,6 @@ class CC_EXPORT LayerTreeSettings {
   bool layers_always_allowed_lcd_text;
   float minimum_contents_scale;
   float low_res_contents_scale_factor;
-  float top_controls_height;
   float top_controls_show_threshold;
   float top_controls_hide_threshold;
   double background_animation_rate;
@@ -66,19 +65,21 @@ class CC_EXPORT LayerTreeSettings {
   bool use_pinch_zoom_scrollbars;
   bool use_pinch_virtual_viewport;
   size_t max_tiles_for_interest_area;
-  float skewport_target_time_multiplier;
+  float skewport_target_time_in_seconds;
   int skewport_extrapolation_limit_in_content_pixels;
   size_t max_unused_resource_memory_percentage;
   size_t max_memory_for_prepaint_percentage;
   bool strict_layer_property_change_checking;
   bool use_one_copy;
   bool use_zero_copy;
-  bool use_image_external;
+  bool enable_elastic_overscroll;
+  unsigned use_image_texture_target;
   bool ignore_root_layer_flings;
   size_t scheduled_raster_task_limit;
   bool use_occlusion_for_tile_prioritization;
   bool record_full_layer;
   bool use_display_lists;
+  bool verify_property_trees;
 
   LayerTreeDebugState initial_debug_state;
 };

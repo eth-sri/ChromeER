@@ -20,7 +20,7 @@ namespace cc {
 
 class CC_EXPORT ClipDisplayItem : public DisplayItem {
  public:
-  virtual ~ClipDisplayItem();
+  ~ClipDisplayItem() override;
 
   static scoped_ptr<ClipDisplayItem> Create(
       gfx::Rect clip_rect,
@@ -32,6 +32,7 @@ class CC_EXPORT ClipDisplayItem : public DisplayItem {
 
   bool IsSuitableForGpuRasterization() const override;
   int ApproximateOpCount() const override;
+  size_t PictureMemoryUsage() const override;
 
  protected:
   ClipDisplayItem(gfx::Rect clip_rect,
@@ -44,7 +45,7 @@ class CC_EXPORT ClipDisplayItem : public DisplayItem {
 
 class CC_EXPORT EndClipDisplayItem : public DisplayItem {
  public:
-  virtual ~EndClipDisplayItem();
+  ~EndClipDisplayItem() override;
 
   static scoped_ptr<EndClipDisplayItem> Create() {
     return make_scoped_ptr(new EndClipDisplayItem());
@@ -54,6 +55,7 @@ class CC_EXPORT EndClipDisplayItem : public DisplayItem {
 
   bool IsSuitableForGpuRasterization() const override;
   int ApproximateOpCount() const override;
+  size_t PictureMemoryUsage() const override;
 
  protected:
   EndClipDisplayItem();

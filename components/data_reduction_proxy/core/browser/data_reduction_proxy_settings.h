@@ -42,8 +42,9 @@ const unsigned int kNumDaysInHistory = 60;
 // The number of days of bandwidth usage statistics that are presented.
 const unsigned int kNumDaysInHistorySummary = 30;
 
-COMPILE_ASSERT(kNumDaysInHistorySummary <= kNumDaysInHistory,
-               DataReductionProxySettings_summary_too_long);
+static_assert(kNumDaysInHistorySummary <= kNumDaysInHistory,
+              "kNumDaysInHistorySummary should be no larger than "
+              "kNumDaysInHistory");
 
 // Values of the UMA DataReductionProxy.StartupState histogram.
 // This enum must remain synchronized with DataReductionProxyStartupState
@@ -180,6 +181,12 @@ class DataReductionProxySettings
   // determine server availability. |at_startup| is true when this method is
   // called in response to creating or loading a new profile.
   void MaybeActivateDataReductionProxy(bool at_startup);
+
+  // Returns the event store being used. May be null if
+  // InitDataReductionProxySettings has not been called.
+  DataReductionProxyEventStore* GetEventStore() const {
+    return event_store_;
+  }
 
  protected:
   void InitPrefMembers();

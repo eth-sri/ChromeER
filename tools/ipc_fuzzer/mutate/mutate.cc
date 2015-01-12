@@ -330,47 +330,47 @@ struct FuzzTraits<base::string16> {
 
 // Specializations to fuzz tuples.
 template <class A>
-struct FuzzTraits<Tuple1<A> > {
-  static void Fuzz(Tuple1<A>* p, Fuzzer* fuzzer) {
-    FuzzParam(&p->a, fuzzer);
+struct FuzzTraits<Tuple<A>> {
+  static void Fuzz(Tuple<A>* p, Fuzzer* fuzzer) {
+    FuzzParam(&get<0>(*p), fuzzer);
   }
 };
 
 template <class A, class B>
-struct FuzzTraits<Tuple2<A, B> > {
-  static void Fuzz(Tuple2<A, B>* p, Fuzzer* fuzzer) {
-    FuzzParam(&p->a, fuzzer);
-    FuzzParam(&p->b, fuzzer);
+struct FuzzTraits<Tuple<A, B>> {
+  static void Fuzz(Tuple<A, B>* p, Fuzzer* fuzzer) {
+    FuzzParam(&get<0>(*p), fuzzer);
+    FuzzParam(&get<1>(*p), fuzzer);
   }
 };
 
 template <class A, class B, class C>
-struct FuzzTraits<Tuple3<A, B, C> > {
-  static void Fuzz(Tuple3<A, B, C>* p, Fuzzer* fuzzer) {
-    FuzzParam(&p->a, fuzzer);
-    FuzzParam(&p->b, fuzzer);
-    FuzzParam(&p->c, fuzzer);
+struct FuzzTraits<Tuple<A, B, C>> {
+  static void Fuzz(Tuple<A, B, C>* p, Fuzzer* fuzzer) {
+    FuzzParam(&get<0>(*p), fuzzer);
+    FuzzParam(&get<1>(*p), fuzzer);
+    FuzzParam(&get<2>(*p), fuzzer);
   }
 };
 
 template <class A, class B, class C, class D>
-struct FuzzTraits<Tuple4<A, B, C, D> > {
-  static void Fuzz(Tuple4<A, B, C, D>* p, Fuzzer* fuzzer) {
-    FuzzParam(&p->a, fuzzer);
-    FuzzParam(&p->b, fuzzer);
-    FuzzParam(&p->c, fuzzer);
-    FuzzParam(&p->d, fuzzer);
+struct FuzzTraits<Tuple<A, B, C, D>> {
+  static void Fuzz(Tuple<A, B, C, D>* p, Fuzzer* fuzzer) {
+    FuzzParam(&get<0>(*p), fuzzer);
+    FuzzParam(&get<1>(*p), fuzzer);
+    FuzzParam(&get<2>(*p), fuzzer);
+    FuzzParam(&get<3>(*p), fuzzer);
   }
 };
 
 template <class A, class B, class C, class D, class E>
-struct FuzzTraits<Tuple5<A, B, C, D, E> > {
-  static void Fuzz(Tuple5<A, B, C, D, E>* p, Fuzzer* fuzzer) {
-    FuzzParam(&p->a, fuzzer);
-    FuzzParam(&p->b, fuzzer);
-    FuzzParam(&p->c, fuzzer);
-    FuzzParam(&p->d, fuzzer);
-    FuzzParam(&p->e, fuzzer);
+struct FuzzTraits<Tuple<A, B, C, D, E>> {
+  static void Fuzz(Tuple<A, B, C, D, E>* p, Fuzzer* fuzzer) {
+    FuzzParam(&get<0>(*p), fuzzer);
+    FuzzParam(&get<1>(*p), fuzzer);
+    FuzzParam(&get<2>(*p), fuzzer);
+    FuzzParam(&get<3>(*p), fuzzer);
+    FuzzParam(&get<4>(*p), fuzzer);
   }
 };
 
@@ -564,11 +564,12 @@ struct FuzzTraits<gfx::Rect> {
   }
 
 #define IPC_MEMBERS_IN_0(p)
-#define IPC_MEMBERS_IN_1(p) p.a
-#define IPC_MEMBERS_IN_2(p) p.a, p.b
-#define IPC_MEMBERS_IN_3(p) p.a, p.b, p.c
-#define IPC_MEMBERS_IN_4(p) p.a, p.b, p.c, p.d
-#define IPC_MEMBERS_IN_5(p) p.a, p.b, p.c, p.d, p.e
+#define IPC_MEMBERS_IN_1(p) get<0>(p)
+#define IPC_MEMBERS_IN_2(p) get<0>(p), get<1>(p)
+#define IPC_MEMBERS_IN_3(p) get<0>(p), get<1>(p), get<2>(p)
+#define IPC_MEMBERS_IN_4(p) get<0>(p), get<1>(p), get<2>(p), get<3>(p)
+#define IPC_MEMBERS_IN_5(p) get<0>(p), get<1>(p), get<2>(p), get<3>(p),     \
+                            get<4>(p)
 
 #define IPC_MEMBERS_OUT_0()
 #define IPC_MEMBERS_OUT_1() NULL
@@ -655,9 +656,9 @@ void usage() {
 }  // namespace
 
 int MutateMain(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
-  CommandLine* cmd = CommandLine::ForCurrentProcess();
-  CommandLine::StringVector args = cmd->GetArgs();
+  base::CommandLine::Init(argc, argv);
+  base::CommandLine* cmd = base::CommandLine::ForCurrentProcess();
+  base::CommandLine::StringVector args = cmd->GetArgs();
 
   if (args.size() != 2 || cmd->HasSwitch(kHelpSwitch)) {
     usage();

@@ -11,7 +11,13 @@
  */
 function FileTasks(fileManager) {
   this.fileManager_ = fileManager;
+
+  /**
+   * @type {Array.<!Object>}
+   * @private
+   */
   this.tasks_ = null;
+
   this.defaultTask_ = null;
   this.entries_ = null;
 
@@ -88,6 +94,7 @@ FileTasks.createWebStoreLink = function(extension, mimeType) {
  *
  * @param {Array.<Entry>} entries List of file entries.
  * @param {Array.<string>=} opt_mimeTypes Mime-type specified for each entries.
+ * @return {!Promise} Promise to be fulfilled when the initialization completes.
  */
 FileTasks.prototype.init = function(entries, opt_mimeTypes) {
   this.entries_ = entries;
@@ -96,8 +103,24 @@ FileTasks.prototype.init = function(entries, opt_mimeTypes) {
   // TODO(mtomasz): Move conversion from entry to url to custom bindings.
   // crbug.com/345527.
   var urls = util.entriesToURLs(entries);
-  if (urls.length > 0)
-    chrome.fileManagerPrivate.getFileTasks(urls, this.onTasks_.bind(this));
+  if (urls.length > 0) {
+    return new Promise(function(fulfill) {
+      chrome.fileManagerPrivate.getFileTasks(urls, function(taskItems) {
+        this.onTasks_(taskItems);
+        fulfill();
+      }.bind(this));
+    }.bind(this));
+  } else {
+    return Promise.resolve();
+  }
+};
+
+/**
+ * Obtains the task items.
+ * @return {Array.<!Object>}
+ */
+FileTasks.prototype.getTaskItems = function() {
+  return this.tasks_;
 };
 
 /**
@@ -210,16 +233,6 @@ FileTasks.isInternalTask_ = function(taskId) {
 FileTasks.prototype.processTasks_ = function(tasks) {
   this.tasks_ = [];
   var id = chrome.runtime.id;
-  var isOnDrive = false;
-  var fm = this.fileManager_;
-  for (var index = 0; index < this.entries_.length; ++index) {
-    var locationInfo = fm.volumeManager.getLocationInfo(this.entries_[index]);
-    if (locationInfo && locationInfo.isDriveBased) {
-      isOnDrive = true;
-      break;
-    }
-  }
-
   for (var i = 0; i < tasks.length; i++) {
     var task = tasks[i];
     var taskParts = task.taskId.split('|');
@@ -368,7 +381,7 @@ FileTasks.prototype.executeDefaultInternal_ = function(entries, opt_callback) {
       return;
     }
 
-    fm.openSuggestAppsDialog(
+    fm.taskController.openSuggestAppsDialog(
         entries[0],
         function() {
           var newTasks = new FileTasks(fm);
@@ -627,12 +640,8 @@ FileTasks.prototype.display_ = function(combobutton) {
 
   // If there exist defaultTask show it on the combobutton.
   if (this.defaultTask_) {
-    if (this.defaultTask_.taskId === FileTasks.ZIP_UNPACKER_TASK_ID) {
-      combobutton.defaultItem = this.createCombobuttonItem_(this.defaultTask_,
-          str('ACTION_OPEN'));
-    } else {
-      combobutton.defaultItem = this.createCombobuttonItem_(this.defaultTask_);
-    }
+    combobutton.defaultItem = this.createCombobuttonItem_(this.defaultTask_,
+        str('ACTION_OPEN'));
   } else {
     combobutton.defaultItem = {
       label: loadTimeData.getString('MORE_ACTIONS')
@@ -703,14 +712,6 @@ FileTasks.prototype.createItems_ = function() {
 };
 
 /**
- * Updates context menu with default item.
- * @private
- */
-FileTasks.prototype.updateMenuItem_ = function() {
-  this.fileManager_.updateContextMenuActionItems(this.tasks_);
-};
-
-/**
  * Creates combobutton item based on task.
  *
  * @param {Object} task Task to convert.
@@ -777,16 +778,6 @@ FileTasks.prototype.display = function(combobutton) {
     this.display_(combobutton);
   else
     this.pendingInvocations_.push(['display_', [combobutton]]);
-};
-
-/**
- * Updates context menu with default item.
- */
-FileTasks.prototype.updateMenuItem = function() {
-  if (this.tasks_)
-    this.updateMenuItem_();
-  else
-    this.pendingInvocations_.push(['updateMenuItem_', []]);
 };
 
 /**

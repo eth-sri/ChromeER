@@ -9,10 +9,11 @@
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_keys.h"
 #include "media/base/video_decoder_config.h"
+#include "media/mojo/interfaces/content_decryption_module.mojom.h"
 #include "media/mojo/interfaces/demuxer_stream.mojom.h"
 #include "mojo/converters/geometry/geometry_type_converters.h"
-#include "mojo/public/cpp/system/data_pipe.h"
 
 namespace mojo {
 
@@ -209,6 +210,29 @@ ASSERT_ENUM_EQ(VideoCodecProfile,
                VIDEO_CODEC_PROFILE_,
                VIDEO_CODEC_PROFILE_MAX);
 
+// CdmException
+#define ASSERT_CDM_EXCEPTION(value)                                        \
+  static_assert(                                                           \
+      media::MediaKeys::value ==                                           \
+          static_cast<media::MediaKeys::Exception>(CDM_EXCEPTION_##value), \
+      "Mismatched CDM Exception")
+ASSERT_CDM_EXCEPTION(NOT_SUPPORTED_ERROR);
+ASSERT_CDM_EXCEPTION(INVALID_STATE_ERROR);
+ASSERT_CDM_EXCEPTION(INVALID_ACCESS_ERROR);
+ASSERT_CDM_EXCEPTION(QUOTA_EXCEEDED_ERROR);
+ASSERT_CDM_EXCEPTION(UNKNOWN_ERROR);
+ASSERT_CDM_EXCEPTION(CLIENT_ERROR);
+ASSERT_CDM_EXCEPTION(OUTPUT_ERROR);
+
+// CDM Session Type
+#define ASSERT_CDM_SESSION_TYPE(value)                                  \
+  static_assert(media::MediaKeys::value ==                              \
+                    static_cast<media::MediaKeys::SessionType>(         \
+                        ContentDecryptionModule::SESSION_TYPE_##value), \
+                "Mismatched CDM Session Type")
+ASSERT_CDM_SESSION_TYPE(TEMPORARY_SESSION);
+ASSERT_CDM_SESSION_TYPE(PERSISTENT_SESSION);
+
 // static
 SubsampleEntryPtr
 TypeConverter<SubsampleEntryPtr, media::SubsampleEntry>::Convert(
@@ -250,9 +274,9 @@ TypeConverter<scoped_ptr<media::DecryptConfig>, DecryptConfigPtr>::Convert(
 MediaDecoderBufferPtr TypeConverter<MediaDecoderBufferPtr,
     scoped_refptr<media::DecoderBuffer> >::Convert(
         const scoped_refptr<media::DecoderBuffer>& input) {
-  MediaDecoderBufferPtr mojo_buffer(MediaDecoderBuffer::New());
-  DCHECK(!mojo_buffer->data.is_valid());
+  DCHECK(input);
 
+  MediaDecoderBufferPtr mojo_buffer(MediaDecoderBuffer::New());
   if (input->end_of_stream())
     return mojo_buffer.Pass();
 
@@ -268,31 +292,18 @@ MediaDecoderBufferPtr TypeConverter<MediaDecoderBufferPtr,
   mojo_buffer->splice_timestamp_usec =
       input->splice_timestamp().InMicroseconds();
 
-  // TODO(tim): Assuming this is small so allowing extra copies.
-  std::vector<uint8> side_data(input->side_data(),
-                               input->side_data() + input->side_data_size());
+  // Note: The side data is always small, so this copy is okay.
+  std::vector<uint8_t> side_data(input->side_data(),
+                                 input->side_data() + input->side_data_size());
   mojo_buffer->side_data.Swap(&side_data);
 
   if (input->decrypt_config())
     mojo_buffer->decrypt_config = DecryptConfig::From(*input->decrypt_config());
 
-  MojoCreateDataPipeOptions options;
-  options.struct_size = sizeof(MojoCreateDataPipeOptions);
-  options.flags = MOJO_CREATE_DATA_PIPE_OPTIONS_FLAG_NONE;
-  options.element_num_bytes = 1;
-  options.capacity_num_bytes = input->data_size();
-  DataPipe data_pipe(options);
-  mojo_buffer->data = data_pipe.consumer_handle.Pass();
+  // TODO(dalecurtis): We intentionally do not serialize the data section of
+  // the DecoderBuffer here; this must instead be done by clients via their
+  // own DataPipe.  See http://crbug.com/432960
 
-  uint32_t num_bytes = input->data_size();
-  // TODO(tim): ALL_OR_NONE isn't really appropriate. Check success?
-  // If fails, we'd still return the buffer, but we'd need to HandleWatch
-  // to fill the pipe at a later time, which means the de-marshalling code
-  // needs to wait for a readable pipe (which it currently doesn't).
-  WriteDataRaw(data_pipe.producer_handle.get(),
-               input->data(),
-               &num_bytes,
-               MOJO_WRITE_DATA_FLAG_ALL_OR_NONE);
   return mojo_buffer.Pass();
 }
 
@@ -300,33 +311,13 @@ MediaDecoderBufferPtr TypeConverter<MediaDecoderBufferPtr,
 scoped_refptr<media::DecoderBuffer>  TypeConverter<
     scoped_refptr<media::DecoderBuffer>, MediaDecoderBufferPtr>::Convert(
         const MediaDecoderBufferPtr& input) {
-  if (!input->data.is_valid())
+  if (!input->data_size)
     return media::DecoderBuffer::CreateEOSBuffer();
 
-  uint32_t num_bytes  = 0;
-  // TODO(tim): We're assuming that because we always write to the pipe above
-  // before sending the MediaDecoderBuffer that the pipe is readable when
-  // we get here.
-  ReadDataRaw(input->data.get(), NULL, &num_bytes, MOJO_READ_DATA_FLAG_QUERY);
-  CHECK_EQ(num_bytes, input->data_size) << "Pipe error converting buffer";
-
-  scoped_ptr<uint8[]> data(new uint8[num_bytes]);  // Uninitialized.
-  ReadDataRaw(input->data.get(), data.get(), &num_bytes,
-              MOJO_READ_DATA_FLAG_ALL_OR_NONE);
-  CHECK_EQ(num_bytes, input->data_size) << "Pipe error converting buffer";
-
-  // TODO(tim): We can't create a media::DecoderBuffer that has side_data
-  // without copying data because it wants to ensure alignment. Could we
-  // read directly into a pre-padded DecoderBuffer?
-  scoped_refptr<media::DecoderBuffer> buffer;
-  if (input->side_data_size) {
-    buffer = media::DecoderBuffer::CopyFrom(data.get(),
-                                            num_bytes,
-                                            &input->side_data.front(),
-                                            input->side_data_size);
-  } else {
-    buffer = media::DecoderBuffer::CopyFrom(data.get(), num_bytes);
-  }
+  scoped_refptr<media::DecoderBuffer> buffer(
+      new media::DecoderBuffer(input->data_size));
+  if (input->side_data_size)
+    buffer->CopySideDataFrom(&input->side_data.front(), input->side_data_size);
 
   buffer->set_timestamp(
       base::TimeDelta::FromMicroseconds(input->timestamp_usec));
@@ -347,6 +338,11 @@ scoped_refptr<media::DecoderBuffer>  TypeConverter<
   buffer->set_discard_padding(discard_padding);
   buffer->set_splice_timestamp(
       base::TimeDelta::FromMicroseconds(input->splice_timestamp_usec));
+
+  // TODO(dalecurtis): We intentionally do not deserialize the data section of
+  // the DecoderBuffer here; this must instead be done by clients via their
+  // own DataPipe.  See http://crbug.com/432960
+
   return buffer;
 }
 
@@ -362,12 +358,13 @@ TypeConverter<AudioDecoderConfigPtr, media::AudioDecoderConfig>::Convert(
       static_cast<ChannelLayout>(input.channel_layout());
   config->samples_per_second = input.samples_per_second();
   if (input.extra_data()) {
-    std::vector<uint8> data(input.extra_data(),
-                            input.extra_data() + input.extra_data_size());
+    std::vector<uint8_t> data(input.extra_data(),
+                              input.extra_data() + input.extra_data_size());
     config->extra_data.Swap(&data);
   }
   config->seek_preroll_usec = input.seek_preroll().InMicroseconds();
   config->codec_delay = input.codec_delay();
+  config->is_encrypted = input.is_encrypted();
   return config.Pass();
 }
 
@@ -383,7 +380,7 @@ TypeConverter<media::AudioDecoderConfig, AudioDecoderConfigPtr>::Convert(
       input->samples_per_second,
       input->extra_data.size() ? &input->extra_data.front() : NULL,
       input->extra_data.size(),
-      false,
+      input->is_encrypted,
       false,
       base::TimeDelta::FromMicroseconds(input->seek_preroll_usec),
       input->codec_delay);
@@ -402,8 +399,8 @@ TypeConverter<VideoDecoderConfigPtr, media::VideoDecoderConfig>::Convert(
   config->visible_rect = Rect::From(input.visible_rect());
   config->natural_size = Size::From(input.natural_size());
   if (input.extra_data()) {
-    std::vector<uint8> data(input.extra_data(),
-                            input.extra_data() + input.extra_data_size());
+    std::vector<uint8_t> data(input.extra_data(),
+                              input.extra_data() + input.extra_data_size());
     config->extra_data.Swap(&data);
   }
   config->is_encrypted = input.is_encrypted();

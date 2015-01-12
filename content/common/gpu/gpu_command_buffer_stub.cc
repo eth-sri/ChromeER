@@ -34,6 +34,7 @@
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
+#include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_switches.h"
 
@@ -147,6 +148,8 @@ GpuCommandBufferStub::GpuCommandBufferStub(
     GpuCommandBufferStub* share_group,
     const gfx::GLSurfaceHandle& handle,
     gpu::gles2::MailboxManager* mailbox_manager,
+    gpu::gles2::SubscriptionRefSet* subscription_ref_set,
+    gpu::ValueStateMap* pending_valuebuffer_state,
     const gfx::Size& size,
     const gpu::gles2::DisallowedFeatures& disallowed_features,
     const std::vector<int32>& attribs,
@@ -191,6 +194,8 @@ GpuCommandBufferStub::GpuCommandBufferStub(
         new GpuCommandBufferMemoryTracker(channel),
         channel_->gpu_channel_manager()->shader_translator_cache(),
         NULL,
+        subscription_ref_set,
+        pending_valuebuffer_state,
         attrib_parser.bind_generates_resource);
   }
 
@@ -312,30 +317,26 @@ void GpuCommandBufferStub::PollWork() {
     return;
 
   if (scheduler_) {
-    bool fences_complete = scheduler_->PollUnscheduleFences();
-    // Perform idle work if all fences are complete.
-    if (fences_complete) {
-      uint64 current_messages_processed =
-          channel()->gpu_channel_manager()->MessagesProcessed();
-      // We're idle when no messages were processed or scheduled.
-      bool is_idle =
-          (previous_messages_processed_ == current_messages_processed) &&
-          !channel()->gpu_channel_manager()->HandleMessagesScheduled();
-      if (!is_idle && !last_idle_time_.is_null()) {
-        base::TimeDelta time_since_idle = base::TimeTicks::Now() -
-            last_idle_time_;
-        base::TimeDelta max_time_since_idle =
-            base::TimeDelta::FromMilliseconds(kMaxTimeSinceIdleMs);
+    uint64 current_messages_processed =
+        channel()->gpu_channel_manager()->MessagesProcessed();
+    // We're idle when no messages were processed or scheduled.
+    bool is_idle =
+        (previous_messages_processed_ == current_messages_processed) &&
+        !channel()->gpu_channel_manager()->HandleMessagesScheduled();
+    if (!is_idle && !last_idle_time_.is_null()) {
+      base::TimeDelta time_since_idle =
+          base::TimeTicks::Now() - last_idle_time_;
+      base::TimeDelta max_time_since_idle =
+          base::TimeDelta::FromMilliseconds(kMaxTimeSinceIdleMs);
 
-        // Force idle when it's been too long since last time we were idle.
-        if (time_since_idle > max_time_since_idle)
-          is_idle = true;
-      }
+      // Force idle when it's been too long since last time we were idle.
+      if (time_since_idle > max_time_since_idle)
+        is_idle = true;
+    }
 
-      if (is_idle) {
-        last_idle_time_ = base::TimeTicks::Now();
-        scheduler_->PerformIdleWork();
-      }
+    if (is_idle) {
+      last_idle_time_ = base::TimeTicks::Now();
+      scheduler_->PerformIdleWork();
     }
   }
   ScheduleDelayedWork(kHandleMoreWorkPeriodBusyMs);
@@ -569,8 +570,8 @@ void GpuCommandBufferStub::OnInitialize(
     return;
   }
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableGPUServiceLogging)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableGPUServiceLogging)) {
     decoder_->set_log_commands(true);
   }
 

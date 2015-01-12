@@ -696,10 +696,9 @@ STDMETHODIMP BrowserAccessibilityWin::get_attributes(BSTR* attributes) {
   // The iaccessible2 attributes are a set of key-value pairs
   // separated by semicolons, with a colon between the key and the value.
   base::string16 str;
-  for (unsigned int i = 0; i < ia2_attributes_.size(); ++i) {
-    if (i != 0)
-      str += L';';
-    str += ia2_attributes_[i];
+  const std::vector<base::string16>& attributes_list = ia2_attributes();
+  for (unsigned int i = 0; i < attributes_list.size(); ++i) {
+    str += attributes_list[i] + L';';
   }
 
   if (str.empty())
@@ -2910,6 +2909,9 @@ void BrowserAccessibilityWin::OnDataChanged() {
 
   InitRoleAndState();
 
+  // Expose autocomplete attribute for combobox and textbox.
+  StringAttributeToIA2(ui::AX_ATTR_AUTO_COMPLETE, "autocomplete");
+
   // Expose the "display" and "tag" attributes.
   StringAttributeToIA2(ui::AX_ATTR_DISPLAY, "display");
   StringAttributeToIA2(ui::AX_ATTR_TEXT_INPUT_TYPE, "text-input-type");
@@ -3085,6 +3087,14 @@ void BrowserAccessibilityWin::OnDataChanged() {
     relation->Initialize(this, IA2_RELATION_LABELLED_BY);
     relation->AddTarget(title_elem_id);
     relations_.push_back(relation);
+  }
+
+  // If this is a web area for a presentational iframe, give it a role of
+  // something other than DOCUMENT so that the fact that it's a separate doc
+  // is not exposed to AT.
+  if (IsWebAreaForPresentationalIframe()) {
+    ia_role_ = ROLE_SYSTEM_GROUPING;
+    ia2_role_ = ROLE_SYSTEM_GROUPING;
   }
 }
 
@@ -3358,11 +3368,10 @@ void BrowserAccessibilityWin::InitRoleAndState() {
     ia_state_ |= STATE_SYSTEM_TRAVERSED;
   if (!HasState(ui::AX_STATE_ENABLED))
     ia_state_ |= STATE_SYSTEM_UNAVAILABLE;
-  if (HasState(ui::AX_STATE_VERTICAL)) {
+  if (HasState(ui::AX_STATE_VERTICAL))
     ia2_state_ |= IA2_STATE_VERTICAL;
-  } else {
+  if (HasState(ui::AX_STATE_HORIZONTAL))
     ia2_state_ |= IA2_STATE_HORIZONTAL;
-  }
   if (HasState(ui::AX_STATE_VISITED))
     ia_state_ |= STATE_SYSTEM_TRAVERSED;
 
@@ -3381,6 +3390,9 @@ void BrowserAccessibilityWin::InitRoleAndState() {
 
   if (GetBoolAttribute(ui::AX_ATTR_CAN_SET_VALUE))
     ia2_state_ |= IA2_STATE_EDITABLE;
+
+  if (!GetStringAttribute(ui::AX_ATTR_AUTO_COMPLETE).empty())
+    ia2_state_ |= IA2_STATE_SUPPORTS_AUTOCOMPLETION;
 
   base::string16 html_tag = GetString16Attribute(
       ui::AX_ATTR_HTML_TAG);
@@ -3414,14 +3426,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_BUTTON:
       ia_role_ = ROLE_SYSTEM_PUSHBUTTON;
-      bool is_aria_pressed_defined;
-      bool is_mixed;
-      if (GetAriaTristate("aria-pressed", &is_aria_pressed_defined, &is_mixed))
-        ia_state_ |= STATE_SYSTEM_PRESSED;
-      if (is_aria_pressed_defined)
-        ia2_role_ = IA2_ROLE_TOGGLE_BUTTON;
-      if (is_mixed)
-        ia_state_ |= STATE_SYSTEM_MIXED;
       break;
     case ui::AX_ROLE_CANVAS:
       if (GetBoolAttribute(ui::AX_ATTR_CANVAS_HAS_FALLBACK)) {
@@ -3509,11 +3513,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_role_ = ROLE_SYSTEM_CLIENT;
       ia2_role_ = IA2_ROLE_EMBEDDED_OBJECT;
       break;
-    case ui::AX_ROLE_EDITABLE_TEXT:
-      ia_role_ = ROLE_SYSTEM_TEXT;
-      ia2_state_ |= IA2_STATE_SINGLE_LINE;
-      ia2_state_ |= IA2_STATE_EDITABLE;
-      break;
     case ui::AX_ROLE_FIGCAPTION:
       role_name_ = html_tag;
       ia2_role_ = IA2_ROLE_CAPTION;
@@ -3550,10 +3549,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       }
       break;
     }
-    case ui::AX_ROLE_GROW_AREA:
-      ia_role_ = ROLE_SYSTEM_GRIP;
-      ia_state_ |= STATE_SYSTEM_READONLY;
-      break;
     case ui::AX_ROLE_HEADING:
       role_name_ = html_tag;
       ia2_role_ = IA2_ROLE_HEADING;
@@ -3562,6 +3557,9 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_role_ = ROLE_SYSTEM_DOCUMENT;
       ia2_role_ = IA2_ROLE_INTERNAL_FRAME;
       ia_state_ = STATE_SYSTEM_READONLY;
+      break;
+    case ui::AX_ROLE_IFRAME_PRESENTATIONAL:
+      ia_role_ = ROLE_SYSTEM_GROUPING;
       break;
     case ui::AX_ROLE_IMAGE:
       ia_role_ = ROLE_SYSTEM_GRAPHIC;
@@ -3686,6 +3684,7 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_RADIO_BUTTON:
       ia_role_ = ROLE_SYSTEM_RADIOBUTTON;
+      ia2_state_ = IA2_STATE_CHECKABLE;
       break;
     case ui::AX_ROLE_RADIO_GROUP:
       ia_role_ = ROLE_SYSTEM_GROUPING;
@@ -3730,11 +3729,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_SPIN_BUTTON_PART:
       ia_role_ = ROLE_SYSTEM_PUSHBUTTON;
-      break;
-    case ui::AX_ROLE_SPLIT_GROUP:
-      ia_role_ = ROLE_SYSTEM_CLIENT;
-      ia2_role_ = IA2_ROLE_SPLIT_PANE;
-      ia_state_ |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_ANNOTATION:
     case ui::AX_ROLE_LIST_MARKER:

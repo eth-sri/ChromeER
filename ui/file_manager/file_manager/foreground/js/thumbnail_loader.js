@@ -37,19 +37,7 @@ function ThumbnailLoader(entry, opt_loaderType, opt_metadata, opt_mediaType,
   if (opt_metadata.external && opt_metadata.external.customIconUrl)
     this.fallbackUrl_ = opt_metadata.external.customIconUrl;
 
-  // Fetch the rotation from the external properties (if available).
-  var externalTransform;
-  if (opt_metadata.external &&
-      opt_metadata.external.imageRotation !== undefined) {
-    externalTransform = {
-      scaleX: 1,
-      scaleY: 1,
-      rotate90: opt_metadata.external.imageRotation / 90
-    };
-  }
-
-  if (((opt_metadata.thumbnail && opt_metadata.thumbnail.url) ||
-       (opt_metadata.external && opt_metadata.external.thumbnailUrl)) &&
+  if (ThumbnailLoader.hasThumbnailInMetadata(opt_metadata) &&
       opt_useEmbedded === ThumbnailLoader.UseEmbedded.USE_EMBEDDED) {
     // If the thumbnail generated from the local cache (metadata.thumbnail.url)
     // is available, use it. If not, use the one passed from the external
@@ -57,12 +45,11 @@ function ThumbnailLoader(entry, opt_loaderType, opt_metadata, opt_mediaType,
     this.thumbnailUrl_ =
         (opt_metadata.thumbnail && opt_metadata.thumbnail.url) ||
         (opt_metadata.external && opt_metadata.external.thumbnailUrl);
-    this.transform_ = externalTransform !== undefined ? externalTransform :
-        (opt_metadata.thumbnail && opt_metadata.thumbnail.transform);
+    this.transform_ =
+        opt_metadata.thumbnail && opt_metadata.thumbnail.transform;
   } else if (FileType.isImage(entry)) {
     this.thumbnailUrl_ = entry.toURL();
-    this.transform_ = externalTransform !== undefined ? externalTransform :
-        opt_metadata.media && opt_metadata.media.imageTransform;
+    this.transform_ = opt_metadata.media && opt_metadata.media.imageTransform;
   } else if (this.fallbackUrl_) {
     // Use fallback as the primary thumbnail.
     this.thumbnailUrl_ = this.fallbackUrl_;
@@ -132,6 +119,16 @@ ThumbnailLoader.THUMBNAIL_MAX_WIDTH = 500;
 ThumbnailLoader.THUMBNAIL_MAX_HEIGHT = 500;
 
 /**
+ * Returns whether the metadata have the thumbnail information or not.
+ * @param {!Object} metadata Metadata.
+ * @return {boolean}
+ */
+ThumbnailLoader.hasThumbnailInMetadata = function(metadata) {
+  return (metadata.thumbnail && metadata.thumbnail.url) ||
+      (metadata.external && metadata.external.thumbnailUrl);
+};
+
+/**
  * Loads and attaches an image.
  *
  * @param {Element} box Container element.
@@ -186,14 +183,20 @@ ThumbnailLoader.prototype.load = function(box, fillMode, opt_optimizationMode,
                          this.metadata_.filesystem &&
                          this.metadata_.filesystem.modificationTime &&
                          this.metadata_.filesystem.modificationTime.getTime();
-  this.taskId_ = util.loadImage(
-      this.image_,
+  this.taskId_ = ImageLoaderClient.loadToImage(
       this.thumbnailUrl_,
-      { maxWidth: ThumbnailLoader.THUMBNAIL_MAX_WIDTH,
+      this.image_,
+      {
+        maxWidth: ThumbnailLoader.THUMBNAIL_MAX_WIDTH,
         maxHeight: ThumbnailLoader.THUMBNAIL_MAX_HEIGHT,
         cache: true,
         priority: this.priority_,
-        timestamp: modificationTime },
+        timestamp: modificationTime
+      },
+      function() {},
+      function() {
+        this.image_.onerror(new Event('load-error'));
+      }.bind(this),
       function() {
         if (opt_optimizationMode ==
             ThumbnailLoader.OptimizationMode.DISCARD_DETACHED &&
@@ -212,7 +215,7 @@ ThumbnailLoader.prototype.cancel = function() {
   if (this.taskId_) {
     this.image_.onload = function() {};
     this.image_.onerror = function() {};
-    util.cancelLoadImage(this.taskId_);
+    ImageLoaderClient.getInstance().cancel(this.taskId_);
     this.taskId_ = null;
   }
 };
@@ -269,14 +272,20 @@ ThumbnailLoader.prototype.loadDetachedImage = function(callback) {
                          this.metadata_.filesystem &&
                          this.metadata_.filesystem.modificationTime &&
                          this.metadata_.filesystem.modificationTime.getTime();
-  this.taskId_ = util.loadImage(
-      this.image_,
+  this.taskId_ = ImageLoaderClient.loadToImage(
       this.thumbnailUrl_,
-      { maxWidth: ThumbnailLoader.THUMBNAIL_MAX_WIDTH,
+      this.image_,
+      {
+        maxWidth: ThumbnailLoader.THUMBNAIL_MAX_WIDTH,
         maxHeight: ThumbnailLoader.THUMBNAIL_MAX_HEIGHT,
         cache: true,
         priority: this.priority_,
-        timestamp: modificationTime });
+        timestamp: modificationTime
+      },
+      function() {},
+      function() {
+        this.image_.onerror(new Event('load-error'));
+      }.bind(this));
 };
 
 /**

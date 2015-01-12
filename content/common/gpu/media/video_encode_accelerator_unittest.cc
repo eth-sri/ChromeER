@@ -14,6 +14,7 @@
 #include "base/strings/string_split.h"
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/common/gpu/media/video_accelerator_unittest_helpers.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/bitstream_buffer.h"
@@ -22,13 +23,9 @@
 #include "media/video/video_encode_accelerator.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_X11)
-#include "ui/gfx/x/x11_types.h"
-#endif
-
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
 #include "content/common/gpu/media/v4l2_video_encode_accelerator.h"
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
 #include "content/common/gpu/media/vaapi_video_encode_accelerator.h"
 #else
 #error The VideoEncodeAcceleratorUnittest is not supported on this platform.
@@ -120,6 +117,10 @@ struct IvfFrameHeader {
   uint32_t frame_size;  // Size of frame in bytes (not including the header)
   uint64_t timestamp;   // 64-bit presentation timestamp
 } __attribute__((packed));
+
+// The number of frames to be encoded. This variable is set by the switch
+// "--num_frames_to_encode". Ignored if 0.
+int g_num_frames_to_encode = 0;
 
 struct TestStream {
   TestStream()
@@ -500,7 +501,8 @@ class VEAClient : public VideoEncodeAccelerator::Client {
             bool force_bitrate,
             bool test_perf,
             bool mid_stream_bitrate_switch,
-            bool mid_stream_framerate_switch);
+            bool mid_stream_framerate_switch,
+            bool run_at_fps);
   virtual ~VEAClient();
   void CreateEncoder();
   void DestroyEncoder();
@@ -528,9 +530,8 @@ class VEAClient : public VideoEncodeAccelerator::Client {
   // Called when encoder is done with a VideoFrame.
   void InputNoLongerNeededCallback(int32 input_id);
 
-  // Ensure encoder has at least as many inputs as it asked for
-  // via RequireBitstreamBuffers().
-  void FeedEncoderWithInputs();
+  // Feed the encoder with one input frame.
+  void FeedEncoderWithOneInput();
 
   // Provide the encoder with a new output buffer.
   void FeedEncoderWithOutput(base::SharedMemory* shm);
@@ -565,10 +566,14 @@ class VEAClient : public VideoEncodeAccelerator::Client {
   void UpdateTestStreamData(bool mid_stream_bitrate_switch,
                             bool mid_stream_framerate_switch);
 
+  // Callback function of the |input_timer_|.
+  void OnInputTimer();
+
   ClientState state_;
   scoped_ptr<VideoEncodeAccelerator> encoder_;
 
   TestStream* test_stream_;
+
   // Used to notify another thread about the state. VEAClient does not own this.
   ClientStateNotification<ClientState>* note_;
 
@@ -650,6 +655,14 @@ class VEAClient : public VideoEncodeAccelerator::Client {
 
   // Framerate to switch to in the middle of the stream.
   unsigned int requested_subsequent_framerate_;
+
+  // The timer used to feed the encoder with the input frames.
+  scoped_ptr<base::RepeatingTimer<VEAClient>> input_timer_;
+
+  // Feed the encoder with the input buffers at the |requested_framerate_|. If
+  // false, feed as fast as possible. This is set by the command line switch
+  // "--run_at_fps".
+  bool run_at_fps_;
 };
 
 VEAClient::VEAClient(TestStream* test_stream,
@@ -659,7 +672,8 @@ VEAClient::VEAClient(TestStream* test_stream,
                      bool force_bitrate,
                      bool test_perf,
                      bool mid_stream_bitrate_switch,
-                     bool mid_stream_framerate_switch)
+                     bool mid_stream_framerate_switch,
+                     bool run_at_fps)
     : state_(CS_CREATED),
       test_stream_(test_stream),
       note_(note),
@@ -683,7 +697,8 @@ VEAClient::VEAClient(TestStream* test_stream,
       requested_bitrate_(0),
       requested_framerate_(0),
       requested_subsequent_bitrate_(0),
-      requested_subsequent_framerate_(0) {
+      requested_subsequent_framerate_(0),
+      run_at_fps_(run_at_fps) {
   if (keyframe_period_)
     CHECK_LT(kMaxKeyframeDelay, keyframe_period_);
 
@@ -716,8 +731,8 @@ void VEAClient::CreateEncoder() {
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
   scoped_ptr<V4L2Device> device = V4L2Device::Create(V4L2Device::kEncoder);
   encoder_.reset(new V4L2VideoEncodeAccelerator(device.Pass()));
-#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-  encoder_.reset(new VaapiVideoEncodeAccelerator(gfx::GetXDisplay()));
+#elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
+  encoder_.reset(new VaapiVideoEncodeAccelerator());
 #endif
 
   SetState(CS_ENCODER_SET);
@@ -743,6 +758,7 @@ void VEAClient::DestroyEncoder() {
   if (!has_encoder())
     return;
   encoder_.reset();
+  input_timer_.reset();
 }
 
 void VEAClient::UpdateTestStreamData(bool mid_stream_bitrate_switch,
@@ -803,15 +819,17 @@ void VEAClient::RequireBitstreamBuffers(unsigned int input_count,
 
   CreateAlignedInputStreamFile(input_coded_size, test_stream_);
 
+  num_frames_to_encode_ = test_stream_->num_frames;
+  if (g_num_frames_to_encode > 0)
+    num_frames_to_encode_ = g_num_frames_to_encode;
+
   // We may need to loop over the stream more than once if more frames than
   // provided is required for bitrate tests.
-  if (force_bitrate_ && test_stream_->num_frames < kMinFramesForBitrateTests) {
+  if (force_bitrate_ && num_frames_to_encode_ < kMinFramesForBitrateTests) {
     DVLOG(1) << "Stream too short for bitrate test ("
              << test_stream_->num_frames << " frames), will loop it to reach "
              << kMinFramesForBitrateTests << " frames";
     num_frames_to_encode_ = kMinFramesForBitrateTests;
-  } else {
-    num_frames_to_encode_ = test_stream_->num_frames;
   }
   if (save_to_file_ && IsVP8(test_stream_->requested_profile))
     WriteIvfFileHeader();
@@ -831,7 +849,16 @@ void VEAClient::RequireBitstreamBuffers(unsigned int input_count,
   }
 
   encode_start_time_ = base::TimeTicks::Now();
-  FeedEncoderWithInputs();
+  if (run_at_fps_) {
+    input_timer_.reset(new base::RepeatingTimer<VEAClient>());
+    input_timer_->Start(
+        FROM_HERE, base::TimeDelta::FromSeconds(1) / current_framerate_,
+        base::Bind(&VEAClient::OnInputTimer, base::Unretained(this)));
+  } else {
+    while (inputs_at_client_.size() <
+           num_required_input_buffers_ + kNumExtraInputFrames)
+      FeedEncoderWithOneInput();
+  }
 }
 
 void VEAClient::BitstreamBufferReady(int32 bitstream_buffer_id,
@@ -898,7 +925,8 @@ void VEAClient::InputNoLongerNeededCallback(int32 input_id) {
   std::set<int32>::iterator it = inputs_at_client_.find(input_id);
   ASSERT_NE(it, inputs_at_client_.end());
   inputs_at_client_.erase(it);
-  FeedEncoderWithInputs();
+  if (!run_at_fps_)
+    FeedEncoderWithOneInput();
 }
 
 scoped_refptr<media::VideoFrame> VEAClient::PrepareInputFrame(off_t position) {
@@ -937,39 +965,42 @@ scoped_refptr<media::VideoFrame> VEAClient::PrepareInputFrame(off_t position) {
   return frame;
 }
 
-void VEAClient::FeedEncoderWithInputs() {
-  if (!has_encoder())
+void VEAClient::OnInputTimer() {
+  if (!has_encoder() || state_ != CS_ENCODING)
+    input_timer_.reset();
+  else if (inputs_at_client_.size() <
+           num_required_input_buffers_ + kNumExtraInputFrames)
+    FeedEncoderWithOneInput();
+  else
+    DVLOG(1) << "Dropping input frame";
+}
+
+void VEAClient::FeedEncoderWithOneInput() {
+  if (!has_encoder() || state_ != CS_ENCODING)
     return;
 
-  if (state_ != CS_ENCODING)
-    return;
-
-  while (inputs_at_client_.size() <
-         num_required_input_buffers_ + kNumExtraInputFrames) {
-    size_t bytes_left =
-        test_stream_->mapped_aligned_in_file.length() - pos_in_input_stream_;
-    if (bytes_left < test_stream_->aligned_buffer_size) {
-      DCHECK_EQ(bytes_left, 0UL);
-      // Rewind if at the end of stream and we are still encoding.
-      // This is to flush the encoder with additional frames from the beginning
-      // of the stream, or if the stream is shorter that the number of frames
-      // we require for bitrate tests.
-      pos_in_input_stream_ = 0;
-      continue;
-    }
-
-    bool force_keyframe = false;
-    if (keyframe_period_ && next_input_id_ % keyframe_period_ == 0) {
-      keyframe_requested_at_ = next_input_id_;
-      force_keyframe = true;
-    }
-
-    scoped_refptr<media::VideoFrame> video_frame =
-        PrepareInputFrame(pos_in_input_stream_);
-    pos_in_input_stream_ += test_stream_->aligned_buffer_size;
-
-    encoder_->Encode(video_frame, force_keyframe);
+  size_t bytes_left =
+      test_stream_->mapped_aligned_in_file.length() - pos_in_input_stream_;
+  if (bytes_left < test_stream_->aligned_buffer_size) {
+    DCHECK_EQ(bytes_left, 0UL);
+    // Rewind if at the end of stream and we are still encoding.
+    // This is to flush the encoder with additional frames from the beginning
+    // of the stream, or if the stream is shorter that the number of frames
+    // we require for bitrate tests.
+    pos_in_input_stream_ = 0;
   }
+
+  bool force_keyframe = false;
+  if (keyframe_period_ && next_input_id_ % keyframe_period_ == 0) {
+    keyframe_requested_at_ = next_input_id_;
+    force_keyframe = true;
+  }
+
+  scoped_refptr<media::VideoFrame> video_frame =
+      PrepareInputFrame(pos_in_input_stream_);
+  pos_in_input_stream_ += test_stream_->aligned_buffer_size;
+
+  encoder_->Encode(video_frame, force_keyframe);
 }
 
 void VEAClient::FeedEncoderWithOutput(base::SharedMemory* shm) {
@@ -1023,6 +1054,10 @@ bool VEAClient::HandleEncodedFrame(bool keyframe) {
         requested_subsequent_framerate_ != current_framerate_) {
       SetStreamParameters(requested_subsequent_bitrate_,
                           requested_subsequent_framerate_);
+      if (run_at_fps_ && input_timer_)
+        input_timer_->Start(
+            FROM_HERE, base::TimeDelta::FromSeconds(1) / current_framerate_,
+            base::Bind(&VEAClient::OnInputTimer, base::Unretained(this)));
     }
   } else if (num_encoded_frames_ == num_frames_to_encode_) {
     VerifyPerf();
@@ -1101,8 +1136,10 @@ void VEAClient::WriteIvfFrameHeader(int frame_index, size_t frame_size) {
 class VideoEncodeAcceleratorTestEnvironment : public ::testing::Environment {
  public:
   VideoEncodeAcceleratorTestEnvironment(
-      scoped_ptr<base::FilePath::StringType> data) {
+      scoped_ptr<base::FilePath::StringType> data,
+      bool run_at_fps) {
     test_stream_data_ = data.Pass();
+    run_at_fps_ = run_at_fps;
   }
 
   virtual void SetUp() {
@@ -1116,13 +1153,16 @@ class VideoEncodeAcceleratorTestEnvironment : public ::testing::Environment {
   }
 
   ScopedVector<TestStream> test_streams_;
+  bool run_at_fps_;
 
  private:
   scoped_ptr<base::FilePath::StringType> test_stream_data_;
 };
 
 // Test parameters:
-// - Number of concurrent encoders.
+// - Number of concurrent encoders. The value takes effect when there is only
+//   one input stream; otherwise, one encoder per input stream will be
+//   instantiated.
 // - If true, save output to file (provided an output filename was supplied).
 // - Force a keyframe every n frames.
 // - Force bitrate; the actual required value is provided as a property
@@ -1132,21 +1172,24 @@ class VideoEncodeAcceleratorTestEnvironment : public ::testing::Environment {
 // - If true, switch framerate mid-stream.
 class VideoEncodeAcceleratorTest
     : public ::testing::TestWithParam<
-          Tuple7<int, bool, int, bool, bool, bool, bool> > {};
+          Tuple<int, bool, int, bool, bool, bool, bool>> {};
 
 TEST_P(VideoEncodeAcceleratorTest, TestSimpleEncode) {
-  const size_t num_concurrent_encoders = GetParam().a;
-  const bool save_to_file = GetParam().b;
-  const unsigned int keyframe_period = GetParam().c;
-  const bool force_bitrate = GetParam().d;
-  const bool test_perf = GetParam().e;
-  const bool mid_stream_bitrate_switch = GetParam().f;
-  const bool mid_stream_framerate_switch = GetParam().g;
+  size_t num_concurrent_encoders = get<0>(GetParam());
+  const bool save_to_file = get<1>(GetParam());
+  const unsigned int keyframe_period = get<2>(GetParam());
+  const bool force_bitrate = get<3>(GetParam());
+  const bool test_perf = get<4>(GetParam());
+  const bool mid_stream_bitrate_switch = get<5>(GetParam());
+  const bool mid_stream_framerate_switch = get<6>(GetParam());
 
   ScopedVector<ClientStateNotification<ClientState> > notes;
   ScopedVector<VEAClient> clients;
   base::Thread encoder_thread("EncoderThread");
   ASSERT_TRUE(encoder_thread.Start());
+
+  if (g_env->test_streams_.size() > 1)
+    num_concurrent_encoders = g_env->test_streams_.size();
 
   // Create all encoders.
   for (size_t i = 0; i < num_concurrent_encoders; i++) {
@@ -1157,14 +1200,11 @@ TEST_P(VideoEncodeAcceleratorTest, TestSimpleEncode) {
          !g_env->test_streams_[test_stream_index]->out_filename.empty());
 
     notes.push_back(new ClientStateNotification<ClientState>());
-    clients.push_back(new VEAClient(g_env->test_streams_[test_stream_index],
-                                    notes.back(),
-                                    encoder_save_to_file,
-                                    keyframe_period,
-                                    force_bitrate,
-                                    test_perf,
-                                    mid_stream_bitrate_switch,
-                                    mid_stream_framerate_switch));
+    clients.push_back(
+        new VEAClient(g_env->test_streams_[test_stream_index], notes.back(),
+                      encoder_save_to_file, keyframe_period, force_bitrate,
+                      test_perf, mid_stream_bitrate_switch,
+                      mid_stream_framerate_switch, g_env->run_at_fps_));
 
     encoder_thread.message_loop()->PostTask(
         FROM_HERE,
@@ -1261,12 +1301,22 @@ int main(int argc, char** argv) {
   const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   DCHECK(cmd_line);
 
+  bool run_at_fps = false;
   base::CommandLine::SwitchMap switches = cmd_line->GetSwitches();
   for (base::CommandLine::SwitchMap::const_iterator it = switches.begin();
        it != switches.end();
        ++it) {
     if (it->first == "test_stream_data") {
       test_stream_data->assign(it->second.c_str());
+      continue;
+    }
+    if (it->first == "num_frames_to_encode") {
+      std::string input(it->second.begin(), it->second.end());
+      CHECK(base::StringToInt(input, &content::g_num_frames_to_encode));
+      continue;
+    }
+    if (it->first == "run_at_fps") {
+      run_at_fps = true;
       continue;
     }
     if (it->first == "v" || it->first == "vmodule")
@@ -1278,7 +1328,7 @@ int main(int argc, char** argv) {
       reinterpret_cast<content::VideoEncodeAcceleratorTestEnvironment*>(
           testing::AddGlobalTestEnvironment(
               new content::VideoEncodeAcceleratorTestEnvironment(
-                  test_stream_data.Pass())));
+                  test_stream_data.Pass(), run_at_fps)));
 
   return RUN_ALL_TESTS();
 }

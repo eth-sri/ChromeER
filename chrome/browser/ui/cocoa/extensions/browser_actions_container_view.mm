@@ -36,7 +36,6 @@ const CGFloat kMinimumContainerWidth = 10.0;
 
 @implementation BrowserActionsContainerView
 
-@synthesize animationEndFrame = animationEndFrame_;
 @synthesize canDragLeft = canDragLeft_;
 @synthesize canDragRight = canDragRight_;
 @synthesize grippyPinned = grippyPinned_;
@@ -52,6 +51,11 @@ const CGFloat kMinimumContainerWidth = 10.0;
     canDragLeft_ = YES;
     canDragRight_ = YES;
     resizable_ = YES;
+
+    resizeAnimation_.reset([[NSViewAnimation alloc] init]);
+    [resizeAnimation_ setDuration:kAnimationDuration];
+    [resizeAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
+
     [self setHidden:YES];
   }
   return self;
@@ -169,12 +173,17 @@ const CGFloat kMinimumContainerWidth = 10.0;
   CGFloat dX = frame.size.width - width;
   frame.size.width = width;
   NSRect newFrame = NSOffsetRect(frame, dX, 0);
+
+  [self stopAnimation];
+
   if (animate) {
-    [NSAnimationContext beginGrouping];
-    [[NSAnimationContext currentContext] setDuration:kAnimationDuration];
-    [[self animator] setFrame:newFrame];
-    [NSAnimationContext endGrouping];
-    animationEndFrame_ = newFrame;
+    NSDictionary* animationDictionary = @{
+      NSViewAnimationTargetKey : self,
+      NSViewAnimationStartFrameKey : [NSValue valueWithRect:[self frame]],
+      NSViewAnimationEndFrameKey : [NSValue valueWithRect:newFrame]
+    };
+    [resizeAnimation_ setViewAnimations:@[ animationDictionary ]];
+    [resizeAnimation_ startAnimation];
 
     [[NSNotificationCenter defaultCenter]
         postNotificationName:kBrowserActionsContainerWillAnimate
@@ -187,6 +196,25 @@ const CGFloat kMinimumContainerWidth = 10.0;
 
 - (CGFloat)resizeDeltaX {
   return [self frame].origin.x - lastXPos_;
+}
+
+- (NSRect)animationEndFrame {
+  if ([resizeAnimation_ isAnimating]) {
+    NSRect endFrame = [[[[resizeAnimation_ viewAnimations] objectAtIndex:0]
+        valueForKey:NSViewAnimationEndFrameKey] rectValue];
+    return endFrame;
+  } else {
+    return [self frame];
+  }
+}
+
+- (BOOL)isAnimating {
+  return [resizeAnimation_ isAnimating];
+}
+
+- (void)stopAnimation {
+  if ([resizeAnimation_ isAnimating])
+    [resizeAnimation_ stopAnimation];
 }
 
 #pragma mark -

@@ -30,15 +30,6 @@ class CrosPlatformBackend(
   def cri(self):
     return self._cri
 
-  def StartRawDisplayFrameRateMeasurement(self):
-    raise NotImplementedError()
-
-  def StopRawDisplayFrameRateMeasurement(self):
-    raise NotImplementedError()
-
-  def GetRawDisplayFrameRateMeasurements(self):
-    raise NotImplementedError()
-
   def IsThermallyThrottled(self):
     raise NotImplementedError()
 
@@ -46,13 +37,22 @@ class CrosPlatformBackend(
     raise NotImplementedError()
 
   def RunCommand(self, args):
-    return self._cri.RunCmdOnDevice(args)[0]
+    if not isinstance(args, list):
+      args = [args]
+    stdout, stderr = self._cri.RunCmdOnDevice(args)
+    if stderr:
+      raise IOError('Failed to run: cmd = %s, stderr = %s' %
+                    (str(args), stderr))
+    return stdout
 
   def GetFileContents(self, filename):
     try:
       return self.RunCommand(['cat', filename])
     except AssertionError:
       return ''
+
+  def GetPsOutput(self, columns, pid=None):
+    return ps_util.GetPsOutputWithPlatformBackend(self, columns, pid)
 
   @staticmethod
   def ParseCStateSample(sample):
@@ -83,11 +83,6 @@ class CrosPlatformBackend(
       sample_stats[cpu] = cstates
     return sample_stats
 
-  def GetIOStats(self, pid):
-    # There is no '/proc/<pid>/io' file on CrOS platforms
-    # Returns empty dict as it does in PlatformBackend.
-    return {}
-
   def GetOSName(self):
     return 'chromeos'
 
@@ -111,8 +106,11 @@ class CrosPlatformBackend(
   def FlushEntireSystemCache(self):
     raise NotImplementedError()
 
-  def FlushSystemCacheForDirectory(self, directory, ignoring=None):
-    raise NotImplementedError()
+  def FlushSystemCacheForDirectory(self, directory):
+    flush_command = (
+        '/usr/local/telemetry/src/src/out/Release/clear_system_cache')
+    self.RunCommand(['chmod', '+x', flush_command])
+    self.RunCommand([flush_command, '--recurse', directory])
 
   def CanMonitorPower(self):
     return self._powermonitor.CanMonitorPower()

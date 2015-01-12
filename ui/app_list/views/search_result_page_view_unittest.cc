@@ -13,6 +13,7 @@
 #include "ui/app_list/views/search_result_list_view_delegate.h"
 #include "ui/app_list/views/search_result_tile_item_list_view.h"
 #include "ui/app_list/views/search_result_view.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/test/views_test_base.h"
 
 namespace app_list {
@@ -30,7 +31,8 @@ class SearchResultPageViewTest : public views::ViewsTestBase,
     view_.reset(new SearchResultPageView());
     list_view_ = new SearchResultListView(this, &view_delegate_);
     view_->AddSearchResultContainerView(GetResults(), list_view_);
-    tile_list_view_ = new SearchResultTileItemListView();
+    textfield_.reset(new views::Textfield());
+    tile_list_view_ = new SearchResultTileItemListView(textfield_.get());
     view_->AddSearchResultContainerView(GetResults(), tile_list_view_);
   }
 
@@ -68,13 +70,13 @@ class SearchResultPageViewTest : public views::ViewsTestBase,
 
  private:
   void OnResultInstalled(SearchResult* result) override {}
-  void OnResultUninstalled(SearchResult* result) override {}
 
   SearchResultListView* list_view_;
   SearchResultTileItemListView* tile_list_view_;
 
   AppListTestViewDelegate view_delegate_;
   scoped_ptr<SearchResultPageView> view_;
+  scoped_ptr<views::Textfield> textfield_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchResultPageViewTest);
 };
@@ -83,8 +85,10 @@ TEST_F(SearchResultPageViewTest, Basic) {
   std::map<SearchResult::DisplayType, int> result_types;
   const int kListResults = 2;
   const int kTileResults = 1;
+  const int kNoneResults = 3;
   result_types[SearchResult::DISPLAY_LIST] = kListResults;
   result_types[SearchResult::DISPLAY_TILE] = kTileResults;
+  result_types[SearchResult::DISPLAY_NONE] = kNoneResults;
 
   SetUpSearchResults(result_types);
   EXPECT_EQ(0, GetSelectedIndex());

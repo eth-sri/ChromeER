@@ -108,15 +108,15 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUIBrowserTest, MAYBE_DifferentStorageId) {
 
   ContentInfo info1 =
       NavigateAndGetInfo(browser(), test_url, CURRENT_TAB);
-  ContentInfo info2 =
-      NavigateAndGetInfo(browser(),
-                         signin::GetPromoURL(signin::SOURCE_START_PAGE, false),
-                         CURRENT_TAB);
+  ContentInfo info2 = NavigateAndGetInfo(
+      browser(),
+      signin::GetPromoURL(signin_metrics::SOURCE_START_PAGE, false),
+      CURRENT_TAB);
   NavigateAndGetInfo(browser(), test_url, CURRENT_TAB);
-  ContentInfo info3 =
-      NavigateAndGetInfo(browser(),
-                         signin::GetPromoURL( signin::SOURCE_START_PAGE, false),
-                         NEW_FOREGROUND_TAB);
+  ContentInfo info3 = NavigateAndGetInfo(
+      browser(),
+      signin::GetPromoURL(signin_metrics::SOURCE_START_PAGE, false),
+      NEW_FOREGROUND_TAB);
 
   // The info for signin should be the same.
   ASSERT_EQ(info2.storage_partition, info3.storage_partition);
@@ -140,10 +140,10 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUIBrowserTest, OneProcessLimit) {
       NavigateAndGetInfo(browser(), test_url_1, CURRENT_TAB);
   ContentInfo info2 =
       NavigateAndGetInfo(browser(), test_url_2, CURRENT_TAB);
-  ContentInfo info3 =
-      NavigateAndGetInfo(browser(),
-                         signin::GetPromoURL( signin::SOURCE_START_PAGE, false),
-                         CURRENT_TAB);
+  ContentInfo info3 = NavigateAndGetInfo(
+      browser(),
+      signin::GetPromoURL(signin_metrics::SOURCE_START_PAGE, false),
+      CURRENT_TAB);
 
   ASSERT_EQ(info1.pid, info2.pid);
   ASSERT_NE(info1.pid, info3.pid);
@@ -164,7 +164,7 @@ class InlineLoginUISafeIframeBrowserTest : public InProcessBrowserTest {
     InProcessBrowserTest::SetUp();
   }
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     const GURL& base_url = embedded_test_server()->base_url();
     command_line->AppendSwitchASCII(::switches::kGaiaUrl, base_url.spec());
     command_line->AppendSwitchASCII(::switches::kLsoUrl, base_url.spec());
@@ -207,7 +207,7 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest, Basic) {
 // Make sure that the foo webui handler does not get created when we try to
 // load it inside the iframe of the login ui.
 IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest, NoWebUIInIframe) {
-  GURL url = signin::GetPromoURL(signin::SOURCE_START_PAGE, false).
+  GURL url = signin::GetPromoURL(signin_metrics::SOURCE_START_PAGE, false).
       Resolve("?source=0&frameUrl=chrome://foo");
   EXPECT_CALL(foo_provider(), NewWebUI(_, _)).Times(0);
   ui_test_utils::NavigateToURL(browser(), url);
@@ -227,7 +227,7 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest,
   // Loads into gaia iframe a web page that attempts to deframe on load.
   GURL deframe_url(embedded_test_server()->GetURL("/login/deframe.html"));
   GURL url(net::AppendOrReplaceQueryParameter(
-      signin::GetPromoURL(signin::SOURCE_START_PAGE, false),
+      signin::GetPromoURL(signin_metrics::SOURCE_START_PAGE, false),
       "frameUrl", deframe_url.spec()));
   ui_test_utils::NavigateToURL(browser(), url);
   WaitUntilUIReady(browser());
@@ -241,7 +241,8 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest,
 }
 
 // Flaky on CrOS, http://crbug.com/364759.
-#if defined(OS_CHROMEOS)
+// Also flaky on Mac, http://crbug.com/442674.
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
 #define MAYBE_NavigationToOtherChromeURLDisallowed \
     DISABLED_NavigationToOtherChromeURLDisallowed
 #else
@@ -252,7 +253,7 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest,
 IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest,
     MAYBE_NavigationToOtherChromeURLDisallowed) {
   ui_test_utils::NavigateToURL(
-      browser(), signin::GetPromoURL(signin::SOURCE_START_PAGE, false));
+      browser(), signin::GetPromoURL(signin_metrics::SOURCE_START_PAGE, false));
   WaitUntilUIReady(browser());
 
   content::WebContents* contents =
@@ -282,7 +283,7 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest,
   // Since the fake gaia auth page is served over HTTP, thus expects to see an
   // untrusted signin confirmation dialog upon submitting credentials below.
   ui_test_utils::NavigateToURL(
-      browser(), signin::GetPromoURL(signin::SOURCE_START_PAGE, false));
+      browser(), signin::GetPromoURL(signin_metrics::SOURCE_START_PAGE, false));
   WaitUntilUIReady(browser());
 
   MockLoginUIObserver observer;

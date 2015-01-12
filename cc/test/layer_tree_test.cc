@@ -16,6 +16,7 @@
 #include "cc/layers/layer_impl.h"
 #include "cc/test/animation_test_common.h"
 #include "cc/test/begin_frame_args_test.h"
+#include "cc/test/fake_external_begin_frame_source.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/test_context_provider.h"
@@ -45,60 +46,14 @@ DrawResult TestHooks::PrepareToDrawOnThread(
   return draw_result;
 }
 
-void TestHooks::CreateResourceAndRasterWorkerPool(
+void TestHooks::CreateResourceAndTileTaskWorkerPool(
     LayerTreeHostImpl* host_impl,
-    scoped_ptr<RasterWorkerPool>* raster_worker_pool,
+    scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
     scoped_ptr<ResourcePool>* resource_pool,
     scoped_ptr<ResourcePool>* staging_resource_pool) {
-  host_impl->LayerTreeHostImpl::CreateResourceAndRasterWorkerPool(
-      raster_worker_pool, resource_pool, staging_resource_pool);
+  host_impl->LayerTreeHostImpl::CreateResourceAndTileTaskWorkerPool(
+      tile_task_worker_pool, resource_pool, staging_resource_pool);
 }
-
-class ExternalBeginFrameSourceForTest
-    : public BeginFrameSourceMixIn,
-      public NON_EXPORTED_BASE(base::NonThreadSafe) {
- public:
-  explicit ExternalBeginFrameSourceForTest(double refresh_rate)
-      : milliseconds_per_frame_(1000.0 / refresh_rate),
-        is_ready_(false),
-        weak_ptr_factory_(this) {
-    DetachFromThread();
-  }
-
-  virtual ~ExternalBeginFrameSourceForTest() {
-    DCHECK(CalledOnValidThread());
-  }
-
-  void OnNeedsBeginFramesChange(bool needs_begin_frames) override {
-    DCHECK(CalledOnValidThread());
-    if (needs_begin_frames) {
-      base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&ExternalBeginFrameSourceForTest::TestOnBeginFrame,
-                   weak_ptr_factory_.GetWeakPtr()),
-        base::TimeDelta::FromMilliseconds(milliseconds_per_frame_));
-    }
-  }
-
-  void SetClientReady() override {
-    DCHECK(CalledOnValidThread());
-    is_ready_ = true;
-  }
-
-  bool is_ready() const {
-    return is_ready_;
-  }
-
-  void TestOnBeginFrame() {
-    DCHECK(CalledOnValidThread());
-    CallOnBeginFrame(CreateBeginFrameArgsForTesting());
-  }
-
- private:
-  double milliseconds_per_frame_;
-  bool is_ready_;
-  base::WeakPtrFactory<ExternalBeginFrameSourceForTest> weak_ptr_factory_;
-};
 
 // Adapts ThreadProxy for test. Injects test hooks for testing.
 class ThreadProxyForTest : public ThreadProxy {
@@ -151,6 +106,11 @@ class ThreadProxyForTest : public ThreadProxy {
   void ScheduledActionBeginOutputSurfaceCreation() override {
     ThreadProxy::ScheduledActionBeginOutputSurfaceCreation();
     test_hooks_->ScheduledActionBeginOutputSurfaceCreation();
+  }
+
+  void ScheduledActionPrepareTiles() override {
+    ThreadProxy::ScheduledActionPrepareTiles();
+    test_hooks_->ScheduledActionPrepareTiles();
   }
 
   ThreadProxyForTest(
@@ -206,12 +166,12 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
         block_notify_ready_to_activate_for_testing_(false),
         notify_ready_to_activate_was_blocked_(false) {}
 
-  void CreateResourceAndRasterWorkerPool(
-      scoped_ptr<RasterWorkerPool>* raster_worker_pool,
+  void CreateResourceAndTileTaskWorkerPool(
+      scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
       scoped_ptr<ResourcePool>* resource_pool,
       scoped_ptr<ResourcePool>* staging_resource_pool) override {
-    test_hooks_->CreateResourceAndRasterWorkerPool(
-        this, raster_worker_pool, resource_pool, staging_resource_pool);
+    test_hooks_->CreateResourceAndTileTaskWorkerPool(
+        this, tile_task_worker_pool, resource_pool, staging_resource_pool);
   }
 
   void WillBeginImplFrame(const BeginFrameArgs& args) override {
@@ -219,9 +179,9 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
     test_hooks_->WillBeginImplFrameOnThread(this, args);
   }
 
-  void BeginMainFrameAborted(bool did_handle) override {
-    LayerTreeHostImpl::BeginMainFrameAborted(did_handle);
-    test_hooks_->BeginMainFrameAbortedOnThread(this, did_handle);
+  void BeginMainFrameAborted(CommitEarlyOutReason reason) override {
+    LayerTreeHostImpl::BeginMainFrameAborted(reason);
+    test_hooks_->BeginMainFrameAbortedOnThread(this, reason);
   }
 
   void BeginCommit() override {
@@ -357,11 +317,11 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
                            const gfx::Vector2d& outer_delta,
+                           const gfx::Vector2dF& elastic_overscroll_delta,
                            float page_scale,
                            float top_controls_delta) override {
-    test_hooks_->ApplyViewportDeltas(inner_delta,
-                                     outer_delta,
-                                     page_scale,
+    test_hooks_->ApplyViewportDeltas(inner_delta, outer_delta,
+                                     elastic_overscroll_delta, page_scale,
                                      top_controls_delta);
   }
   void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
@@ -372,8 +332,8 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
                                      top_controls_delta);
   }
 
-  void RequestNewOutputSurface(bool fallback) override {
-    test_hooks_->RequestNewOutputSurface(fallback);
+  void RequestNewOutputSurface() override {
+    test_hooks_->RequestNewOutputSurface();
   }
 
   void DidInitializeOutputSurface() override {
@@ -386,6 +346,7 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   void DidFailToInitializeOutputSurface() override {
     test_hooks_->DidFailToInitializeOutputSurface();
+    RequestNewOutputSurface();
   }
 
   void WillCommit() override { test_hooks_->WillCommit(); }
@@ -488,6 +449,7 @@ LayerTreeTest::LayerTreeTest()
       started_(false),
       ended_(false),
       delegating_renderer_(false),
+      verify_property_trees_(true),
       timeout_seconds_(0),
       weak_factory_(this) {
   main_thread_weak_ptr_ = weak_factory_.GetWeakPtr();
@@ -608,10 +570,10 @@ void LayerTreeTest::WillBeginTest() {
 void LayerTreeTest::DoBeginTest() {
   client_ = LayerTreeHostClientForTesting::Create(this);
 
-  scoped_ptr<ExternalBeginFrameSourceForTest> external_begin_frame_source;
+  scoped_ptr<FakeExternalBeginFrameSource> external_begin_frame_source;
   if (settings_.use_external_begin_frame_source &&
       settings_.throttle_frame_production) {
-    external_begin_frame_source.reset(new ExternalBeginFrameSourceForTest(
+    external_begin_frame_source.reset(new FakeExternalBeginFrameSource(
         settings_.renderer_settings.refresh_rate));
     external_begin_frame_source_ = external_begin_frame_source.get();
   }
@@ -748,6 +710,7 @@ void LayerTreeTest::RunTest(bool threaded,
   settings_.renderer_settings.refresh_rate = 200.0;
   settings_.background_animation_rate = 200.0;
   settings_.impl_side_painting = impl_side_painting;
+  settings_.verify_property_trees = verify_property_trees_;
   InitializeSettings(&settings_);
 
   main_task_runner_->PostTask(
@@ -780,17 +743,14 @@ void LayerTreeTest::RunTestWithImplSidePainting() {
   RunTest(true, false, true);
 }
 
-void LayerTreeTest::RequestNewOutputSurface(bool fallback) {
-  layer_tree_host_->SetOutputSurface(CreateOutputSurface(fallback));
+void LayerTreeTest::RequestNewOutputSurface() {
+  layer_tree_host_->SetOutputSurface(CreateOutputSurface());
 }
 
-scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface(bool fallback) {
-  scoped_ptr<FakeOutputSurface> output_surface =
-      CreateFakeOutputSurface(fallback);
-  if (output_surface) {
-    DCHECK_EQ(delegating_renderer_,
-              output_surface->capabilities().delegated_rendering);
-  }
+scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface() {
+  scoped_ptr<FakeOutputSurface> output_surface = CreateFakeOutputSurface();
+  DCHECK_EQ(delegating_renderer_,
+            output_surface->capabilities().delegated_rendering);
   output_surface_ = output_surface.get();
 
   if (settings_.use_external_begin_frame_source &&
@@ -801,8 +761,7 @@ scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface(bool fallback) {
   return output_surface.Pass();
 }
 
-scoped_ptr<FakeOutputSurface> LayerTreeTest::CreateFakeOutputSurface(
-    bool fallback) {
+scoped_ptr<FakeOutputSurface> LayerTreeTest::CreateFakeOutputSurface() {
   if (delegating_renderer_)
     return FakeOutputSurface::CreateDelegating3d();
   else

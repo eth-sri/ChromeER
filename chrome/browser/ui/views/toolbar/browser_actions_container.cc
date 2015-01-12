@@ -63,15 +63,14 @@ BrowserActionsContainer::DropPosition::DropPosition(
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserActionsContainer
 
-// static
-bool BrowserActionsContainer::disable_animations_during_testing_ = false;
-
 BrowserActionsContainer::BrowserActionsContainer(
     Browser* browser,
     BrowserActionsContainer* main_container)
-    : toolbar_actions_bar_(new ToolbarActionsBar(this,
-                                                 browser,
-                                                 main_container != nullptr)),
+    : toolbar_actions_bar_(new ToolbarActionsBar(
+          this,
+          browser,
+          main_container ?
+              main_container->toolbar_actions_bar_.get() : nullptr)),
       browser_(browser),
       main_container_(main_container),
       popup_owner_(NULL),
@@ -288,9 +287,7 @@ void BrowserActionsContainer::ResizeAndAnimate(
     gfx::Tween::Type tween_type,
     int target_width,
     bool suppress_chevron) {
-  if (resize_animation_ &&
-      !disable_animations_during_testing_ &&
-      !toolbar_actions_bar_->suppress_animation()) {
+  if (resize_animation_ && !toolbar_actions_bar_->suppress_animation()) {
     // Animate! We have to set the animation_target_size_ after calling Reset(),
     // because that could end up calling AnimationEnded which clears the value.
     resize_animation_->Reset();
@@ -727,7 +724,8 @@ void BrowserActionsContainer::ViewHierarchyChanged(
     return;
 
   if (details.is_add && details.child == this) {
-    if (!in_overflow_mode()) {  // We only need one keybinding registry.
+    if (!in_overflow_mode() &&  // We only need one keybinding registry.
+        parent()->GetFocusManager()) {  // focus manager can be null in tests.
       extension_keybinding_registry_.reset(new ExtensionKeybindingRegistryViews(
           browser_->profile(),
           parent()->GetFocusManager(),

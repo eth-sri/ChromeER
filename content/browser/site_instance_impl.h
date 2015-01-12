@@ -28,8 +28,8 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   SiteInstance* GetRelatedSiteInstance(const GURL& url) override;
   bool IsRelatedSiteInstance(const SiteInstance* instance) override;
   size_t GetRelatedActiveContentsCount() override;
-  virtual int32 CreateEventRacerLog() override;
-  virtual EventRacerLogHost *GetEventRacerLog() override;
+  int32 CreateEventRacerLog() override;
+  EventRacerLogHost *GetEventRacerLog() override;
 
   // Set the web site that this SiteInstance is rendering pages for.
   // This includes the scheme and registered domain, but not the port.  If the

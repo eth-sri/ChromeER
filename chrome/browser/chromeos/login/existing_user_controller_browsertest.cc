@@ -65,7 +65,6 @@ using ::testing::Invoke;
 using ::testing::InvokeWithoutArgs;
 using ::testing::Return;
 using ::testing::ReturnNull;
-using ::testing::Sequence;
 using ::testing::WithArg;
 using ::testing::_;
 
@@ -159,7 +158,7 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
         .Times(1);
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) override {
+  virtual void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kLoginManager);
   }
 
@@ -178,9 +177,6 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
         .Times(AnyNumber())
         .WillRepeatedly(Return(false));
     EXPECT_CALL(*mock_user_manager_, IsLoggedInAsGuest())
-        .Times(AnyNumber())
-        .WillRepeatedly(Return(false));
-    EXPECT_CALL(*mock_user_manager_, IsLoggedInAsDemoUser())
         .Times(AnyNumber())
         .WillRepeatedly(Return(false));
     EXPECT_CALL(*mock_user_manager_, IsLoggedInAsPublicAccount())
@@ -294,83 +290,12 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, ExistingUserLogin) {
   EXPECT_CALL(*mock_login_display_, SetUIEnabled(true))
       .Times(1);
   EXPECT_CALL(*mock_login_display_host_,
-              StartWizardPtr(WizardController::kTermsOfServiceScreenName, NULL))
+              StartWizard(WizardController::kTermsOfServiceScreenName))
       .Times(0);
   EXPECT_CALL(*mock_user_manager_, IsCurrentUserNew())
       .Times(AnyNumber())
       .WillRepeatedly(Return(false));
   existing_user_controller()->Login(user_context, SigninSpecifics());
-  content::RunAllPendingInMessageLoop();
-}
-
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest, AutoEnrollAfterSignIn) {
-  EXPECT_CALL(*mock_login_display_host_,
-              StartWizardPtr(WizardController::kEnrollmentScreenName,
-                             _))
-      .Times(1);
-  EXPECT_CALL(*mock_login_display_host_.get(), OnCompleteLogin())
-      .Times(1);
-  EXPECT_CALL(*mock_user_manager_, IsCurrentUserNew())
-      .Times(AnyNumber())
-      .WillRepeatedly(Return(false));
-  // The order of these expected calls matters: the UI if first disabled
-  // during the login sequence, and is enabled again for the enrollment screen.
-  Sequence uiEnabledSequence;
-  EXPECT_CALL(*mock_login_display_, SetUIEnabled(false))
-      .Times(1)
-      .InSequence(uiEnabledSequence);
-  EXPECT_CALL(*mock_login_display_, SetUIEnabled(true))
-      .Times(1)
-      .InSequence(uiEnabledSequence);
-  existing_user_controller()->DoAutoEnrollment();
-  UserContext user_context(kUsername);
-  user_context.SetKey(Key(kPassword));
-  existing_user_controller()->CompleteLogin(user_context);
-  content::RunAllPendingInMessageLoop();
-}
-
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerTest,
-                       NewUserDontAutoEnrollAfterSignIn) {
-  EXPECT_CALL(*mock_login_display_host_,
-              StartWizardPtr(WizardController::kEnrollmentScreenName,
-                             _))
-      .Times(0);
-  UserContext user_context(kNewUsername);
-  user_context.SetKey(Key(kPassword));
-  user_context.SetUserIDHash(kNewUsername);
-  EXPECT_CALL(*mock_login_utils_, CreateAuthenticator(_))
-      .Times(1)
-      .WillOnce(WithArg<0>(CreateAuthenticator(user_context)));
-  base::Callback<void(void)> add_user_cb =
-      base::Bind(&MockUserManager::AddUser,
-                 base::Unretained(mock_user_manager_),
-                 kNewUsername);
-  EXPECT_CALL(*mock_login_utils_, PrepareProfile(user_context, _, _, _))
-      .Times(1)
-      .WillOnce(DoAll(
-          InvokeWithoutArgs(&add_user_cb,
-                            &base::Callback<void(void)>::Run),
-          InvokeWithoutArgs(&profile_prepared_cb_,
-                            &base::Callback<void(void)>::Run)));
-  EXPECT_CALL(*mock_login_display_host_.get(), OnCompleteLogin())
-      .Times(1);
-  EXPECT_CALL(*mock_user_manager_, IsCurrentUserNew())
-      .Times(AnyNumber())
-      .WillRepeatedly(Return(true));
-
-  // The order of these expected calls matters: the UI if first disabled
-  // during the login sequence, and is enabled again after login completion.
-  Sequence uiEnabledSequence;
-  // This is disabled twice: once right after signin but before checking for
-  // auto-enrollment, and again after doing an ownership status check.
-  EXPECT_CALL(*mock_login_display_, SetUIEnabled(false))
-      .Times(1)
-      .InSequence(uiEnabledSequence);
-  EXPECT_CALL(*mock_login_display_, SetUIEnabled(true))
-      .Times(1)
-      .InSequence(uiEnabledSequence);
-
-  existing_user_controller()->CompleteLogin(user_context);
   content::RunAllPendingInMessageLoop();
 }
 
@@ -422,14 +347,6 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerUntrustedTest,
 }
 
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerUntrustedTest,
-                       RetailModeLoginForbidden) {
-  existing_user_controller()->Login(
-      UserContext(user_manager::USER_TYPE_RETAIL_MODE,
-                  chromeos::login::kRetailModeUserName),
-      SigninSpecifics());
-}
-
-IN_PROC_BROWSER_TEST_F(ExistingUserControllerUntrustedTest,
                        SupervisedUserLoginForbidden) {
   UserContext user_context(kSupervisedUserID);
   user_context.SetKey(Key(kPassword));
@@ -442,8 +359,7 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerUntrustedTest,
   MockBaseScreenDelegate mock_base_screen_delegate;
   SupervisedUserCreationScreenHandler supervised_user_creation_screen_handler;
   SupervisedUserCreationScreen supervised_user_creation_screen(
-      &mock_base_screen_delegate,
-      &supervised_user_creation_screen_handler);
+      &mock_base_screen_delegate, &supervised_user_creation_screen_handler);
 
   EXPECT_CALL(*mock_user_manager_, SetUserFlow(kUsername, _))
       .Times(1)
@@ -554,8 +470,7 @@ class ExistingUserControllerPublicSessionTest
     EXPECT_CALL(*mock_login_display_, SetUIEnabled(true))
         .Times(1);
     EXPECT_CALL(*mock_login_display_host_,
-                StartWizardPtr(WizardController::kTermsOfServiceScreenName,
-                               NULL))
+                StartWizard(WizardController::kTermsOfServiceScreenName))
         .Times(0);
   }
 

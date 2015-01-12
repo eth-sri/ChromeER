@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 // This file contains the implementation of GenericV4L2Device used on
-// Generic platform.
+// platforms, which provide generic V4L2 video codec devices.
 
 #ifndef CONTENT_COMMON_GPU_MEDIA_GENERIC_V4L2_VIDEO_DEVICE_H_
 #define CONTENT_COMMON_GPU_MEDIA_GENERIC_V4L2_VIDEO_DEVICE_H_

@@ -58,12 +58,12 @@
 #include "chrome/browser/ui/views/passwords/manage_passwords_bubble_view.h"
 #include "chrome/browser/ui/views/passwords/manage_passwords_icon_view.h"
 #include "chrome/browser/ui/views/translate/translate_bubble_view.h"
-#include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/translate/core/browser/language_state.h"
+#include "components/ui/zoom/zoom_controller.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
@@ -184,7 +184,8 @@ LocationBarView::LocationBarView(Browser* browser,
       starting_omnibox_leading_inset_(0),
       current_omnibox_leading_inset_(0),
       current_omnibox_width_(0),
-      ending_omnibox_width_(0) {
+      ending_omnibox_width_(0),
+      web_contents_null_at_last_refresh_(true) {
   edit_bookmarks_enabled_.Init(
       bookmarks::prefs::kEditBookmarksEnabled, profile->GetPrefs(),
       base::Bind(&LocationBarView::Update, base::Unretained(this),
@@ -251,11 +252,7 @@ void LocationBarView::Init() {
 
   // Initialize the Omnibox view.
   omnibox_view_ = new OmniboxViewViews(
-      this, profile(), command_updater(),
-      is_popup_mode_ ||
-          (browser_->is_app() &&
-           extensions::util::IsStreamlinedHostedAppsEnabled()),
-      this, font_list);
+      this, profile(), command_updater(), is_popup_mode_, this, font_list);
   omnibox_view_->Init();
   omnibox_view_->SetFocusable(true);
   AddChildView(omnibox_view_);
@@ -338,7 +335,7 @@ void LocationBarView::Init() {
   translate_icon_view_->SetVisible(false);
   AddChildView(translate_icon_view_);
 
-  star_view_ = new StarView(command_updater());
+  star_view_ = new StarView(command_updater(), browser_);
   star_view_->SetVisible(false);
   AddChildView(star_view_);
 
@@ -1082,18 +1079,18 @@ bool LocationBarView::RefreshPageActionViews() {
         extensions_tab_helper->location_bar_controller();
     new_page_actions = controller->GetCurrentActions();
   }
+  web_contents_null_at_last_refresh_ = web_contents == NULL;
 
   // On startup we sometimes haven't loaded any extensions. This makes sure
   // we catch up when the extensions (and any page actions) load.
-  if (page_actions_ != new_page_actions) {
+  if (PageActionsDiffer(new_page_actions)) {
     changed = true;
 
-    page_actions_.swap(new_page_actions);
-    DeletePageActionViews();  // Delete the old views (if any).
+    DeletePageActionViews();
 
     // Create the page action views.
-    for (PageActions::const_iterator i = page_actions_.begin();
-         i != page_actions_.end(); ++i) {
+    for (PageActions::const_iterator i = new_page_actions.begin();
+         i != new_page_actions.end(); ++i) {
       PageActionWithBadgeView* page_action_view = new PageActionWithBadgeView(
           delegate_->CreatePageActionImageView(this, *i));
       page_action_view->SetVisible(false);
@@ -1120,16 +1117,28 @@ bool LocationBarView::RefreshPageActionViews() {
       AddChildViewAt(*i, GetIndexOf(right_anchor));
   }
 
-  if (!page_action_views_.empty() && web_contents) {
-    for (PageActionViews::const_iterator i(page_action_views_.begin());
-         i != page_action_views_.end(); ++i) {
-      bool old_visibility = (*i)->visible();
-      (*i)->UpdateVisibility(
-          GetToolbarModel()->input_in_progress() ? NULL : web_contents);
-      changed |= old_visibility != (*i)->visible();
-    }
+  for (PageActionViews::const_iterator i(page_action_views_.begin());
+       i != page_action_views_.end(); ++i) {
+    bool old_visibility = (*i)->visible();
+    (*i)->UpdateVisibility(
+        GetToolbarModel()->input_in_progress() ? NULL : web_contents);
+    changed |= old_visibility != (*i)->visible();
   }
   return changed;
+}
+
+bool LocationBarView::PageActionsDiffer(
+    const PageActions& page_actions) const {
+  if (page_action_views_.size() != page_actions.size())
+    return true;
+
+  for (size_t index = 0; index < page_actions.size(); ++index) {
+    PageActionWithBadgeView* view = page_action_views_[index];
+    if (view->image_view()->extension_action() != page_actions[index])
+      return true;
+  }
+
+  return false;
 }
 
 bool LocationBarView::RefreshZoomView() {
@@ -1138,7 +1147,7 @@ bool LocationBarView::RefreshZoomView() {
   if (!web_contents)
     return false;
   const bool was_visible = zoom_view_->visible();
-  zoom_view_->Update(ZoomController::FromWebContents(web_contents));
+  zoom_view_->Update(ui_zoom::ZoomController::FromWebContents(web_contents));
   if (!zoom_view_->visible())
     ZoomBubbleView::CloseBubble();
   return was_visible != zoom_view_->visible();
@@ -1296,10 +1305,6 @@ void LocationBarView::UpdatePageActions() {
   }
 }
 
-void LocationBarView::InvalidatePageActions() {
-  DeletePageActionViews();
-}
-
 void LocationBarView::UpdateBookmarkStarVisibility() {
   if (star_view_) {
     star_view_->SetVisible(
@@ -1316,9 +1321,21 @@ bool LocationBarView::ShowPageActionPopup(
   ExtensionAction* extension_action =
       extensions::ExtensionActionManager::Get(profile())->GetPageAction(
           *extension);
-  DCHECK(extension_action);
-  return GetPageActionView(extension_action)->image_view()->view_controller()->
-      ExecuteAction(grant_tab_permissions);
+  CHECK(extension_action);
+  PageActionWithBadgeView* page_action_view =
+      GetPageActionView(extension_action);
+  if (!page_action_view) {
+    CHECK(!web_contents_null_at_last_refresh_);
+    CHECK(!is_popup_mode_);
+    CHECK(!extensions::FeatureSwitch::extension_action_redesign()->IsEnabled());
+    CHECK(false);
+  }
+  PageActionImageView* page_action_image_view = page_action_view->image_view();
+  CHECK(page_action_image_view);
+  ExtensionActionViewController* extension_action_view_controller =
+      page_action_image_view->view_controller();
+  CHECK(extension_action_view_controller);
+  return extension_action_view_controller->ExecuteAction(grant_tab_permissions);
 }
 
 void LocationBarView::UpdateOpenPDFInReaderPrompt() {

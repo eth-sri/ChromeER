@@ -10,6 +10,7 @@
 
 #include "base/memory/shared_memory.h"
 #include "content/common/content_export.h"
+#include "content/common/content_param_traits.h"
 #include "content/common/gpu/gpu_memory_uma_stats.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/gpu/gpu_result_codes.h"
@@ -20,6 +21,7 @@
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "gpu/command_buffer/common/mailbox.h"
+#include "gpu/command_buffer/common/value_state.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/gpu_command_buffer_traits.h"
 #include "ipc/ipc_channel_handle.h"
@@ -73,6 +75,15 @@ IPC_STRUCT_BEGIN(GPUCreateCommandBufferConfig)
   IPC_STRUCT_MEMBER(std::vector<int>, attribs)
   IPC_STRUCT_MEMBER(GURL, active_url)
   IPC_STRUCT_MEMBER(gfx::GpuPreference, gpu_preference)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(GpuMsg_CreateGpuMemoryBuffer_Params)
+IPC_STRUCT_MEMBER(int32, id)
+IPC_STRUCT_MEMBER(gfx::Size, size)
+IPC_STRUCT_MEMBER(gfx::GpuMemoryBuffer::Format, format)
+IPC_STRUCT_MEMBER(gfx::GpuMemoryBuffer::Usage, usage)
+IPC_STRUCT_MEMBER(int32, client_id)
+IPC_STRUCT_MEMBER(gfx::PluginWindowHandle, surface_handle)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params)
@@ -250,12 +261,8 @@ IPC_MESSAGE_CONTROL5(GpuMsg_CreateViewCommandBuffer,
                      int32 /* route_id */)
 
 // Tells the GPU process to create a new gpu memory buffer.
-IPC_MESSAGE_CONTROL5(GpuMsg_CreateGpuMemoryBuffer,
-                     gfx::GpuMemoryBufferId, /* id */
-                     gfx::Size, /* size */
-                     gfx::GpuMemoryBuffer::Format, /* format */
-                     gfx::GpuMemoryBuffer::Usage, /* usage */
-                     int32 /* client_id */)
+IPC_MESSAGE_CONTROL1(GpuMsg_CreateGpuMemoryBuffer,
+                     GpuMsg_CreateGpuMemoryBuffer_Params)
 
 // Tells the GPU process to destroy buffer.
 IPC_MESSAGE_CONTROL3(GpuMsg_DestroyGpuMemoryBuffer,
@@ -299,6 +306,12 @@ IPC_MESSAGE_CONTROL0(GpuMsg_GpuSwitched)
 // close the display and any other resources when the last GL surface is
 // deleted. GPU process will respond with GphHosMsg_ResourcesRelinquished.
 IPC_MESSAGE_CONTROL0(GpuMsg_RelinquishResources)
+
+// Sends an input event to the gpu service.
+IPC_MESSAGE_CONTROL3(GpuMsg_UpdateValueState,
+                     int, /* client_id */
+                     unsigned int, /* target */
+                     gpu::ValueState /* valuestate */)
 
 //------------------------------------------------------------------------------
 // GPU Host Messages
@@ -403,6 +416,18 @@ IPC_MESSAGE_CONTROL1(GpuHostMsg_GpuMemoryUmaStats,
 
 // Response to GpuMsg_RelinquishResources.
 IPC_MESSAGE_CONTROL0(GpuHostMsg_ResourcesRelinquished)
+
+// Tells the browser that a context has subscribed to a new target and
+// the browser should start sending the corresponding information
+IPC_MESSAGE_CONTROL2(GpuHostMsg_AddSubscription,
+                     int32 /* client_id */,
+                     unsigned int /* target */)
+
+// Tells the browser that no contexts are subscribed to the target anymore
+// so the browser should stop sending the corresponding information
+IPC_MESSAGE_CONTROL2(GpuHostMsg_RemoveSubscription,
+                     int32 /* client_id */,
+                     unsigned int /* target */)
 
 //------------------------------------------------------------------------------
 // GPU Channel Messages

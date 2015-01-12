@@ -5,7 +5,7 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 #define CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 
-#include "content/browser/compositor/browser_compositor_ca_layer_tree_mac.h"
+#include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 #include "ui/compositor/compositor.h"
 
 namespace content {
@@ -16,21 +16,27 @@ namespace content {
 // in terms of time and resources).
 class BrowserCompositorMac {
  public:
+  ~BrowserCompositorMac();
+
   // Create a compositor, or recycle a preexisting one.
   static scoped_ptr<BrowserCompositorMac> Create();
 
   // Delete a compositor, or allow it to be recycled.
   static void Recycle(scoped_ptr<BrowserCompositorMac> compositor);
 
+  // Indicate that the recyclable compositor should be destroyed, and no future
+  // compositors should be recycled.
+  static void DisableRecyclingForShutdown();
+
   ui::Compositor* compositor() { return &compositor_; }
-  AcceleratedWidgetMac* accelerated_widget_mac() {
-    return &accelerated_widget_mac_;
+  ui::AcceleratedWidgetMac* accelerated_widget_mac() {
+    return accelerated_widget_mac_.get();
   }
 
  private:
   BrowserCompositorMac();
 
-  AcceleratedWidgetMac accelerated_widget_mac_;
+  scoped_ptr<ui::AcceleratedWidgetMac> accelerated_widget_mac_;
   ui::Compositor compositor_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserCompositorMac);

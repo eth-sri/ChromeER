@@ -4,246 +4,17 @@
 
 #include "ui/display/chromeos/display_configurator.h"
 
-#include <stdint.h>
-
-#include <cmath>
-#include <cstdarg>
-#include <map>
-#include <string>
-#include <vector>
-
-#include "base/compiler_specific.h"
-#include "base/format_macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
-#include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/display/chromeos/test/action_logger_util.h"
 #include "ui/display/chromeos/test/test_display_snapshot.h"
-#include "ui/display/types/display_mode.h"
-#include "ui/display/types/native_display_delegate.h"
+#include "ui/display/chromeos/test/test_native_display_delegate.h"
 
 namespace ui {
+namespace test {
 
 namespace {
-
-// Strings returned by TestNativeDisplayDelegate::GetActionsAndClear() to
-// describe various actions that were performed.
-const char kInitXRandR[] = "init";
-const char kGrab[] = "grab";
-const char kUngrab[] = "ungrab";
-const char kSync[] = "sync";
-const char kForceDPMS[] = "dpms";
-const char kTakeDisplayControl[] = "take";
-const char kRelinquishDisplayControl[] = "relinquish";
-
-// String returned by TestNativeDisplayDelegate::GetActionsAndClear() if no
-// actions were requested.
-const char kNoActions[] = "";
-
-std::string DisplaySnapshotToString(const DisplaySnapshot& output) {
-  return base::StringPrintf("id=%" PRId64, output.display_id());
-}
-
-// Returns a string describing a TestNativeDisplayDelegate::SetBackgroundColor()
-// call.
-std::string GetBackgroundAction(uint32_t color_argb) {
-  return base::StringPrintf("background(0x%x)", color_argb);
-}
-
-// Returns a string describing a TestNativeDisplayDelegate::AddOutputMode()
-// call.
-std::string GetAddOutputModeAction(const DisplaySnapshot& output,
-                                   const DisplayMode* mode) {
-  return base::StringPrintf("add_mode(output=%" PRId64 ",mode=%s)",
-                            output.display_id(),
-                            mode->ToString().c_str());
-}
-
-// Returns a string describing a TestNativeDisplayDelegate::Configure()
-// call.
-std::string GetCrtcAction(const DisplaySnapshot& output,
-                          const DisplayMode* mode,
-                          const gfx::Point& origin) {
-  return base::StringPrintf("crtc(display=[%s],x=%d,y=%d,mode=[%s])",
-                            DisplaySnapshotToString(output).c_str(),
-                            origin.x(),
-                            origin.y(),
-                            mode ? mode->ToString().c_str() : "NULL");
-}
-
-// Returns a string describing a TestNativeDisplayDelegate::CreateFramebuffer()
-// call.
-std::string GetFramebufferAction(const gfx::Size& size,
-                                 const DisplaySnapshot* out1,
-                                 const DisplaySnapshot* out2) {
-  return base::StringPrintf(
-      "framebuffer(width=%d,height=%d,display1=%s,display2=%s)",
-      size.width(),
-      size.height(),
-      out1 ? DisplaySnapshotToString(*out1).c_str() : "NULL",
-      out2 ? DisplaySnapshotToString(*out2).c_str() : "NULL");
-}
-
-// Returns a string describing a TestNativeDisplayDelegate::SetHDCPState() call.
-std::string GetSetHDCPStateAction(const DisplaySnapshot& output,
-                                  HDCPState state) {
-  return base::StringPrintf(
-      "set_hdcp(id=%" PRId64 ",state=%d)", output.display_id(), state);
-}
-
-// Joins a sequence of strings describing actions (e.g. kScreenDim) such
-// that they can be compared against a string returned by
-// ActionLogger::GetActionsAndClear().  The list of actions must be
-// terminated by a NULL pointer.
-std::string JoinActions(const char* action, ...) {
-  std::string actions;
-
-  va_list arg_list;
-  va_start(arg_list, action);
-  while (action) {
-    if (!actions.empty())
-      actions += ",";
-    actions += action;
-    action = va_arg(arg_list, const char*);
-  }
-  va_end(arg_list);
-  return actions;
-}
-
-class ActionLogger {
- public:
-  ActionLogger() {}
-
-  void AppendAction(const std::string& action) {
-    if (!actions_.empty())
-      actions_ += ",";
-    actions_ += action;
-  }
-
-  // Returns a comma-separated string describing the actions that were
-  // requested since the previous call to GetActionsAndClear() (i.e.
-  // results are non-repeatable).
-  std::string GetActionsAndClear() {
-    std::string actions = actions_;
-    actions_.clear();
-    return actions;
-  }
-
- private:
-  std::string actions_;
-
-  DISALLOW_COPY_AND_ASSIGN(ActionLogger);
-};
-
-class TestNativeDisplayDelegate : public NativeDisplayDelegate {
- public:
-  // Ownership of |log| remains with the caller.
-  explicit TestNativeDisplayDelegate(ActionLogger* log)
-      : max_configurable_pixels_(0),
-        hdcp_state_(HDCP_STATE_UNDESIRED),
-        log_(log) {}
-  virtual ~TestNativeDisplayDelegate() {}
-
-  const std::vector<DisplaySnapshot*>& outputs() const { return outputs_; }
-  void set_outputs(const std::vector<DisplaySnapshot*>& outputs) {
-    outputs_ = outputs;
-  }
-
-  void set_max_configurable_pixels(int pixels) {
-    max_configurable_pixels_ = pixels;
-  }
-
-  void set_hdcp_state(HDCPState state) { hdcp_state_ = state; }
-
-  // DisplayConfigurator::Delegate overrides:
-  virtual void Initialize() override { log_->AppendAction(kInitXRandR); }
-  virtual void GrabServer() override { log_->AppendAction(kGrab); }
-  virtual void UngrabServer() override { log_->AppendAction(kUngrab); }
-  virtual bool TakeDisplayControl() override {
-    log_->AppendAction(kTakeDisplayControl);
-    return true;
-  }
-  virtual bool RelinquishDisplayControl() override {
-    log_->AppendAction(kRelinquishDisplayControl);
-    return true;
-  }
-  virtual void SyncWithServer() override { log_->AppendAction(kSync); }
-  virtual void SetBackgroundColor(uint32_t color_argb) override {
-    log_->AppendAction(GetBackgroundAction(color_argb));
-  }
-  virtual void ForceDPMSOn() override { log_->AppendAction(kForceDPMS); }
-  virtual std::vector<DisplaySnapshot*> GetDisplays() override {
-    return outputs_;
-  }
-  virtual void AddMode(const DisplaySnapshot& output,
-                       const DisplayMode* mode) override {
-    log_->AppendAction(GetAddOutputModeAction(output, mode));
-  }
-  virtual bool Configure(const DisplaySnapshot& output,
-                         const DisplayMode* mode,
-                         const gfx::Point& origin) override {
-    log_->AppendAction(GetCrtcAction(output, mode, origin));
-
-    if (max_configurable_pixels_ == 0)
-      return true;
-
-    if (!mode)
-      return false;
-
-    return mode->size().GetArea() <= max_configurable_pixels_;
-  }
-  virtual void CreateFrameBuffer(const gfx::Size& size) override {
-    log_->AppendAction(
-        GetFramebufferAction(size,
-                             outputs_.size() >= 1 ? outputs_[0] : NULL,
-                             outputs_.size() >= 2 ? outputs_[1] : NULL));
-  }
-  virtual bool GetHDCPState(const DisplaySnapshot& output,
-                            HDCPState* state) override {
-    *state = hdcp_state_;
-    return true;
-  }
-
-  virtual bool SetHDCPState(const DisplaySnapshot& output,
-                            HDCPState state) override {
-    log_->AppendAction(GetSetHDCPStateAction(output, state));
-    return true;
-  }
-
-  virtual std::vector<ui::ColorCalibrationProfile>
-  GetAvailableColorCalibrationProfiles(const DisplaySnapshot& output) override {
-    return std::vector<ui::ColorCalibrationProfile>();
-  }
-
-  virtual bool SetColorCalibrationProfile(
-      const DisplaySnapshot& output,
-      ui::ColorCalibrationProfile new_profile) override {
-    return false;
-  }
-
-  virtual void AddObserver(NativeDisplayObserver* observer) override {}
-
-  virtual void RemoveObserver(NativeDisplayObserver* observer) override {}
-
- private:
-  // Outputs to be returned by GetDisplays().
-  std::vector<DisplaySnapshot*> outputs_;
-
-  // |max_configurable_pixels_| represents the maximum number of pixels that
-  // Configure will support.  Tests can use this to force Configure
-  // to fail if attempting to set a resolution that is higher than what
-  // a device might support under a given circumstance.
-  // A value of 0 means that no limit is enforced and Configure will
-  // return success regardless of the resolution.
-  int max_configurable_pixels_;
-
-  // Result value of GetHDCPState().
-  HDCPState hdcp_state_;
-
-  ActionLogger* log_;  // Not owned.
-
-  DISALLOW_COPY_AND_ASSIGN(TestNativeDisplayDelegate);
-};
 
 class TestObserver : public DisplayConfigurator::Observer {
  public:
@@ -412,17 +183,13 @@ class DisplayConfiguratorTest : public testing::Test {
     configurator_.Init(false);
     EXPECT_EQ(kNoActions, log_->GetActionsAndClear());
     configurator_.ForceInitialConfigure(0);
-    EXPECT_EQ(
-        JoinActions(
-            kGrab,
-            kInitXRandR,
-            GetFramebufferAction(small_mode_.size(), &outputs_[0], NULL)
-                .c_str(),
-            GetCrtcAction(outputs_[0], &small_mode_, gfx::Point(0, 0)).c_str(),
-            kForceDPMS,
-            kUngrab,
-            NULL),
-        log_->GetActionsAndClear());
+    EXPECT_EQ(JoinActions(kInitXRandR, kGrab,
+                          GetFramebufferAction(small_mode_.size(), &outputs_[0],
+                                               NULL).c_str(),
+                          GetCrtcAction(outputs_[0], &small_mode_,
+                                        gfx::Point(0, 0)).c_str(),
+                          kForceDPMS, kUngrab, NULL),
+              log_->GetActionsAndClear());
   }
 
   base::MessageLoop message_loop_;
@@ -549,7 +316,7 @@ TEST_F(DisplayConfiguratorTest, ConnectSecondOutput) {
   EXPECT_EQ(1, observer_.num_changes());
 
   observer_.Reset();
-  EXPECT_TRUE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR));
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR);
   EXPECT_EQ(
       JoinActions(
           kGrab,
@@ -600,7 +367,7 @@ TEST_F(DisplayConfiguratorTest, ConnectSecondOutput) {
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
 
   observer_.Reset();
-  EXPECT_TRUE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR));
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR);
   EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL), log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED,
             configurator_.display_state());
@@ -609,15 +376,14 @@ TEST_F(DisplayConfiguratorTest, ConnectSecondOutput) {
 
   // Setting MULTIPLE_DISPLAY_STATE_DUAL_MIRROR should try to reconfigure.
   observer_.Reset();
-  EXPECT_TRUE(
-      configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED));
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED);
   EXPECT_EQ(JoinActions(NULL), log_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
 
   // Set back to software mirror mode.
   observer_.Reset();
-  EXPECT_TRUE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR));
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR);
   EXPECT_EQ(JoinActions(kGrab, kUngrab, NULL), log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED,
             configurator_.display_state());
@@ -927,7 +693,7 @@ TEST_F(DisplayConfiguratorTest, Headless) {
   configurator_.Init(false);
   EXPECT_EQ(kNoActions, log_->GetActionsAndClear());
   configurator_.ForceInitialConfigure(0);
-  EXPECT_EQ(JoinActions(kGrab, kInitXRandR, kForceDPMS, kUngrab, NULL),
+  EXPECT_EQ(JoinActions(kInitXRandR, kGrab, kForceDPMS, kUngrab, NULL),
             log_->GetActionsAndClear());
 
   // Not much should happen when the display power state is changed while
@@ -967,15 +733,12 @@ TEST_F(DisplayConfiguratorTest, StartWithTwoOutputs) {
   configurator_.ForceInitialConfigure(0);
   EXPECT_EQ(
       JoinActions(
-          kGrab,
-          kInitXRandR,
+          kInitXRandR, kGrab,
           GetFramebufferAction(small_mode_.size(), &outputs_[0], &outputs_[1])
               .c_str(),
           GetCrtcAction(outputs_[0], &small_mode_, gfx::Point(0, 0)).c_str(),
           GetCrtcAction(outputs_[1], &small_mode_, gfx::Point(0, 0)).c_str(),
-          kForceDPMS,
-          kUngrab,
-          NULL),
+          kForceDPMS, kUngrab, NULL),
       log_->GetActionsAndClear());
 }
 
@@ -985,34 +748,37 @@ TEST_F(DisplayConfiguratorTest, InvalidMultipleDisplayStates) {
   configurator_.Init(false);
   configurator_.ForceInitialConfigure(0);
   observer_.Reset();
-  EXPECT_TRUE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_HEADLESS));
-  EXPECT_FALSE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_SINGLE));
-  EXPECT_FALSE(
-      configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR));
-  EXPECT_FALSE(
-      configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED));
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_HEADLESS);
+  EXPECT_EQ(1, observer_.num_changes());
+  EXPECT_EQ(0, observer_.num_failures());
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_SINGLE);
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR);
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED);
   EXPECT_EQ(1, observer_.num_changes());
   EXPECT_EQ(3, observer_.num_failures());
 
   UpdateOutputs(1, true);
   observer_.Reset();
-  EXPECT_FALSE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_HEADLESS));
-  EXPECT_TRUE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_SINGLE));
-  EXPECT_FALSE(
-      configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR));
-  EXPECT_FALSE(
-      configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED));
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_HEADLESS);
+  EXPECT_EQ(0, observer_.num_changes());
+  EXPECT_EQ(1, observer_.num_failures());
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_SINGLE);
+  EXPECT_EQ(1, observer_.num_changes());
+  EXPECT_EQ(1, observer_.num_failures());
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR);
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED);
   EXPECT_EQ(1, observer_.num_changes());
   EXPECT_EQ(3, observer_.num_failures());
 
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED);
   UpdateOutputs(2, true);
   observer_.Reset();
-  EXPECT_FALSE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_HEADLESS));
-  EXPECT_FALSE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_SINGLE));
-  EXPECT_TRUE(configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR));
-  EXPECT_TRUE(
-      configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED));
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_HEADLESS);
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_SINGLE);
+  EXPECT_EQ(0, observer_.num_changes());
+  EXPECT_EQ(2, observer_.num_failures());
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR);
+  configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_DUAL_EXTENDED);
   EXPECT_EQ(2, observer_.num_changes());
   EXPECT_EQ(2, observer_.num_failures());
 }
@@ -1062,16 +828,13 @@ TEST_F(DisplayConfiguratorTest, PanelFitting) {
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_DUAL_MIRROR, configurator_.display_state());
   EXPECT_EQ(
       JoinActions(
-          kGrab,
-          kInitXRandR,
+          kInitXRandR, kGrab,
           GetAddOutputModeAction(outputs_[0], &small_mode_).c_str(),
           GetFramebufferAction(small_mode_.size(), &outputs_[0], &outputs_[1])
               .c_str(),
           GetCrtcAction(outputs_[0], &small_mode_, gfx::Point(0, 0)).c_str(),
           GetCrtcAction(outputs_[1], &small_mode_, gfx::Point(0, 0)).c_str(),
-          kForceDPMS,
-          kUngrab,
-          NULL),
+          kForceDPMS, kUngrab, NULL),
       log_->GetActionsAndClear());
 
   // Both outputs should be using the small mode.
@@ -1263,15 +1026,14 @@ TEST_F(DisplayConfiguratorTest, HandleConfigureCrtcFailure) {
 
   EXPECT_EQ(
       JoinActions(
-          kGrab,
-          GetFramebufferAction(modes[0]->size(), &outputs_[0], &outputs_[1])
-              .c_str(),
+          kGrab, GetFramebufferAction(modes[0]->size(), &outputs_[0],
+                                      &outputs_[1]).c_str(),
           GetCrtcAction(outputs_[0], modes[0], gfx::Point(0, 0)).c_str(),
+          // Then attempt to configure crtc1 with the first mode.
+          GetCrtcAction(outputs_[1], modes[0], gfx::Point(0, 0)).c_str(),
           // First mode tried is expected to fail and it will
           // retry wil the 4th mode in the list.
           GetCrtcAction(outputs_[0], modes[3], gfx::Point(0, 0)).c_str(),
-          // Then attempt to configure crtc1 with the first mode.
-          GetCrtcAction(outputs_[1], modes[0], gfx::Point(0, 0)).c_str(),
           GetCrtcAction(outputs_[1], modes[3], gfx::Point(0, 0)).c_str(),
           // Since it was requested to go into mirror mode
           // and the configured modes were different, it
@@ -1281,24 +1043,18 @@ TEST_F(DisplayConfiguratorTest, HandleConfigureCrtcFailure) {
               gfx::Size(modes[0]->size().width(),
                         modes[0]->size().height() + modes[0]->size().height() +
                             DisplayConfigurator::kVerticalGap),
-              &outputs_[0],
-              &outputs_[1]).c_str(),
+              &outputs_[0], &outputs_[1]).c_str(),
           GetCrtcAction(outputs_[0], modes[0], gfx::Point(0, 0)).c_str(),
+          GetCrtcAction(outputs_[1], modes[0],
+                        gfx::Point(0, modes[0]->size().height() +
+                                          DisplayConfigurator::kVerticalGap))
+              .c_str(),
           GetCrtcAction(outputs_[0], modes[3], gfx::Point(0, 0)).c_str(),
-          GetCrtcAction(outputs_[1],
-                        modes[0],
-                        gfx::Point(0,
-                                   modes[0]->size().height() +
-                                       DisplayConfigurator::kVerticalGap))
+          GetCrtcAction(outputs_[1], modes[3],
+                        gfx::Point(0, modes[0]->size().height() +
+                                          DisplayConfigurator::kVerticalGap))
               .c_str(),
-          GetCrtcAction(outputs_[1],
-                        modes[3],
-                        gfx::Point(0,
-                                   modes[0]->size().height() +
-                                       DisplayConfigurator::kVerticalGap))
-              .c_str(),
-          kUngrab,
-          NULL),
+          kUngrab, NULL),
       log_->GetActionsAndClear());
 }
 
@@ -1310,19 +1066,23 @@ TEST_F(DisplayConfiguratorTest, SaveDisplayPowerStateOnConfigFailure) {
   configurator_.Init(false);
   configurator_.ForceInitialConfigure(0);
   log_->GetActionsAndClear();
+  observer_.Reset();
 
   // Turn off the internal display, simulating docked mode.
-  EXPECT_TRUE(configurator_.SetDisplayPower(
+  configurator_.SetDisplayPower(
       chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-      DisplayConfigurator::kSetDisplayPowerNoFlags));
+      DisplayConfigurator::kSetDisplayPowerNoFlags);
+  EXPECT_EQ(1, observer_.num_changes());
+  EXPECT_EQ(0, observer_.num_failures());
   log_->GetActionsAndClear();
 
   // Make all subsequent configuration requests fail and try to turn the
   // internal display back on.
   native_display_delegate_->set_max_configurable_pixels(1);
-  EXPECT_FALSE(configurator_.SetDisplayPower(
-      chromeos::DISPLAY_POWER_ALL_ON,
-      DisplayConfigurator::kSetDisplayPowerNoFlags));
+  configurator_.SetDisplayPower(chromeos::DISPLAY_POWER_ALL_ON,
+                                DisplayConfigurator::kSetDisplayPowerNoFlags);
+  EXPECT_EQ(1, observer_.num_changes());
+  EXPECT_EQ(1, observer_.num_failures());
   log_->GetActionsAndClear();
 
   // Simulate the external display getting disconnected and check that the
@@ -1330,14 +1090,12 @@ TEST_F(DisplayConfiguratorTest, SaveDisplayPowerStateOnConfigFailure) {
   // than the earlier DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON state.
   native_display_delegate_->set_max_configurable_pixels(0);
   UpdateOutputs(1, true);
-  EXPECT_EQ(
-      JoinActions(
-          kGrab,
-          GetFramebufferAction(small_mode_.size(), &outputs_[0], NULL).c_str(),
-          GetCrtcAction(outputs_[0], &small_mode_, gfx::Point(0, 0)).c_str(),
-          kUngrab,
-          NULL),
-      log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kGrab, GetFramebufferAction(small_mode_.size(),
+                                                    &outputs_[0], NULL).c_str(),
+                        GetCrtcAction(outputs_[0], &small_mode_,
+                                      gfx::Point(0, 0)).c_str(),
+                        kForceDPMS, kUngrab, NULL),
+            log_->GetActionsAndClear());
 }
 
 // Tests that the SetDisplayPowerState() task posted by HandleResume() doesn't
@@ -1349,11 +1107,14 @@ TEST_F(DisplayConfiguratorTest, DontRestoreStalePowerStateAfterResume) {
   configurator_.Init(false);
   configurator_.ForceInitialConfigure(0);
   log_->GetActionsAndClear();
+  observer_.Reset();
 
   // Turn off the internal display, simulating docked mode.
-  EXPECT_TRUE(configurator_.SetDisplayPower(
+  configurator_.SetDisplayPower(
       chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-      DisplayConfigurator::kSetDisplayPowerNoFlags));
+      DisplayConfigurator::kSetDisplayPowerNoFlags);
+  EXPECT_EQ(1, observer_.num_changes());
+  EXPECT_EQ(0, observer_.num_failures());
   EXPECT_EQ(
       JoinActions(
           kGrab,
@@ -1372,9 +1133,10 @@ TEST_F(DisplayConfiguratorTest, DontRestoreStalePowerStateAfterResume) {
   configurator_.ResumeDisplays();
 
   // Before the task runs, exit docked mode.
-  EXPECT_TRUE(configurator_.SetDisplayPower(
-      chromeos::DISPLAY_POWER_ALL_ON,
-      DisplayConfigurator::kSetDisplayPowerNoFlags));
+  configurator_.SetDisplayPower(chromeos::DISPLAY_POWER_ALL_ON,
+                                DisplayConfigurator::kSetDisplayPowerNoFlags);
+  EXPECT_EQ(2, observer_.num_changes());
+  EXPECT_EQ(0, observer_.num_failures());
   EXPECT_EQ(
       JoinActions(
           kGrab,
@@ -1413,12 +1175,14 @@ TEST_F(DisplayConfiguratorTest, ExternalControl) {
           NULL),
       log_->GetActionsAndClear());
   configurator_.TakeControl();
-  EXPECT_EQ(
-      JoinActions(
-          kTakeDisplayControl,
-          GetCrtcAction(outputs_[0], &small_mode_, gfx::Point(0, 0)).c_str(),
-          NULL),
-      log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTakeDisplayControl, kGrab,
+                        GetFramebufferAction(small_mode_.size(), &outputs_[0],
+                                             nullptr).c_str(),
+                        GetCrtcAction(outputs_[0], &small_mode_,
+                                      gfx::Point(0, 0)).c_str(),
+                        kUngrab, NULL),
+            log_->GetActionsAndClear());
 }
 
+}  // namespace test
 }  // namespace ui

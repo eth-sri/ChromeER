@@ -13,6 +13,7 @@ import org.chromium.chrome.browser.ChromiumApplication;
 import org.chromium.chrome.browser.PKCS11AuthenticationManager;
 import org.chromium.chrome.browser.UmaUtils;
 import org.chromium.chrome.browser.invalidation.UniqueIdInvalidationClientNameGenerator;
+import org.chromium.chrome.shell.preferences.ChromeShellPreferences;
 
 import java.util.ArrayList;
 
@@ -51,13 +52,16 @@ public class ChromeShellApplication extends ChromiumApplication {
         UmaUtils.recordMainEntryPointTime();
         super.onCreate();
 
-        ResourceExtractor.setMandatoryPaksToExtract(CHROME_MANDATORY_PAKS);
-        PathUtils.setPrivateDataDirectorySuffix(PRIVATE_DATA_DIRECTORY_SUFFIX);
-
         mObservers = new ArrayList<ChromeShellApplicationObserver>();
 
         // Initialize the invalidations ID, just like we would in the downstream code.
         UniqueIdInvalidationClientNameGenerator.doInitializeAndInstallGenerator(this);
+    }
+
+    @Override
+    protected void initializeLibraryDependencies() {
+        ResourceExtractor.setMandatoryPaksToExtract(CHROME_MANDATORY_PAKS);
+        PathUtils.setPrivateDataDirectorySuffix(PRIVATE_DATA_DIRECTORY_SUFFIX);
     }
 
     @Override
@@ -83,6 +87,11 @@ public class ChromeShellApplication extends ChromiumApplication {
         if (!CommandLine.isInitialized()) {
             CommandLine.initFromFile(COMMAND_LINE_FILE);
         }
+    }
+
+    @Override
+    public String getSettingsActivityName() {
+        return ChromeShellPreferences.class.getName();
     }
 
     @Override

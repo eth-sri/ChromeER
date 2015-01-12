@@ -7,10 +7,17 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/process/process_handle.h"
 #include "chrome/browser/chromeos/power/renderer_freezer.h"
+
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace chromeos {
 
@@ -23,22 +30,15 @@ class FreezerCgroupProcessManager : public RendererFreezer::Delegate {
   // RendererFreezer::Delegate overrides.
   void SetShouldFreezeRenderer(base::ProcessHandle handle,
                                bool frozen) override;
-  bool FreezeRenderers() override;
-  bool ThawRenderers() override;
-  bool CanFreezeRenderers() override;
+  void FreezeRenderers() override;
+  void ThawRenderers(ResultCallback callback) override;
+  void CheckCanFreezeRenderers(ResultCallback callback) override;
 
  private:
-  bool WriteCommandToFile(const std::string& command,
-                          const base::FilePath& file);
+  scoped_refptr<base::SequencedTaskRunner> file_thread_;
 
-  // Control path for the cgroup that is not frozen.
-  base::FilePath default_control_path_;
-
-  // Control and state paths for the cgroup whose processes will be frozen.
-  base::FilePath to_be_frozen_control_path_;
-  base::FilePath to_be_frozen_state_path_;
-
-  bool enabled_;
+  class FileWorker;
+  scoped_ptr<FileWorker> file_worker_;
 
   DISALLOW_COPY_AND_ASSIGN(FreezerCgroupProcessManager);
 };

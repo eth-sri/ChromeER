@@ -63,20 +63,30 @@ class ExtensionsGuestViewContainer : public GuestViewContainer {
     scoped_ptr<base::DictionaryValue> params_;
   };
 
+  class DetachRequest : public Request {
+   public:
+    DetachRequest(GuestViewContainer* container,
+                  v8::Handle<v8::Function> callback,
+                  v8::Isolate* isolate);
+    ~DetachRequest() override;
+
+    void PerformRequest() override;
+    void HandleResponse(const IPC::Message& message) override;
+  };
+
   explicit ExtensionsGuestViewContainer(content::RenderFrame* render_frame);
   ~ExtensionsGuestViewContainer() override;
 
   static ExtensionsGuestViewContainer* FromID(int element_instance_id);
 
   void IssueRequest(linked_ptr<Request> request);
+  void RegisterDestructionCallback(v8::Handle<v8::Function> callback,
+                                   v8::Isolate* isolate);
 
   // BrowserPluginDelegate implementation.
+  bool OnMessageReceived(const IPC::Message& message) override;
   void SetElementInstanceID(int element_instance_id) override;
   void Ready() override;
-
-  // GuestViewContainer override.
-  bool HandlesMessage(const IPC::Message& message) override;
-  bool OnMessage(const IPC::Message& message) override;
 
  private:
   void OnHandleCallback(const IPC::Message& message);
@@ -89,6 +99,9 @@ class ExtensionsGuestViewContainer : public GuestViewContainer {
 
   std::deque<linked_ptr<Request> > pending_requests_;
   linked_ptr<Request> pending_response_;
+
+  ScopedPersistent<v8::Function> destruction_callback_;
+  v8::Isolate* destruction_isolate_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionsGuestViewContainer);
 };

@@ -17,7 +17,6 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/locale_settings.h"
-#include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/render_process_host.h"
@@ -81,92 +80,6 @@ base::string16 PluginInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
-
-// UnauthorizedPluginInfoBarDelegate ------------------------------------------
-
-// static
-void UnauthorizedPluginInfoBarDelegate::Create(
-    InfoBarService* infobar_service,
-    HostContentSettingsMap* content_settings,
-    const base::string16& name,
-    const std::string& identifier) {
-  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate>(new UnauthorizedPluginInfoBarDelegate(
-          content_settings, name, identifier))));
-
-  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.Shown"));
-  std::string utf8_name(base::UTF16ToUTF8(name));
-  if (utf8_name == PluginMetadata::kJavaGroupName) {
-    content::RecordAction(UserMetricsAction("BlockedPluginInfobar.Shown.Java"));
-  } else if (utf8_name == PluginMetadata::kQuickTimeGroupName) {
-    content::RecordAction(
-        UserMetricsAction("BlockedPluginInfobar.Shown.QuickTime"));
-  } else if (utf8_name == PluginMetadata::kShockwaveGroupName) {
-    content::RecordAction(
-        UserMetricsAction("BlockedPluginInfobar.Shown.Shockwave"));
-  } else if (utf8_name == PluginMetadata::kRealPlayerGroupName) {
-    content::RecordAction(
-        UserMetricsAction("BlockedPluginInfobar.Shown.RealPlayer"));
-  } else if (utf8_name == PluginMetadata::kWindowsMediaPlayerGroupName) {
-    content::RecordAction(
-        UserMetricsAction("BlockedPluginInfobar.Shown.WindowsMediaPlayer"));
-  }
-}
-
-UnauthorizedPluginInfoBarDelegate::UnauthorizedPluginInfoBarDelegate(
-    HostContentSettingsMap* content_settings,
-    const base::string16& name,
-    const std::string& identifier)
-    : PluginInfoBarDelegate(identifier),
-      content_settings_(content_settings),
-      name_(name) {
-}
-
-UnauthorizedPluginInfoBarDelegate::~UnauthorizedPluginInfoBarDelegate() {
-  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.Closed"));
-}
-
-std::string UnauthorizedPluginInfoBarDelegate::GetLearnMoreURL() const {
-  return chrome::kBlockedPluginLearnMoreURL;
-}
-
-base::string16 UnauthorizedPluginInfoBarDelegate::GetMessageText() const {
-  return l10n_util::GetStringFUTF16(IDS_PLUGIN_NOT_AUTHORIZED, name_);
-}
-
-base::string16 UnauthorizedPluginInfoBarDelegate::GetButtonLabel(
-    InfoBarButton button) const {
-  return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
-      IDS_PLUGIN_ENABLE_TEMPORARILY : IDS_PLUGIN_ENABLE_ALWAYS);
-}
-
-bool UnauthorizedPluginInfoBarDelegate::Accept() {
-  content::RecordAction(
-      UserMetricsAction("BlockedPluginInfobar.AllowThisTime"));
-  LoadBlockedPlugins();
-  return true;
-}
-
-bool UnauthorizedPluginInfoBarDelegate::Cancel() {
-  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.AlwaysAllow"));
-  const GURL& url = InfoBarService::WebContentsFromInfoBar(infobar())->GetURL();
-  content_settings_->AddExceptionForURL(url, url, CONTENT_SETTINGS_TYPE_PLUGINS,
-                                        CONTENT_SETTING_ALLOW);
-  LoadBlockedPlugins();
-  return true;
-}
-
-void UnauthorizedPluginInfoBarDelegate::InfoBarDismissed() {
-  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.Dismissed"));
-}
-
-bool UnauthorizedPluginInfoBarDelegate::LinkClicked(
-    WindowOpenDisposition disposition) {
-  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.LearnMore"));
-  return PluginInfoBarDelegate::LinkClicked(disposition);
-}
-
-
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 
 // OutdatedPluginInfoBarDelegate ----------------------------------------------
@@ -178,9 +91,10 @@ void OutdatedPluginInfoBarDelegate::Create(
   // Copy the name out of |plugin_metadata| now, since the Pass() call below
   // will make it impossible to get at.
   base::string16 name(plugin_metadata->name());
-  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+  infobar_service->AddInfoBar(infobar_service->CreateConfirmInfoBar(
       scoped_ptr<ConfirmInfoBarDelegate>(new OutdatedPluginInfoBarDelegate(
-          installer, plugin_metadata.Pass(), l10n_util::GetStringFUTF16(
+          installer, plugin_metadata.Pass(),
+          l10n_util::GetStringFUTF16(
               (installer->state() == PluginInstaller::INSTALLER_STATE_IDLE) ?
                   IDS_PLUGIN_OUTDATED_PROMPT : IDS_PLUGIN_DOWNLOADING,
               name)))));
@@ -319,13 +233,13 @@ void PluginInstallerInfoBarDelegate::Create(
     return;
   }
 #endif
-  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+  infobar_service->AddInfoBar(infobar_service->CreateConfirmInfoBar(
       scoped_ptr<ConfirmInfoBarDelegate>(new PluginInstallerInfoBarDelegate(
           installer, plugin_metadata.Pass(), callback, true,
           l10n_util::GetStringFUTF16(
-              (installer->state() == PluginInstaller::INSTALLER_STATE_IDLE) ?
-                  IDS_PLUGININSTALLER_INSTALLPLUGIN_PROMPT :
-                  IDS_PLUGIN_DOWNLOADING,
+              (installer->state() == PluginInstaller::INSTALLER_STATE_IDLE)
+                  ? IDS_PLUGININSTALLER_INSTALLPLUGIN_PROMPT
+                  : IDS_PLUGIN_DOWNLOADING,
               name)))));
 }
 
@@ -336,9 +250,10 @@ void PluginInstallerInfoBarDelegate::Replace(
     bool new_install,
     const base::string16& message) {
   DCHECK(infobar->owner());
-  infobar->owner()->ReplaceInfoBar(infobar,
-      ConfirmInfoBarDelegate::CreateInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
-          new PluginInstallerInfoBarDelegate(
+  infobar->owner()->ReplaceInfoBar(
+      infobar,
+      infobar->owner()->CreateConfirmInfoBar(
+          scoped_ptr<ConfirmInfoBarDelegate>(new PluginInstallerInfoBarDelegate(
               installer, plugin_metadata.Pass(),
               PluginInstallerInfoBarDelegate::InstallCallback(), new_install,
               message))));
@@ -452,8 +367,8 @@ void PluginMetroModeInfoBarDelegate::Create(
     InfoBarService* infobar_service,
     PluginMetroModeInfoBarDelegate::Mode mode,
     const base::string16& name) {
-  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate>(
+  infobar_service->AddInfoBar(
+      infobar_service->CreateConfirmInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
           new PluginMetroModeInfoBarDelegate(mode, name))));
 }
 

@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/sys_byteorder.h"
 #include "base/thread_task_runner_handle.h"
 #include "content/common/gpu/media/vt_video_decode_accelerator.h"
@@ -85,10 +86,10 @@ BuildImageConfig(CMVideoDimensions coded_dimensions) {
 // not documented), then VideoToolbox will fall back on software decoding
 // internally. If that happens, the likely solution is to expand the scope of
 // this initialization.
-void InitializeVideoToolbox() {
+static bool InitializeVideoToolboxInternal() {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDisableAcceleratedVideoDecode)) {
-    return;
+          switches::kDisableAcceleratedVideoDecode)) {
+    return false;
   }
 
   if (!IsVtInitialized()) {
@@ -100,7 +101,7 @@ void InitializeVideoToolbox() {
     paths[kModuleVt].push_back(FILE_PATH_LITERAL(
         "/System/Library/Frameworks/VideoToolbox.framework/VideoToolbox"));
     if (!InitializeStubs(paths))
-      return;
+      return false;
   }
 
   // Create a decoding session.
@@ -123,8 +124,7 @@ void InitializeVideoToolbox() {
   if (status) {
     OSSTATUS_LOG(ERROR, status) << "Failed to create CMVideoFormatDescription "
                                 << "while initializing VideoToolbox";
-    content_common_gpu_media::UninitializeVt();
-    return;
+    return false;
   }
 
   base::ScopedCFTypeRef<CFMutableDictionaryRef> decoder_config(
@@ -156,9 +156,24 @@ void InitializeVideoToolbox() {
   if (status) {
     OSSTATUS_LOG(ERROR, status) << "Failed to create VTDecompressionSession "
                                 << "while initializing VideoToolbox";
-    content_common_gpu_media::UninitializeVt();
-    return;
+    return false;
   }
+
+  return true;
+}
+
+bool InitializeVideoToolbox() {
+  // InitializeVideoToolbox() is called during GPU process sandbox warmup,
+  // and then only from the GPU process main thread.
+  static bool attempted = false;
+  static bool succeeded = false;
+
+  if (!attempted) {
+    attempted = true;
+    succeeded = InitializeVideoToolboxInternal();
+  }
+
+  return succeeded;
 }
 
 // Route decoded frame callbacks back into the VTVideoDecodeAccelerator.
@@ -229,7 +244,7 @@ bool VTVideoDecodeAccelerator::Initialize(
   DCHECK(gpu_thread_checker_.CalledOnValidThread());
   client_ = client;
 
-  if (!IsVtInitialized())
+  if (!InitializeVideoToolbox())
     return false;
 
   // Only H.264 is supported.
@@ -246,9 +261,10 @@ bool VTVideoDecodeAccelerator::Initialize(
 bool VTVideoDecodeAccelerator::FinishDelayedFrames() {
   DCHECK(decoder_thread_.message_loop_proxy()->BelongsToCurrentThread());
   if (session_) {
-    OSStatus status = VTDecompressionSessionFinishDelayedFrames(session_);
+    OSStatus status = VTDecompressionSessionWaitForAsynchronousFrames(session_);
     if (status) {
-      NOTIFY_STATUS("VTDecompressionSessionFinishDelayedFrames()", status);
+      NOTIFY_STATUS("VTDecompressionSessionWaitForAsynchronousFrames()",
+                    status);
       return false;
     }
   }
@@ -318,7 +334,8 @@ bool VTVideoDecodeAccelerator::ConfigureDecoder() {
   base::ScopedCFTypeRef<CFMutableDictionaryRef> image_config(
       BuildImageConfig(coded_dimensions));
 
-  // TODO(sandersd): Does the old session need to be flushed first?
+  if (!FinishDelayedFrames())
+    return false;
   session_.reset();
   status = VTDecompressionSessionCreate(
       kCFAllocatorDefault,
@@ -330,6 +347,18 @@ bool VTVideoDecodeAccelerator::ConfigureDecoder() {
   if (status) {
     NOTIFY_STATUS("VTDecompressionSessionCreate()", status);
     return false;
+  }
+
+  // Report whether hardware decode is being used.
+  base::ScopedCFTypeRef<CFBooleanRef> using_hardware;
+  if (VTSessionCopyProperty(
+          session_,
+          // kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder
+          CFSTR("UsingHardwareAcceleratedVideoDecoder"),
+          kCFAllocatorDefault,
+          using_hardware.InitializeInto()) == 0) {
+    UMA_HISTOGRAM_BOOLEAN("Media.VTVDA.HardwareAccelerated",
+                          CFBooleanGetValue(using_hardware));
   }
 
   return true;
@@ -357,6 +386,7 @@ void VTVideoDecodeAccelerator::DecodeTask(
   // Locate relevant NALUs and compute the size of the rewritten data. Also
   // record any parameter sets for VideoToolbox initialization.
   bool config_changed = false;
+  bool has_slice = false;
   size_t data_size = 0;
   std::vector<media::H264NALU> nalus;
   parser_.SetStream(buf, size);
@@ -401,18 +431,14 @@ void VTVideoDecodeAccelerator::DecodeTask(
       case media::H264NALU::kSliceDataA:
       case media::H264NALU::kSliceDataB:
       case media::H264NALU::kSliceDataC:
-        DLOG(ERROR) << "Coded slide data partitions not implemented.";
-        NotifyError(PLATFORM_FAILURE);
-        return;
-
       case media::H264NALU::kNonIDRSlice:
         // TODO(sandersd): Check that there has been an IDR slice since the
         // last reset.
       case media::H264NALU::kIDRSlice:
-        {
-          // TODO(sandersd): Make sure this only happens once per frame.
-          DCHECK_EQ(frame->pic_order_cnt, 0);
-
+        // Compute the |pic_order_cnt| for the picture from the first slice.
+        // TODO(sandersd): Make sure that any further slices are part of the
+        // same picture or a redundant coded picture.
+        if (!has_slice) {
           media::H264SliceHeader slice_hdr;
           result = parser_.ParseSliceHeader(nalu, &slice_hdr);
           if (result != media::H264Parser::kOk) {
@@ -451,6 +477,7 @@ void VTVideoDecodeAccelerator::DecodeTask(
                                              kMaxReorderQueueSize - 1);
           }
         }
+        has_slice = true;
       default:
         nalus.push_back(nalu);
         data_size += kNALUHeaderLength + nalu.size;
@@ -472,9 +499,9 @@ void VTVideoDecodeAccelerator::DecodeTask(
       return;
   }
 
-  // If there are no non-configuration units, drop the bitstream buffer by
-  // returning an empty frame.
-  if (!data_size) {
+  // If there are no image slices, drop the bitstream buffer by returning an
+  // empty frame.
+  if (!has_slice) {
     if (!FinishDelayedFrames())
       return;
     gpu_task_runner_->PostTask(FROM_HERE, base::Bind(

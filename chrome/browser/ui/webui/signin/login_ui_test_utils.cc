@@ -46,7 +46,7 @@ class SignInObserver : public SigninTracker::Observer {
     EXPECT_TRUE(seen_);
   }
 
-  virtual void SigninFailed(const GoogleServiceAuthError& error) override {
+  void SigninFailed(const GoogleServiceAuthError& error) override {
     DVLOG(1) << "Google signin failed.";
     seen_ = true;
     if (!running_)
@@ -55,10 +55,9 @@ class SignInObserver : public SigninTracker::Observer {
     running_ = false;
   }
 
-  virtual void MergeSessionComplete(
-      const GoogleServiceAuthError& error) override {}
+  void MergeSessionComplete(const GoogleServiceAuthError& error) override {}
 
-  virtual void SigninSuccess() override {
+  void SigninSuccess() override {
     DVLOG(1) << "Google signin succeeded.";
     seen_ = true;
     signed_in_ = true;
@@ -128,14 +127,20 @@ bool SignInWithUI(Browser* browser,
       SigninTrackerFactory::CreateForProfile(browser->profile(),
                                              &signin_observer);
 
-  GURL signin_url = signin::GetPromoURL(signin::SOURCE_START_PAGE, false);
+  GURL signin_url = signin::GetPromoURL(
+      signin_metrics::SOURCE_START_PAGE, false);
   DVLOG(1) << "Navigating to " << signin_url;
-  content::WindowedNotificationObserver observer(
-    content::NOTIFICATION_LOAD_STOP,
-    content::NotificationService::AllSources());
-  ui_test_utils::NavigateToURL(browser, signin_url);
-  observer.Wait();
-  // Wait until the signin page is ready.
+  // For some tests, the window is not shown yet and this might be the first tab
+  // navigation, so GetActiveWebContents() for CURRENT_TAB is NULL. That's why
+  // we use NEW_FOREGROUND_TAB rather than the CURRENT_TAB used by default in
+  // ui_test_utils::NavigateToURL().
+  ui_test_utils::NavigateToURLWithDisposition(
+        browser,
+        signin_url,
+        NEW_FOREGROUND_TAB,
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+
+  DVLOG(1) << "Wait for login UI to be ready.";
   WaitUntilUIReady(browser);
   DVLOG(1) << "Sign in user: " << username;
   ExecuteJsToSigninInSigninFrame(browser, username, password);

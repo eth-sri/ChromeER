@@ -107,6 +107,10 @@ StoragePartition* MockRenderProcessHost::GetStoragePartition() const {
 void MockRenderProcessHost::AddWord(const base::string16& word) {
 }
 
+bool MockRenderProcessHost::Shutdown(int exit_code, bool wait) {
+  return true;
+}
+
 bool MockRenderProcessHost::FastShutdownIfPossible() {
   // We aren't actually going to do anything, but set |fast_shutdown_started_|
   // to true so that tests know we've been called.
@@ -228,6 +232,20 @@ const base::TimeTicks& MockRenderProcessHost::GetInitTimeForNavigationMetrics()
     const {
   static base::TimeTicks dummy_time = base::TimeTicks::Now();
   return dummy_time;
+}
+
+bool MockRenderProcessHost::SubscribeUniformEnabled() const {
+  return false;
+}
+
+void MockRenderProcessHost::OnAddSubscription(unsigned int target) {
+}
+
+void MockRenderProcessHost::OnRemoveSubscription(unsigned int target) {
+}
+
+void MockRenderProcessHost::SendUpdateValueState(
+    unsigned int target, const gpu::ValueState& state) {
 }
 
 void MockRenderProcessHost::FilterURL(bool empty_allowed, GURL* url) {

@@ -23,6 +23,22 @@
         'dns_prefetch/common/prefetch_messages.h',
       ],
     },
+    {
+      # GN version: //components/dns_prefetch/browser
+      'target_name': 'dns_prefetch_browser',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        '../content/content.gyp:content_browser',
+        '../net/net.gyp:net',
+      ],
+      'sources': [
+        'dns_prefetch/browser/net_message_filter.cc',
+        'dns_prefetch/browser/net_message_filter.h',
+      ],
+    },
   ],
   'conditions': [
     ['OS!="ios"', {
@@ -37,10 +53,13 @@
           'dependencies': [
             'dns_prefetch_common',
             '../content/content.gyp:content_renderer',
+            '../third_party/WebKit/public/blink.gyp:blink',
           ],
           'sources': [
             'dns_prefetch/renderer/predictor_queue.cc',
             'dns_prefetch/renderer/predictor_queue.h',
+            'dns_prefetch/renderer/prescient_networking_dispatcher.cc',
+            'dns_prefetch/renderer/prescient_networking_dispatcher.h',
             'dns_prefetch/renderer/renderer_net_predictor.cc',
             'dns_prefetch/renderer/renderer_net_predictor.h',
           ],

@@ -50,7 +50,6 @@
         'accelerators/platform_accelerator.h',
         'accelerators/platform_accelerator_cocoa.h',
         'accelerators/platform_accelerator_cocoa.mm',
-        'android/system_ui_resource_manager.h',
         'android/system_ui_resource_type.h',
         'android/ui_base_jni_registrar.cc',
         'android/ui_base_jni_registrar.h',
@@ -189,6 +188,8 @@
         'dragdrop/os_exchange_data_provider_mac.mm',
         'dragdrop/os_exchange_data_provider_win.cc',
         'dragdrop/os_exchange_data_provider_win.h',
+        'font_helper_chromeos.cc',
+        'font_helper_chromeos.h',
         'hit_test.h',
         'ime/candidate_window.cc',
         'ime/candidate_window.h',
@@ -329,7 +330,6 @@
         'nine_image_painter_factory.h',
         'page_transition_types.cc',
         'page_transition_types.h',
-        'page_transition_types_list.h',
         'resource/data_pack.cc',
         'resource/data_pack.h',
         'resource/resource_bundle.cc',
@@ -347,6 +347,8 @@
         'text/bytes_formatting.h',
         'theme_provider.cc',
         'theme_provider.h',
+        'touch/selection_bound.cc',
+        'touch/selection_bound.h',
         'touch/touch_device.cc',
         'touch/touch_device.h',
         'touch/touch_device_android.cc',
@@ -474,6 +476,8 @@
         ['use_ozone==1', {
           'dependencies': [
             '../ozone/ozone.gyp:ozone_base',
+            '../events/devices/events_devices.gyp:events_devices',
+            '../events/ozone/events_ozone.gyp:events_ozone_layout',
           ],
         }],
         ['use_aura==1 and OS=="win"', {

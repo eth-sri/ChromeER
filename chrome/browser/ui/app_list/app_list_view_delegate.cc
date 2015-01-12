@@ -11,6 +11,7 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/metrics/user_metrics.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "chrome/browser/apps/scoped_keep_alive.h"
 #include "chrome/browser/browser_process.h"
@@ -42,6 +43,7 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/speech_recognition_session_preamble.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
@@ -157,7 +159,13 @@ AppListViewDelegate::AppListViewDelegate(AppListControllerDelegate* controller)
     : controller_(controller),
       profile_(NULL),
       model_(NULL),
+      is_voice_query_(false),
       scoped_observer_(this) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::AppListViewDelegate"));
+
   CHECK(controller_);
   // The SigninManagerFactor and the SigninManagers are observed to keep the
   // profile switcher menu up to date, with the correct list of profiles and the
@@ -167,6 +175,12 @@ AppListViewDelegate::AppListViewDelegate(AppListControllerDelegate* controller)
   // Start observing all already-created SigninManagers.
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   std::vector<Profile*> profiles = profile_manager->GetLoadedProfiles();
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::AppListViewDelegate1"));
+
   for (std::vector<Profile*>::iterator i = profiles.begin();
        i != profiles.end();
        ++i) {
@@ -178,14 +192,37 @@ AppListViewDelegate::AppListViewDelegate(AppListControllerDelegate* controller)
     }
   }
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::AppListViewDelegate2"));
+
   profile_manager->GetProfileInfoCache().AddObserver(this);
   speech_ui_.reset(new app_list::SpeechUIModel);
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile3(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::AppListViewDelegate3"));
+
 #if defined(GOOGLE_CHROME_BUILD)
-  speech_ui_->set_logo(
+  gfx::ImageSkia image =
       *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-          IDR_APP_LIST_GOOGLE_LOGO_VOICE_SEARCH));
+          IDR_APP_LIST_GOOGLE_LOGO_VOICE_SEARCH);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile31(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::AppListViewDelegate31"));
+
+  speech_ui_->set_logo(image);
 #endif
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile32(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::AppListViewDelegate32"));
 
   registrar_.Add(this,
                  chrome::NOTIFICATION_APP_TERMINATING,
@@ -206,10 +243,20 @@ AppListViewDelegate::~AppListViewDelegate() {
 }
 
 void AppListViewDelegate::SetProfile(Profile* new_profile) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::SetProfile"));
+
   if (profile_ == new_profile)
     return;
 
   if (profile_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+    tracked_objects::ScopedTracker tracking_profile1(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "431326 AppListViewDelegate::SetProfile1"));
+
     // Note: |search_resource_manager_| has a reference to |speech_ui_| so must
     // be destroyed first.
     search_resource_manager_.reset();
@@ -228,9 +275,19 @@ void AppListViewDelegate::SetProfile(Profile* new_profile) {
 
   profile_ = new_profile;
   if (!profile_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "431326 AppListViewDelegate::SetProfile2"));
+
     speech_ui_->SetSpeechRecognitionState(app_list::SPEECH_RECOGNITION_OFF);
     return;
   }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile3(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::SetProfile3"));
 
   model_ =
       app_list::AppListSyncableServiceFactory::GetForProfile(profile_)->model();
@@ -242,6 +299,11 @@ void AppListViewDelegate::SetProfile(Profile* new_profile) {
   SetUpSearchUI();
   SetUpProfileSwitcher();
   SetUpCustomLauncherPages();
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
+  tracked_objects::ScopedTracker tracking_profile4(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "431326 AppListViewDelegate::SetProfile4"));
 
   // Clear search query.
   model_->search_box()->SetText(base::string16());
@@ -324,10 +386,11 @@ void AppListViewDelegate::OnHotwordStateChanged(bool started) {
   }
 }
 
-void AppListViewDelegate::OnHotwordRecognized() {
+void AppListViewDelegate::OnHotwordRecognized(
+    const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble) {
   DCHECK_EQ(app_list::SPEECH_RECOGNITION_HOTWORD_LISTENING,
             speech_ui_->state());
-  ToggleSpeechRecognition();
+  ToggleSpeechRecognitionForHotword(preamble);
 }
 
 void AppListViewDelegate::SigninManagerCreated(SigninManagerBase* manager) {
@@ -418,7 +481,7 @@ void AppListViewDelegate::GetShortcutPathForApp(
 
 void AppListViewDelegate::StartSearch() {
   if (search_controller_) {
-    search_controller_->Start();
+    search_controller_->Start(is_voice_query_);
     controller_->OnSearchStarted();
   }
 }
@@ -451,6 +514,8 @@ base::TimeDelta AppListViewDelegate::GetAutoLaunchTimeout() {
 void AppListViewDelegate::AutoLaunchCanceled() {
   base::RecordAction(base::UserMetricsAction("AppList_AutoLaunchCanceled"));
   auto_launch_timeout_ = base::TimeDelta();
+  // Cancelling the auto launch means we are no longer in a voice query.
+  is_voice_query_ = false;
 }
 
 void AppListViewDelegate::ViewInitialized() {
@@ -541,10 +606,15 @@ void AppListViewDelegate::OpenFeedback() {
 }
 
 void AppListViewDelegate::ToggleSpeechRecognition() {
+  ToggleSpeechRecognitionForHotword(nullptr);
+}
+
+void AppListViewDelegate::ToggleSpeechRecognitionForHotword(
+    const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble) {
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
   if (service)
-    service->ToggleSpeechRecognition();
+    service->ToggleSpeechRecognition(preamble);
 
   // With the new hotword extension, stop the hotword session. With the launcher
   // and NTP, this is unnecessary since the hotwording is implicitly stopped.
@@ -575,6 +645,7 @@ void AppListViewDelegate::OnSpeechResult(const base::string16& result,
   if (is_final) {
     auto_launch_timeout_ = base::TimeDelta::FromMilliseconds(
         kAutoLaunchDefaultTimeoutMilliSec);
+    is_voice_query_ = true;
     model_->search_box()->SetText(result);
   }
 }
@@ -655,6 +726,11 @@ std::vector<views::View*> AppListViewDelegate::CreateCustomPageWebViews(
 void AppListViewDelegate::CustomLauncherPageAnimationChanged(double progress) {
   if (launcher_page_event_dispatcher_)
     launcher_page_event_dispatcher_->ProgressChanged(progress);
+}
+
+void AppListViewDelegate::CustomLauncherPagePopSubpage() {
+  if (launcher_page_event_dispatcher_)
+    launcher_page_event_dispatcher_->PopSubpage();
 }
 #endif
 

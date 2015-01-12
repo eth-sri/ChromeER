@@ -260,15 +260,16 @@ CopyTextureCHROMIUMResourceManager::CopyTextureCHROMIUMResourceManager()
       framebuffer_(0u) {}
 
 CopyTextureCHROMIUMResourceManager::~CopyTextureCHROMIUMResourceManager() {
-  DCHECK(!buffer_id_);
-  DCHECK(!framebuffer_);
+  // |buffer_id_| and |framebuffer_| can be not-null because when GPU context is
+  // lost, this class can be deleted without releasing resources like
+  // GLES2DecoderImpl.
 }
 
 void CopyTextureCHROMIUMResourceManager::Initialize(
     const gles2::GLES2Decoder* decoder) {
-  COMPILE_ASSERT(
+  static_assert(
       kVertexPositionAttrib == 0u,
-      Position_attribs_must_be_0);
+      "kVertexPositionAttrib must be 0");
   DCHECK(!buffer_id_);
   DCHECK(!framebuffer_);
   DCHECK(programs_.empty());
@@ -330,7 +331,8 @@ void CopyTextureCHROMIUMResourceManager::DoCopyTexture(
   // format of internalformat.
   // https://www.khronos.org/opengles/sdk/docs/man/xhtml/glCopyTexImage2D.xml
   bool source_format_contain_superset_of_dest_format =
-      source_internal_format == dest_internal_format ||
+      (source_internal_format == dest_internal_format &&
+       source_internal_format != GL_BGRA_EXT) ||
       (source_internal_format == GL_RGBA && dest_internal_format == GL_RGB);
   // GL_TEXTURE_RECTANGLE_ARB on FBO is supported by OpenGL, not GLES2,
   // so restrict this to GL_TEXTURE_2D.

@@ -72,16 +72,20 @@ void SigninManagerFactory::RegisterProfilePrefs(
       prefs::kGoogleServicesLastUsername,
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterInt64Pref(
+      prefs::kGoogleServicesRefreshTokenAnnotateScheduledTime,
+      base::Time().ToInternalValue(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kGoogleServicesSigninScopedDeviceId,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
       prefs::kGoogleServicesUserAccountId,
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterStringPref(
       prefs::kGoogleServicesUsername,
-      std::string(),
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-  registry->RegisterStringPref(
-      prefs::kGoogleServicesSigninScopedDeviceId,
       std::string(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
@@ -131,7 +135,9 @@ KeyedService* SigninManagerFactory::BuildServiceInstanceFor(
   service = new SigninManagerBase(client);
 #else
   service = new SigninManager(
-      client, ProfileOAuth2TokenServiceFactory::GetForProfile(profile));
+      client,
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+      AccountTrackerServiceFactory::GetForProfile(profile));
 #endif
   service->Initialize(g_browser_process->local_state());
   FOR_EACH_OBSERVER(Observer, observer_list_, SigninManagerCreated(service));

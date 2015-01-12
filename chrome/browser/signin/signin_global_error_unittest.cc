@@ -36,8 +36,6 @@ class SigninGlobalErrorTest : public testing::Test {
                               FakeSigninManagerBase::Build);
     profile_ = builder.Build();
 
-    profile_->GetPrefs()->SetString(
-        prefs::kGoogleServicesUsername, kTestAccountId);
     SigninManagerFactory::GetForProfile(profile_.get())
         ->SetAuthenticatedUsername(kTestAccountId);
 
@@ -112,8 +110,8 @@ TEST_F(SigninGlobalErrorTest, AuthStatusEnumerateAllErrors) {
     { GoogleServiceAuthError::SERVICE_ERROR, true },
     { GoogleServiceAuthError::WEB_LOGIN_REQUIRED, true },
   };
-  COMPILE_ASSERT(arraysize(table) == GoogleServiceAuthError::NUM_STATES,
-      kTable_size_does_not_match_number_of_auth_error_types);
+  static_assert(arraysize(table) == GoogleServiceAuthError::NUM_STATES,
+      "table size should match number of auth error types");
 
   for (size_t i = 0; i < arraysize(table); ++i) {
     FakeAuthStatusProvider provider(error_controller_);

@@ -17,7 +17,7 @@ def _IssueMarkerAndScroll(action_runner):
 def _CreatePageClassWithSmoothInteractions(page_cls):
   class DerivedSmoothPage(page_cls):  # pylint: disable=W0232
 
-    def RunSmoothness(self, action_runner):
+    def RunPageInteractions(self, action_runner):
       _IssueMarkerAndScroll(action_runner)
   return DerivedSmoothPage
 
@@ -31,7 +31,7 @@ class TopSmoothPage(page_module.Page):
     self.user_agent_type = 'desktop'
     self.credentials = credentials
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     _IssueMarkerAndScroll(action_runner)
 
 
@@ -39,7 +39,7 @@ class GmailSmoothPage(top_pages.GmailPage):
 
   """ Why: productivity, top google properties """
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     action_runner.ExecuteJavaScript('''
         gmonkey.load('2.0', function(api) {
           window.__scrollableElementForTelemetry = api.getScrollableElement();
@@ -57,7 +57,7 @@ class GoogleCalendarSmoothPage(top_pages.GoogleCalendarPage):
 
   """ Why: productivity, top google properties """
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     interaction = action_runner.BeginGestureInteraction(
         'ScrollAction', is_smooth=True)
     action_runner.ScrollElement(selector='#scrolltimedeventswk')
@@ -68,7 +68,7 @@ class GoogleDocSmoothPage(top_pages.GoogleDocPage):
 
   """ Why: productivity, top google properties; Sample doc in the link """
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     interaction = action_runner.BeginGestureInteraction(
         'ScrollAction', is_smooth=True)
     action_runner.ScrollElement(selector='.kix-appview-editor')
@@ -79,7 +79,7 @@ class ESPNSmoothPage(top_pages.ESPNPage):
 
   """ Why: #1 sports """
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     interaction = action_runner.BeginGestureInteraction(
         'ScrollAction', is_smooth=True)
     action_runner.ScrollPage(left_start_ratio=0.1)
@@ -96,35 +96,35 @@ class Top25SmoothPageSet(page_set_module.PageSet):
         archive_data_file='data/top_25.json',
         bucket=page_set_module.PARTNER_BUCKET)
 
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.GoogleWebSearchPage)(self))
-    self.AddPage(GmailSmoothPage(self))
-    self.AddPage(GoogleCalendarSmoothPage(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(GmailSmoothPage(self))
+    self.AddUserStory(GoogleCalendarSmoothPage(self))
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.GoogleImageSearchPage)(self))
-    self.AddPage(GoogleDocSmoothPage(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(GoogleDocSmoothPage(self))
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.GooglePlusPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.YoutubePage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.BlogspotPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.WordpressPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.FacebookPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.LinkedinPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.WikipediaPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.TwitterPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.PinterestPage)(self))
-    self.AddPage(ESPNSmoothPage(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(ESPNSmoothPage(self))
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.WeatherPage)(self))
-    self.AddPage(_CreatePageClassWithSmoothInteractions(
+    self.AddUserStory(_CreatePageClassWithSmoothInteractions(
         top_pages.YahooGamesPage)(self))
 
     other_urls = [
@@ -148,4 +148,4 @@ class Top25SmoothPageSet(page_set_module.PageSet):
     ]
 
     for url in other_urls:
-      self.AddPage(TopSmoothPage(url, self))
+      self.AddUserStory(TopSmoothPage(url, self))

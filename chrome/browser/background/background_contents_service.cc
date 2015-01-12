@@ -168,16 +168,15 @@ void NotificationImageReady(
   // Origin URL must be different from the crashed extension to avoid the
   // conflict. NotificationSystemObserver will cancel all notifications from
   // the same origin when NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED.
-  // TODO(mukai, dewittj): remove this and switch to message center
-  // notifications.
-  DesktopNotificationService::AddIconNotification(
-      GURL("chrome://extension-crash"),  // Origin URL.
-      base::string16(),                  // Title of notification.
-      message,
-      notification_icon,
-      base::UTF8ToUTF16(delegate->id()),  // Replace ID.
-      delegate.get(),
-      profile);
+  Notification notification(GURL("chrome://extension-crash"),
+                            base::string16(),
+                            message,
+                            notification_icon,
+                            base::string16(),
+                            base::UTF8ToUTF16(delegate->id()),
+                            delegate.get());
+
+  g_browser_process->notification_ui_manager()->Add(notification, profile);
 }
 #endif
 
@@ -254,7 +253,8 @@ const char kFrameNameKey[] = "name";
 int BackgroundContentsService::restart_delay_in_ms_ = 3000;  // 3 seconds.
 
 BackgroundContentsService::BackgroundContentsService(
-    Profile* profile, const CommandLine* command_line)
+    Profile* profile,
+    const base::CommandLine* command_line)
     : prefs_(NULL), extension_registry_observer_(this) {
   // Don't load/store preferences if the parent profile is incognito.
   if (!profile->IsOffTheRecord())
@@ -623,6 +623,7 @@ void BackgroundContentsService::LoadBackgroundContents(
   BackgroundContents* contents = CreateBackgroundContents(
       SiteInstance::CreateForURL(profile, url),
       MSG_ROUTING_NONE,
+      MSG_ROUTING_NONE,
       profile,
       frame_name,
       application_id,
@@ -638,13 +639,15 @@ void BackgroundContentsService::LoadBackgroundContents(
 BackgroundContents* BackgroundContentsService::CreateBackgroundContents(
     SiteInstance* site,
     int routing_id,
+    int main_frame_route_id,
     Profile* profile,
     const base::string16& frame_name,
     const base::string16& application_id,
     const std::string& partition_id,
     content::SessionStorageNamespace* session_storage_namespace) {
   BackgroundContents* contents = new BackgroundContents(
-      site, routing_id, this, partition_id, session_storage_namespace);
+      site, routing_id, main_frame_route_id, this, partition_id,
+      session_storage_namespace);
 
   // Register the BackgroundContents internally, then send out a notification
   // to external listeners.

@@ -42,7 +42,7 @@ class SchedulerClient {
   virtual void ScheduledActionCommit() = 0;
   virtual void ScheduledActionActivateSyncTree() = 0;
   virtual void ScheduledActionBeginOutputSurfaceCreation() = 0;
-  virtual void ScheduledActionManageTiles() = 0;
+  virtual void ScheduledActionPrepareTiles() = 0;
   virtual void DidAnticipatedDrawTimeChange(base::TimeTicks time) = 0;
   virtual base::TimeDelta DrawDurationEstimate() = 0;
   virtual base::TimeDelta BeginMainFrameToCommitDurationEstimate() = 0;
@@ -119,7 +119,7 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
 
   void SetNeedsAnimate();
 
-  void SetNeedsManageTiles();
+  void SetNeedsPrepareTiles();
 
   void SetMaxSwapsPending(int max);
   void DidSwapBuffers();
@@ -128,9 +128,9 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
   void SetImplLatencyTakesPriority(bool impl_latency_takes_priority);
 
   void NotifyReadyToCommit();
-  void BeginMainFrameAborted(bool did_handle);
+  void BeginMainFrameAborted(CommitEarlyOutReason reason);
 
-  void DidManageTiles();
+  void DidPrepareTiles();
   void DidLoseOutputSurface();
   void DidCreateAndInitializeOutputSurface();
 
@@ -143,8 +143,8 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
 
   bool CommitPending() const { return state_machine_.CommitPending(); }
   bool RedrawPending() const { return state_machine_.RedrawPending(); }
-  bool ManageTilesPending() const {
-    return state_machine_.ManageTilesPending();
+  bool PrepareTilesPending() const {
+    return state_machine_.PrepareTilesPending();
   }
   bool MainThreadIsInHighLatencyMode() const {
     return state_machine_.MainThreadIsInHighLatencyMode();
@@ -152,8 +152,6 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
   bool BeginImplFrameDeadlinePending() const {
     return !begin_impl_frame_deadline_task_.IsCancelled();
   }
-
-  bool WillDrawIfNeeded() const;
 
   base::TimeTicks AnticipatedDrawTime() const;
 
@@ -202,16 +200,16 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
 
   base::TimeDelta estimated_parent_draw_time_;
 
-  bool begin_retro_frame_posted_;
   std::deque<BeginFrameArgs> begin_retro_frame_args_;
   BeginFrameArgs begin_impl_frame_args_;
+  SchedulerStateMachine::BeginImplFrameDeadlineMode
+      begin_impl_frame_deadline_mode_;
 
   base::Closure begin_retro_frame_closure_;
-  base::Closure begin_unthrottled_frame_closure_;
-
   base::Closure begin_impl_frame_deadline_closure_;
   base::Closure poll_for_draw_triggers_closure_;
   base::Closure advance_commit_state_closure_;
+  base::CancelableClosure begin_retro_frame_task_;
   base::CancelableClosure begin_impl_frame_deadline_task_;
   base::CancelableClosure poll_for_draw_triggers_task_;
   base::CancelableClosure advance_commit_state_task_;
@@ -221,10 +219,8 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
   SchedulerStateMachine::Action inside_action_;
 
  private:
-  base::TimeTicks AdjustedBeginImplFrameDeadline(
-      const BeginFrameArgs& args,
-      base::TimeDelta draw_duration_estimate) const;
-  void ScheduleBeginImplFrameDeadline(base::TimeTicks deadline);
+  void ScheduleBeginImplFrameDeadline();
+  void RescheduleBeginImplFrameDeadlineIfNeeded();
   void SetupNextBeginFrameIfNeeded();
   void PostBeginRetroFrameIfNeeded();
   void SetupPollingMechanisms(bool needs_begin_frame);

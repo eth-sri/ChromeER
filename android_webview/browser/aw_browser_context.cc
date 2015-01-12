@@ -141,7 +141,7 @@ void AwBrowserContext::PreMainMessageLoopRun() {
               data_reduction_proxy::DataReductionProxyParams::kAllowed)));
   data_reduction_proxy_event_store_.reset(
       new DataReductionProxyEventStore(
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)));
   scoped_ptr<DataReductionProxyConfigService>
       data_reduction_proxy_config_service(
           new DataReductionProxyConfigService(
@@ -347,7 +347,10 @@ content::PushMessagingService* AwBrowserContext::GetPushMessagingService() {
 }
 
 content::SSLHostStateDelegate* AwBrowserContext::GetSSLHostStateDelegate() {
-  return NULL;
+  if (!ssl_host_state_delegate_.get()) {
+    ssl_host_state_delegate_.reset(new AwSSLHostStateDelegate());
+  }
+  return ssl_host_state_delegate_.get();
 }
 
 void AwBrowserContext::RebuildTable(

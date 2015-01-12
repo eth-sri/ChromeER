@@ -57,10 +57,25 @@ void BindRenderbuffer(GLenum target, GLuint renderbuffer) {
   }
 }
 
+void BindSampler(GLuint unit, GLuint sampler) {
+  gles2::cmds::BindSampler* c = GetCmdSpace<gles2::cmds::BindSampler>();
+  if (c) {
+    c->Init(unit, sampler);
+  }
+}
+
 void BindTexture(GLenum target, GLuint texture) {
   gles2::cmds::BindTexture* c = GetCmdSpace<gles2::cmds::BindTexture>();
   if (c) {
     c->Init(target, texture);
+  }
+}
+
+void BindTransformFeedback(GLenum target, GLuint transformfeedback) {
+  gles2::cmds::BindTransformFeedback* c =
+      GetCmdSpace<gles2::cmds::BindTransformFeedback>();
+  if (c) {
+    c->Init(target, transformfeedback);
   }
 }
 
@@ -342,6 +357,15 @@ void DeleteRenderbuffersImmediate(GLsizei n, const GLuint* renderbuffers) {
   }
 }
 
+void DeleteSamplersImmediate(GLsizei n, const GLuint* samplers) {
+  const uint32_t size = gles2::cmds::DeleteSamplersImmediate::ComputeSize(n);
+  gles2::cmds::DeleteSamplersImmediate* c =
+      GetImmediateCmdSpaceTotalSize<gles2::cmds::DeleteSamplersImmediate>(size);
+  if (c) {
+    c->Init(n, samplers);
+  }
+}
+
 void DeleteShader(GLuint shader) {
   gles2::cmds::DeleteShader* c = GetCmdSpace<gles2::cmds::DeleteShader>();
   if (c) {
@@ -355,6 +379,17 @@ void DeleteTexturesImmediate(GLsizei n, const GLuint* textures) {
       GetImmediateCmdSpaceTotalSize<gles2::cmds::DeleteTexturesImmediate>(size);
   if (c) {
     c->Init(n, textures);
+  }
+}
+
+void DeleteTransformFeedbacksImmediate(GLsizei n, const GLuint* ids) {
+  const uint32_t size =
+      gles2::cmds::DeleteTransformFeedbacksImmediate::ComputeSize(n);
+  gles2::cmds::DeleteTransformFeedbacksImmediate* c =
+      GetImmediateCmdSpaceTotalSize<
+          gles2::cmds::DeleteTransformFeedbacksImmediate>(size);
+  if (c) {
+    c->Init(n, ids);
   }
 }
 
@@ -524,12 +559,32 @@ void GenRenderbuffersImmediate(GLsizei n, GLuint* renderbuffers) {
   }
 }
 
+void GenSamplersImmediate(GLsizei n, GLuint* samplers) {
+  const uint32_t size = gles2::cmds::GenSamplersImmediate::ComputeSize(n);
+  gles2::cmds::GenSamplersImmediate* c =
+      GetImmediateCmdSpaceTotalSize<gles2::cmds::GenSamplersImmediate>(size);
+  if (c) {
+    c->Init(n, samplers);
+  }
+}
+
 void GenTexturesImmediate(GLsizei n, GLuint* textures) {
   const uint32_t size = gles2::cmds::GenTexturesImmediate::ComputeSize(n);
   gles2::cmds::GenTexturesImmediate* c =
       GetImmediateCmdSpaceTotalSize<gles2::cmds::GenTexturesImmediate>(size);
   if (c) {
     c->Init(n, textures);
+  }
+}
+
+void GenTransformFeedbacksImmediate(GLsizei n, GLuint* ids) {
+  const uint32_t size =
+      gles2::cmds::GenTransformFeedbacksImmediate::ComputeSize(n);
+  gles2::cmds::GenTransformFeedbacksImmediate* c =
+      GetImmediateCmdSpaceTotalSize<
+          gles2::cmds::GenTransformFeedbacksImmediate>(size);
+  if (c) {
+    c->Init(n, ids);
   }
 }
 
@@ -677,6 +732,28 @@ void GetRenderbufferParameteriv(GLenum target,
   }
 }
 
+void GetSamplerParameterfv(GLuint sampler,
+                           GLenum pname,
+                           uint32_t params_shm_id,
+                           uint32_t params_shm_offset) {
+  gles2::cmds::GetSamplerParameterfv* c =
+      GetCmdSpace<gles2::cmds::GetSamplerParameterfv>();
+  if (c) {
+    c->Init(sampler, pname, params_shm_id, params_shm_offset);
+  }
+}
+
+void GetSamplerParameteriv(GLuint sampler,
+                           GLenum pname,
+                           uint32_t params_shm_id,
+                           uint32_t params_shm_offset) {
+  gles2::cmds::GetSamplerParameteriv* c =
+      GetCmdSpace<gles2::cmds::GetSamplerParameteriv>();
+  if (c) {
+    c->Init(sampler, pname, params_shm_id, params_shm_offset);
+  }
+}
+
 void GetShaderiv(GLuint shader,
                  GLenum pname,
                  uint32_t params_shm_id,
@@ -813,6 +890,36 @@ void Hint(GLenum target, GLenum mode) {
   }
 }
 
+void InvalidateFramebufferImmediate(GLenum target,
+                                    GLsizei count,
+                                    const GLenum* attachments) {
+  const uint32_t size =
+      gles2::cmds::InvalidateFramebufferImmediate::ComputeSize(count);
+  gles2::cmds::InvalidateFramebufferImmediate* c =
+      GetImmediateCmdSpaceTotalSize<
+          gles2::cmds::InvalidateFramebufferImmediate>(size);
+  if (c) {
+    c->Init(target, count, attachments);
+  }
+}
+
+void InvalidateSubFramebufferImmediate(GLenum target,
+                                       GLsizei count,
+                                       const GLenum* attachments,
+                                       GLint x,
+                                       GLint y,
+                                       GLsizei width,
+                                       GLsizei height) {
+  const uint32_t size =
+      gles2::cmds::InvalidateSubFramebufferImmediate::ComputeSize(count);
+  gles2::cmds::InvalidateSubFramebufferImmediate* c =
+      GetImmediateCmdSpaceTotalSize<
+          gles2::cmds::InvalidateSubFramebufferImmediate>(size);
+  if (c) {
+    c->Init(target, count, attachments, x, y, width, height);
+  }
+}
+
 void IsBuffer(GLuint buffer,
               uint32_t result_shm_id,
               uint32_t result_shm_offset) {
@@ -856,6 +963,15 @@ void IsRenderbuffer(GLuint renderbuffer,
   }
 }
 
+void IsSampler(GLuint sampler,
+               uint32_t result_shm_id,
+               uint32_t result_shm_offset) {
+  gles2::cmds::IsSampler* c = GetCmdSpace<gles2::cmds::IsSampler>();
+  if (c) {
+    c->Init(sampler, result_shm_id, result_shm_offset);
+  }
+}
+
 void IsShader(GLuint shader,
               uint32_t result_shm_id,
               uint32_t result_shm_offset) {
@@ -874,6 +990,16 @@ void IsTexture(GLuint texture,
   }
 }
 
+void IsTransformFeedback(GLuint transformfeedback,
+                         uint32_t result_shm_id,
+                         uint32_t result_shm_offset) {
+  gles2::cmds::IsTransformFeedback* c =
+      GetCmdSpace<gles2::cmds::IsTransformFeedback>();
+  if (c) {
+    c->Init(transformfeedback, result_shm_id, result_shm_offset);
+  }
+}
+
 void LineWidth(GLfloat width) {
   gles2::cmds::LineWidth* c = GetCmdSpace<gles2::cmds::LineWidth>();
   if (c) {
@@ -888,6 +1014,14 @@ void LinkProgram(GLuint program) {
   }
 }
 
+void PauseTransformFeedback() {
+  gles2::cmds::PauseTransformFeedback* c =
+      GetCmdSpace<gles2::cmds::PauseTransformFeedback>();
+  if (c) {
+    c->Init();
+  }
+}
+
 void PixelStorei(GLenum pname, GLint param) {
   gles2::cmds::PixelStorei* c = GetCmdSpace<gles2::cmds::PixelStorei>();
   if (c) {
@@ -899,6 +1033,13 @@ void PolygonOffset(GLfloat factor, GLfloat units) {
   gles2::cmds::PolygonOffset* c = GetCmdSpace<gles2::cmds::PolygonOffset>();
   if (c) {
     c->Init(factor, units);
+  }
+}
+
+void ReadBuffer(GLenum src) {
+  gles2::cmds::ReadBuffer* c = GetCmdSpace<gles2::cmds::ReadBuffer>();
+  if (c) {
+    c->Init(src);
   }
 }
 
@@ -939,10 +1080,58 @@ void RenderbufferStorage(GLenum target,
   }
 }
 
+void ResumeTransformFeedback() {
+  gles2::cmds::ResumeTransformFeedback* c =
+      GetCmdSpace<gles2::cmds::ResumeTransformFeedback>();
+  if (c) {
+    c->Init();
+  }
+}
+
 void SampleCoverage(GLclampf value, GLboolean invert) {
   gles2::cmds::SampleCoverage* c = GetCmdSpace<gles2::cmds::SampleCoverage>();
   if (c) {
     c->Init(value, invert);
+  }
+}
+
+void SamplerParameterf(GLuint sampler, GLenum pname, GLfloat param) {
+  gles2::cmds::SamplerParameterf* c =
+      GetCmdSpace<gles2::cmds::SamplerParameterf>();
+  if (c) {
+    c->Init(sampler, pname, param);
+  }
+}
+
+void SamplerParameterfvImmediate(GLuint sampler,
+                                 GLenum pname,
+                                 const GLfloat* params) {
+  const uint32_t size = gles2::cmds::SamplerParameterfvImmediate::ComputeSize();
+  gles2::cmds::SamplerParameterfvImmediate* c =
+      GetImmediateCmdSpaceTotalSize<gles2::cmds::SamplerParameterfvImmediate>(
+          size);
+  if (c) {
+    c->Init(sampler, pname, params);
+  }
+}
+
+void SamplerParameteri(GLuint sampler, GLenum pname, GLint param) {
+  gles2::cmds::SamplerParameteri* c =
+      GetCmdSpace<gles2::cmds::SamplerParameteri>();
+  if (c) {
+    c->Init(sampler, pname, param);
+  }
+}
+
+void SamplerParameterivImmediate(GLuint sampler,
+                                 GLenum pname,
+                                 const GLint* params) {
+  const uint32_t size = gles2::cmds::SamplerParameterivImmediate::ComputeSize();
+  gles2::cmds::SamplerParameterivImmediate* c =
+      GetImmediateCmdSpaceTotalSize<gles2::cmds::SamplerParameterivImmediate>(
+          size);
+  if (c) {
+    c->Init(sampler, pname, params);
   }
 }
 
@@ -1652,10 +1841,26 @@ void BeginQueryEXT(GLenum target,
   }
 }
 
+void BeginTransformFeedback(GLenum primitivemode) {
+  gles2::cmds::BeginTransformFeedback* c =
+      GetCmdSpace<gles2::cmds::BeginTransformFeedback>();
+  if (c) {
+    c->Init(primitivemode);
+  }
+}
+
 void EndQueryEXT(GLenum target, GLuint submit_count) {
   gles2::cmds::EndQueryEXT* c = GetCmdSpace<gles2::cmds::EndQueryEXT>();
   if (c) {
     c->Init(target, submit_count);
+  }
+}
+
+void EndTransformFeedback() {
+  gles2::cmds::EndTransformFeedback* c =
+      GetCmdSpace<gles2::cmds::EndTransformFeedback>();
+  if (c) {
+    c->Init();
   }
 }
 
@@ -1984,11 +2189,11 @@ void ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) {
   }
 }
 
-void TraceBeginCHROMIUM(GLuint bucket_id) {
+void TraceBeginCHROMIUM(GLuint category_bucket_id, GLuint name_bucket_id) {
   gles2::cmds::TraceBeginCHROMIUM* c =
       GetCmdSpace<gles2::cmds::TraceBeginCHROMIUM>();
   if (c) {
-    c->Init(bucket_id);
+    c->Init(category_bucket_id, name_bucket_id);
   }
 }
 
@@ -2123,6 +2328,13 @@ void ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
     c->Init(plane_z_order, plane_transform, overlay_texture_id, bounds_x,
             bounds_y, bounds_width, bounds_height, uv_x, uv_y, uv_width,
             uv_height);
+  }
+}
+
+void SwapInterval(GLint interval) {
+  gles2::cmds::SwapInterval* c = GetCmdSpace<gles2::cmds::SwapInterval>();
+  if (c) {
+    c->Init(interval);
   }
 }
 

@@ -12,6 +12,7 @@ const char kAboutPage[] = "about_page";
 const char kAllFrames[] = "all_frames";
 const char kAltKey[] = "altKey";
 const char kApp[] = "app";
+const char kAppIconColor[] = "app.icon_color";
 const char kAutomation[] = "automation";
 const char kBackgroundAllowJsAccess[] = "background.allow_js_access";
 const char kBackgroundPage[] = "background.page";
@@ -23,6 +24,7 @@ const char kBookmarkUI[] = "bookmarks_ui";
 const char kBrowserAction[] = "browser_action";
 const char kChromeURLOverrides[] = "chrome_url_overrides";
 const char kCommands[] = "commands";
+const char kContentCapabilities[] = "content_capabilities";
 const char kContentPack[] = "content_pack";
 const char kContentPackSites[] = "sites";
 const char kContentScripts[] = "content_scripts";
@@ -125,7 +127,6 @@ const char kRequirements[] = "requirements";
 const char kRunAt[] = "run_at";
 const char kSandboxedPages[] = "sandbox.pages";
 const char kSandboxedPagesCSP[] = "sandbox.content_security_policy";
-const char kScriptBadge[] = "script_badge";
 const char kSettingsOverride[] = "chrome_settings_overrides";
 const char kSettingsOverrideAlternateUrls[] =
     "chrome_settings_overrides.search_provider.alternate_urls";
@@ -170,6 +171,7 @@ const char kUpdateURL[] = "update_url";
 const char kUrlHandlers[] = "url_handlers";
 const char kUrlHandlerTitle[] = "title";
 const char kVersion[] = "version";
+const char kVersionName[] = "version_name";
 const char kWebAccessibleResources[] = "web_accessible_resources";
 const char kWebURLs[] = "app.urls";
 const char kWebview[] = "webview";
@@ -222,7 +224,6 @@ const char kRunAtDocumentIdle[] = "document_idle";
 const char kPageActionCommandEvent[] = "_execute_page_action";
 const char kPageActionTypeTab[] = "tab";
 const char kPageActionTypePermanent[] = "permanent";
-const char kScriptBadgeCommandEvent[] = "_execute_script_badge";
 const char kLaunchContainerPanel[] = "panel";
 const char kLaunchContainerTab[] = "tab";
 const char kLaunchContainerWindow[] = "window";
@@ -268,15 +269,12 @@ const char kChromeVersionTooLow[] =
 const char kDisabledByPolicy[] =
     "This extension has been disabled by your administrator.";
 const char kExpectString[] = "Expect string value.";
-const char kExperimentalFlagRequired[] =
-    "Loading extensions with 'experimental' permission is turned off by "
-    "default. You can enable 'Experimental Extension APIs' "
-    "by visiting chrome://flags.";
 const char kInvalidAboutPage[] = "Invalid value for 'about_page'.";
 const char kInvalidAboutPageExpectRelativePath[] =
     "Invalid value for 'about_page'. Value must be a relative path.";
 const char kInvalidAllFrames[] =
     "Invalid value for 'content_scripts[*].all_frames'.";
+const char kInvalidAppIconColor[] = "Invalid value for app.icon_color.";
 const char kInvalidBackground[] =
     "Invalid value for 'background_page'.";
 const char kInvalidBackgroundAllowJsAccess[] =
@@ -302,6 +300,14 @@ const char kInvalidChromeURLOverrides[] =
     "Invalid value for 'chrome_url_overrides'.";
 const char kInvalidCommandsKey[] =
     "Invalid value for 'commands'.";
+const char kInvalidContentCapabilities[] =
+    "Invalid value for 'content_capabilities'.";
+const char kInvalidContentCapabilitiesMatch[] =
+    "Invalid content_capabilities URL pattern: *";
+const char kInvalidContentCapabilitiesMatchOrigin[] =
+    "Domain wildcards are not allowed for content_capabilities URL patterns.";
+const char kInvalidContentCapabilitiesPermission[] =
+    "Invalid content_capabilities permission: *.";
 const char kInvalidContentPack[] =
     "Invalid value for 'content_pack'.";
 const char kInvalidContentPackSites[] =
@@ -536,8 +542,6 @@ const char kInvalidSandboxedPage[] =
     "Invalid value for 'sandbox.pages[*]'.";
 const char kInvalidSandboxedPagesCSP[] =
     "Invalid value for 'sandbox.content_security_policy'.";
-const char kInvalidScriptBadge[] =
-    "Invalid value for 'script_badge'.";
 const char kInvalidSearchEngineMissingKeys[] =
     "Missing mandatory parameters for "
     "'chrome_settings_overrides.search_provider'.";
@@ -600,6 +604,7 @@ const char kInvalidURLPatternError[] =
 const char kInvalidVersion[] =
     "Required value 'version' is missing or invalid. It must be between 1-4 "
     "dot-separated integers each between 0 and 65536.";
+const char kInvalidVersionName[] = "Invalid value for 'version_name'.";
 const char kInvalidWebAccessibleResourcesList[] =
     "Invalid value for 'web_accessible_resources'.";
 const char kInvalidWebAccessibleResource[] =
@@ -677,14 +682,6 @@ const char kPermissionUnknownOrMalformed[] =
     "Permission '*' is unknown or URL pattern is malformed.";
 const char kReservedMessageFound[] =
     "Reserved key * found in message catalog.";
-const char kScriptBadgeRequiresFlag[] =
-    "The script_badge manifest key is turned off by default. "
-    "You can enable it with the --enable-script-badges command-line flag.";
-const char kScriptBadgeIconIgnored[] =
-    "default_icon specified in script_badge manifest section will not be used.";
-const char kScriptBadgeTitleIgnored[] =
-    "default_title specified in script_badge manifest section will not be "
-    "used.";
 const char kUnrecognizedManifestKey[] = "Unrecognized manifest key '*'.";
 const char kUnrecognizedManifestProperty[] =
     "Unrecognized property '*' of manifest key '*'.";

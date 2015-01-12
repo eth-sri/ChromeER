@@ -206,7 +206,6 @@ void ExtensionMessageFilter::OnExtensionCreateMimeHandlerViewGuest(
   create_params.SetString(mime_handler_view::kSrc, src);
   create_params.SetString(mime_handler_view::kContentUrl, content_url);
   manager->CreateGuest(MimeHandlerViewGuest::Type,
-                       "",
                        embedder_web_contents,
                        create_params,
                        callback);
@@ -322,10 +321,8 @@ void ExtensionMessageFilter::MimeHandlerViewGuestCreatedCallback(
                        guest_instance_id,
                        attach_params);
 
-  IPC::Message* msg =
-      new ExtensionMsg_CreateMimeHandlerViewGuestACK(element_instance_id);
-  msg->set_routing_id(rfh->GetRoutingID());
-  rfh->Send(msg);
+  rfh->Send(
+      new ExtensionMsg_CreateMimeHandlerViewGuestACK(element_instance_id));
 }
 
 }  // namespace extensions

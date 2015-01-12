@@ -280,11 +280,11 @@ const char kDisableIPv6[]                   = "disable-ipv6";
 const char kDisableMinimizeOnSecondLauncherItemClick[] =
     "disable-minimize-on-second-launcher-item-click";
 
+// Disables the new bookmark app system.
+const char kDisableNewBookmarkApps[]   = "disable-new-bookmark-apps";
+
 // Disables the menu on the NTP for accessing sessions from other devices.
 const char kDisableNTPOtherSessionsMenu[]   = "disable-ntp-other-sessions-menu";
-
-// Disables the Material Design NTP.
-const char kDisableMaterialDesignNTP[]      = "disable-material-design-ntp";
 
 // Disable auto-reload of error pages if offline.
 const char kDisableOfflineAutoReload[]       = "disable-offline-auto-reload";
@@ -363,10 +363,6 @@ const char kDisableSupervisedUserSafeSites[] =
 // Disables syncing browser data to a Google Account.
 const char kDisableSync[]                   = "disable-sync";
 
-// Disable synced notifications.
-const char kDisableSyncSyncedNotifications[] =
-    "disable-sync-synced-notifications";
-
 // Disables syncing one or more sync data types that are on by default.
 // See sync/internal_api/public/base/model_type.h for possible types. Types
 // should be comma separated, and follow the naming convention for string
@@ -402,7 +398,7 @@ const char kDnsPrefetchDisable[]            = "dns-prefetch-disable";
 const char kDumpBrowserHistograms[]         = "dump-browser-histograms";
 
 // Overrides the path of Easy Unlock component app.
-extern const char kEasyUnlockAppPath[]      = "easy-unlock-app-path";
+const char kEasyUnlockAppPath[]             = "easy-unlock-app-path";
 
 // If set, the app list will be enabled as if enabled from CWS.
 const char kEnableAppList[]                 = "enable-app-list";
@@ -447,14 +443,14 @@ const char kEnableDomainReliability[]          = "enable-domain-reliability";
 // Enable Enhanced Bookmarks.
 const char kEnhancedBookmarksExperiment[] = "enhanced-bookmarks-experiment";
 
-// Enables experimentation with ephemeral apps, which are launched without
-// installing in Chrome.
-const char kEnableEphemeralApps[]           = "enable-ephemeral-apps";
+// Enables experimentation with ephemeral apps to be launched from the webstore.
+const char kEnableEphemeralAppsInWebstore[] =
+    "enable-ephemeral-apps-in-webstore";
 
-// Enables v2 hotword detection features. These features include
+// Disables v2 hotword detection features. These features include
 // using a new component extension for performing hotword detection, new UI
 // flows, and always-on detection.
-const char kEnableExperimentalHotwording[]  = "enable-experimental-hotwording";
+const char kDisableExperimentalHotwording[] = "disable-experimental-hotwording";
 
 // Enables experimental hotword features specific to always-on.
 const char kEnableExperimentalHotwordHardware[] = "enable-hotword-hardware";
@@ -486,9 +482,6 @@ const char kEnableNaCl[]                    = "enable-nacl";
 
 // Enables the network-related benchmarking extensions.
 const char kEnableNetBenchmarking[]         = "enable-net-benchmarking";
-
-// Enables the Material Design NTP.
-const char kEnableMaterialDesignNTP[]       = "enable-material-design-ntp";
 
 // Enables NPN with HTTP. It means NPN is enabled but SPDY won't be used.
 // HTTP is still used for all requests.
@@ -607,9 +600,6 @@ const char kEnableSSLConnectJobWaiting[] = "enable-ssl-connect-job-waiting";
 // proceeds in the background.
 const char kEnableStaleWhileRevalidate[]    = "enable-stale-while-revalidate";
 
-// Enables an experimental hosted app experience.
-const char kEnableStreamlinedHostedApps[]   = "enable-streamlined-hosted-apps";
-
 // Enables the suggestions service.
 const char kEnableSuggestionsService[]      = "enable-suggestions-service";
 
@@ -620,10 +610,6 @@ const char kEnableSupervisedUserBlacklist[] =
 // Enables SafeSites filtering for supervised users.
 const char kEnableSupervisedUserSafeSites[] =
     "enable-supervised-user-safesites";
-
-// Enables synced notifications.
-const char kEnableSyncSyncedNotifications[] =
-    "enable-sync-synced-notifications";
 
 // Enables synced articles.
 const char kEnableSyncArticles[]            = "enable-sync-articles";
@@ -642,8 +628,15 @@ const char kEnableTranslateNewUX[]         = "enable-translate-new-ux";
 const char kEnableUserAlternateProtocolPorts[] =
     "enable-user-controlled-alternate-protocol-ports";
 
+// Enables a new "web app" style frame for hosted apps (including bookmark
+// apps).
+extern const char kEnableWebAppFrame[] = "enable-web-app-frame";
+
 // Enables the Website Settings page on the Settings page.
 const char kEnableWebsiteSettingsManager[]  = "enable-website-settings-manager";
+
+// Enables synchronizing WiFi credentials across devices, using Chrome Sync.
+const char kEnableWifiCredentialSync[]      = "enable-wifi-credential-sync";
 
 // Explicitly allows additional ports using a comma-separated list of port
 // numbers.
@@ -773,6 +766,10 @@ const char kInstantProcess[]                = "instant-process";
 // Invalidation service should use GCM network channel even if experiment is not
 // enabled.
 const char kInvalidationUseGCMChannel[]     = "invalidation-use-gcm-channel";
+
+// Disable latest shipping ECMAScript 6 features.
+const char kDisableJavaScriptHarmonyShipping[] =
+    "disable-javascript-harmony-shipping";
 
 // Enables experimental Harmony (ECMAScript 6) features.
 const char kJavaScriptHarmony[]             = "javascript-harmony";
@@ -1019,6 +1016,11 @@ const char kRecordMode[]                    = "record-mode";
 // time delta to remember certificates should be specified in seconds.
 const char kRememberCertErrorDecisions[]    = "remember-cert-error-decisions";
 
+// Requires presence of Certificate Transparency for Extended Validation
+// certificates. Enforce the policy detailed at:
+// http://dev.chromium.org/Home/chromium-security/certificate-transparency
+const char kRequireCTForEV[] = "require-ct-for-ev";
+
 // If set, the app list will forget it has been installed on startup. Note this
 // doesn't prevent the app list from running, it just makes Chrome think the app
 // list hasn't been enabled (as in kEnableAppList) yet.
@@ -1079,17 +1081,20 @@ const char kSilentDebuggerExtensionAPI[]    = "silent-debugger-extension-api";
 // one wishes to use Chrome as an ash server.
 const char kSilentLaunch[]                  = "silent-launch";
 
-// Simulates an update being available.
-const char kSimulateUpgrade[]               = "simulate-upgrade";
+// Simulates that elevation is needed to recover upgrade channel.
+const char kSimulateElevatedRecovery[]      = "simulate-elevated-recovery";
 
 // Simulates a critical update being available.
 const char kSimulateCriticalUpdate[]        = "simulate-critical-update";
 
 // Simulates that current version is outdated.
-const char kSimulateOutdated[]               = "simulate-outdated";
+const char kSimulateOutdated[]              = "simulate-outdated";
 
 // Simulates that current version is outdated and auto-update is off.
-const char kSimulateOutdatedNoAU[]           = "simulate-outdated-no-au";
+const char kSimulateOutdatedNoAU[]          = "simulate-outdated-no-au";
+
+// Simulates an update being available.
+const char kSimulateUpgrade[]               = "simulate-upgrade";
 
 // Speculative resource prefetching.
 const char kSpeculativeResourcePrefetching[] =
@@ -1304,10 +1309,17 @@ const char kMigrateDataDirForSxS[]          = "migrate-data-dir-for-sxs";
 // Prevents Chrome from quitting when Chrome Apps are open.
 const char kAppsKeepChromeAliveInTests[]    = "apps-keep-chrome-alive-in-tests";
 
+// Shows a notification when quitting Chrome with hosted apps running. Default
+// behavior is to also quit all hosted apps.
+const char kHostedAppQuitNotification[] = "enable-hosted-app-quit-notification";
+
 // Forcibly disables Lion-style on newer OSes, to allow developers to test the
 // older, SnowLeopard-style fullscreen.
 const char kDisableSystemFullscreenForTesting[] =
     "disable-system-fullscreen-for-testing";
+
+// Enables app shim creation for hosted apps on Mac.
+const char kEnableHostedAppShimCreation[] = "enable-hosted-app-shim-creation";
 
 // A process type (switches::kProcessType) that relaunches the browser. See
 // chrome/browser/mac/relauncher.h.
@@ -1362,15 +1374,16 @@ const char kFileManagerExtensionPath[]      = "filemgr-ext-path";
 
 bool AboutInSettingsEnabled() {
   return SettingsWindowEnabled() &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kDisableAboutInSettings);
+         !base::CommandLine::ForCurrentProcess()->HasSwitch(
+             ::switches::kDisableAboutInSettings);
 }
 
 bool OutOfProcessPdfEnabled() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(kEnableOutOfProcessPdf))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kEnableOutOfProcessPdf))
     return true;
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(kDisableOutOfProcessPdf))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          kDisableOutOfProcessPdf))
     return false;
 
   // Default.
@@ -1379,17 +1392,17 @@ bool OutOfProcessPdfEnabled() {
 
 bool SettingsWindowEnabled() {
 #if defined(OS_CHROMEOS)
-  return !CommandLine::ForCurrentProcess()->HasSwitch(
+  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
       ::switches::kDisableSettingsWindow);
 #else
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       ::switches::kEnableSettingsWindow);
 #endif
 }
 
 #if defined(OS_CHROMEOS)
 bool PowerOverlayEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       ::switches::kEnablePowerOverlay);
 }
 #endif

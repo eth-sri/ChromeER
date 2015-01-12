@@ -299,18 +299,20 @@ class ChromeProxyHTTPToDirectFallback(ChromeProxyValidation):
         '--spdy-proxy-auth-origin=http://nonexistent.googlezip.net')
 
   def WillNavigateToPage(self, page, tab):
-    super(ChromeProxyHTTPToDirectFallback, self).WillNavigateToPage(page, tab)
     # Attempt to load a page through the nonexistent primary proxy in order to
     # cause a proxy fallback, and have this test run starting from the HTTP
     # fallback proxy.
     tab.Navigate(_TEST_SERVER_DEFAULT_URL)
     tab.WaitForJavaScriptExpression('performance.timing.loadEventStart', 300)
-
     proxies = [
         'nonexistent.googlezip.net:80',
         self._metrics.effective_proxies['fallback'],
         self._metrics.effective_proxies['direct']]
+    # TODO(sclittle): Remove this dependency on net-internals#proxy once an
+    # alternative method of verifying that Chrome is on the fallback proxy
+    # exists.
     self._metrics.VerifyProxyInfo(tab, proxies, proxies[:1])
+    super(ChromeProxyHTTPToDirectFallback, self).WillNavigateToPage(page, tab)
 
   def AddResults(self, tab, results):
     self._metrics.AddResultsForHTTPToDirectFallback(tab, results)

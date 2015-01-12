@@ -23,8 +23,10 @@
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
+#include "third_party/skia/include/core/SkPixelSerializer.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/utils/SkNullCanvas.h"
+#include "third_party/skia/include/utils/SkPictureUtils.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -34,36 +36,39 @@ namespace cc {
 
 namespace {
 
-SkData* EncodeBitmap(size_t* offset, const SkBitmap& bm) {
-  const int kJpegQuality = 80;
-  std::vector<unsigned char> data;
+class BitmapSerializer : public SkPixelSerializer {
+ protected:
+  bool onUseEncodedData(const void* data, size_t len) override { return true; }
 
-  // If bitmap is opaque, encode as JPEG.
-  // Otherwise encode as PNG.
-  bool encoding_succeeded = false;
-  if (bm.isOpaque()) {
-    SkAutoLockPixels lock_bitmap(bm);
-    if (bm.empty())
-      return NULL;
+  SkData* onEncodePixels(const SkImageInfo& info,
+                         const void* pixels,
+                         size_t row_bytes) override {
+    const int kJpegQuality = 80;
+    std::vector<unsigned char> data;
 
-    encoding_succeeded = gfx::JPEGCodec::Encode(
-        reinterpret_cast<unsigned char*>(bm.getAddr32(0, 0)),
-        gfx::JPEGCodec::FORMAT_SkBitmap,
-        bm.width(),
-        bm.height(),
-        bm.rowBytes(),
-        kJpegQuality,
-        &data);
-  } else {
-    encoding_succeeded = gfx::PNGCodec::EncodeBGRASkBitmap(bm, false, &data);
+    // If bitmap is opaque, encode as JPEG.
+    // Otherwise encode as PNG.
+    bool encoding_succeeded = false;
+    if (info.isOpaque()) {
+      encoding_succeeded =
+          gfx::JPEGCodec::Encode(reinterpret_cast<const unsigned char*>(pixels),
+                                 gfx::JPEGCodec::FORMAT_SkBitmap, info.width(),
+                                 info.height(), row_bytes, kJpegQuality, &data);
+    } else {
+      SkBitmap bm;
+      // The cast is ok, since we only read the bm.
+      if (!bm.installPixels(info, const_cast<void*>(pixels), row_bytes)) {
+        return nullptr;
+      }
+      encoding_succeeded = gfx::PNGCodec::EncodeBGRASkBitmap(bm, false, &data);
+    }
+
+    if (encoding_succeeded) {
+      return SkData::NewWithCopy(&data.front(), data.size());
+    }
+    return nullptr;
   }
-
-  if (encoding_succeeded) {
-    *offset = 0;
-    return SkData::NewWithCopy(&data.front(), data.size());
-  }
-  return NULL;
-}
+};
 
 bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
   const unsigned char* data = static_cast<const unsigned char *>(buffer);
@@ -120,7 +125,7 @@ scoped_refptr<Picture> Picture::CreateFromSkpValue(const base::Value* value) {
   if (skpicture == NULL)
     return NULL;
 
-  gfx::Rect layer_rect(skpicture->width(), skpicture->height());
+  gfx::Rect layer_rect(gfx::SkIRectToRect(skpicture->cullRect().roundOut()));
   return make_scoped_refptr(new Picture(skpicture, layer_rect));
 }
 
@@ -174,22 +179,23 @@ Picture::~Picture() {
     TRACE_DISABLED_BY_DEFAULT("cc.debug"), "cc::Picture", this);
 }
 
-bool Picture::IsSuitableForGpuRasterization() const {
+bool Picture::IsSuitableForGpuRasterization(const char** reason) const {
   DCHECK(picture_);
 
-  // TODO(alokp): SkPicture::suitableForGpuRasterization needs a GrContext.
-  // Ideally this GrContext should be the same as that for rasterizing this
-  // picture. But we are on the main thread while the rasterization context
-  // may be on the compositor or raster thread.
-  // SkPicture::suitableForGpuRasterization is not implemented yet.
-  // Pass a NULL context for now and discuss with skia folks if the context
-  // is really needed.
-  return picture_->suitableForGpuRasterization(NULL);
+  // TODO(hendrikw): SkPicture::suitableForGpuRasterization takes a GrContext.
+  // Currently the GrContext isn't used, and should probably be removed from
+  // skia.
+  return picture_->suitableForGpuRasterization(nullptr, reason);
 }
 
 int Picture::ApproximateOpCount() const {
   DCHECK(picture_);
   return picture_->approximateOpCount();
+}
+
+size_t Picture::ApproximateMemoryUsage() const {
+  DCHECK(picture_);
+  return SkPictureUtils::ApproximateBytesUsed(picture_.get());
 }
 
 bool Picture::HasText() const {
@@ -338,7 +344,7 @@ int Picture::Raster(SkCanvas* canvas,
   if (callback) {
     // If we have a callback, we need to call |draw()|, |drawPicture()| doesn't
     // take a callback.  This is used by |AnalysisCanvas| to early out.
-    picture_->draw(canvas, callback);
+    picture_->playback(canvas, callback);
   } else {
     // Prefer to call |drawPicture()| on the canvas since it could place the
     // entire picture on the canvas instead of parsing the skia operations.
@@ -356,7 +362,7 @@ int Picture::Raster(SkCanvas* canvas,
 void Picture::Replay(SkCanvas* canvas) {
   TRACE_EVENT_BEGIN0("cc", "Picture::Replay");
   DCHECK(picture_);
-  picture_->draw(canvas);
+  picture_->playback(canvas);
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   TRACE_EVENT_END1("cc", "Picture::Replay",
@@ -365,7 +371,8 @@ void Picture::Replay(SkCanvas* canvas) {
 
 scoped_ptr<base::Value> Picture::AsValue() const {
   SkDynamicMemoryWStream stream;
-  picture_->serialize(&stream, &EncodeBitmap);
+  BitmapSerializer serializer;
+  picture_->serialize(&stream, &serializer);
 
   // Encode the picture as base64.
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());

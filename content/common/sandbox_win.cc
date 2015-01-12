@@ -57,12 +57,15 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"cooliris.dll",                // CoolIris.
   L"dockshellhook.dll",           // Stardock Objectdock.
   L"easyhook32.dll",              // GDIPP and others.
+  L"esspd.dll",                   // Samsung Smart Security ESCORT.
   L"googledesktopnetwork3.dll",   // Google Desktop Search v5.
   L"fwhook.dll",                  // PC Tools Firewall Plus.
   L"hookprocesscreation.dll",     // Blumentals Program protector.
   L"hookterminateapis.dll",       // Blumentals and Cyberprinter.
   L"hookprintapis.dll",           // Cyberprinter.
   L"imon.dll",                    // NOD32 Antivirus.
+  L"icatcdll.dll",                // Samsung Smart Security ESCORT.
+  L"icdcnl.dll",                  // Samsung Smart Security ESCORT.
   L"ioloHL.dll",                  // Iolo (System Mechanic).
   L"kloehk.dll",                  // Kaspersky Internet Security.
   L"lawenforcer.dll",             // Spyware-Browser AntiSpyware (Spybro).
@@ -602,11 +605,11 @@ base::Process StartSandboxedProcess(
   if ((delegate && !delegate->ShouldSandbox()) ||
       browser_command_line.HasSwitch(switches::kNoSandbox) ||
       cmd_line->HasSwitch(switches::kNoSandbox)) {
-    base::ProcessHandle handle = 0;
-    base::LaunchProcess(*cmd_line, base::LaunchOptions(), &handle);
+    base::Process process =
+        base::LaunchProcess(*cmd_line, base::LaunchOptions());
     // TODO(rvargas) crbug.com/417532: Don't share a raw handle.
-    g_broker_services->AddTargetPeer(handle);
-    return base::Process(handle);
+    g_broker_services->AddTargetPeer(process.Handle());
+    return process.Pass();
   }
 
   sandbox::TargetPolicy* policy = g_broker_services->CreatePolicy();
@@ -617,10 +620,9 @@ base::Process StartSandboxedProcess(
                                          sandbox::MITIGATION_DEP_NO_ATL_THUNK |
                                          sandbox::MITIGATION_SEHOP;
 
- if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
-     type_str == switches::kRendererProcess &&
-     browser_command_line.HasSwitch(
-        switches::kEnableWin32kRendererLockDown)) {
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
+      type_str == switches::kRendererProcess &&
+      switches::IsWin32kRendererLockdownEnabled()) {
     if (policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
                         sandbox::TargetPolicy::FAKE_USER_GDI_INIT,
                         NULL) != sandbox::SBOX_ALL_OK) {

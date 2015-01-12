@@ -318,8 +318,9 @@ QuicClientSession::~QuicClientSession() {
     UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.MaxReorderingTimeLongRtt",
                                 reordering, 0, kMaxReordering, 50);
   }
-  UMA_HISTOGRAM_COUNTS("Net.QuicSession.MaxReordering",
-                       stats.max_sequence_reordering);
+  UMA_HISTOGRAM_COUNTS(
+      "Net.QuicSession.MaxReordering",
+      static_cast<base::HistogramBase::Sample>(stats.max_sequence_reordering));
 }
 
 void QuicClientSession::OnStreamFrames(
@@ -451,7 +452,7 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
   // Report the TLS cipher suite that most closely resembles the crypto
   // parameters of the QUIC connection.
   QuicTag aead = crypto_stream_->crypto_negotiated_params().aead;
-  int cipher_suite;
+  uint16 cipher_suite;
   int security_bits;
   switch (aead) {
     case kAESG:
@@ -467,9 +468,7 @@ bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
       return false;
   }
   int ssl_connection_status = 0;
-  ssl_connection_status |=
-      (cipher_suite & SSL_CONNECTION_CIPHERSUITE_MASK) <<
-       SSL_CONNECTION_CIPHERSUITE_SHIFT;
+  ssl_connection_status |= cipher_suite;
   ssl_connection_status |=
       (SSL_CONNECTION_VERSION_QUIC & SSL_CONNECTION_VERSION_MASK) <<
        SSL_CONNECTION_VERSION_SHIFT;
@@ -762,6 +761,7 @@ void QuicClientSession::StartReading() {
                          read_buffer_->size(),
                          base::Bind(&QuicClientSession::OnReadComplete,
                                     weak_factory_.GetWeakPtr()));
+  UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.AsyncRead", rv == ERR_IO_PENDING);
   if (rv == ERR_IO_PENDING) {
     num_packets_read_ = 0;
     return;

@@ -8,6 +8,7 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.test.FlakyTest;
 import android.test.suitebuilder.annotation.MediumTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.text.Editable;
@@ -398,7 +399,9 @@ public class ImeTest extends ContentShellTestBase {
         assertTrue(ev.isShiftPressed());
     }
 
-    @SmallTest
+    // http://crbug.com/445499
+    @FlakyTest
+    // @SmallTest
     @Feature({"TextInput", "Main"})
     public void testKeyCodesWhileComposingText() throws Throwable {
         DOMUtils.focusNode(mWebContents, "textarea");
@@ -468,7 +471,9 @@ public class ImeTest extends ContentShellTestBase {
         assertEquals("", mConnection.getTextBeforeCursor(9, 0));
     }
 
-    @SmallTest
+    // http://crbug.com/445499
+    @FlakyTest
+    // @SmallTest
     @Feature({"TextInput", "Main"})
     public void testKeyCodesWhileSwipingText() throws Throwable {
         DOMUtils.focusNode(mWebContents, "textarea");
@@ -587,6 +592,45 @@ public class ImeTest extends ContentShellTestBase {
         deleteSurroundingText(mConnection, 1, 0);  // DEL on empty still sends 1,0
         assertEquals(KeyEvent.KEYCODE_DEL, mImeAdapter.mLastSyntheticKeyCode);
         assertEquals("", mConnection.getTextBeforeCursor(9, 0));
+    }
+
+    @SmallTest
+    @Feature({"TextInput", "Main"})
+    public void testAccentKeyCodesFromPhysicalKeyboard() throws Throwable {
+        DOMUtils.focusNode(mWebContents, "textarea");
+        assertWaitForKeyboardStatus(true);
+
+        // The calls below are a reflection of what a physical keyboard sends when the noted
+        // key is pressed on the device.  Exercise care when altering to make sure that the test
+        // reflects reality.
+        mConnection = (TestAdapterInputConnection) getAdapterInputConnection();
+        waitAndVerifyEditableCallback(mConnection.mImeUpdateQueue, 0, "", 0, 0, -1, -1);
+
+        // H
+        dispatchKeyEvent(mConnection, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_H));
+        dispatchKeyEvent(mConnection, new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_H));
+        assertEquals("h", mConnection.getTextBeforeCursor(9, 0));
+
+        // I
+        dispatchKeyEvent(mConnection, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_I));
+        dispatchKeyEvent(mConnection, new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_I));
+        assertEquals("hi", mConnection.getTextBeforeCursor(9, 0));
+
+        // ALT-I  (circomflex accent key on virtual keyboard)
+        dispatchKeyEvent(
+                mConnection, new KeyEvent(
+                        0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_I, 0, KeyEvent.META_ALT_ON));
+        dispatchKeyEvent(
+                mConnection, new KeyEvent(
+                        0, 0, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_I, 0, KeyEvent.META_ALT_ON));
+        assertEquals("hiˆ", mConnection.getTextBeforeCursor(9, 0));
+
+        // O  (accented key)
+        dispatchKeyEvent(mConnection, new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_O));
+        assertUpdateStateCall(mConnection, 1000);
+        assertEquals("hi", mConnection.getTextBeforeCursor(9, 0));
+        dispatchKeyEvent(mConnection, new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_O));
+        assertEquals("hiô", mConnection.getTextBeforeCursor(9, 0));
     }
 
     @SmallTest
@@ -905,6 +949,15 @@ public class ImeTest extends ContentShellTestBase {
             @Override
             public void run() {
                 connection.deleteSurroundingText(before, after);
+            }
+        });
+    }
+
+    private void dispatchKeyEvent(final AdapterInputConnection connection, final KeyEvent event) {
+        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+            @Override
+            public void run() {
+                mImeAdapter.dispatchKeyEvent(event);
             }
         });
     }

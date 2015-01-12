@@ -76,7 +76,6 @@ component("ozone") {
     platform_list_cc_file,
     platform_list_h_file,
     constructor_list_cc_file,
-
     "common/display_mode_proxy.cc",
     "common/display_mode_proxy.h",
     "common/display_snapshot_proxy.cc",
@@ -92,6 +91,8 @@ component("ozone") {
     "common/gpu/ozone_gpu_messages.h",
     "common/native_display_delegate_ozone.cc",
     "common/native_display_delegate_ozone.h",
+    "public/input_controller.cc",
+    "public/input_controller.h",
     "public/ozone_platform.cc",
     "public/ozone_platform.h",
     "public/ozone_switches.cc",
@@ -104,24 +105,25 @@ component("ozone") {
 
   defines = [ "OZONE_IMPLEMENTATION" ]
 
-  deps = [
-    ":generate_constructor_list",
-    ":generate_ozone_platform_list",
-    ":ozone_base",
-    "//base",
-    "//ipc",
-    "//skia",
-    "//ui/display/types",
-    "//ui/display/util",
-    "//ui/events",
-    "//ui/events/ozone:events_ozone",
-    "//ui/gfx",
-    "//ui/gfx/geometry",
-    "//ui/gfx/ipc",
-    # TODO(GYP) the GYP version has a way to add additional dependencies via
-    # build flags.
-  ] + ozone_platform_deps
+  deps =
+      [
+        ":generate_constructor_list",
+        ":generate_ozone_platform_list",
+        ":ozone_base",
+        "//base",
+        "//ipc",
+        "//skia",
+        "//ui/display/types",
+        "//ui/display/util",
+        "//ui/events",
+        "//ui/events/ozone:events_ozone",
+        "//ui/gfx",
+        "//ui/gfx/geometry",
+        "//ui/gfx/ipc",
 
+        # TODO(GYP) the GYP version has a way to add additional dependencies via
+        # build flags.
+      ] + ozone_platform_deps
 }
 
 # GYP version: ui/ozone/ozone.gyp:generate_ozone_platform_list
@@ -130,15 +132,16 @@ action("generate_ozone_platform_list") {
   outputs = [
     platform_list_cc_file,
     platform_list_h_file,
-    platform_list_txt_file
+    platform_list_txt_file,
   ]
 
-  args = [
-    "--output_cc=" + rebase_path(platform_list_cc_file, root_build_dir),
-    "--output_h=" + rebase_path(platform_list_h_file, root_build_dir),
-    "--output_txt=" + rebase_path(platform_list_txt_file, root_build_dir),
-    "--default=$ozone_platform",
-  ] + ozone_platforms
+  args =
+      [
+        "--output_cc=" + rebase_path(platform_list_cc_file, root_build_dir),
+        "--output_h=" + rebase_path(platform_list_h_file, root_build_dir),
+        "--output_txt=" + rebase_path(platform_list_txt_file, root_build_dir),
+        "--default=$ozone_platform",
+      ] + ozone_platforms
 }
 
 # GYP version: ui/ozone/ozone.gyp:generate_constructor_list
@@ -160,7 +163,9 @@ action("generate_constructor_list") {
     "--include=\"ui/ozone/public/ozone_platform.h\"",
   ]
 
-  deps = [ ":generate_ozone_platform_list" ]
+  deps = [
+    ":generate_ozone_platform_list",
+  ]
 }
 
 test("ozone_unittests") {
@@ -169,7 +174,7 @@ test("ozone_unittests") {
   ]
 
   deps = [
-    "//base/test:test_support",
-    "//testing/gtest",
-  ] + ozone_platform_test_deps
+           "//base/test:test_support",
+           "//testing/gtest",
+         ] + ozone_platform_test_deps
 }

@@ -22,10 +22,16 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/transform.h"
 #include "ui/views/widget/widget.h"
+
+using wallpaper::WallpaperLayout;
+using wallpaper::WALLPAPER_LAYOUT_CENTER;
+using wallpaper::WALLPAPER_LAYOUT_CENTER_CROPPED;
+using wallpaper::WALLPAPER_LAYOUT_STRETCH;
+using wallpaper::WALLPAPER_LAYOUT_TILE;
 
 namespace ash {
 namespace {

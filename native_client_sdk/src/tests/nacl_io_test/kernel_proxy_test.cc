@@ -527,6 +527,29 @@ TEST_F(KernelProxyTest, MemMountDup) {
   // fd, new_fd, dup_fd -> "/bar"
 }
 
+TEST_F(KernelProxyTest, DescriptorAllocationConsistency) {
+  // Check that the descriptor free list returns the expected ones,
+  // as the order is mandated by POSIX.
+
+  // Open a file to a get a descriptor to copy for this test.
+  // The test makes the assumption at all descriptors
+  // open by default are contiguous starting from zero.
+  int fd = ki_open("/foo", O_CREAT | O_RDWR, 0777);
+  ASSERT_GT(fd, -1);
+
+  // The next descriptor allocated should follow the first.
+  int dup_fd = ki_dup(fd);
+  ASSERT_EQ(fd + 1, dup_fd);
+
+  // Allocate a high descriptor number.
+  ASSERT_EQ(100, ki_dup2(fd, 100));
+
+  // The next descriptor allocate should still come 2 places
+  // after the first.
+  int dup_fd2 = ki_dup(fd);
+  ASSERT_EQ(fd + 2, dup_fd2);
+}
+
 TEST_F(KernelProxyTest, Lstat) {
   int fd = ki_open("/foo", O_CREAT | O_RDWR, 0777);
   ASSERT_GT(fd, -1);
@@ -614,10 +637,15 @@ TEST_F(KernelProxyTest, Utimes) {
   struct stat buf;
   EXPECT_EQ(0, ki_stat("/dummy", &buf));
 
-  EXPECT_GE(buf.st_atime, tm.tv_sec);
-  EXPECT_GE(buf.st_atimensec, tm.tv_usec * 1000);
-  EXPECT_GE(buf.st_mtime, tm.tv_sec);
-  EXPECT_GE(buf.st_mtimensec, tm.tv_usec * 1000);
+  // We just want to check if st_atime >= tm. This is true if atime seconds > tm
+  // seconds (in which case the nanoseconds are irrelevant), or if the seconds
+  // are equal, then this is true if atime nanoseconds >= tm microseconds.
+  EXPECT_TRUE(
+      buf.st_atime > tm.tv_sec ||
+      (buf.st_atime == tm.tv_sec && buf.st_atimensec >= tm.tv_usec * 1000));
+  EXPECT_TRUE(
+      buf.st_mtime > tm.tv_sec ||
+      (buf.st_mtime == tm.tv_sec && buf.st_mtimensec >= tm.tv_usec * 1000));
 }
 
 TEST_F(KernelProxyTest, Utime) {
@@ -645,10 +673,15 @@ TEST_F(KernelProxyTest, Utime) {
   struct stat buf;
   EXPECT_EQ(0, ki_stat("/dummy", &buf));
 
-  EXPECT_GE(buf.st_atime, tm.tv_sec);
-  EXPECT_GE(buf.st_atimensec, tm.tv_usec * 1000);
-  EXPECT_GE(buf.st_mtime, tm.tv_sec);
-  EXPECT_GE(buf.st_mtimensec, tm.tv_usec * 1000);
+  // We just want to check if st_atime >= tm. This is true if atime seconds > tm
+  // seconds (in which case the nanoseconds are irrelevant), or if the seconds
+  // are equal, then this is true if atime nanoseconds >= tm microseconds.
+  EXPECT_TRUE(
+      buf.st_atime > tm.tv_sec ||
+      (buf.st_atime == tm.tv_sec && buf.st_atimensec >= tm.tv_usec * 1000));
+  EXPECT_TRUE(
+      buf.st_mtime > tm.tv_sec ||
+      (buf.st_mtime == tm.tv_sec && buf.st_mtimensec >= tm.tv_usec * 1000));
 }
 
 TEST_F(KernelProxyTest, Umask) {

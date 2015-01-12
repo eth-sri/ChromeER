@@ -51,7 +51,7 @@ class SupervisedUserURLFilter
     BLOCK,
     HISTOGRAM_BOUNDING_VALUE
   };
-  enum FilteringBehaviorSource {
+  enum FilteringBehaviorReason {
     DEFAULT,
     ASYNC_CHECKER,
     BLACKLIST,
@@ -59,7 +59,7 @@ class SupervisedUserURLFilter
   };
 
   typedef base::Callback<void(FilteringBehavior,
-                              FilteringBehaviorSource,
+                              FilteringBehaviorReason,
                               bool /* uncertain */)>
       FilteringBehaviorCallback;
 
@@ -73,6 +73,10 @@ class SupervisedUserURLFilter
   SupervisedUserURLFilter();
 
   static FilteringBehavior BehaviorFromInt(int behavior_value);
+
+  static int GetBlockMessageID(FilteringBehaviorReason reason);
+
+  static bool ReasonIsAutomatic(FilteringBehaviorReason reason);
 
   // Normalizes a URL for matching purposes.
   static GURL Normalize(const GURL& url);
@@ -158,7 +162,7 @@ class SupervisedUserURLFilter
   void SetContents(scoped_ptr<Contents> url_matcher);
 
   FilteringBehavior GetFilteringBehaviorForURL(
-      const GURL& url, bool manual_only, FilteringBehaviorSource* source) const;
+      const GURL& url, bool manual_only, FilteringBehaviorReason* reason) const;
 
   void CheckCallback(const FilteringBehaviorCallback& callback,
                      const GURL& url,

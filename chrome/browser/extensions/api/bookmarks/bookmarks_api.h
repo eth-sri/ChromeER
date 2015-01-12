@@ -39,7 +39,7 @@ struct CreateDetails;
 
 // Observes BookmarkModel and then routes the notifications as events to
 // the extension system.
-class BookmarkEventRouter : public BookmarkModelObserver {
+class BookmarkEventRouter : public bookmarks::BookmarkModelObserver {
  public:
   explicit BookmarkEventRouter(Profile* profile);
   ~BookmarkEventRouter() override;
@@ -303,7 +303,9 @@ class BookmarksIOFunction : public BookmarksFunction,
  public:
   BookmarksIOFunction();
 
-  virtual void FileSelected(const base::FilePath& path, int index, void* params) = 0;
+  void FileSelected(const base::FilePath& path,
+                    int index,
+                    void* params) override = 0;
 
   // ui::SelectFileDialog::Listener:
   void MultiFilesSelected(const std::vector<base::FilePath>& files,

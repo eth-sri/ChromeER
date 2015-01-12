@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <set>
 
 #include "base/debug/trace_event.h"
 #include "cc/base/region.h"
@@ -26,10 +27,6 @@ const bool kDefaultClearCanvasSetting = true;
 }  // namespace
 
 namespace cc {
-
-scoped_refptr<PicturePileImpl> PicturePileImpl::Create() {
-  return make_scoped_refptr(new PicturePileImpl);
-}
 
 scoped_refptr<PicturePileImpl> PicturePileImpl::CreateFromPicturePile(
     const PicturePile* other) {
@@ -265,6 +262,19 @@ skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
 
   return picture;
+}
+
+size_t PicturePileImpl::GetPictureMemoryUsage() const {
+  // Place all pictures in a set to de-dupe.
+  size_t total_size = 0;
+  std::set<const Picture*> pictures_seen;
+  for (const auto& map_value : picture_map_) {
+    const Picture* picture = map_value.second.GetPicture();
+    if (picture && pictures_seen.insert(picture).second)
+      total_size += picture->ApproximateMemoryUsage();
+  }
+
+  return total_size;
 }
 
 void PicturePileImpl::PerformSolidColorAnalysis(

@@ -8,6 +8,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/shell/browser/layout_test/layout_test_browser_context.h"
 #include "content/shell/browser/layout_test/layout_test_message_filter.h"
 #include "content/shell/browser/layout_test/layout_test_notification_manager.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -39,8 +40,7 @@ void RequestDesktopNotificationPermissionOnIO(
 LayoutTestContentBrowserClient::LayoutTestContentBrowserClient() {
   DCHECK(!g_layout_test_browser_client);
 
-  layout_test_notification_manager_.reset(
-      new LayoutTestNotificationManager());
+  layout_test_notification_manager_.reset(new LayoutTestNotificationManager());
 
   g_layout_test_browser_client = this;
 }
@@ -51,6 +51,11 @@ LayoutTestContentBrowserClient::~LayoutTestContentBrowserClient() {
 
 LayoutTestContentBrowserClient* LayoutTestContentBrowserClient::Get() {
   return g_layout_test_browser_client;
+}
+
+LayoutTestBrowserContext*
+LayoutTestContentBrowserClient::GetLayoutTestBrowserContext() {
+  return static_cast<LayoutTestBrowserContext*>(browser_context());
 }
 
 LayoutTestNotificationManager*
@@ -98,26 +103,9 @@ void LayoutTestContentBrowserClient::RequestPermission(
                                                result_callback);
 }
 
-blink::WebNotificationPermission
-LayoutTestContentBrowserClient::CheckDesktopNotificationPermission(
-    const GURL& source_url,
-    ResourceContext* context,
-    int render_process_id) {
-  LayoutTestNotificationManager* manager = GetLayoutTestNotificationManager();
-  if (manager)
-    return manager->CheckPermission(source_url);
-
-  return blink::WebNotificationPermissionAllowed;
-}
-
-void LayoutTestContentBrowserClient::ShowDesktopNotification(
-    const ShowDesktopNotificationHostMsgParams& params,
-    BrowserContext* browser_context,
-    int render_process_id,
-    scoped_ptr<DesktopNotificationDelegate> delegate,
-    base::Closure* cancel_callback) {
-  if (auto* manager = GetLayoutTestNotificationManager())
-    manager->Show(params, delegate.Pass(), cancel_callback);
+PlatformNotificationService*
+LayoutTestContentBrowserClient::GetPlatformNotificationService() {
+  return layout_test_notification_manager_.get();
 }
 
 }  // namespace content

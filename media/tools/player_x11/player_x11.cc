@@ -95,8 +95,8 @@ static void OnAddTextTrack(const media::TextTrackConfig& config,
                            const media::AddTextTrackDoneCB& done_cb) {
 }
 
-static void NeedKey(const std::string& type,
-                    const std::vector<uint8>& init_data) {
+static void OnEncryptedMediaInitData(const std::string& init_data_type,
+                                     const std::vector<uint8>& init_data) {
   std::cout << "File is encrypted." << std::endl;
 }
 
@@ -229,8 +229,8 @@ int main(int argc, char** argv) {
   base::AtExitManager at_exit;
   media::InitializeMediaLibraryForTesting();
 
-  CommandLine::Init(argc, argv);
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine::Init(argc, argv);
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   std::string filename = command_line->GetSwitchValueASCII("file");
 
   if (filename.empty()) {
@@ -281,7 +281,7 @@ int main(int argc, char** argv) {
       CreateDataSource(filename), command_line->HasSwitch("streaming")));
   scoped_ptr<media::Demuxer> demuxer(new media::FFmpegDemuxer(
       media_thread.message_loop_proxy(), data_source.get(),
-      base::Bind(&NeedKey), new media::MediaLog()));
+      base::Bind(&OnEncryptedMediaInitData), new media::MediaLog()));
 
   media::Pipeline pipeline(media_thread.message_loop_proxy(),
                            new media::MediaLog());

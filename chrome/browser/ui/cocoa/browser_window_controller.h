@@ -18,7 +18,7 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
-#import "chrome/browser/ui/cocoa/fullscreen_exit_bubble_controller.h"
+#import "chrome/browser/ui/cocoa/exclusive_access_bubble_window_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_window_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
@@ -26,7 +26,7 @@
 #import "chrome/browser/ui/cocoa/view_resizer.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "ui/base/accelerators/accelerator_manager.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 @class AvatarBaseController;
 class Browser;
@@ -81,8 +81,8 @@ class Command;
   base::scoped_nsobject<OverlayableContentsController>
       overlayableContentsController_;
   base::scoped_nsobject<PresentationModeController> presentationModeController_;
-  base::scoped_nsobject<FullscreenExitBubbleController>
-      fullscreenExitBubbleController_;
+  base::scoped_nsobject<ExclusiveAccessBubbleWindowController>
+      exclusiveAccessBubbleWindowController_;
 
   // Strong. StatusBubble is a special case of a strong reference that
   // we don't wrap in a scoped_ptr because it is acting the same
@@ -134,11 +134,6 @@ class Command;
   // AppKit fullscreen mode.
   BOOL enteringAppKitFullscreen_;
 
-  // Only adjust the tab strip once while entering fullscreen. See the
-  // implementation of -[BrowserWindowController updateSubviewZOrder:] for more
-  // details.
-  BOOL hasAdjustedTabStripWhileEnteringAppKitFullscreen_;
-
   // True between |enterImmersiveFullscreen| and |-windowDidEnterFullScreen:|
   // to indicate that the window is in the process of transitioning into
   // AppKit fullscreen mode.
@@ -177,7 +172,7 @@ class Command;
   // fullscreen type, since we can't show the bubble until
   // -windowDidEnterFullScreen: gets called.
   GURL fullscreenUrl_;
-  FullscreenExitBubbleType fullscreenBubbleType_;
+  ExclusiveAccessBubbleType exclusiveAccessBubbleType_;
 
   // The Extension Command Registry used to determine which keyboard events to
   // handle.
@@ -516,7 +511,7 @@ class Command;
 // Updates the contents of the fullscreen exit bubble with |url| and
 // |bubbleType|.
 - (void)updateFullscreenExitBubbleURL:(const GURL&)url
-                           bubbleType:(FullscreenExitBubbleType)bubbleType;
+                           bubbleType:(ExclusiveAccessBubbleType)bubbleType;
 
 // Returns YES if the browser window is in or entering any fullscreen mode.
 - (BOOL)isInAnyFullscreenMode;
@@ -531,11 +526,11 @@ class Command;
 
 // Enter fullscreen for an extension.
 - (void)enterExtensionFullscreenForURL:(const GURL&)url
-                            bubbleType:(FullscreenExitBubbleType)bubbleType;
+                            bubbleType:(ExclusiveAccessBubbleType)bubbleType;
 
 // Enters Immersive Fullscreen for the given URL.
 - (void)enterWebContentFullscreenForURL:(const GURL&)url
-                             bubbleType:(FullscreenExitBubbleType)bubbleType;
+                             bubbleType:(ExclusiveAccessBubbleType)bubbleType;
 
 // Exits the current fullscreen mode.
 - (void)exitAnyFullscreen;
@@ -607,7 +602,7 @@ class Command;
                     to:(NSRect)target;
 
 // The fullscreen exit bubble controller, or nil if the bubble isn't showing.
-- (FullscreenExitBubbleController*)fullscreenExitBubbleController;
+- (ExclusiveAccessBubbleWindowController*)exclusiveAccessBubbleWindowController;
 
 // Gets the rect, in window base coordinates, that the omnibox popup should be
 // positioned relative to.

@@ -57,10 +57,12 @@
     'startup_metric_utils.gypi',
     'suggestions.gypi',
     'translate.gypi',
+    'ui_zoom.gypi',
     'url_fixer.gypi',
     'url_matcher.gypi',
     'user_prefs.gypi',
     'variations.gypi',
+    'wallpaper.gypi',
     'webdata.gypi',
     'web_resource.gypi',
   ],
@@ -69,7 +71,7 @@
       'includes': [
         'app_modal.gypi',
         'cdm.gypi',
-        'copresence_sockets.gypi',
+        'copresence_endpoints.gypi',
         'navigation_interception.gypi',
         'plugins.gypi',
         'power.gypi',
@@ -77,6 +79,11 @@
         'web_cache.gypi',
         'web_contents_delegate_android.gypi',
         'web_modal.gypi',
+      ],
+    }],
+    ['OS == "ios"', {
+      'includes': [
+        'webp_transcode.gypi',
       ],
     }],
     ['OS != "android"', {
@@ -95,6 +102,7 @@
       'includes': [
         'pairing.gypi',
         'timers.gypi',
+        'wifi_sync.gypi',
       ],
     }],
     ['OS == "win" or OS == "mac"', {
@@ -128,6 +136,7 @@
         'search_engines.gypi',
         'sync_driver.gypi',
         'invalidation.gypi',
+        'webdata_services.gypi',
       ],
     }],
     ['enable_plugins==1', {

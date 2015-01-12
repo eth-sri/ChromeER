@@ -414,10 +414,6 @@ public class SigninManager {
         } else {
             onSignOutDone();
         }
-
-        for (SignInStateObserver observer : mSignInStateObservers) {
-            observer.onSignedOut();
-        }
     }
 
     /**
@@ -472,6 +468,10 @@ public class SigninManager {
             new Handler().post(mSignOutCallback);
             mSignOutCallback = null;
         }
+
+        for (SignInStateObserver observer : mSignInStateObservers) {
+            observer.onSignedOut();
+        }
     }
 
     /**
@@ -479,6 +479,13 @@ public class SigninManager {
      */
     public static boolean isNewProfileManagementEnabled() {
         return nativeIsNewProfileManagementEnabled();
+    }
+
+    /**
+     * @return Whether there is a signed in account on the native side.
+     */
+    public boolean isSignedInOnNative() {
+        return nativeIsSignedInOnNative(mNativeSigninManagerAndroid);
     }
 
     /**
@@ -517,5 +524,6 @@ public class SigninManager {
     private native void nativeWipeProfileData(long nativeSigninManagerAndroid);
     private native void nativeClearLastSignedInUser(long nativeSigninManagerAndroid);
     private native void nativeLogInSignedInUser(long nativeSigninManagerAndroid);
+    private native boolean nativeIsSignedInOnNative(long nativeSigninManagerAndroid);
     private static native boolean nativeIsNewProfileManagementEnabled();
 }

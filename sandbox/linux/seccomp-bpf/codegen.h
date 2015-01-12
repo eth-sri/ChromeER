@@ -81,7 +81,7 @@ class SANDBOX_EXPORT CodeGen {
   void Compile(Node head, Program* program);
 
  private:
-  using MemoKey = Tuple4<uint16_t, uint32_t, Node, Node>;
+  using MemoKey = Tuple<uint16_t, uint32_t, Node, Node>;
   struct MemoKeyLess {
     bool operator()(const MemoKey& lhs, const MemoKey& rhs) const;
   };
@@ -105,6 +105,13 @@ class SANDBOX_EXPORT CodeGen {
   // NOTE: program_ is the compiled program in *reverse*, so that
   // indices remain stable as we add instructions.
   Program program_;
+
+  // equivalent_ stores the most recent semantically-equivalent node for each
+  // instruction in program_. A node is defined as semantically-equivalent to N
+  // if it has the same instruction code and constant as N and its successor
+  // nodes (if any) are semantically-equivalent to N's successor nodes, or
+  // if it's an unconditional jump to a node semantically-equivalent to N.
+  std::vector<Node> equivalent_;
 
   std::map<MemoKey, Node, MemoKeyLess> memos_;
 

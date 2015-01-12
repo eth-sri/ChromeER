@@ -26,13 +26,13 @@ class CdmResultPromise : public media::CdmPromiseTemplate<T...> {
  public:
   CdmResultPromise(const blink::WebContentDecryptionModuleResult& result,
                    const std::string& uma_name);
-  virtual ~CdmResultPromise();
+  ~CdmResultPromise() override;
 
   // CdmPromiseTemplate<T> implementation.
-  virtual void resolve(const T&... result) override;
-  virtual void reject(media::MediaKeys::Exception exception_code,
-                      uint32 system_code,
-                      const std::string& error_message) override;
+  void resolve(const T&... result) override;
+  void reject(media::MediaKeys::Exception exception_code,
+              uint32 system_code,
+              const std::string& error_message) override;
 
  private:
   using media::CdmPromiseTemplate<T...>::MarkPromiseSettled;
@@ -63,14 +63,6 @@ inline void CdmResultPromise<>::resolve() {
   MarkPromiseSettled();
   ReportCdmResultUMA(uma_name_, SUCCESS);
   web_cdm_result_.complete();
-}
-
-template <>
-inline void CdmResultPromise<media::KeyIdsVector>::resolve(
-    const media::KeyIdsVector& result) {
-  // TODO(jrummell): Update blink::WebContentDecryptionModuleResult to
-  // handle the set of keys.
-  reject(media::MediaKeys::NOT_SUPPORTED_ERROR, 0, "Not implemented.");
 }
 
 template <typename... T>

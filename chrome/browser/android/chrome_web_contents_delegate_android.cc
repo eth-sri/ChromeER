@@ -31,8 +31,8 @@
 #include "content/public/common/file_chooser_params.h"
 #include "jni/ChromeWebContentsDelegateAndroid_jni.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 #if defined(ENABLE_PLUGINS)
 #include "chrome/browser/pepper_broker_infobar_delegate.h"
@@ -281,7 +281,7 @@ WebContents* ChromeWebContentsDelegateAndroid::OpenURLFromTab(
        params.disposition == NEW_BACKGROUND_TAB ||
        params.disposition == NEW_WINDOW) &&
       !params.user_gesture &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisablePopupBlocking)) {
     if (popup_blocker_helper->MaybeBlockPopup(nav_params,
                                               blink::WebWindowFeatures())) {

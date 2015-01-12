@@ -24,7 +24,9 @@ from telemetry.core.backends.chrome import extension_backend
 from telemetry.core.backends.chrome import system_info_backend
 from telemetry.core.backends.chrome import tab_list_backend
 from telemetry.core.backends.chrome import tracing_backend
-from telemetry.timeline import tracing_timeline_data
+from telemetry.core.backends.chrome_inspector import devtools_client_backend
+from telemetry.core.backends.chrome_inspector import devtools_http
+from telemetry.timeline import trace_data as trace_data_module
 from telemetry.unittest_util import options_for_unittests
 
 
@@ -44,6 +46,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
     self._platform_backend = platform_backend
     self._supports_tab_control = supports_tab_control
+    self._devtools_client = None
     self._tracing_backend = None
     self._system_info_backend = None
 
@@ -67,6 +70,14 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
                        'unexpected effects due to profile-specific settings, '
                        'such as about:flags settings, cookies, and '
                        'extensions.\n')
+
+  @property
+  def devtools_client(self):
+    if not self._devtools_client:
+      assert self._port, 'No DevTools port info available.'
+      self._devtools_client = devtools_client_backend.DevToolsClientBackend(
+          self._port)
+    return self._devtools_client
 
   @property
   @decorators.Cache
@@ -164,13 +175,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     return replay_args
 
   def HasBrowserFinishedLaunching(self):
-    try:
-      self.Request('', timeout=.1)
-    except (exceptions.BrowserGoneException,
-            exceptions.BrowserConnectionGoneException):
-      return False
-    else:
-      return True
+    return self.devtools_client.IsAlive()
 
   def _WaitForBrowserToComeUp(self, wait_for_extensions=True):
     try:
@@ -226,20 +231,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
         raise
 
   def ListInspectableContexts(self):
-    return json.loads(self.Request(''))
-
-  def Request(self, path, timeout=30, throw_network_exception=False):
-    url = 'http://127.0.0.1:%i/json' % self._port
-    if path:
-      url += '/' + path
     try:
-      proxy_handler = urllib2.ProxyHandler({})  # Bypass any system proxy.
-      opener = urllib2.build_opener(proxy_handler)
-      with contextlib.closing(opener.open(url, timeout=timeout)) as req:
-        return req.read()
-    except (socket.error, httplib.BadStatusLine, urllib2.URLError) as e:
-      if throw_network_exception:
-        raise e
+      return self._devtools_client.ListInspectableContexts()
+    except devtools_http.DevToolsClientConnectionError as e:
       if not self.IsBrowserRunning():
         raise exceptions.BrowserGoneException(self.browser, e)
       raise exceptions.BrowserConnectionGoneException(self.browser, e)
@@ -251,29 +245,6 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
   @property
   def profile_directory(self):
     raise NotImplementedError()
-
-  @property
-  @decorators.Cache
-  def chrome_branch_number(self):
-    # Detect version information.
-    data = self.Request('version')
-    resp = json.loads(data)
-    if 'Protocol-Version' in resp:
-      if 'Browser' in resp:
-        branch_number_match = re.search(r'Chrome/\d+\.\d+\.(\d+)\.\d+',
-                                        resp['Browser'])
-      else:
-        branch_number_match = re.search(
-            r'Chrome/\d+\.\d+\.(\d+)\.\d+ (Mobile )?Safari',
-            resp['User-Agent'])
-
-      if branch_number_match:
-        branch_number = int(branch_number_match.group(1))
-        if branch_number:
-          return branch_number
-
-    # Branch number can't be determined, so fail any branch number checks.
-    return 0
 
   @property
   def supports_tab_control(self):
@@ -300,15 +271,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     return self._tracing_backend.StartTracing(
         trace_options, custom_categories, timeout)
 
-  @property
-  def is_tracing_running(self):
-    if not self._tracing_backend:
-      return None
-    return self._tracing_backend.is_tracing_running
-
-  def StopTracing(self):
-    """ Stops tracing and returns the result as TimelineData object. """
-    tab_ids_list = []
+  def StopTracing(self, trace_data_builder):
     for (i, _) in enumerate(self.browser.tabs):
       tab = self.tab_list_backend.Get(i, None)
       if tab:
@@ -318,11 +281,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
             "console.time.toString().indexOf('[native code]') != -1;")
         if not success:
           raise Exception('Page stomped on console.time')
-        tab_ids_list.append(tab.id)
-    trace_events = self._tracing_backend.StopTracing()
-    # Augment tab_ids data to trace events.
-    event_data = {'traceEvents' : trace_events, 'tabIds': tab_ids_list}
-    return tracing_timeline_data.TracingTimelineData(event_data)
+        trace_data_builder.AddEventsTo(trace_data_module.TAB_ID_PART, [tab.id])
+
+    self._tracing_backend.StopTracing(trace_data_builder)
 
   def GetProcessName(self, cmd_line):
     """Returns a user-friendly name for the process of the given |cmd_line|."""

@@ -142,7 +142,9 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
                                   parent_routing_id,
                                   frame_tree_node_->frame_tree()
                                       ->GetRenderViewHost(site_instance_.get())
-                                      ->GetRoutingID()));
+                                      ->GetRoutingID(),
+                                  frame_tree_node_
+                                      ->current_replication_state()));
 
   return true;
 }
@@ -153,7 +155,7 @@ void RenderFrameProxyHost::DisownOpener() {
 
 void RenderFrameProxyHost::OnOpenURL(
     const FrameHostMsg_OpenURL_Params& params) {
-  frame_tree_node_->current_frame_host()->OpenURL(params);
+  frame_tree_node_->current_frame_host()->OpenURL(params, site_instance_.get());
 }
 
 }  // namespace content

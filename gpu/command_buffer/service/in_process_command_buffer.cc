@@ -19,6 +19,7 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/threading/thread.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
+#include "gpu/command_buffer/common/value_state.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
@@ -31,6 +32,7 @@
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
+#include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_image.h"
@@ -39,6 +41,11 @@
 #if defined(OS_ANDROID)
 #include "gpu/command_buffer/service/stream_texture_manager_in_process_android.h"
 #include "ui/gl/android/surface_texture.h"
+#endif
+
+#if defined(OS_WIN)
+#include <windows.h>
+#include "base/process/process_handle.h"
 #endif
 
 namespace gpu {
@@ -178,6 +185,53 @@ void SyncPointManager::WaitSyncPoint(uint32 sync_point) {
 base::LazyInstance<SyncPointManager> g_sync_point_manager =
     LAZY_INSTANCE_INITIALIZER;
 
+base::SharedMemoryHandle ShareToGpuThread(
+    base::SharedMemoryHandle source_handle) {
+#if defined(OS_WIN)
+  // Windows needs to explicitly duplicate the handle to current process.
+  base::SharedMemoryHandle target_handle;
+  if (!DuplicateHandle(GetCurrentProcess(),
+                       source_handle,
+                       GetCurrentProcess(),
+                       &target_handle,
+                       FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+                       FALSE,
+                       0)) {
+    return base::SharedMemory::NULLHandle();
+  }
+
+  return target_handle;
+#else
+  int duped_handle = HANDLE_EINTR(dup(source_handle.fd));
+  if (duped_handle < 0)
+    return base::SharedMemory::NULLHandle();
+
+  return base::FileDescriptor(duped_handle, true);
+#endif
+}
+
+gfx::GpuMemoryBufferHandle ShareGpuMemoryBufferToGpuThread(
+    const gfx::GpuMemoryBufferHandle& source_handle,
+    bool* requires_sync_point) {
+  switch (source_handle.type) {
+    case gfx::SHARED_MEMORY_BUFFER: {
+      gfx::GpuMemoryBufferHandle handle;
+      handle.type = gfx::SHARED_MEMORY_BUFFER;
+      handle.handle = ShareToGpuThread(source_handle.handle);
+      *requires_sync_point = false;
+      return handle;
+    }
+    case gfx::IO_SURFACE_BUFFER:
+    case gfx::SURFACE_TEXTURE_BUFFER:
+    case gfx::OZONE_NATIVE_BUFFER:
+      *requires_sync_point = true;
+      return source_handle;
+    default:
+      NOTREACHED();
+      return gfx::GpuMemoryBufferHandle();
+  }
+}
+
 }  // anonyous namespace
 
 InProcessCommandBuffer::Service::Service() {}
@@ -195,6 +249,22 @@ InProcessCommandBuffer::Service::mailbox_manager() {
     }
   }
   return mailbox_manager_;
+}
+
+scoped_refptr<gles2::SubscriptionRefSet>
+InProcessCommandBuffer::Service::subscription_ref_set() {
+  if (!subscription_ref_set_.get()) {
+    subscription_ref_set_ = new gles2::SubscriptionRefSet();
+  }
+  return subscription_ref_set_;
+}
+
+scoped_refptr<ValueStateMap>
+InProcessCommandBuffer::Service::pending_valuebuffer_state() {
+  if (!pending_valuebuffer_state_.get()) {
+    pending_valuebuffer_state_ = new ValueStateMap();
+  }
+  return pending_valuebuffer_state_;
 }
 
 InProcessCommandBuffer::InProcessCommandBuffer(
@@ -342,6 +412,8 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
                                     NULL,
                                     service_->shader_translator_cache(),
                                     NULL,
+                                    service_->subscription_ref_set(),
+                                    service_->pending_valuebuffer_state(),
                                     bind_generates_resource)));
 
   gpu_scheduler_.reset(
@@ -622,13 +694,28 @@ int32 InProcessCommandBuffer::CreateImage(ClientBuffer buffer,
 
   DCHECK(gpu::ImageFactory::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
       internalformat, gpu_memory_buffer->GetFormat()));
+
+  // This handle is owned by the GPU thread and must be passed to it or it
+  // will leak. In otherwords, do not early out on error between here and the
+  // queuing of the CreateImage task below.
+  bool requires_sync_point = false;
+  gfx::GpuMemoryBufferHandle handle =
+      ShareGpuMemoryBufferToGpuThread(gpu_memory_buffer->GetHandle(),
+                                      &requires_sync_point);
+
   QueueTask(base::Bind(&InProcessCommandBuffer::CreateImageOnGpuThread,
                        base::Unretained(this),
                        new_id,
-                       gpu_memory_buffer->GetHandle(),
+                       handle,
                        gfx::Size(width, height),
                        gpu_memory_buffer->GetFormat(),
                        internalformat));
+
+  if (requires_sync_point) {
+    gpu_memory_buffer_manager_->SetDestructionSyncPoint(gpu_memory_buffer,
+                                                        InsertSyncPoint());
+  }
+
   return new_id;
 }
 

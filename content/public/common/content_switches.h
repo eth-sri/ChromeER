@@ -33,13 +33,12 @@ CONTENT_EXPORT extern const char kDefaultTileHeight[];
 CONTENT_EXPORT extern const char kDisable2dCanvasAntialiasing[];
 CONTENT_EXPORT extern const char kDisable3DAPIs[];
 CONTENT_EXPORT extern const char kDisableAccelerated2dCanvas[];
-CONTENT_EXPORT extern const char kDisableLayerSquashing[];
+CONTENT_EXPORT extern const char kDisableAcceleratedJpegDecoding[];
 CONTENT_EXPORT extern const char kDisableAcceleratedVideoDecode[];
 CONTENT_EXPORT extern const char kDisableApplicationCache[];
 extern const char kDisableBackingStoreLimit[];
 CONTENT_EXPORT extern const char kDisableBlinkScheduler[];
 CONTENT_EXPORT extern const char kDisablePreferCompositingToLCDText[];
-CONTENT_EXPORT extern const char kDisableCompositingForTransition[];
 CONTENT_EXPORT extern const char kDisableDatabases[];
 CONTENT_EXPORT extern const char kDisableDelegatedRenderer[];
 extern const char kDisableDirectNPAPIRequests[];
@@ -92,15 +91,11 @@ extern const char kDisableXSLT[];
 extern const char kDisableXSSAuditor[];
 CONTENT_EXPORT extern const char kDomAutomationController[];
 extern const char kEnable2dCanvasClipAntialiasing[];
-CONTENT_EXPORT extern const char kEnableAcceleratedJpegDecoding[];
 CONTENT_EXPORT extern const char kEnableBleedingEdgeRenderingFastPaths[];
-CONTENT_EXPORT extern const char kEnableLayerSquashing[];
-CONTENT_EXPORT extern const char kEnableContainerCulling[];
 CONTENT_EXPORT extern const char kEnableCredentialManagerAPI[];
 CONTENT_EXPORT extern const char kEnableBeginFrameScheduling[];
 CONTENT_EXPORT extern const char kEnablePreferCompositingToLCDText[];
 CONTENT_EXPORT extern const char kEnableBrowserSideNavigation[];
-CONTENT_EXPORT extern const char kEnableCompositingForTransition[];
 CONTENT_EXPORT extern const char kEnableDeferredImageDecoding[];
 CONTENT_EXPORT extern const char kEnableDelegatedRenderer[];
 CONTENT_EXPORT extern const char kEnableDisplayList2dCanvas[];
@@ -126,9 +121,9 @@ CONTENT_EXPORT extern const char kEnablePreciseMemoryInfo[];
 CONTENT_EXPORT extern const char kEnableRegionBasedColumns[];
 CONTENT_EXPORT extern const char kEnableRendererMojoChannel[];
 CONTENT_EXPORT extern const char kEnableSandboxLogging[];
-extern const char kEnableSeccompFilterSandbox[];
+CONTENT_EXPORT extern const char kEnableSeccompFilterSandbox[];
 extern const char kEnableSkiaBenchmarking[];
-extern const char kEnableSlimmingPaint[];
+CONTENT_EXPORT extern const char kEnableSlimmingPaint[];
 CONTENT_EXPORT extern const char kEnableSmoothScrolling[];
 CONTENT_EXPORT extern const char kEnableSpatialNavigation[];
 CONTENT_EXPORT extern const char kEnableStatsTable[];
@@ -234,8 +229,9 @@ CONTENT_EXPORT extern const char kUIPrioritizeInGpuProcess[];
 CONTENT_EXPORT extern const char kUseDiscardableMemory[];
 CONTENT_EXPORT extern const char kUseFakeUIForMediaStream[];
 CONTENT_EXPORT extern const char kEnableNativeGpuMemoryBuffers[];
-CONTENT_EXPORT extern const char kUseImageExternal[];
+extern const char kUseImageTextureTarget[];
 CONTENT_EXPORT extern const char kUseMobileUserAgent[];
+CONTENT_EXPORT extern const char kUseNormalPriorityForTileTaskWorkerThreads[];
 extern const char kUseSurfaces[];
 extern const char kUtilityCmdPrefix[];
 CONTENT_EXPORT extern const char kUtilityProcess[];
@@ -294,10 +290,12 @@ CONTENT_EXPORT extern const char kDeviceScaleFactor[];
 CONTENT_EXPORT extern const char kDisableLegacyIntermediateWindow[];
 // This switch will be removed when we enable the win32K lockdown process
 // mitigation.
+CONTENT_EXPORT extern const char kDisableWin32kRendererLockDown[];
 CONTENT_EXPORT extern const char kEnableWin32kRendererLockDown[];
 // Switch to uniquely identify names shared memory section for font cache
 // across chromium flavors.
 CONTENT_EXPORT extern const char kFontCacheSharedMemSuffix[];
+CONTENT_EXPORT bool IsWin32kRendererLockdownEnabled();
 #endif
 
 #if defined(ENABLE_PLUGINS)

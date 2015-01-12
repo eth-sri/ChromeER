@@ -116,7 +116,7 @@ void ExtensionBrowserTest::SetUp() {
   InProcessBrowserTest::SetUp();
 }
 
-void ExtensionBrowserTest::SetUpCommandLine(CommandLine* command_line) {
+void ExtensionBrowserTest::SetUpCommandLine(base::CommandLine* command_line) {
   PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_);
   test_data_dir_ = test_data_dir_.AppendASCII("extensions");
   observer_.reset(new ExtensionTestNotificationObserver(browser()));
@@ -234,7 +234,8 @@ ExtensionBrowserTest::LoadExtensionWithInstallParam(
     content::WindowedNotificationObserver load_signal(
         extensions::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::Source<Profile>(profile()));
-    CHECK(!extensions::util::IsIncognitoEnabled(extension_id, profile()));
+    CHECK(!extensions::util::IsIncognitoEnabled(extension_id, profile()))
+        << extension_id << " is enabled in incognito, but shouldn't be";
 
     if (flags & kFlagEnableIncognito) {
       extensions::util::SetIsIncognitoEnabled(extension_id, profile(), true);

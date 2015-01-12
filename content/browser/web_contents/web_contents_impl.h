@@ -38,7 +38,7 @@
 #include "net/http/http_response_headers.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/base/page_transition_types.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/size.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
@@ -99,6 +99,8 @@ class CONTENT_EXPORT WebContentsImpl
       public NON_EXPORTED_BASE(NavigationControllerDelegate),
       public NON_EXPORTED_BASE(NavigatorDelegate) {
  public:
+  class FriendZone;
+
   ~WebContentsImpl() override;
 
   static WebContentsImpl* CreateWithOpener(
@@ -315,6 +317,7 @@ class CONTENT_EXPORT WebContentsImpl
   gfx::Size GetPreferredSize() const override;
   bool GotResponseToLockMouseRequest(bool allowed) override;
   bool HasOpener() const override;
+  WebContents* GetOpener() const override;
   void DidChooseColorInColorChooser(SkColor color) override;
   void DidEndColorChooser() override;
   int DownloadImage(const GURL& url,
@@ -352,6 +355,7 @@ class CONTENT_EXPORT WebContentsImpl
   void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
   void DidStartLoading(RenderFrameHost* render_frame_host,
                        bool to_different_document) override;
+  void DidStopLoading(RenderFrameHost* render_frame_host) override;
   void SwappedOut(RenderFrameHost* render_frame_host) override;
   void DidDeferAfterResponseStarted(
       const TransitionLayerData& transition_data) override;
@@ -610,13 +614,10 @@ class CONTENT_EXPORT WebContentsImpl
   bool NavigateToPendingEntry(
       NavigationController::ReloadType reload_type) override;
 
-  // Sets the history for this WebContentsImpl to |history_length| entries, and
-  // moves the current page_id to the last entry in the list if it's valid.
-  // This is mainly used when a prerendered page is swapped into the current
-  // tab. The method is virtual for testing.
-  void SetHistoryLengthAndPrune(const SiteInstance* site_instance,
-                                int merge_history_length,
-                                int32 minimum_page_id) override;
+  // Sets the history for this WebContentsImpl to |history_length| entries, with
+  // an offset of |history_offset|.
+  void SetHistoryOffsetAndLength(int history_offset,
+                                 int history_length) override;
 
   // Called by InterstitialPageImpl when it creates a RenderFrameHost.
   void RenderFrameForInterstitialPageCreated(
@@ -666,8 +667,6 @@ class CONTENT_EXPORT WebContentsImpl
   }
 
  private:
-  friend class TestNavigationObserver;
-  friend class WebContentsAddedObserver;
   friend class WebContentsObserver;
   friend class WebContents;  // To implement factory methods.
 
@@ -883,10 +882,13 @@ class CONTENT_EXPORT WebContentsImpl
   // Calculates the progress of the current load and notifies the delegate.
   void SendLoadProgressChanged();
 
-  // Called once when the last frame on the page has stopped loading.
-  void DidStopLoading(RenderFrameHost* render_frame_host);
-
   // Misc non-view stuff -------------------------------------------------------
+
+  // Sets the history for a specified RenderViewHost to |history_length|
+  // entries, with an offset of |history_offset|.
+  void SetHistoryOffsetAndLengthForView(RenderViewHost* render_view_host,
+                                        int history_offset,
+                                        int history_length);
 
   // Helper functions for sending notifications.
   void NotifyViewSwapped(RenderViewHost* old_host, RenderViewHost* new_host);
@@ -941,11 +943,6 @@ class CONTENT_EXPORT WebContentsImpl
   // Removes all entries from |player_map| for |render_frame_host|.
   void RemoveAllMediaPlayerEntries(RenderFrameHost* render_frame_host,
                                    ActiveMediaPlayerMap* player_map);
-
-  // Adds/removes a callback called on creation of each new WebContents.
-  // Deprecated, about to remove.
-  static void AddCreatedCallback(const CreatedCallback& callback);
-  static void RemoveCreatedCallback(const CreatedCallback& callback);
 
   // Data for core operation ---------------------------------------------------
 
@@ -1232,6 +1229,23 @@ class CONTENT_EXPORT WebContentsImpl
   base::WeakPtrFactory<WebContentsImpl> loading_weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsImpl);
+};
+
+// Dangerous methods which should never be made part of the public API, so we
+// grant their use only to an explicit friend list (c++ attorney/client idiom).
+class CONTENT_EXPORT WebContentsImpl::FriendZone {
+ private:
+  friend class TestNavigationObserver;
+  friend class WebContentsAddedObserver;
+  friend class ContentBrowserSanityChecker;
+
+  FriendZone();  // Not instantiable.
+
+  // Adds/removes a callback called on creation of each new WebContents.
+  static void AddCreatedCallbackForTesting(const CreatedCallback& callback);
+  static void RemoveCreatedCallbackForTesting(const CreatedCallback& callback);
+
+  DISALLOW_COPY_AND_ASSIGN(FriendZone);
 };
 
 }  // namespace content

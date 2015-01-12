@@ -14,6 +14,8 @@
             'sources': [
               'browser_watcher/exit_code_watcher_win.cc',
               'browser_watcher/exit_code_watcher_win.h',
+              'browser_watcher/exit_funnel_win.cc',
+              'browser_watcher/exit_funnel_win.h',
             ],
             'dependencies': [
               '../base/base.gyp:base',

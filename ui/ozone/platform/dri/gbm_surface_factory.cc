@@ -12,6 +12,7 @@
 #include "ui/ozone/common/egl_util.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_impl.h"
 #include "ui/ozone/platform/dri/dri_window_delegate_manager.h"
+#include "ui/ozone/platform/dri/dri_wrapper.h"
 #include "ui/ozone/platform/dri/gbm_buffer.h"
 #include "ui/ozone/platform/dri/gbm_surface.h"
 #include "ui/ozone/platform/dri/gbm_surfaceless.h"
@@ -86,8 +87,12 @@ void GbmSurfaceFactory::InitializeGpu(
 }
 
 intptr_t GbmSurfaceFactory::GetNativeDisplay() {
-  DCHECK(state_ == INITIALIZED);
   return reinterpret_cast<intptr_t>(device_);
+}
+
+int GbmSurfaceFactory::GetDrmFd() {
+  DCHECK(drm_);
+  return drm_->get_fd();
 }
 
 const int32* GbmSurfaceFactory::GetEGLSurfaceProperties(
@@ -114,8 +119,6 @@ bool GbmSurfaceFactory::LoadEGLGLES2Bindings(
 
 scoped_ptr<SurfaceOzoneEGL> GbmSurfaceFactory::CreateEGLSurfaceForWidget(
     gfx::AcceleratedWidget widget) {
-  DCHECK(state_ == INITIALIZED);
-
   DriWindowDelegate* delegate = GetOrCreateWindowDelegate(widget);
 
   scoped_ptr<GbmSurface> surface(new GbmSurface(delegate, device_, drm_));
@@ -157,7 +160,7 @@ scoped_refptr<ui::NativePixmap> GbmSurfaceFactory::CreateNativePixmap(
 
 OverlayCandidatesOzone* GbmSurfaceFactory::GetOverlayCandidates(
     gfx::AcceleratedWidget w) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kOzoneTestSingleOverlaySupport))
     return new SingleOverlay();
   return NULL;

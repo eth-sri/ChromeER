@@ -238,8 +238,6 @@
       'client/plugin/delegating_signal_strategy.h',
       'client/plugin/empty_cursor_filter.cc',
       'client/plugin/empty_cursor_filter.h',
-      'client/plugin/media_source_video_renderer.cc',
-      'client/plugin/media_source_video_renderer.h',
       'client/plugin/normalizing_input_filter_cros.cc',
       'client/plugin/normalizing_input_filter_cros.h',
       'client/plugin/normalizing_input_filter_mac.cc',
@@ -264,8 +262,9 @@
       'client/plugin/pepper_port_allocator.h',
       'client/plugin/pepper_util.cc',
       'client/plugin/pepper_util.h',
-      'client/plugin/pepper_view.cc',
-      'client/plugin/pepper_view.h',
+      'client/plugin/pepper_video_renderer.h',
+      'client/plugin/pepper_video_renderer_2d.cc',
+      'client/plugin/pepper_video_renderer_2d.h',
     ],
   }
 }

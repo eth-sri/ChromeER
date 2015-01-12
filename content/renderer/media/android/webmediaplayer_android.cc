@@ -160,8 +160,9 @@ WebMediaPlayerAndroid::WebMediaPlayerAndroid(
   player_id_ = player_manager_->RegisterMediaPlayer(this);
 
 #if defined(VIDEO_HOLE)
-  force_use_overlay_embedded_video_ = CommandLine::ForCurrentProcess()->
-      HasSwitch(switches::kForceUseOverlayEmbeddedVideo);
+  force_use_overlay_embedded_video_ =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kForceUseOverlayEmbeddedVideo);
   if (force_use_overlay_embedded_video_ ||
     player_manager_->ShouldUseVideoOverlayForEmbeddedEncryptedVideo()) {
     // Defer stream texture creation until we are sure it's necessary.
@@ -261,7 +262,7 @@ void WebMediaPlayerAndroid::load(LoadType load_type,
       media_source_delegate_->InitializeMediaSource(
           base::Bind(&WebMediaPlayerAndroid::OnMediaSourceOpened,
                      weak_factory_.GetWeakPtr()),
-          base::Bind(&WebMediaPlayerAndroid::OnNeedKey,
+          base::Bind(&WebMediaPlayerAndroid::OnEncryptedMediaInitData,
                      weak_factory_.GetWeakPtr()),
           set_decryptor_ready_cb,
           base::Bind(&WebMediaPlayerAndroid::UpdateNetworkState,
@@ -1731,8 +1732,9 @@ void WebMediaPlayerAndroid::OnMediaSourceOpened(
   client_->mediaSourceOpened(web_media_source);
 }
 
-void WebMediaPlayerAndroid::OnNeedKey(const std::string& type,
-                                      const std::vector<uint8>& init_data) {
+void WebMediaPlayerAndroid::OnEncryptedMediaInitData(
+    const std::string& init_data_type,
+    const std::vector<uint8>& init_data) {
   DCHECK(main_thread_checker_.CalledOnValidThread());
 
   // Do not fire NeedKey event if encrypted media is not enabled.
@@ -1743,13 +1745,16 @@ void WebMediaPlayerAndroid::OnNeedKey(const std::string& type,
 
   UMA_HISTOGRAM_COUNTS(kMediaEme + std::string("NeedKey"), 1);
 
-  DCHECK(init_data_type_.empty() || type.empty() || type == init_data_type_);
+  DCHECK(!init_data_type.empty());
+  DLOG_IF(WARNING,
+          !init_data_type_.empty() && init_data_type != init_data_type_)
+      << "Mixed init data type not supported. The new type is ignored.";
   if (init_data_type_.empty())
-    init_data_type_ = type;
+    init_data_type_ = init_data_type;
 
   const uint8* init_data_ptr = init_data.empty() ? NULL : &init_data[0];
-  client_->encrypted(
-      WebString::fromUTF8(type), init_data_ptr, init_data.size());
+  client_->encrypted(WebString::fromUTF8(init_data_type), init_data_ptr,
+                     init_data.size());
 }
 
 void WebMediaPlayerAndroid::SetDecryptorReadyCB(

@@ -107,23 +107,6 @@ CommandUtil.canExecuteAlways = function(event) {
 };
 
 /**
- * Returns a single selected/passed entry or null.
- * @param {!Event} event Command event.
- * @param {!FileManager} fileManager FileManager to use.
- * @return {FileEntry} The entry or null.
- */
-CommandUtil.getSingleEntry = function(event, fileManager) {
-  if (event.target.entry) {
-    return event.target.entry;
-  }
-  var selection = fileManager.getSelection();
-  if (selection.totalCount == 1) {
-    return selection.entries[0];
-  }
-  return null;
-};
-
-/**
  * Obtains target entries that can be pinned from the selection.
  * If directories are included in the selection, it just returns an empty
  * array to avoid confusing because pinning directory is not supported
@@ -236,13 +219,14 @@ CommandUtil.getOnlyOneSelectedDirectory = function(selection) {
     return null;
   if (!selection.entries[0].isDirectory)
     return null;
-  return selection.entries[0];
+  return /** @type {!DirectoryEntry} */(selection.entries[0]);
 };
 
 /**
  * Handle of the command events.
  * @param {!FileManager} fileManager FileManager.
  * @constructor
+ * @struct
  */
 var CommandHandler = function(fileManager) {
   /**
@@ -258,8 +242,6 @@ var CommandHandler = function(fileManager) {
    * @private
    */
   this.commands_ = {};
-
-  Object.seal(this);
 
   // Decorate command tags in the document.
   var commands = fileManager.document.querySelectorAll('command');
@@ -285,6 +267,16 @@ CommandHandler.prototype.updateAvailability = function() {
   for (var id in this.commands_) {
     this.commands_[id].canExecuteChange();
   }
+};
+
+/**
+ * @param {string} id Command id
+ * @return {boolean} True if the specified command was "very recently"
+ *     known to be enabled.
+ */
+CommandHandler.prototype.isCommandEnabled = function(id) {
+  var command = this.commands_[id];
+  return !!command && !command.disabled;
 };
 
 /**
@@ -1033,6 +1025,36 @@ CommandHandler.COMMANDS_['share'] = /** @type {Command} */ ({
         !isDriveOffline &&
         selection && selection.totalCount == 1;
     event.command.setHidden(!fileManager.isOnDrive());
+  }
+});
+
+/**
+ * Initiates cloud import.
+ * @type {Command}
+ */
+CommandHandler.COMMANDS_['cloud-import'] = /** @type {Command} */ ({
+  /**
+   * @param {!Event} event Command event.
+   * @param {!FileManager} fileManager
+   */
+  execute: function(event, fileManager) {
+    console.assert(fileManager.importController !== null);
+      fileManager.importController.execute();
+  },
+  /**
+   * @param {!Event} event Command event.
+   * @param {!FileManager} fileManager
+   */
+  canExecute: function(event, fileManager) {
+    if (fileManager.importController) {
+      var response = fileManager.importController.update();
+      event.command.label = str(response.label_id);
+      event.canExecute = response.executable;
+      event.command.setHidden(!response.visible);
+    } else {
+      event.canExecute = false;
+      event.command.setHidden(true);
+    }
   }
 });
 

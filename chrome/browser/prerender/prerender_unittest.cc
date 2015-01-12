@@ -53,7 +53,6 @@ class DummyPrerenderContents : public PrerenderContents {
   ~DummyPrerenderContents() override;
 
   void StartPrerendering(
-      int creator_child_id,
       const gfx::Size& size,
       content::SessionStorageNamespace* session_storage_namespace,
       net::URLRequestContextGetter* request_context) override;
@@ -294,7 +293,6 @@ DummyPrerenderContents::~DummyPrerenderContents() {
 }
 
 void DummyPrerenderContents::StartPrerendering(
-    int creator_child_id,
     const gfx::Size& size,
     content::SessionStorageNamespace* session_storage_namespace,
     net::URLRequestContextGetter* request_context) {
@@ -323,7 +321,7 @@ class PrerenderTest : public testing::Test {
                     last_prerender_id_(0),
                     field_trial_list_(NULL) {
     // Enable omnibox prerendering.
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kPrerenderFromOmnibox,
         switches::kPrerenderFromOmniboxSwitchValueEnabled);
   }

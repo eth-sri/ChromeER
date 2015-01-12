@@ -37,23 +37,28 @@ class CHROMEOS_EXPORT RendererFreezer
  public:
   class Delegate {
    public:
+    typedef base::Callback<void(bool)> ResultCallback;
+
     virtual ~Delegate() {}
 
     // If |frozen| is true, marks the renderer process |handle| to be frozen
     // when FreezeRenderers() is called; otherwise marks it to remain unfrozen.
+    // Performs the operation asynchronously on the FILE thread.
     virtual void SetShouldFreezeRenderer(base::ProcessHandle handle,
                                          bool frozen) = 0;
 
     // Freezes the renderers marked for freezing by SetShouldFreezeRenderer().
-    // Returns true if the operation was successful.
-    virtual bool FreezeRenderers() = 0;
+    // Performs the operation asynchronously on the FILE thread.
+    virtual void FreezeRenderers() = 0;
 
     // Thaws the chrome renderers that were frozen by the call to
-    // FreezeRenderers().  Returns true if the operation was successful.
-    virtual bool ThawRenderers() = 0;
+    // FreezeRenderers().  Performs the operation asynchronously on the FILE
+    // thread and runs |callback| with the result on the UI thread.
+    virtual void ThawRenderers(ResultCallback callback) = 0;
 
-    // Returns true iff the delegate is capable of freezing renderers.
-    virtual bool CanFreezeRenderers() = 0;
+    // Asynchronously checks on the FILE thread if the delegate can freeze
+    // renderers and runs |callback| on the UI thread with the result.
+    virtual void CheckCanFreezeRenderers(ResultCallback callback) = 0;
   };
 
   explicit RendererFreezer(scoped_ptr<Delegate> delegate);
@@ -75,6 +80,12 @@ class CHROMEOS_EXPORT RendererFreezer
   void RenderProcessHostDestroyed(content::RenderProcessHost* host) override;
 
  private:
+  // Called after checking if the delegate is capable of freezing renderers.
+  void OnCheckCanFreezeRenderersComplete(bool can_freeze);
+
+  // Called after thawing the renderers has completed.
+  void OnThawRenderersComplete(bool success);
+
   // Called whenever a new renderer process is created.
   void OnRenderProcessCreated(content::RenderProcessHost* rph);
 

@@ -83,7 +83,8 @@ class TCPServerSocketFactory
 
 scoped_ptr<DevToolsHttpHandler::ServerSocketFactory>
 CreateSocketFactory() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 #if defined(OS_ANDROID)
   std::string socket_name = "content_shell_devtools_remote";
   if (command_line.HasSwitch(switches::kRemoteDebuggingSocketName)) {
@@ -232,8 +233,6 @@ ShellDevToolsManagerDelegate::CreateHttpHandler(
   std::string frontend_url;
 #if defined(OS_ANDROID)
   frontend_url = base::StringPrintf(kFrontEndURL, GetWebKitRevision().c_str());
-#else
-  frontend_url = "/devtools/devtools.html";
 #endif
   return DevToolsHttpHandler::Start(CreateSocketFactory(),
                                     frontend_url,
@@ -265,7 +264,6 @@ ShellDevToolsManagerDelegate::CreateNewTarget(const GURL& url) {
   Shell* shell = Shell::CreateNewWindow(browser_context_,
                                         url,
                                         NULL,
-                                        MSG_ROUTING_NONE,
                                         gfx::Size());
   return scoped_ptr<DevToolsTarget>(
       new Target(DevToolsAgentHost::GetOrCreateFor(shell->web_contents())));

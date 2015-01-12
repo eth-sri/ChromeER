@@ -7,13 +7,6 @@
     'use_snappy%': 1,
   },
   'conditions': [
-    ['OS == "android" and android_webview_build == 1', {
-      'variables': {
-        # Snappy not used in Android WebView
-        # crbug.com/236780
-        'use_snappy': 0,
-      },
-    }],
     ['OS=="android"', {
       'targets': [{
         'target_name': 'env_chromium_unittests_apk',
@@ -99,10 +92,11 @@
         'src/db/db_impl.h',
         'src/db/db_iter.cc',
         'src/db/db_iter.h',
-        'src/db/filename.cc',
-        'src/db/filename.h',
         'src/db/dbformat.cc',
         'src/db/dbformat.h',
+        'src/db/dumpfile.cc',
+        'src/db/filename.cc',
+        'src/db/filename.h',
         'src/db/log_format.h',
         'src/db/log_reader.cc',
         'src/db/log_reader.h',
@@ -126,6 +120,7 @@
         'src/include/leveldb/cache.h',
         'src/include/leveldb/comparator.h',
         'src/include/leveldb/db.h',
+        'src/include/leveldb/dumpfile.h',
         'src/include/leveldb/env.h',
         'src/include/leveldb/filter_policy.h',
         'src/include/leveldb/iterator.h',
@@ -269,6 +264,26 @@
       ],
       'sources': [
         'src/db/corruption_test.cc',
+      ],
+    },
+    {
+      'target_name': 'leveldb_fault_injection_test',
+      'type': 'executable',
+      'dependencies': [
+        'leveldb_testutil',
+      ],
+      'sources': [
+        'src/db/fault_injection_test.cc',
+      ],
+    },
+    {
+      'target_name': 'leveldb_recovery_test',
+      'type': 'executable',
+      'dependencies': [
+        'leveldb_testutil',
+      ],
+      'sources': [
+        'src/db/recovery_test.cc',
       ],
     },
     {

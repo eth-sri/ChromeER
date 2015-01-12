@@ -353,6 +353,18 @@ static const GLenum valid_reset_status_table[] = {
     GL_UNKNOWN_CONTEXT_RESET_ARB,
 };
 
+static const GLenum valid_sampler_parameter_table[] = {
+    GL_TEXTURE_MAG_FILTER,
+    GL_TEXTURE_MIN_FILTER,
+    GL_TEXTURE_MIN_LOD,
+    GL_TEXTURE_MAX_LOD,
+    GL_TEXTURE_WRAP_S,
+    GL_TEXTURE_WRAP_T,
+    GL_TEXTURE_WRAP_R,
+    GL_TEXTURE_COMPARE_MODE,
+    GL_TEXTURE_COMPARE_FUNC,
+};
+
 static const GLenum valid_shader_parameter_table[] = {
     GL_SHADER_TYPE,
     GL_DELETE_STATUS,
@@ -502,6 +514,16 @@ static const GLenum valid_texture_wrap_mode_table[] = {
     GL_REPEAT,
 };
 
+static const GLenum valid_transform_feedback_bind_target_table[] = {
+    GL_TRANSFORM_FEEDBACK,
+};
+
+static const GLenum valid_transform_feedback_primitive_mode_table[] = {
+    GL_POINTS,
+    GL_LINES,
+    GL_TRIANGLES,
+};
+
 static const GLenum valid_value_buffer_target_table[] = {
     GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM,
 };
@@ -596,6 +618,8 @@ Validators::Validators()
                            arraysize(valid_render_buffer_target_table)),
       reset_status(valid_reset_status_table,
                    arraysize(valid_reset_status_table)),
+      sampler_parameter(valid_sampler_parameter_table,
+                        arraysize(valid_sampler_parameter_table)),
       shader_binary_format(),
       shader_parameter(valid_shader_parameter_table,
                        arraysize(valid_shader_parameter_table)),
@@ -633,6 +657,12 @@ Validators::Validators()
                     arraysize(valid_texture_usage_table)),
       texture_wrap_mode(valid_texture_wrap_mode_table,
                         arraysize(valid_texture_wrap_mode_table)),
+      transform_feedback_bind_target(
+          valid_transform_feedback_bind_target_table,
+          arraysize(valid_transform_feedback_bind_target_table)),
+      transform_feedback_primitive_mode(
+          valid_transform_feedback_primitive_mode_table,
+          arraysize(valid_transform_feedback_primitive_mode_table)),
       value_buffer_target(valid_value_buffer_target_table,
                           arraysize(valid_value_buffer_target_table)),
       vertex_attrib_size(valid_vertex_attrib_size_table,

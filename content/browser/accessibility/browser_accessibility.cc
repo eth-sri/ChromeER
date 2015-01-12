@@ -51,7 +51,6 @@ bool BrowserAccessibility::PlatformIsLeaf() const {
   // implementation details, but we want to expose them as leaves
   // to platform accessibility APIs.
   switch (GetRole()) {
-    case ui::AX_ROLE_EDITABLE_TEXT:
     case ui::AX_ROLE_SLIDER:
     case ui::AX_ROLE_STATIC_TEXT:
     case ui::AX_ROLE_TEXT_AREA:
@@ -677,6 +676,23 @@ bool BrowserAccessibility::IsEditableText() const {
   return (!HasState(ui::AX_STATE_READ_ONLY) ||
           GetRole() == ui::AX_ROLE_TEXT_FIELD ||
           GetRole() == ui::AX_ROLE_TEXT_AREA);
+}
+
+bool BrowserAccessibility::IsWebAreaForPresentationalIframe() const {
+  if (GetRole() != ui::AX_ROLE_WEB_AREA &&
+      GetRole() != ui::AX_ROLE_ROOT_WEB_AREA) {
+    return false;
+  }
+
+  BrowserAccessibility* parent = GetParent();
+  if (!parent)
+    return false;
+
+  BrowserAccessibility* grandparent = parent->GetParent();
+  if (!grandparent)
+    return false;
+
+  return grandparent->GetRole() == ui::AX_ROLE_IFRAME_PRESENTATIONAL;
 }
 
 std::string BrowserAccessibility::GetTextRecursive() const {

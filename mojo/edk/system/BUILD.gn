@@ -2,6 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../mojo_edk.gni")
+
+if (is_android) {
+  import("//build/config/android/config.gni")
+  import("//build/config/android/rules.gni")
+}
+
 config("system_config") {
   defines = [
     # Ensures that dependent projects import the core functions on Windows.
@@ -13,6 +20,11 @@ component("system") {
   output_name = "mojo_system_impl"
 
   sources = [
+    "async_waiter.cc",
+    "async_waiter.h",
+    "awakable.h",
+    "awakable_list.cc",
+    "awakable_list.h",
     "channel.cc",
     "channel.h",
     "channel_endpoint.cc",
@@ -36,9 +48,13 @@ component("system") {
     "data_pipe_producer_dispatcher.h",
     "dispatcher.cc",
     "dispatcher.h",
+    "endpoint_relayer.cc",
+    "endpoint_relayer.h",
     "handle_signals_state.h",
     "handle_table.cc",
     "handle_table.h",
+    "incoming_endpoint.cc",
+    "incoming_endpoint.h",
     "local_data_pipe.cc",
     "local_data_pipe.h",
     "local_message_pipe_endpoint.cc",
@@ -74,8 +90,6 @@ component("system") {
     "transport_data.h",
     "waiter.cc",
     "waiter.h",
-    "waiter_list.cc",
-    "waiter_list.h",
   ]
 
   defines = [
@@ -86,9 +100,9 @@ component("system") {
   all_dependent_configs = [ ":system_config" ]
 
   public_deps = [
-    "//mojo/edk/embedder",
-    "//mojo/edk/embedder:platform",
-    "//mojo/public/c/system",
+    "../embedder",
+    "../embedder:platform",
+    "../../public/c/system",
   ]
 
   deps = [
@@ -96,13 +110,28 @@ component("system") {
     "//base/third_party/dynamic_annotations",
   ]
 
-  allow_circular_includes_from = [ "//mojo/edk/embedder" ]
+  allow_circular_includes_from = [ "../embedder" ]
+}
+
+mojo_edk_source_set("test_utils") {
+  testonly = true
+
+  sources = [
+    "test_utils.cc",
+    "test_utils.h",
+  ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+  ]
 }
 
 # GYP version: mojo/edk/mojo_edk.gyp:mojo_system_unittests
 test("mojo_system_unittests") {
   sources = [
     "../test/multiprocess_test_helper_unittest.cc",
+    "awakable_list_unittest.cc",
     "channel_endpoint_id_unittest.cc",
     "channel_manager_unittest.cc",
     "channel_unittest.cc",
@@ -125,10 +154,6 @@ test("mojo_system_unittests") {
     "run_all_unittests.cc",
     "shared_buffer_dispatcher_unittest.cc",
     "simple_dispatcher_unittest.cc",
-    # TODO(vtl): Factor test_utils.* into their own source set.
-    "test_utils.cc",
-    "test_utils.h",
-    "waiter_list_unittest.cc",
     "waiter_test_utils.cc",
     "waiter_test_utils.h",
     "waiter_unittest.cc",
@@ -136,14 +161,19 @@ test("mojo_system_unittests") {
 
   deps = [
     ":system",
+    ":test_utils",
+    "../embedder:embedder_unittests",
+    "../test:test_support",
     "//base",
     "//base/test:test_support",
-    "//mojo/edk/embedder:embedder_unittests",
-    "//mojo/edk/test:test_support",
     "//testing/gtest",
   ]
 
-  allow_circular_includes_from = [ "//mojo/edk/embedder:embedder_unittests" ]
+  if (is_android) {
+    deps += [ "//testing/android:native_test_native_code" ]
+  }
+
+  allow_circular_includes_from = [ "../embedder:embedder_unittests" ]
 }
 
 # GYP version: mojo/edk/mojo_edk.gyp:mojo_message_pipe_perftests
@@ -152,16 +182,24 @@ test("mojo_message_pipe_perftests") {
     "message_pipe_perftest.cc",
     "message_pipe_test_utils.h",
     "message_pipe_test_utils.cc",
-    "test_utils.cc",
-    "test_utils.h",
   ]
 
   deps = [
     ":system",
+    ":test_utils",
+    "../test:test_support",
     "//base",
     "//base/test:test_support",
     "//base/test:test_support_perf",
-    "//mojo/edk/test:test_support",
     "//testing/gtest",
   ]
+}
+
+if (is_android) {
+  unittest_apk("mojo_system_unittests_apk") {
+    deps = [
+      ":mojo_system_unittests",
+    ]
+    unittests_dep = ":mojo_system_unittests"
+  }
 }

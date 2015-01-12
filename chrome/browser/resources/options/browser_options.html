@@ -203,9 +203,7 @@
         <div id="audio-history" hidden>
           <div class="settings-row">
             <label class="hotword-audio-history">
-              <span id="audio-history-label"
-                    i18n-content="hotwordAudioHistoryEnabled">
-              </span>
+              <span id="audio-history-label"></span>
             </label>
             <a target="_blank" class="hotword-link"
                i18n-content="hotwordAudioHistoryManage"
@@ -294,13 +292,14 @@
           <select class="control"
               i18n-options="timezoneList" data-type="string"
               pref="cros.system.timezone"
-              aria-labelledby="timezone-value-label"></select>
+              aria-labelledby="timezone-value-label"
+              metric="Options_TimezoneSelect"></select>
         </div>
       </div>
       <div class="checkbox settings-row">
         <label>
           <input id="use-24hour-clock" pref="settings.clock.use_24hour_clock"
-              type="checkbox">
+              metric="Options_Use24HourClockCheckbox" type="checkbox">
           <span i18n-content="use24HourClock"></span>
         </label>
       </div>
@@ -482,6 +481,22 @@
           </label>
         </div>
       </div>
+<if expr="chromeos">
+      <div id="wake-on-wifi" hidden
+          class="checkbox controlled-setting-with-label">
+        <label>
+          <input id="wake-on-wifi-checkbox" type="checkbox"
+              metric="Options_WakeOnWifiSsid"
+              pref="settings.internet.wake_on_wifi_ssid">
+          <span>
+            <span i18n-content="wakeOnWifiLabel"></span>
+            <span id="wake-on-wifi-indicator"
+                class="controlled-setting-indicator"
+                pref="settings.internet.wake_on_wifi_ssid"></span>
+          </span>
+        </label>
+      </div>
+</if>
     </div>
   </section>
 <if expr="chromeos">

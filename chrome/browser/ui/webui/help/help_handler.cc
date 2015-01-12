@@ -16,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task_runner_util.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -49,6 +50,7 @@
 #include "base/i18n/time_formatting.h"
 #include "base/prefs/pref_service.h"
 #include "base/sys_info.h"
+#include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos_factory.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -126,12 +128,26 @@ bool CanChangeChannel(Profile* profile) {
   return false;
 }
 
+// Reads the file containing the FCC label text, if found. Must be called from
+// the blocking pool.
+std::string ReadFCCLabelText() {
+  const base::FilePath asset_dir(FILE_PATH_LITERAL(chrome::kChromeOSAssetPath));
+  const base::FilePath label_file_path =
+      asset_dir.AppendASCII(kFCCLabelTextPath);
+
+  std::string contents;
+  if (base::ReadFileToString(label_file_path, &contents))
+    return contents;
+  return std::string();
+}
+
 #endif  // defined(OS_CHROMEOS)
 
 }  // namespace
 
 HelpHandler::HelpHandler()
-    : version_updater_(VersionUpdater::Create(nullptr)), weak_factory_(this) {
+    : version_updater_(VersionUpdater::Create(nullptr)),
+      weak_factory_(this) {
 }
 
 HelpHandler::~HelpHandler() {
@@ -262,8 +278,8 @@ void HelpHandler::GetLocalizedValues(base::DictionaryValue* localized_strings) {
           IDS_ABOUT_PAGE_CHANNEL_CHANGE_PAGE_UNSTABLE_MESSAGE,
           product_name));
 
-  if (CommandLine::ForCurrentProcess()->
-      HasSwitch(chromeos::switches::kDisableNewChannelSwitcherUI)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kDisableNewChannelSwitcherUI)) {
     localized_strings->SetBoolean("disableNewChannelSwitcherUI", true);
   }
 #endif
@@ -279,8 +295,8 @@ void HelpHandler::GetLocalizedValues(base::DictionaryValue* localized_strings) {
 
   localized_strings->SetString("userAgentInfo", GetUserAgent());
 
-  CommandLine::StringType command_line =
-      CommandLine::ForCurrentProcess()->GetCommandLineString();
+  base::CommandLine::StringType command_line =
+      base::CommandLine::ForCurrentProcess()->GetCommandLineString();
   localized_strings->SetString("commandLineInfo", command_line);
 }
 
@@ -353,14 +369,19 @@ base::string16 HelpHandler::BuildBrowserVersionString() {
 
 void HelpHandler::OnPageLoaded(const base::ListValue* args) {
 #if defined(OS_CHROMEOS)
-  // Version information is loaded from a callback
-  loader_.GetVersion(
-      chromeos::VersionLoader::VERSION_FULL,
-      base::Bind(&HelpHandler::OnOSVersion, base::Unretained(this)),
-      &tracker_);
-  loader_.GetFirmware(
-      base::Bind(&HelpHandler::OnOSFirmware, base::Unretained(this)),
-      &tracker_);
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&chromeos::version_loader::GetVersion,
+                 chromeos::version_loader::VERSION_FULL),
+      base::Bind(&HelpHandler::OnOSVersion,
+                 weak_factory_.GetWeakPtr()));
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&chromeos::version_loader::GetFirmware),
+      base::Bind(&HelpHandler::OnOSFirmware,
+                 weak_factory_.GetWeakPtr()));
 
   web_ui()->CallJavascriptFunction(
       "help.HelpPage.updateEnableReleaseChannel",
@@ -403,9 +424,12 @@ void HelpHandler::OnPageLoaded(const base::ListValue* args) {
   version_updater_->GetChannel(false,
       base::Bind(&HelpHandler::OnTargetChannel, weak_factory_.GetWeakPtr()));
 
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&HelpHandler::LoadFCCLabelText, weak_factory_.GetWeakPtr()));
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&ReadFCCLabelText),
+      base::Bind(&HelpHandler::OnFCCLabelTextRead,
+                 weak_factory_.GetWeakPtr()));
 #endif
 }
 
@@ -587,16 +611,11 @@ void HelpHandler::OnTargetChannel(const std::string& channel) {
       "help.HelpPage.updateTargetChannel", base::StringValue(channel));
 }
 
-void HelpHandler::LoadFCCLabelText() {
-  base::FilePath path(std::string(chrome::kChromeOSAssetPath) +
-                      kFCCLabelTextPath);
-  std::string contents;
-  if (base::ReadFileToString(path, &contents)) {
-    // Remove unnecessary whitespace.
-    base::StringValue label(base::CollapseWhitespaceASCII(contents, true));
-    web_ui()->CallJavascriptFunction("help.HelpPage.setProductLabelText",
-                                     label);
-  }
+void HelpHandler::OnFCCLabelTextRead(const std::string& text) {
+  // Remove unnecessary whitespace.
+  web_ui()->CallJavascriptFunction(
+      "help.HelpPage.setProductLabelText",
+      base::StringValue(base::CollapseWhitespaceASCII(text, true)));
 }
 
 #endif // defined(OS_CHROMEOS)

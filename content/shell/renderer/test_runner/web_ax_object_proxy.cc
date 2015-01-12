@@ -80,8 +80,6 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Div");
     case blink::WebAXRoleDocument:
       return result.append("Document");
-    case blink::WebAXRoleEditableText:
-      return result.append("EditableText");
     case blink::WebAXRoleEmbeddedObject:
       return result.append("EmbeddedObject");
     case blink::WebAXRoleFigcaption:
@@ -96,8 +94,6 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Grid");
     case blink::WebAXRoleGroup:
       return result.append("Group");
-    case blink::WebAXRoleGrowArea:
-      return result.append("GrowArea");
     case blink::WebAXRoleHeading:
       return result.append("Heading");
     case blink::WebAXRoleIgnored:
@@ -204,8 +200,6 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("SpinButtonPart");
     case blink::WebAXRoleSpinButton:
       return result.append("SpinButton");
-    case blink::WebAXRoleSplitGroup:
-      return result.append("SplitGroup");
     case blink::WebAXRoleSplitter:
       return result.append("Splitter");
     case blink::WebAXRoleStaticText:
@@ -297,16 +291,14 @@ std::string GetTitle(const blink::WebAXObject& object) {
   return title.insert(0, "AXTitle: ");
 }
 
-std::string GetOrientation(const blink::WebAXObject& object) {
-  if (object.isVertical())
-    return "AXOrientation: AXVerticalOrientation";
-
-  return "AXOrientation: AXHorizontalOrientation";
-}
-
 std::string GetValueDescription(const blink::WebAXObject& object) {
   std::string value_description = object.valueDescription().utf8();
   return value_description.insert(0, "AXValueDescription: ");
+}
+
+std::string GetLanguage(const blink::WebAXObject& object) {
+  std::string language = object.language().utf8();
+  return language.insert(0, "AXLanguage: ");
 }
 
 std::string GetAttributes(const blink::WebAXObject& object) {
@@ -481,6 +473,7 @@ WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetProperty("description", &WebAXObjectProxy::Description)
       .SetProperty("helpText", &WebAXObjectProxy::HelpText)
       .SetProperty("stringValue", &WebAXObjectProxy::StringValue)
+      .SetProperty("language", &WebAXObjectProxy::Language)
       .SetProperty("x", &WebAXObjectProxy::X)
       .SetProperty("y", &WebAXObjectProxy::Y)
       .SetProperty("width", &WebAXObjectProxy::Width)
@@ -516,6 +509,7 @@ WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetProperty("rowCount", &WebAXObjectProxy::RowCount)
       .SetProperty("columnCount", &WebAXObjectProxy::ColumnCount)
       .SetProperty("isClickable", &WebAXObjectProxy::IsClickable)
+      .SetProperty("isButtonStateMixed", &WebAXObjectProxy::IsButtonStateMixed)
       .SetMethod("allAttributes", &WebAXObjectProxy::AllAttributes)
       .SetMethod("attributesOfChildren",
                  &WebAXObjectProxy::AttributesOfChildren)
@@ -524,6 +518,8 @@ WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetMethod("childAtIndex", &WebAXObjectProxy::ChildAtIndex)
       .SetMethod("elementAtPoint", &WebAXObjectProxy::ElementAtPoint)
       .SetMethod("tableHeader", &WebAXObjectProxy::TableHeader)
+      .SetMethod("rowHeaderAtIndex", &WebAXObjectProxy::RowHeaderAtIndex)
+      .SetMethod("columnHeaderAtIndex", &WebAXObjectProxy::ColumnHeaderAtIndex)
       .SetMethod("rowIndexRange", &WebAXObjectProxy::RowIndexRange)
       .SetMethod("columnIndexRange", &WebAXObjectProxy::ColumnIndexRange)
       .SetMethod("cellForColumnAndRow", &WebAXObjectProxy::CellForColumnAndRow)
@@ -624,6 +620,11 @@ std::string WebAXObjectProxy::HelpText() {
 std::string WebAXObjectProxy::StringValue() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return GetStringValue(accessibility_object_);
+}
+
+std::string WebAXObjectProxy::Language() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return GetLanguage(accessibility_object_);
 }
 
 int WebAXObjectProxy::X() {
@@ -776,7 +777,13 @@ bool WebAXObjectProxy::IsReadOnly() {
 
 std::string WebAXObjectProxy::Orientation() {
   accessibility_object_.updateLayoutAndCheckValidity();
-  return GetOrientation(accessibility_object_);
+  if (accessibility_object_.orientation() == blink::WebAXOrientationVertical)
+    return "AXOrientation: AXVerticalOrientation";
+  else if (accessibility_object_.orientation()
+           == blink::WebAXOrientationHorizontal)
+    return "AXOrientation: AXHorizontalOrientation";
+
+  return std::string();
 }
 
 int WebAXObjectProxy::ClickPointX() {
@@ -802,6 +809,11 @@ int32_t WebAXObjectProxy::ColumnCount() {
 bool WebAXObjectProxy::IsClickable() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return accessibility_object_.isClickable();
+}
+
+bool WebAXObjectProxy::IsButtonStateMixed() {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  return accessibility_object_.isButtonStateMixed();
 }
 
 std::string WebAXObjectProxy::AllAttributes() {
@@ -878,6 +890,28 @@ v8::Handle<v8::Object> WebAXObjectProxy::TableHeader() {
     return v8::Handle<v8::Object>();
 
   return factory_->GetOrCreate(obj);
+}
+
+v8::Handle<v8::Object> WebAXObjectProxy::RowHeaderAtIndex(unsigned index) {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> headers;
+  accessibility_object_.rowHeaders(headers);
+  size_t headerCount = headers.size();
+  if (index >= headerCount)
+    return v8::Handle<v8::Object>();
+
+  return factory_->GetOrCreate(headers[index]);
+}
+
+v8::Handle<v8::Object> WebAXObjectProxy::ColumnHeaderAtIndex(unsigned index) {
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> headers;
+  accessibility_object_.columnHeaders(headers);
+  size_t headerCount = headers.size();
+  if (index >= headerCount)
+    return v8::Handle<v8::Object>();
+
+  return factory_->GetOrCreate(headers[index]);
 }
 
 std::string WebAXObjectProxy::RowIndexRange() {

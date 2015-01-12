@@ -277,7 +277,7 @@ class SyncerTest : public testing::Test,
             session_.get()));
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     dir_maker_.SetUp();
     mock_server_.reset(new MockConnectionManager(directory(),
                                                  &cancelation_signal_));
@@ -324,7 +324,7 @@ class SyncerTest : public testing::Test,
     mock_server_->SetKeystoreKey("encryption_key");
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     model_type_registry_->UnregisterDirectoryTypeDebugInfoObserver(
         &debug_info_cache_);
     mock_server_.reset();
@@ -853,6 +853,47 @@ TEST_F(SyncerTest, GetCommitIds_VerifyDeletionCommitOrder) {
 
     Entry entry3(&trans, GET_BY_HANDLE, result_handles[3]);
     EXPECT_EQ(ids_.FromNumber(4), entry3.GetId());
+  }
+}
+
+// Verify that if there are more deleted items than the maximum number of
+// entries, child to parent order is still preserved.
+TEST_F(SyncerTest, GetCommitIds_VerifyDeletionCommitOrderMaxEntries) {
+  {
+    WriteTransaction trans(FROM_HERE, UNITTEST, directory());
+
+    // Create a bookmark tree with one root, two second level, and three third
+    // level bookmarks, all folders.
+    for (int i = 1; i <= 6; ++i) {
+      MutableEntry entry(&trans, CREATE, BOOKMARKS, trans.root_id(), "");
+      entry.PutId(ids_.FromNumber(i));
+      entry.PutIsDir(true);
+      entry.PutBaseVersion(5);
+      entry.PutServerVersion(5);
+      entry.PutParentId(ids_.FromNumber(i/2));
+      entry.PutServerParentId(ids_.FromNumber(i/2));
+      entry.PutServerIsDir(true);
+      entry.PutIsUnsynced(true);
+      entry.PutSpecifics(DefaultBookmarkSpecifics());
+      entry.PutIsDel(true);
+    }
+  }
+
+  {
+    // Run GetCommitIds with a limit of 2 entries to commit.
+    syncable::Directory::Metahandles result_handles;
+    syncable::ReadTransaction trans(FROM_HERE, directory());
+    GetCommitIdsForType(&trans, BOOKMARKS, 2, &result_handles);
+
+    // Now verify the output.  We expect two results in child to parent order
+    // (descending id order).
+    ASSERT_EQ(2U, result_handles.size());
+
+    Entry entry0(&trans, GET_BY_HANDLE, result_handles[0]);
+    EXPECT_EQ(ids_.FromNumber(6), entry0.GetId());
+
+    Entry entry1(&trans, GET_BY_HANDLE, result_handles[1]);
+    EXPECT_EQ(ids_.FromNumber(5), entry1.GetId());
   }
 }
 
@@ -4638,7 +4679,7 @@ TEST_F(SyncerBookmarksTest, LocalDeleteRemoteChangeConflict) {
 
   // Trigger a getupdates that modifies the bookmark. The update should  be
   // clobbered by the local delete.
-  mock_server_->AddUpdateBookmark(GetServerId(), Id(), "dummy", 10, 10,
+  mock_server_->AddUpdateBookmark(GetServerId(), Id::GetRoot(), "dummy", 10, 10,
                                   local_cache_guid(), local_id_.GetServerId());
 
   SyncShareNudge();

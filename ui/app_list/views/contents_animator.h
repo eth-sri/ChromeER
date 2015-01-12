@@ -39,6 +39,10 @@ class ContentsAnimator {
  protected:
   const ContentsView* contents_view() const { return contents_view_; }
 
+  // Gets the on-screen page bounds for a given launcher page with index
+  // |page_index|.
+  gfx::Rect GetOnscreenPageBounds(int page_index) const;
+
   // Gets the origin (the off-screen resting place) for a given launcher page
   // with index |page_index|.
   gfx::Rect GetOffscreenPageBounds(int page_index) const;
@@ -51,6 +55,17 @@ class ContentsAnimator {
   void UpdateCustomPageForDefaultAnimation(double progress,
                                            int from_page,
                                            int to_page) const;
+
+  // Updates the position of the search box view, placing it in the correct
+  // position for the transition from |from_page| to |to_page|.
+  void UpdateSearchBoxForDefaultAnimation(double progress,
+                                          int from_page,
+                                          int to_page) const;
+
+  // Clips the drawing of the search results page to its onscreen bounds.
+  void ClipSearchResultsPageToOnscreenBounds(int page_index,
+                                             const gfx::Rect& current_bounds,
+                                             const gfx::Rect& onscreen_bounds);
 
  private:
   ContentsView* contents_view_;
@@ -70,6 +85,7 @@ class DefaultAnimator : public ContentsAnimator {
   std::string NameForTests() const override;
   void Update(double progress, int from_page, int to_page) override;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(DefaultAnimator);
 };
 
@@ -84,6 +100,7 @@ class StartToAppsAnimator : public ContentsAnimator {
   std::string NameForTests() const override;
   void Update(double progress, int start_page, int apps_page) override;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(StartToAppsAnimator);
 };
 
@@ -95,6 +112,7 @@ class StartToCustomAnimator : public ContentsAnimator {
   std::string NameForTests() const override;
   void Update(double progress, int start_page, int custom_page) override;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(StartToCustomAnimator);
 };
 

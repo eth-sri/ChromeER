@@ -49,33 +49,32 @@ const char kIsApprtcCallUpJavascript[] =
 // call gets up when connecting to the same room from two tabs in a browser.
 class WebRtcApprtcBrowserTest : public WebRtcTestBase {
  public:
-  WebRtcApprtcBrowserTest()
-      : dev_appserver_(base::kNullProcessHandle),
-        firefox_(base::kNullProcessHandle) {
-  }
+  WebRtcApprtcBrowserTest() {}
 
-  void SetUpCommandLine(CommandLine* command_line) override {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     EXPECT_FALSE(command_line->HasSwitch(switches::kUseFakeUIForMediaStream));
 
     // The video playback will not work without a GPU, so force its use here.
     command_line->AppendSwitch(switches::kUseGpuInTests);
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kUseFakeDeviceForMediaStream);
   }
 
   void TearDown() override {
-    // Kill any processes we may have brought up.
+    // Kill any processes we may have brought up. Note: this isn't perfect,
+    // especially if the test hangs or if we're on Windows.
     LOG(INFO) << "Entering TearDown";
-    if (dev_appserver_ != base::kNullProcessHandle)
-      base::KillProcess(dev_appserver_, 0, false);
-    // TODO(phoglund): Find some way to shut down Firefox cleanly on Windows.
-    if (firefox_ != base::kNullProcessHandle)
-      base::KillProcess(firefox_, 0, false);
+    if (dev_appserver_.IsValid())
+      base::KillProcess(dev_appserver_.Handle(), 0, false);
+    if (collider_server_.IsValid())
+      base::KillProcess(collider_server_.Handle(), 0, false);
+    if (firefox_.IsValid())
+      base::KillProcess(firefox_.Handle(), 0, false);
     LOG(INFO) << "Exiting TearDown";
   }
 
  protected:
-  bool LaunchApprtcInstanceOnLocalhost() {
+  bool LaunchApprtcInstanceOnLocalhost(const std::string& port) {
     base::FilePath appengine_dev_appserver =
         GetSourceDir().Append(
             FILE_PATH_LITERAL("../google_appengine/dev_appserver.py"));
@@ -93,18 +92,47 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
       return false;
     }
 
-    CommandLine command_line(CommandLine::NO_PROGRAM);
+    base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
     EXPECT_TRUE(GetPythonCommand(&command_line));
 
     command_line.AppendArgPath(appengine_dev_appserver);
     command_line.AppendArgPath(apprtc_dir);
-    command_line.AppendArg("--port=9999");
+    command_line.AppendArg("--port=" + port);
     command_line.AppendArg("--admin_port=9998");
     command_line.AppendArg("--skip_sdk_update_check");
+    command_line.AppendArg("--clear_datastore=yes");
 
     DVLOG(1) << "Running " << command_line.GetCommandLineString();
-    return base::LaunchProcess(command_line, base::LaunchOptions(),
-                               &dev_appserver_);
+    dev_appserver_ = base::LaunchProcess(command_line, base::LaunchOptions());
+    return dev_appserver_.IsValid();
+  }
+
+  bool LaunchColliderOnLocalHost(const std::string& apprtc_url,
+                                 const std::string& collider_port) {
+    // The go workspace should be created, and collidermain built, at the
+    // runhooks stage when webrtc.DEPS/build_apprtc_collider.py runs.
+#if defined(OS_WIN)
+    base::FilePath collider_server = GetSourceDir().Append(
+        FILE_PATH_LITERAL("out/go-workspace/bin/collidermain.exe"));
+#else
+    base::FilePath collider_server = GetSourceDir().Append(
+        FILE_PATH_LITERAL("out/go-workspace/bin/collidermain"));
+#endif
+    if (!base::PathExists(collider_server)) {
+      LOG(ERROR) << "Missing Collider server binary at " <<
+          collider_server.value() << ". " << kAdviseOnGclientSolution;
+      return false;
+    }
+
+    base::CommandLine command_line(collider_server);
+
+    command_line.AppendArg("-tls=false");
+    command_line.AppendArg("-port=" + collider_port);
+    command_line.AppendArg("-room-server=" + apprtc_url);
+
+    DVLOG(1) << "Running " << command_line.GetCommandLineString();
+    collider_server_ = base::LaunchProcess(command_line, base::LaunchOptions());
+    return collider_server_.IsValid();
   }
 
   bool LocalApprtcInstanceIsUp() {
@@ -191,34 +219,19 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
       return false;
     }
 
-    CommandLine command_line(firefox_launcher);
+    base::CommandLine command_line(firefox_launcher);
     command_line.AppendSwitchPath("--binary", firefox_binary);
     command_line.AppendSwitchASCII("--webpage", url.spec());
 
     DVLOG(1) << "Running " << command_line.GetCommandLineString();
-    return base::LaunchProcess(command_line, base::LaunchOptions(),
-                               &firefox_);
-  }
-
-  bool HasWebcamOnSystem() {
-#if defined(OS_LINUX)
-    // Implementation note: normally we would be able to figure this out with
-    // MediaStreamTrack.getSources, but we can't ask Chrome since it runs in
-    // fake device mode where it will not enumerate webcams on the system.
-    // Therefore, look for /dev/video* entries directly since this test only
-    // runs on Linux for now anyway.
-    base::FileEnumerator dev_video(base::FilePath(FILE_PATH_LITERAL("/dev")),
-                                   false, base::FileEnumerator::FILES,
-                                   FILE_PATH_LITERAL("video*"));
-    return !dev_video.Next().empty();
-#endif
-    NOTREACHED();
-    return false;
+    firefox_ = base::LaunchProcess(command_line, base::LaunchOptions());
+    return firefox_.IsValid();
   }
 
  private:
-  base::ProcessHandle dev_appserver_;
-  base::ProcessHandle firefox_;
+  base::Process dev_appserver_;
+  base::Process firefox_;
+  base::Process collider_server_;
 };
 
 IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
@@ -227,12 +240,13 @@ IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
     return;
 
   DetectErrorsInJavaScript();
-  ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());
+  ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost("9999"));
+  ASSERT_TRUE(LaunchColliderOnLocalHost("http://localhost:9999", "8089"));
   while (!LocalApprtcInstanceIsUp())
     DVLOG(1) << "Waiting for AppRTC to come up...";
 
-  GURL room_url = GURL(base::StringPrintf("localhost:9999?r=room_%d",
-                                          base::RandInt(0, 65536)));
+  GURL room_url = GURL("http://localhost:9999/r/some_room"
+                       "?wsh=localhost&wsp=8089&wstls=false");
 
   chrome::AddTabAt(browser(), GURL(), -1, true);
   content::WebContents* left_tab = OpenPageAndAcceptUserMedia(room_url);
@@ -269,12 +283,14 @@ IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest,
     return;
 
   DetectErrorsInJavaScript();
-  ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());
+  ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost("9999"));
+  ASSERT_TRUE(LaunchColliderOnLocalHost("http://localhost:9999", "8089"));
   while (!LocalApprtcInstanceIsUp())
     DVLOG(1) << "Waiting for AppRTC to come up...";
 
-  GURL room_url = GURL(
-      "http://localhost:9999?r=some_room_id&firefox_fake_device=1");
+  GURL room_url = GURL("http://localhost:9999/r/some_room"
+                       "?wsh=localhost&wsp=8089&wstls=false"
+                       "&firefox_fake_device=1");
   content::WebContents* chrome_tab = OpenPageAndAcceptUserMedia(room_url);
 
   ASSERT_TRUE(LaunchFirefoxWithUrl(room_url));

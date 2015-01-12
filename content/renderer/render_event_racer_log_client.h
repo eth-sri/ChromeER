@@ -20,7 +20,7 @@ public:
   virtual void didHappenBefore(const WebVector<WebEventActionEdge> &) override;
   virtual void didUpdateStringTable(size_t, const WebVector<WebString> &) override;
 
-  virtual bool Send(IPC::Message* msg) override;
+  bool Send(IPC::Message* msg) override;
 
 private:
   int32 routing_id_;

@@ -62,8 +62,8 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
     if (result != MOJO_RESULT_OK) {
       // It was closed, probably.
       CHECK_EQ(result, MOJO_RESULT_FAILED_PRECONDITION);
-      CHECK_EQ(hss.satisfied_signals, 0u);
-      CHECK_EQ(hss.satisfiable_signals, 0u);
+      CHECK_EQ(hss.satisfied_signals, MOJO_HANDLE_SIGNAL_PEER_CLOSED);
+      CHECK_EQ(hss.satisfiable_signals, MOJO_HANDLE_SIGNAL_PEER_CLOSED);
       break;
     } else {
       CHECK((hss.satisfied_signals & MOJO_HANDLE_SIGNAL_READABLE));
@@ -96,7 +96,13 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(EchoEcho) {
 }
 
 // Sends "hello" to child, and expects "hellohello" back.
-TEST_F(MultiprocessMessagePipeTest, Basic) {
+#if defined(OS_ANDROID)
+// Android multi-process tests are not executing the new process. This is flaky.
+#define MAYBE_Basic DISABLED_Basic
+#else
+#define MAYBE_Basic Basic
+#endif  // defined(OS_ANDROID)
+TEST_F(MultiprocessMessagePipeTest, MAYBE_Basic) {
   helper()->StartChild("EchoEcho");
 
   scoped_refptr<ChannelEndpoint> ep;
@@ -136,7 +142,13 @@ TEST_F(MultiprocessMessagePipeTest, Basic) {
 
 // Sends a bunch of messages to the child. Expects them "repeated" back. Waits
 // for the child to close its end before quitting.
-TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
+#if defined(OS_ANDROID)
+// Android multi-process tests are not executing the new process. This is flaky.
+#define MAYBE_QueueMessages DISABLED_QueueMessages
+#else
+#define MAYBE_QueueMessages QueueMessages
+#endif  // defined(OS_ANDROID)
+TEST_F(MultiprocessMessagePipeTest, DISABLED_QueueMessages) {
   helper()->StartChild("EchoEcho");
 
   scoped_refptr<ChannelEndpoint> ep;
@@ -184,8 +196,8 @@ TEST_F(MultiprocessMessagePipeTest, QueueMessages) {
   HandleSignalsState hss;
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
             test::WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
-  EXPECT_EQ(0u, hss.satisfied_signals);
-  EXPECT_EQ(0u, hss.satisfiable_signals);
+  EXPECT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfied_signals);
+  EXPECT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfiable_signals);
 
   mp->Close(0);
 
@@ -211,8 +223,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   // pipe before we do.
   CHECK_EQ(hss.satisfied_signals,
            MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
-  CHECK_EQ(hss.satisfiable_signals,
-           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  CHECK_EQ(hss.satisfiable_signals, MOJO_HANDLE_SIGNAL_READABLE |
+                                        MOJO_HANDLE_SIGNAL_WRITABLE |
+                                        MOJO_HANDLE_SIGNAL_PEER_CLOSED);
 
   // It should have a shared buffer.
   std::string read_buffer(100, '\0');
@@ -260,8 +273,9 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
            MOJO_RESULT_OK);
   CHECK_EQ(hss.satisfied_signals,
            MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
-  CHECK_EQ(hss.satisfiable_signals,
-           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  CHECK_EQ(hss.satisfiable_signals, MOJO_HANDLE_SIGNAL_READABLE |
+                                        MOJO_HANDLE_SIGNAL_WRITABLE |
+                                        MOJO_HANDLE_SIGNAL_PEER_CLOSED);
 
   read_buffer = std::string(100, '\0');
   num_bytes = static_cast<uint32_t>(read_buffer.size());
@@ -282,10 +296,11 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckSharedBuffer) {
   return 0;
 }
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
 #define MAYBE_SharedBufferPassing SharedBufferPassing
 #else
 // Not yet implemented (on Windows).
+// Android multi-process tests are not executing the new process. This is flaky.
 #define MAYBE_SharedBufferPassing DISABLED_SharedBufferPassing
 #endif
 TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
@@ -301,7 +316,7 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
                                 platform_support(),
                                 SharedBufferDispatcher::kDefaultCreateOptions,
                                 100, &dispatcher));
-  ASSERT_TRUE(dispatcher.get());
+  ASSERT_TRUE(dispatcher);
 
   // Make a mapping.
   scoped_ptr<embedder::PlatformSharedBufferMapping> mapping;
@@ -364,8 +379,8 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_SharedBufferPassing) {
   hss = HandleSignalsState();
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
             test::WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
-  EXPECT_EQ(0u, hss.satisfied_signals);
-  EXPECT_EQ(0u, hss.satisfiable_signals);
+  EXPECT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfied_signals);
+  EXPECT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfiable_signals);
 
   mp->Close(0);
 
@@ -387,13 +402,14 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckPlatformHandleFile) {
            MOJO_RESULT_OK);
   CHECK_EQ(hss.satisfied_signals,
            MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
-  CHECK_EQ(hss.satisfiable_signals,
-           MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  CHECK_EQ(hss.satisfiable_signals, MOJO_HANDLE_SIGNAL_READABLE |
+                                        MOJO_HANDLE_SIGNAL_WRITABLE |
+                                        MOJO_HANDLE_SIGNAL_PEER_CLOSED);
 
   std::string read_buffer(100, '\0');
   uint32_t num_bytes = static_cast<uint32_t>(read_buffer.size());
   DispatcherVector dispatchers;
-  uint32_t num_dispatchers = 10;  // Maximum number to receive.
+  uint32_t num_dispatchers = 30;  // Maximum number to receive.
   CHECK_EQ(mp->ReadMessage(0, UserPointer<void>(&read_buffer[0]),
                            MakeUserPointer(&num_bytes), &dispatchers,
                            &num_dispatchers, MOJO_READ_MESSAGE_FLAG_NONE),
@@ -401,34 +417,38 @@ MOJO_MULTIPROCESS_TEST_CHILD_MAIN(CheckPlatformHandleFile) {
   mp->Close(0);
 
   read_buffer.resize(num_bytes);
-  CHECK_EQ(read_buffer, std::string("hello"));
-  CHECK_EQ(num_dispatchers, 1u);
+  char hello[32];
+  int num_handles = 0;
+  sscanf(read_buffer.c_str(), "%s %d", hello, &num_handles);
+  CHECK_EQ(std::string("hello"), std::string(hello));
+  CHECK_GT(num_handles, 0);
 
-  CHECK_EQ(dispatchers[0]->GetType(), Dispatcher::kTypePlatformHandle);
+  for (int i = 0; i < num_handles; ++i) {
+    CHECK_EQ(dispatchers[i]->GetType(), Dispatcher::kTypePlatformHandle);
 
-  scoped_refptr<PlatformHandleDispatcher> dispatcher(
-      static_cast<PlatformHandleDispatcher*>(dispatchers[0].get()));
-  embedder::ScopedPlatformHandle h = dispatcher->PassPlatformHandle().Pass();
-  CHECK(h.is_valid());
-  dispatcher->Close();
+    scoped_refptr<PlatformHandleDispatcher> dispatcher(
+        static_cast<PlatformHandleDispatcher*>(dispatchers[i].get()));
+    embedder::ScopedPlatformHandle h = dispatcher->PassPlatformHandle().Pass();
+    CHECK(h.is_valid());
+    dispatcher->Close();
 
-  base::ScopedFILE fp(mojo::test::FILEFromPlatformHandle(h.Pass(), "r"));
-  CHECK(fp);
-  std::string fread_buffer(100, '\0');
-  size_t bytes_read = fread(&fread_buffer[0], 1, fread_buffer.size(), fp.get());
-  fread_buffer.resize(bytes_read);
-  CHECK_EQ(fread_buffer, "world");
+    base::ScopedFILE fp(mojo::test::FILEFromPlatformHandle(h.Pass(), "r"));
+    CHECK(fp);
+    std::string fread_buffer(100, '\0');
+    size_t bytes_read =
+        fread(&fread_buffer[0], 1, fread_buffer.size(), fp.get());
+    fread_buffer.resize(bytes_read);
+    CHECK_EQ(fread_buffer, "world");
+  }
 
   return 0;
 }
 
-#if defined(OS_POSIX)
-#define MAYBE_PlatformHandlePassing PlatformHandlePassing
-#else
-// Not yet implemented (on Windows).
-#define MAYBE_PlatformHandlePassing DISABLED_PlatformHandlePassing
-#endif
-TEST_F(MultiprocessMessagePipeTest, MAYBE_PlatformHandlePassing) {
+class MultiprocessMessagePipeTestWithPipeCount
+    : public test::MultiprocessMessagePipeTestBase,
+      public testing::WithParamInterface<size_t> {};
+
+TEST_P(MultiprocessMessagePipeTestWithPipeCount, PlatformHandlePassing) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
@@ -438,46 +458,62 @@ TEST_F(MultiprocessMessagePipeTest, MAYBE_PlatformHandlePassing) {
   scoped_refptr<MessagePipe> mp(MessagePipe::CreateLocalProxy(&ep));
   Init(ep);
 
-  base::FilePath unused;
-  base::ScopedFILE fp(
-      CreateAndOpenTemporaryFileInDir(temp_dir.path(), &unused));
-  const std::string world("world");
-  ASSERT_EQ(fwrite(&world[0], 1, world.size(), fp.get()), world.size());
-  fflush(fp.get());
-  rewind(fp.get());
-
-  embedder::ScopedPlatformHandle h(
-      mojo::test::PlatformHandleFromFILE(fp.Pass()));
-  scoped_refptr<PlatformHandleDispatcher> dispatcher(
-      new PlatformHandleDispatcher(h.Pass()));
-
-  const std::string hello("hello");
-  DispatcherTransport transport(
-      test::DispatcherTryStartTransport(dispatcher.get()));
-  ASSERT_TRUE(transport.is_valid());
-
+  std::vector<scoped_refptr<PlatformHandleDispatcher>> dispatchers;
   std::vector<DispatcherTransport> transports;
-  transports.push_back(transport);
-  EXPECT_EQ(MOJO_RESULT_OK,
-            mp->WriteMessage(0, UserPointer<const void>(&hello[0]),
-                             static_cast<uint32_t>(hello.size()), &transports,
-                             MOJO_WRITE_MESSAGE_FLAG_NONE));
-  transport.End();
 
-  EXPECT_TRUE(dispatcher->HasOneRef());
-  dispatcher = nullptr;
+  size_t pipe_count = GetParam();
+  for (size_t i = 0; i < pipe_count; ++i) {
+    base::FilePath unused;
+    base::ScopedFILE fp(
+        CreateAndOpenTemporaryFileInDir(temp_dir.path(), &unused));
+    const std::string world("world");
+    CHECK_EQ(fwrite(&world[0], 1, world.size(), fp.get()), world.size());
+    fflush(fp.get());
+    rewind(fp.get());
+
+    scoped_refptr<PlatformHandleDispatcher> dispatcher(
+        new PlatformHandleDispatcher(embedder::ScopedPlatformHandle(
+            mojo::test::PlatformHandleFromFILE(fp.Pass()))));
+    dispatchers.push_back(dispatcher);
+    DispatcherTransport transport(
+        test::DispatcherTryStartTransport(dispatcher.get()));
+    ASSERT_TRUE(transport.is_valid());
+    transports.push_back(transport);
+  }
+
+  char message[128];
+  sprintf(message, "hello %d", static_cast<int>(pipe_count));
+  EXPECT_EQ(MOJO_RESULT_OK,
+            mp->WriteMessage(0, UserPointer<const void>(message),
+                             static_cast<uint32_t>(strlen(message)),
+                             &transports, MOJO_WRITE_MESSAGE_FLAG_NONE));
+
+  for (size_t i = 0; i < pipe_count; ++i) {
+    transports[i].End();
+    EXPECT_TRUE(dispatchers[i]->HasOneRef());
+  }
+
+  dispatchers.clear();
 
   // Wait for it to become readable, which should fail.
   HandleSignalsState hss;
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
             test::WaitIfNecessary(mp, MOJO_HANDLE_SIGNAL_READABLE, &hss));
-  EXPECT_EQ(0u, hss.satisfied_signals);
-  EXPECT_EQ(0u, hss.satisfiable_signals);
+  EXPECT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfied_signals);
+  EXPECT_EQ(MOJO_HANDLE_SIGNAL_PEER_CLOSED, hss.satisfiable_signals);
 
   mp->Close(0);
 
   EXPECT_EQ(0, helper()->WaitForChildShutdown());
 }
+
+// Not yet implemented (on Windows).
+// Android multi-process tests are not executing the new process. This is flaky.
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
+INSTANTIATE_TEST_CASE_P(PipeCount,
+                        MultiprocessMessagePipeTestWithPipeCount,
+                        testing::Values(1u, 10u, 25u));
+#endif
 
 }  // namespace
 }  // namespace system

@@ -9,32 +9,22 @@
 var DocumentNatives = requireNative('document_natives');
 var GuestView = require('guestView').GuestView;
 var GuestViewContainer = require('guestViewContainer').GuestViewContainer;
-var GuestViewInternal =
-    require('binding').Binding.create('guestViewInternal').generate();
-var GuestViewInternalNatives = requireNative('guest_view_internal');
-var IdGenerator = requireNative('id_generator');
 var WebViewConstants = require('webViewConstants').WebViewConstants;
 var WebViewEvents = require('webViewEvents').WebViewEvents;
 var WebViewInternal = require('webViewInternal').WebViewInternal;
 
 // Represents the internal state of <webview>.
 function WebViewImpl(webviewElement) {
-  GuestViewContainer.call(this, webviewElement)
+  GuestViewContainer.call(this, webviewElement, 'webview');
 
-  this.guest = new GuestView('webview');
   this.beforeFirstNavigation = true;
-  this.viewInstanceId = IdGenerator.GetNextId();
 
   this.setupWebViewAttributes();
-  this.setupFocusPropagation();
   this.setupElementProperties();
 
   // on* Event handlers.
   this.on = {};
   new WebViewEvents(this, this.viewInstanceId);
-
-  var shadowRoot = this.element.createShadowRoot();
-  shadowRoot.appendChild(this.browserPluginElement);
 }
 
 WebViewImpl.prototype.__proto__ = GuestViewContainer.prototype;
@@ -54,7 +44,7 @@ WebViewImpl.setupElement = function(proto) {
   // Create default implementations for undefined API methods.
   var createDefaultApiMethod = function(m) {
     return function(var_args) {
-      if (!this.guest.getId()) {window.console.log(this);
+      if (!this.guest.getId()) {
         return false;
       }
       var args = $Array.concat([this.guest.getId()], $Array.slice(arguments));
@@ -75,24 +65,15 @@ WebViewImpl.setupElement = function(proto) {
 
 // Initiates navigation once the <webview> element is attached to the DOM.
 WebViewImpl.prototype.onElementAttached = function() {
-  this.parseSrcAttribute();
+  this.attributes[WebViewConstants.ATTRIBUTE_SRC].parse();
 };
 
 // Resets some state upon detaching <webview> element from the DOM.
 WebViewImpl.prototype.onElementDetached = function() {
-  // If the guest's ID is defined then the <webview> has navigated and has
-  // already picked up a partition ID. Thus, we need to reset the initialization
-  // state. However, it may be the case that beforeFirstNavigation is false BUT
-  // the guest's ID has yet to be initialized. This means that we have not
-  // heard back from createGuest yet. We will not reset the flag in this case so
-  // that we don't end up allocating a second guest.
-  if (this.guest.getId()) {
-    this.guest.destroy();
-    this.guest = new GuestView('webview');
-    this.beforeFirstNavigation = true;
-    this.attributes[WebViewConstants.ATTRIBUTE_PARTITION].validPartitionId =
-        true;
-  }
+  this.guest.destroy();
+  this.beforeFirstNavigation = true;
+  this.attributes[WebViewConstants.ATTRIBUTE_PARTITION].validPartitionId =
+      true;
   this.internalInstanceId = 0;
 };
 
@@ -106,24 +87,6 @@ WebViewImpl.prototype.setRequestPropertyOnWebViewElement = function(request) {
         enumerable: true
       }
   );
-};
-
-WebViewImpl.prototype.setupFocusPropagation = function() {
-  if (!this.element.hasAttribute('tabIndex')) {
-    // <webview> needs a tabIndex in order to be focusable.
-    // TODO(fsamuel): It would be nice to avoid exposing a tabIndex attribute
-    // to allow <webview> to be focusable.
-    // See http://crbug.com/231664.
-    this.element.setAttribute('tabIndex', -1);
-  }
-  this.element.addEventListener('focus', function(e) {
-    // Focus the BrowserPlugin when the <webview> takes focus.
-    this.browserPluginElement.focus();
-  }.bind(this));
-  this.element.addEventListener('blur', function(e) {
-    // Blur the BrowserPlugin when the <webview> loses focus.
-    this.browserPluginElement.blur();
-  }.bind(this));
 };
 
 WebViewImpl.prototype.setupElementProperties = function() {
@@ -152,21 +115,6 @@ WebViewImpl.prototype.handleAttributeMutation = function(
 
   // Let the changed attribute handle its own mutation;
   this.attributes[attributeName].handleMutation(oldValue, newValue);
-};
-
-WebViewImpl.prototype.handleBrowserPluginAttributeMutation = function(
-    attributeName, oldValue, newValue) {
-  if (attributeName == WebViewConstants.ATTRIBUTE_INTERNALINSTANCEID &&
-      !oldValue && !!newValue) {
-    this.browserPluginElement.removeAttribute(
-        WebViewConstants.ATTRIBUTE_INTERNALINSTANCEID);
-    this.internalInstanceId = parseInt(newValue);
-
-    if (!this.guest.getId()) {
-      return;
-    }
-    this.guest.attach(this.internalInstanceId, this.buildAttachParams());
-  }
 };
 
 WebViewImpl.prototype.onSizeChanged = function(webViewEvent) {
@@ -205,37 +153,15 @@ WebViewImpl.prototype.onSizeChanged = function(webViewEvent) {
   }
 };
 
-WebViewImpl.prototype.parseSrcAttribute = function() {
-  if (!this.elementAttached ||
-      !this.attributes[WebViewConstants.ATTRIBUTE_PARTITION].validPartitionId ||
-      !this.attributes[WebViewConstants.ATTRIBUTE_SRC].getValue()) {
-    return;
-  }
-
-  if (!this.guest.getId()) {
-    if (this.beforeFirstNavigation) {
-      this.beforeFirstNavigation = false;
-      this.createGuest();
-    }
-    return;
-  }
-
-  // Navigate to |this.src|.
-  WebViewInternal.navigate(
-      this.guest.getId(),
-      this.attributes[WebViewConstants.ATTRIBUTE_SRC].getValue());
-};
-
 WebViewImpl.prototype.createGuest = function() {
   var params = {
     'storagePartitionId': this.attributes[
       WebViewConstants.ATTRIBUTE_PARTITION].getValue()
   };
 
-  this.guest.create(params,
-                    function() {
-                      this.attachWindow();
-                    }.bind(this));
+  this.guest.create(params, function() {
+    this.attachWindow();
+  }.bind(this));
 };
 
 WebViewImpl.prototype.onFrameNameChanged = function(name) {
@@ -295,30 +221,25 @@ WebViewImpl.prototype.onAttach = function(storagePartitionId) {
 };
 
 WebViewImpl.prototype.buildAttachParams = function() {
-  var params = {
-    'instanceId': this.viewInstanceId,
-    'userAgentOverride': this.userAgentOverride
-  };
+  var params = { 'userAgentOverride': this.userAgentOverride };
   for (var i in this.attributes) {
     params[i] = this.attributes[i].getValue();
   }
   return params;
 };
 
-WebViewImpl.prototype.attachWindow = function(guestInstanceId) {
-  if (guestInstanceId) {
-    if (this.guest.getId() && this.guest.getId() != guestInstanceId) {
-      this.guest.destroy();
+WebViewImpl.prototype.attachWindow = function(opt_guestInstanceId) {
+  // If |opt_guestInstanceId| was provided, then a different existing guest is
+  // being attached to this webview, and the current one will get destroyed.
+  if (opt_guestInstanceId) {
+    if (this.guest.getId() == opt_guestInstanceId) {
+      return true;
     }
-    this.guest = new GuestView('webview', guestInstanceId);
+    this.guest.destroy();
+    this.guest = new GuestView('webview', opt_guestInstanceId);
   }
 
-  if (!this.internalInstanceId) {
-    return true;
-  }
-
-  this.guest.attach(this.internalInstanceId, this.buildAttachParams());
-  return true;
+  return GuestViewContainer.prototype.attachWindow.call(this);
 };
 
 // Shared implementation of executeScript() and insertCSS().
@@ -345,8 +266,12 @@ WebViewImpl.prototype.maybeGetChromeWebViewEvents = function() {};
 // Implemented when the experimental WebView API is available.
 WebViewImpl.maybeGetExperimentalApiMethods = function() { return []; };
 WebViewImpl.prototype.setupExperimentalContextMenus = function() {};
+WebViewImpl.prototype.maybeSetupExperimentalChromeWebViewEvents =
+  function(request) {
+    return request;
+};
 
-GuestViewContainer.listenForReadyStateChange(WebViewImpl);
+GuestViewContainer.registerElement(WebViewImpl);
 
 // Exports.
 exports.WebViewImpl = WebViewImpl;

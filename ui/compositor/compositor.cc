@@ -77,6 +77,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       device_scale_factor_(0.0f),
       last_started_frame_(0),
       last_ended_frame_(0),
+      num_failed_recreate_attempts_(0),
       disable_schedule_composite_(false),
       compositor_lock_(NULL),
       defer_draw_scheduling_(false),
@@ -87,7 +88,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       weak_ptr_factory_(this) {
   root_web_layer_ = cc::Layer::Create();
 
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   cc::LayerTreeSettings settings;
   // When impl-side painting is enabled, this will ensure PictureLayers always
@@ -109,6 +110,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
 #endif
 #if defined(OS_WIN)
   settings.disable_hi_res_timer_tasks_on_battery = true;
+  settings.renderer_settings.finish_rendering_on_resize = true;
 #endif
 
   // These flags should be mirrored by renderer versions in content/renderer/.
@@ -239,7 +241,7 @@ void Compositor::Draw() {
     // TODO(nduca): Temporary while compositor calls
     // compositeImmediately() directly.
     cc::BeginFrameArgs args = cc::BeginFrameArgs::Create(
-        gfx::FrameTime::Now(), base::TimeTicks(),
+        BEGINFRAME_FROM_HERE, gfx::FrameTime::Now(), base::TimeTicks(),
         cc::BeginFrameArgs::DefaultInterval(), cc::BeginFrameArgs::SYNCHRONOUS);
     BeginMainFrame(args);
     host_->Composite(args.frame_time);
@@ -256,8 +258,9 @@ void Compositor::ScheduleRedrawRect(const gfx::Rect& damage_rect) {
   host_->SetNeedsRedrawRect(damage_rect);
 }
 
-void Compositor::FinishAllRendering() {
+void Compositor::DisableSwapUntilResize() {
   host_->FinishAllRendering();
+  context_factory_->ResizeDisplay(this, gfx::Size());
 }
 
 void Compositor::SetLatencyInfo(const ui::LatencyInfo& latency_info) {
@@ -272,6 +275,7 @@ void Compositor::SetScaleAndSize(float scale, const gfx::Size& size_in_pixel) {
     size_ = size_in_pixel;
     host_->SetViewportSize(size_in_pixel);
     root_web_layer_->SetBounds(size_in_pixel);
+    context_factory_->ResizeDisplay(this, size_in_pixel);
   }
   if (device_scale_factor_ != scale) {
     device_scale_factor_ = scale;
@@ -353,9 +357,28 @@ void Compositor::Layout() {
   disable_schedule_composite_ = false;
 }
 
-void Compositor::RequestNewOutputSurface(bool fallback) {
+void Compositor::RequestNewOutputSurface() {
+  bool fallback =
+      num_failed_recreate_attempts_ >= OUTPUT_SURFACE_RETRIES_BEFORE_FALLBACK;
   context_factory_->CreateOutputSurface(weak_ptr_factory_.GetWeakPtr(),
                                         fallback);
+}
+
+void Compositor::DidInitializeOutputSurface() {
+  num_failed_recreate_attempts_ = 0;
+}
+
+void Compositor::DidFailToInitializeOutputSurface() {
+  num_failed_recreate_attempts_++;
+
+  // Tolerate a certain number of recreation failures to work around races
+  // in the output-surface-lost machinery.
+  if (num_failed_recreate_attempts_ >= MAX_OUTPUT_SURFACE_RETRIES)
+    LOG(FATAL) << "Failed to create a fallback OutputSurface.";
+
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&Compositor::RequestNewOutputSurface,
+                            weak_ptr_factory_.GetWeakPtr()));
 }
 
 void Compositor::DidCommit() {

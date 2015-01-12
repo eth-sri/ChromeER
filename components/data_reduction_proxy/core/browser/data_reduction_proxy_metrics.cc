@@ -292,25 +292,22 @@ class DailyDataSavingUpdate {
 }  // namespace
 
 DataReductionProxyRequestType GetDataReductionProxyRequestType(
-    const net::URLRequest* request) {
-  if (request->url().SchemeIs(url::kHttpsScheme))
+    const net::URLRequest& request,
+    const DataReductionProxyParams& params) {
+  if (request.url().SchemeIs(url::kHttpsScheme))
     return HTTPS;
-  if (!request->url().SchemeIs(url::kHttpScheme)) {
+  if (!request.url().SchemeIs(url::kHttpScheme)) {
     NOTREACHED();
     return UNKNOWN_TYPE;
   }
-  DataReductionProxyParams params(
-        DataReductionProxyParams::kAllowed |
-        DataReductionProxyParams::kFallbackAllowed |
-        DataReductionProxyParams::kPromoAllowed);
   base::TimeDelta bypass_delay;
-  if (params.AreDataReductionProxiesBypassed(*request, &bypass_delay)) {
+  if (params.AreDataReductionProxiesBypassed(request, &bypass_delay)) {
     if (bypass_delay > base::TimeDelta::FromSeconds(kLongBypassDelayInSeconds))
       return LONG_BYPASS;
     return SHORT_BYPASS;
   }
-  if (request->response_info().headers.get() &&
-      HasDataReductionProxyViaHeader(request->response_info().headers.get(),
+  if (request.response_info().headers.get() &&
+      HasDataReductionProxyViaHeader(request.response_info().headers.get(),
                                      NULL)) {
     return VIA_DATA_REDUCTION_PROXY;
   }
@@ -468,9 +465,10 @@ void UpdateContentLengthPrefsForDataReductionProxy(
 
 void UpdateContentLengthPrefs(int received_content_length,
                               int original_content_length,
-                              PrefService* profile_prefs,
+                              bool data_reduction_proxy_enabled,
                               DataReductionProxyRequestType request_type,
                               DataReductionProxyStatisticsPrefs* prefs) {
+  DCHECK(prefs);
   int64 total_received = prefs->GetInt64(
       data_reduction_proxy::prefs::kHttpReceivedContentLength);
   int64 total_original = prefs->GetInt64(
@@ -484,13 +482,10 @@ void UpdateContentLengthPrefs(int received_content_length,
       data_reduction_proxy::prefs::kHttpOriginalContentLength,
       total_original);
 
-  bool with_data_reduction_proxy_enabled =
-      profile_prefs->GetBoolean(
-          data_reduction_proxy::prefs::kDataReductionProxyEnabled);
   UpdateContentLengthPrefsForDataReductionProxy(
       received_content_length,
       original_content_length,
-      with_data_reduction_proxy_enabled,
+      data_reduction_proxy_enabled,
       request_type,
       base::Time::Now(),
       prefs);

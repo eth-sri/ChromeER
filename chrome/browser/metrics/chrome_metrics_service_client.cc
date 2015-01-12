@@ -59,6 +59,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/metrics/chromeos_metrics_provider.h"
+#include "chrome/browser/metrics/signin_status_metrics_provider_chromeos.h"
 #endif
 
 #if defined(OS_WIN)
@@ -70,7 +71,7 @@
 
 #if !defined(OS_CHROMEOS) && !defined(OS_IOS)
 #include "chrome/browser/metrics/signin_status_metrics_provider.h"
-#endif
+#endif  // !defined(OS_CHROMEOS) && !defined(OS_IOS)
 
 namespace {
 
@@ -337,13 +338,18 @@ void ChromeMetricsServiceClient::Initialize() {
   chromeos_metrics_provider_ = chromeos_metrics_provider;
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(chromeos_metrics_provider));
+
+  SigninStatusMetricsProviderChromeOS* signin_metrics_provider_cros =
+      new SigninStatusMetricsProviderChromeOS;
+  metrics_service_->RegisterMetricsProvider(
+      scoped_ptr<metrics::MetricsProvider>(signin_metrics_provider_cros));
 #endif  // defined(OS_CHROMEOS)
 
 #if !defined(OS_CHROMEOS) && !defined(OS_IOS)
   metrics_service_->RegisterMetricsProvider(
       scoped_ptr<metrics::MetricsProvider>(
           SigninStatusMetricsProvider::CreateInstance()));
-#endif
+#endif  // !defined(OS_CHROMEOS) && !defined(OS_IOS)
 }
 
 void ChromeMetricsServiceClient::OnInitTaskGotHardwareClass() {
@@ -444,7 +450,7 @@ void ChromeMetricsServiceClient::OnHistogramSynchronizationDone() {
 
 void ChromeMetricsServiceClient::RecordCommandLineMetrics() {
   // Get stats on use of command line.
-  const CommandLine* command_line(CommandLine::ForCurrentProcess());
+  const base::CommandLine* command_line(base::CommandLine::ForCurrentProcess());
   size_t common_commands = 0;
   if (command_line->HasSwitch(switches::kUserDataDir)) {
     ++common_commands;

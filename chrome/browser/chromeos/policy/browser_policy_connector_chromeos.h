@@ -11,6 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 
@@ -23,20 +24,21 @@ class URLRequestContextGetter;
 
 namespace policy {
 
-class AppPackUpdater;
 class ConsumerManagementService;
 class DeviceCloudPolicyInitializer;
 class DeviceCloudPolicyInvalidator;
-class DeviceCloudPolicyManagerChromeOS;
 class DeviceLocalAccountPolicyService;
 class DeviceManagementService;
+struct EnrollmentConfig;
 class EnterpriseInstallAttributes;
 class NetworkConfigurationUpdater;
 class ProxyPolicyProvider;
 class ServerBackedStateKeysBroker;
 
 // Extends ChromeBrowserPolicyConnector with the setup specific to ChromeOS.
-class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
+class BrowserPolicyConnectorChromeOS
+    : public ChromeBrowserPolicyConnector,
+      public DeviceCloudPolicyManagerChromeOS::Observer {
  public:
   BrowserPolicyConnectorChromeOS();
 
@@ -67,11 +69,14 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
   // For other OSes the function will always return DEVICE_MODE_CONSUMER.
   DeviceMode GetDeviceMode();
 
+  // Get the enrollment configuration for the device as decided by various
+  // factors. See DeviceCloudPolicyInitializer::GetPrescribedEnrollmentConfig()
+  // for details.
+  EnrollmentConfig GetPrescribedEnrollmentConfig() const;
+
   // Works out the user affiliation by checking the given |user_name| against
   // the installation attributes.
   UserAffiliation GetUserAffiliation(const std::string& user_name);
-
-  AppPackUpdater* GetAppPackUpdater();
 
   DeviceCloudPolicyManagerChromeOS* GetDeviceCloudPolicyManager() {
     return device_cloud_policy_manager_;
@@ -130,11 +135,12 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
   // Registers device refresh rate pref.
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
+  // DeviceCloudPolicyManagerChromeOS::Observer:
+  void OnDeviceCloudPolicyManagerConnected() override;
+
  private:
   // Set the timezone as soon as the policies are available.
   void SetTimezoneIfPolicyAvailable();
-
-  void OnDeviceCloudPolicyManagerConnected();
 
   // Components of the device cloud policy implementation.
   scoped_ptr<ServerBackedStateKeysBroker> state_keys_broker_;
@@ -155,7 +161,6 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
   // pointer to get to the ProxyPolicyProvider at SetUserPolicyDelegate().
   ProxyPolicyProvider* global_user_cloud_policy_provider_;
 
-  scoped_ptr<AppPackUpdater> app_pack_updater_;
   scoped_ptr<NetworkConfigurationUpdater> network_configuration_updater_;
 
   base::WeakPtrFactory<BrowserPolicyConnectorChromeOS> weak_ptr_factory_;

@@ -265,7 +265,7 @@ function unload() {
 
 /**
  * Loads the video file.
- * @param {Object} video Data of the video file.
+ * @param {!FileEntry} video Entry of the video to be played.
  * @param {function()=} opt_callback Completion callback.
  * @private
  */
@@ -273,9 +273,9 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
   this.unloadVideo(true);
 
   this.loadQueue_.run(function(callback) {
-    document.title = video.title;
+    document.title = video.name;
 
-    document.querySelector('#title').innerText = video.title;
+    document.querySelector('#title').innerText = video.name;
 
     var videoPlayerElement = document.querySelector('#video-player');
     if (this.currentPos_ === (this.videos_.length - 1))
@@ -298,7 +298,7 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
 
     videoPlayerElement.setAttribute('loading', true);
 
-    var media = new MediaManager(video.entry);
+    var media = new MediaManager(video);
 
     Promise.all([media.getThumbnail(), media.getToken()])
         .then(function(results) {
@@ -318,6 +318,8 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
 
     var videoElementInitializePromise;
     if (this.currentCast_) {
+      metrics.recordPlayType(metrics.PLAY_TYPE.CAST);
+
       videoPlayerElement.setAttribute('casting', true);
 
       document.querySelector('#cast-name').textContent =
@@ -342,6 +344,7 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
             }.bind(this));
           }.bind(this));
     } else {
+      metrics.recordPlayType(metrics.PLAY_TYPE.LOCAL);
       videoPlayerElement.removeAttribute('casting');
 
       this.videoElement_ = document.createElement('video');
@@ -349,7 +352,7 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
           this.videoElement_);
 
       this.controls.attachMedia(this.videoElement_);
-      this.videoElement_.src = video.url;
+      this.videoElement_.src = video.toURL();
 
       media.isAvailableForCast().then(function(result) {
         if (result)
@@ -390,6 +393,9 @@ VideoPlayer.prototype.loadVideo_ = function(video, opt_callback) {
         }.bind(this))
         // In case of error.
         .catch(function(error) {
+          if (this.currentCast_)
+            metrics.recordCastVideoErrorAction();
+
           videoPlayerElement.removeAttribute('loading');
           console.error('Failed to initialize the video element.',
                         error.stack || error);
@@ -626,27 +632,6 @@ VideoPlayer.prototype.onCastSessionUpdate_ = function(alive) {
     this.unloadVideo();
 };
 
-/**
- * Initialize the list of videos.
- * @param {function(Array.<Object>)} callback Called with the video list when
- *     it is ready.
- */
-function initVideos(callback) {
-  if (window.videos) {
-    var videos = window.videos;
-    window.videos = null;
-    callback(videos);
-    return;
-  }
-
-  chrome.runtime.onMessage.addListener(
-      function(request, sender, sendResponse) {
-        var videos = window.videos;
-        window.videos = null;
-        callback(videos);
-      }.wrap(null));
-}
-
 var player = new VideoPlayer();
 
 /**
@@ -661,13 +646,25 @@ function initStrings(callback) {
   }.wrap(null));
 }
 
+function initVolumeManager(callback) {
+  var volumeManager = new VolumeManagerWrapper(
+      VolumeManagerWrapper.DriveEnabledStatus.DRIVE_ENABLED);
+  volumeManager.ensureInitialized(callback);
+}
+
 var initPromise = Promise.all(
-    [new Promise(initVideos.wrap(null)),
-     new Promise(initStrings.wrap(null)),
+    [new Promise(initStrings.wrap(null)),
+     new Promise(initVolumeManager.wrap(null)),
      new Promise(util.addPageLoadHandler.wrap(null))]);
 
-initPromise.then(function(results) {
-  var videos = results[0];
-  player.prepare(videos);
-  return new Promise(player.playFirstVideo.wrap(player));
-}.wrap(null));
+initPromise.then(function(unused) {
+  return new Promise(function(fulfill, reject) {
+    util.URLsToEntries(window.appState.items, function(entries) {
+      metrics.recordOpenVideoPlayerAction();
+      metrics.recordNumberOfOpenedFiles(entries.length);
+
+      player.prepare(entries);
+      player.playFirstVideo(player, fulfill);
+    }.wrap());
+  }.wrap());
+}.wrap());

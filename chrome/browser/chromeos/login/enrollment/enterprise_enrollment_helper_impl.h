@@ -14,9 +14,8 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
-#include "chrome/browser/chromeos/login/enrollment/enrollment_mode.h"
 #include "chrome/browser/chromeos/login/enrollment/enterprise_enrollment_helper.h"
-#include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
+#include "chrome/browser/chromeos/policy/enrollment_config.h"
 #include "components/policy/core/common/cloud/enterprise_metrics.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 
@@ -31,9 +30,10 @@ namespace chromeos {
 class EnterpriseEnrollmentHelperImpl : public EnterpriseEnrollmentHelper,
                                        public BrowsingDataRemover::Observer {
  public:
-  EnterpriseEnrollmentHelperImpl(EnrollmentStatusConsumer* status_consumer,
-                                 EnrollmentMode enrollment_mode,
-                                 std::string& user);
+  EnterpriseEnrollmentHelperImpl(
+      EnrollmentStatusConsumer* status_consumer,
+      const policy::EnrollmentConfig& enrollment_config,
+      const std::string& enrolling_user_domain);
   virtual ~EnterpriseEnrollmentHelperImpl();
 
   // Overridden from EnterpriseEnrollmentHelper:
@@ -57,20 +57,14 @@ class EnterpriseEnrollmentHelperImpl : public EnterpriseEnrollmentHelper,
   void ReportEnrollmentStatus(policy::EnrollmentStatus status);
 
   // Logs an UMA event in the kMetricEnrollment or the kMetricEnrollmentRecovery
-  // histogram, depending on |enrollment_mode_|.  If auto-enrollment is on,
-  // |sample| is ignored and a kMetricEnrollmentAutoFailed sample is logged
-  // instead.
-  void UMAFailure(policy::MetricEnrollment sample);
-
-  bool is_auto_enrollment() const {
-    return enrollment_mode_ == ENROLLMENT_MODE_AUTO;
-  }
+  // histogram, depending on |enrollment_mode_|.
+  void UMA(policy::MetricEnrollment sample);
 
   // Overridden from BrowsingDataRemover::Observer:
   virtual void OnBrowsingDataRemoverDone() override;
 
-  EnrollmentMode enrollment_mode_;
-  std::string user_;
+  const policy::EnrollmentConfig enrollment_config_;
+  const std::string enrolling_user_domain_;
   Profile* profile_;
   bool fetch_additional_token_;
 

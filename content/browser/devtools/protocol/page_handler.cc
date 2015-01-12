@@ -12,6 +12,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
 #include "content/browser/devtools/protocol/color_picker.h"
+#include "content/browser/devtools/protocol/frame_recorder.h"
 #include "content/browser/devtools/protocol/usage_and_quota_query.h"
 #include "content/browser/geolocation/geolocation_service_context.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -115,11 +116,13 @@ PageHandler::PageHandler()
       screencast_max_width_(-1),
       screencast_max_height_(-1),
       capture_retry_count_(0),
-      has_last_compositor_frame_metadata_(false),
+      has_compositor_frame_metadata_(false),
       screencast_frame_sent_(0),
       screencast_frame_acked_(0),
+      processing_screencast_frame_(false),
       color_picker_(new ColorPicker(base::Bind(
           &PageHandler::OnColorPicked, base::Unretained(this)))),
+      frame_recorder_(new FrameRecorder()),
       host_(nullptr),
       weak_factory_(this) {
 }
@@ -132,6 +135,7 @@ void PageHandler::SetRenderViewHost(RenderViewHostImpl* host) {
     return;
 
   color_picker_->SetRenderViewHost(host);
+  frame_recorder_->SetRenderViewHost(host);
   host_ = host;
   UpdateTouchEventEmulationState();
 }
@@ -146,12 +150,15 @@ void PageHandler::Detached() {
 
 void PageHandler::OnSwapCompositorFrame(
     const cc::CompositorFrameMetadata& frame_metadata) {
-  last_compositor_frame_metadata_ = frame_metadata;
-  has_last_compositor_frame_metadata_ = true;
+  last_compositor_frame_metadata_ = has_compositor_frame_metadata_ ?
+      next_compositor_frame_metadata_ : frame_metadata;
+  next_compositor_frame_metadata_ = frame_metadata;
+  has_compositor_frame_metadata_ = true;
 
   if (screencast_enabled_)
     InnerSwapCompositorFrame();
   color_picker_->OnSwapCompositorFrame();
+  frame_recorder_->OnSwapCompositorFrame();
 }
 
 void PageHandler::OnVisibilityChanged(bool visible) {
@@ -321,15 +328,14 @@ Response PageHandler::SetTouchEmulationEnabled(
   return Response::FallThrough();
 }
 
-scoped_refptr<DevToolsProtocol::Response> PageHandler::CaptureScreenshot(
-    scoped_refptr<DevToolsProtocol::Command> command) {
+Response PageHandler::CaptureScreenshot(DevToolsCommandId command_id) {
   if (!host_ || !host_->GetView())
-    return command->InternalErrorResponse("Could not connect to view");
+    return Response::InternalError("Could not connect to view");
 
   host_->GetSnapshotFromBrowser(
       base::Bind(&PageHandler::ScreenshotCaptured,
-          weak_factory_.GetWeakPtr(), command));
-  return command->AsyncResponsePromise();
+          weak_factory_.GetWeakPtr(), command_id));
+  return Response::OK();
 }
 
 Response PageHandler::CanScreencast(bool* result) {
@@ -377,7 +383,7 @@ Response PageHandler::StartScreencast(const std::string* format,
   bool visible = !host_->is_hidden();
   NotifyScreencastVisibility(visible);
   if (visible) {
-    if (has_last_compositor_frame_metadata_)
+    if (has_compositor_frame_metadata_)
       InnerSwapCompositorFrame();
     else
       host_->Send(new ViewMsg_ForceRedraw(host_->GetRoutingID(), 0));
@@ -389,6 +395,15 @@ Response PageHandler::StopScreencast() {
   screencast_enabled_ = false;
   UpdateTouchEventEmulationState();
   return Response::FallThrough();
+}
+
+Response PageHandler::StartRecordingFrames(int max_frame_count) {
+  return frame_recorder_->StartRecordingFrames(max_frame_count);
+}
+
+Response PageHandler::StopRecordingFrames(DevToolsCommandId command_id) {
+  return frame_recorder_->StopRecordingFrames(base::Bind(
+      &PageHandler::OnFramesRecorded, base::Unretained(this), command_id));
 }
 
 Response PageHandler::ScreencastFrameAck(int frame_number) {
@@ -419,11 +434,10 @@ Response PageHandler::HandleJavaScriptDialog(bool accept,
   return Response::InternalError("Could not handle JavaScript dialog");
 }
 
-scoped_refptr<DevToolsProtocol::Response> PageHandler::QueryUsageAndQuota(
-    const std::string& security_origin,
-    scoped_refptr<DevToolsProtocol::Command> command) {
+Response PageHandler::QueryUsageAndQuota(DevToolsCommandId command_id,
+                                         const std::string& security_origin) {
   if (!host_)
-    return command->InternalErrorResponse("Could not connect to view");
+    return Response::InternalError("Could not connect to view");
 
   scoped_refptr<storage::QuotaManager> quota_manager =
       host_->GetProcess()->GetStoragePartition()->GetQuotaManager();
@@ -436,9 +450,8 @@ scoped_refptr<DevToolsProtocol::Response> PageHandler::QueryUsageAndQuota(
                  GURL(security_origin),
                  base::Bind(&PageHandler::QueryUsageAndQuotaCompleted,
                             weak_factory_.GetWeakPtr(),
-                            command)));
-
-  return command->AsyncResponsePromise();
+                            command_id)));
+  return Response::OK();
 }
 
 Response PageHandler::SetColorPickerEnabled(bool enabled) {
@@ -470,7 +483,7 @@ void PageHandler::NotifyScreencastVisibility(bool visible) {
 
 void PageHandler::InnerSwapCompositorFrame() {
   if (screencast_frame_sent_ - screencast_frame_acked_ >
-      kMaxScreencastFramesInFlight) {
+      kMaxScreencastFramesInFlight || processing_screencast_frame_) {
     return;
   }
 
@@ -508,6 +521,7 @@ void PageHandler::InnerSwapCompositorFrame() {
       gfx::ScaleSize(viewport_size_dip, scale)));
 
   if (snapshot_size_dip.width() > 0 && snapshot_size_dip.height() > 0) {
+    processing_screencast_frame_ = true;
     gfx::Rect viewport_bounds_dip(gfx::ToRoundedSize(viewport_size_dip));
     view->CopyFromCompositingSurface(
         viewport_bounds_dip,
@@ -524,6 +538,7 @@ void PageHandler::ScreencastFrameCaptured(
     const SkBitmap& bitmap,
     ReadbackResponse response) {
   if (response != READBACK_SUCCESS) {
+    processing_screencast_frame_ = false;
     if (capture_retry_count_) {
       --capture_retry_count_;
       base::MessageLoop::current()->PostDelayedTask(
@@ -540,12 +555,15 @@ void PageHandler::ScreencastFrameCaptured(
       base::Bind(&EncodeScreencastFrame,
                  bitmap, screencast_format_, screencast_quality_),
       base::Bind(&PageHandler::ScreencastFrameEncoded,
-                 weak_factory_.GetWeakPtr(), metadata));
+                 weak_factory_.GetWeakPtr(), metadata, base::Time::Now()));
 }
 
 void PageHandler::ScreencastFrameEncoded(
     const cc::CompositorFrameMetadata& metadata,
+    const base::Time& timestamp,
     const std::string& data) {
+  processing_screencast_frame_ = false;
+
   // Consider metadata empty in case it has no device scale factor.
   if (metadata.device_scale_factor == 0 || !host_ || data.empty())
     return;
@@ -564,20 +582,20 @@ void PageHandler::ScreencastFrameEncoded(
           ->set_device_width(screen_size_dip.width())
           ->set_device_height(screen_size_dip.height())
           ->set_scroll_offset_x(metadata.root_scroll_offset.x())
-          ->set_scroll_offset_y(metadata.root_scroll_offset.y());
+          ->set_scroll_offset_y(metadata.root_scroll_offset.y())
+          ->set_timestamp(timestamp.ToDoubleT());
   client_->ScreencastFrame(ScreencastFrameParams::Create()
       ->set_data(data)
       ->set_metadata(param_metadata)
       ->set_frame_number(++screencast_frame_sent_));
 }
 
-void PageHandler::ScreenshotCaptured(
-    scoped_refptr<DevToolsProtocol::Command> command,
-    const unsigned char* png_data,
-    size_t png_size) {
+void PageHandler::ScreenshotCaptured(DevToolsCommandId command_id,
+                                     const unsigned char* png_data,
+                                     size_t png_size) {
   if (!png_data || !png_size) {
-    client_->SendInternalErrorResponse(command,
-                                       "Unable to capture screenshot");
+    client_->SendError(command_id,
+                       Response::InternalError("Unable to capture screenshot"));
     return;
   }
 
@@ -586,7 +604,7 @@ void PageHandler::ScreenshotCaptured(
       base::StringPiece(reinterpret_cast<const char*>(png_data), png_size),
       &base_64_data);
 
-  client_->SendCaptureScreenshotResponse(command,
+  client_->SendCaptureScreenshotResponse(command_id,
       CaptureScreenshotResponse::Create()->set_data(base_64_data));
 }
 
@@ -596,10 +614,16 @@ void PageHandler::OnColorPicked(int r, int g, int b, int a) {
   client_->ColorPicked(ColorPickedParams::Create()->set_color(color));
 }
 
+void PageHandler::OnFramesRecorded(
+    DevToolsCommandId command_id,
+    scoped_refptr<StopRecordingFramesResponse> response_data) {
+  client_->SendStopRecordingFramesResponse(command_id, response_data);
+}
+
 void PageHandler::QueryUsageAndQuotaCompleted(
-    scoped_refptr<DevToolsProtocol::Command> command,
+    DevToolsCommandId command_id,
     scoped_refptr<QueryUsageAndQuotaResponse> response_data) {
-  client_->SendQueryUsageAndQuotaResponse(command, response_data);
+  client_->SendQueryUsageAndQuotaResponse(command_id, response_data);
 }
 
 }  // namespace page

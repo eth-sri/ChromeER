@@ -83,8 +83,6 @@ _OS_SPECIFIC_FILTER['linux'] = [
     'ChromeDriverTest.testWindowSize',
 ]
 _OS_SPECIFIC_FILTER['mac'] = [
-    # https://code.google.com/p/chromedriver/issues/detail?id=304
-    'ChromeDriverTest.testGoBackAndGoForward',
 ]
 
 _DESKTOP_NEGATIVE_FILTER = [
@@ -538,6 +536,13 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
     self._driver.GoBack()
     self._driver.GoForward()
+
+  def testDontGoBackOrGoForward(self):
+    self.assertEquals('data:,', self._driver.GetCurrentUrl())
+    self._driver.GoBack()
+    self.assertEquals('data:,', self._driver.GetCurrentUrl())
+    self._driver.GoForward()
+    self.assertEquals('data:,', self._driver.GetCurrentUrl())
 
   def testRefresh(self):
     self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
@@ -1129,6 +1134,14 @@ class SessionHandlingTest(ChromeDriverBaseTest):
     driver.Quit()
     driver.Quit()
 
+  def testGetSessions(self):
+    driver = self.CreateDriver()
+    response = driver.GetSessions()
+    self.assertEqual(1, len(response))
+
+    driver2 = self.CreateDriver()
+    response = driver2.GetSessions()
+    self.assertEqual(2, len(response))
 
 class RemoteBrowserTest(ChromeDriverBaseTest):
   """Tests for ChromeDriver remote browser capability."""

@@ -349,7 +349,7 @@ void Traversal::AddItemThenPredecessors(
     return;  // Deleted items have no predecessors.
 
   syncable::Id prev_id = item.GetPredecessorId();
-  while (!prev_id.IsRoot()) {
+  while (!prev_id.IsNull()) {
     syncable::Entry prev(trans_, syncable::GET_BY_ID, prev_id);
     CHECK(prev.good()) << "Bad id when walking predecessors.";
     if (!prev.GetIsUnsynced()) {
@@ -496,8 +496,11 @@ void Traversal::AddCreatesAndMoves(
 void Traversal::AddDeletes(const std::set<int64>& ready_unsynced_set) {
   syncable::Directory::Metahandles deletion_list;
 
+  // Note: we iterate over all the unsynced set, regardless of the max size.
+  // The max size is only enforced after the top-to-bottom order has been
+  // reversed, in order to ensure children are always deleted before parents.
   for (std::set<int64>::const_iterator iter = ready_unsynced_set.begin();
-       !IsFull() && iter != ready_unsynced_set.end(); ++iter) {
+       iter != ready_unsynced_set.end(); ++iter) {
     int64 metahandle = *iter;
 
     if (HaveItem(metahandle))
@@ -522,9 +525,6 @@ void Traversal::AddDeletes(const std::set<int64>& ready_unsynced_set) {
         deletion_list.push_back(metahandle);
       }
     }
-
-    if (deletion_list.size() + out_->size() > max_entries_)
-      break;
   }
 
   // We've been gathering deletions in top to bottom order.  Now we reverse the

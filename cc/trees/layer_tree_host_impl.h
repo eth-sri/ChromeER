@@ -18,6 +18,7 @@
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/scrollbar_animation_controller.h"
 #include "cc/base/cc_export.h"
+#include "cc/base/synced_property.h"
 #include "cc/debug/micro_benchmark_controller_impl.h"
 #include "cc/input/input_handler.h"
 #include "cc/input/layer_scroll_offset_delegate.h"
@@ -31,6 +32,7 @@
 #include "cc/quads/render_pass.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/tile_manager.h"
+#include "cc/scheduler/commit_earlyout_reason.h"
 #include "cc/scheduler/draw_result.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -50,7 +52,7 @@ class PageScaleAnimation;
 class PaintTimeCounter;
 class PictureLayerImpl;
 class RasterTilePriorityQueue;
-class RasterWorkerPool;
+class TileTaskWorkerPool;
 class RenderPassDrawQuad;
 class RenderingStatsInstrumentation;
 class ResourcePool;
@@ -61,6 +63,14 @@ class TopControlsManager;
 class UIResourceBitmap;
 class UIResourceRequest;
 struct RendererCapabilitiesImpl;
+
+enum class GpuRasterizationStatus {
+  ON,
+  ON_FORCED,
+  OFF_DEVICE,
+  OFF_VIEWPORT,
+  OFF_CONTENT
+};
 
 // LayerTreeHost->Proxy callback interface.
 class LayerTreeHostImplClient {
@@ -83,7 +93,7 @@ class LayerTreeHostImplClient {
   virtual void SetNeedsRedrawRectOnImplThread(const gfx::Rect& damage_rect) = 0;
   virtual void SetNeedsAnimateOnImplThread() = 0;
   virtual void SetNeedsCommitOnImplThread() = 0;
-  virtual void SetNeedsManageTilesOnImplThread() = 0;
+  virtual void SetNeedsPrepareTilesOnImplThread() = 0;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
       scoped_ptr<AnimationEventsVector> events) = 0;
   // Returns true if resources were deleted by this call.
@@ -96,7 +106,7 @@ class LayerTreeHostImplClient {
       const base::Closure& start_fade,
       base::TimeDelta delay) = 0;
   virtual void DidActivateSyncTree() = 0;
-  virtual void DidManageTiles() = 0;
+  virtual void DidPrepareTiles() = 0;
 
  protected:
   virtual ~LayerTreeHostImplClient() {}
@@ -181,7 +191,7 @@ class CC_EXPORT LayerTreeHostImpl
     void AppendRenderPass(scoped_ptr<RenderPass> render_pass) override;
   };
 
-  virtual void BeginMainFrameAborted(bool did_handle);
+  virtual void BeginMainFrameAborted(CommitEarlyOutReason reason);
   virtual void BeginCommit();
   virtual void CommitComplete();
   virtual void Animate(base::TimeTicks monotonic_time);
@@ -191,7 +201,7 @@ class CC_EXPORT LayerTreeHostImpl
   void DidAnimateScrollOffset();
   void SetViewportDamage(const gfx::Rect& damage_rect);
 
-  virtual void ManageTiles();
+  virtual void PrepareTiles();
 
   // Returns DRAW_SUCCESS unless problems occured preparing the frame, and we
   // should try to avoid displaying the frame. If PrepareToDraw is called,
@@ -279,6 +289,15 @@ class CC_EXPORT LayerTreeHostImpl
   TileManager* tile_manager() { return tile_manager_.get(); }
   void SetUseGpuRasterization(bool use_gpu);
   bool use_gpu_rasterization() const { return use_gpu_rasterization_; }
+
+  GpuRasterizationStatus gpu_rasterization_status() const {
+    return gpu_rasterization_status_;
+  }
+  void set_gpu_rasterization_status(
+      GpuRasterizationStatus gpu_rasterization_status) {
+    gpu_rasterization_status_ = gpu_rasterization_status;
+  }
+
   bool create_low_res_tiling() const {
     return settings_.create_low_res_tiling && !use_gpu_rasterization_;
   }
@@ -341,6 +360,8 @@ class CC_EXPORT LayerTreeHostImpl
 
   void SetDeviceScaleFactor(float device_scale_factor);
   float device_scale_factor() const { return device_scale_factor_; }
+
+  void SetPageScaleOnActiveTree(float page_scale_factor);
 
   const gfx::Transform& DrawTransform() const;
 
@@ -472,8 +493,6 @@ class CC_EXPORT LayerTreeHostImpl
   void GetPictureLayerImplPairs(std::vector<PictureLayerImpl::Pair>* layers,
                                 bool need_valid_tile_priorities) const;
 
-  void SetTopControlsLayoutHeight(float height);
-
   void SetRequiresHighResToDraw() { requires_high_res_to_draw_ = true; }
   void ResetRequiresHighResToDraw() { requires_high_res_to_draw_ = false; }
   bool RequiresHighResToDraw() const { return requires_high_res_to_draw_; }
@@ -481,10 +500,12 @@ class CC_EXPORT LayerTreeHostImpl
   // Only valid for synchronous (non-scheduled) single-threaded case.
   void SynchronouslyInitializeAllTiles();
 
-  virtual void CreateResourceAndRasterWorkerPool(
-      scoped_ptr<RasterWorkerPool>* raster_worker_pool,
+  virtual void CreateResourceAndTileTaskWorkerPool(
+      scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
       scoped_ptr<ResourcePool>* resource_pool,
       scoped_ptr<ResourcePool>* staging_resource_pool);
+
+  bool prepare_tiles_needed() const { return tile_priorities_dirty_; }
 
  protected:
   LayerTreeHostImpl(
@@ -504,8 +525,6 @@ class CC_EXPORT LayerTreeHostImpl
       active_animation_controllers() const {
     return animation_registrar_->active_animation_controllers();
   }
-
-  bool manage_tiles_needed() const { return tile_priorities_dirty_; }
 
   LayerTreeHostImplClient* client_;
   Proxy* proxy_;
@@ -591,7 +610,8 @@ class CC_EXPORT LayerTreeHostImpl
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<TileManager> tile_manager_;
   bool use_gpu_rasterization_;
-  scoped_ptr<RasterWorkerPool> raster_worker_pool_;
+  GpuRasterizationStatus gpu_rasterization_status_;
+  scoped_ptr<TileTaskWorkerPool> tile_task_worker_pool_;
   scoped_ptr<ResourcePool> resource_pool_;
   scoped_ptr<ResourcePool> staging_resource_pool_;
   scoped_ptr<Renderer> renderer_;

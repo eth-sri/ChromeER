@@ -12,9 +12,9 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/touch/touch_editing_controller.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect.h"
 
 namespace ui {
 class Accelerator;
@@ -90,7 +90,7 @@ class CONTENT_EXPORT TouchEditableImplAura
   ui::TextInputType text_input_type_;
 
   RenderWidgetHostViewAura* rwhva_;
-  scoped_ptr<ui::TouchSelectionController> touch_selection_controller_;
+  scoped_ptr<ui::TouchEditingControllerDeprecated> touch_selection_controller_;
 
   // True if |rwhva_| is currently handling a gesture that could result in a
   // change in selection (long press, double tap or triple tap).

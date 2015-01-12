@@ -76,7 +76,7 @@ MAX_LINUX_BUILD_TIME = 14400
 
 # The confidence percentage we require to consider the initial range a
 # regression based on the test results of the inital good and bad revisions.
-REGRESSION_CONFIDENCE = 95
+REGRESSION_CONFIDENCE = 80
 
 # Patch template to add a new file, DEPS.sha under src folder.
 # This file contains SHA1 value of the DEPS changes made while bisecting
@@ -495,14 +495,15 @@ def _CheckRegressionConfidenceError(
   """
   error = False
   # Adding good and bad values to a parameter list.
-  confidenceParams = []
+  confidence_params = []
   for l in [known_bad_value['values'], known_good_value['values']]:
-    # Flatten if needed
+    # Flatten if needed, by averaging the values in each nested list
     if isinstance(l, list) and all([isinstance(x, list) for x in l]):
-      confidenceParams.append(sum(l, []))
+      averages = map(math_utils.Mean, l)
+      confidence_params.append(averages)
     else:
-      confidenceParams.append(l)
-  regression_confidence = BisectResults.ConfidenceScore(*confidenceParams)
+      confidence_params.append(l)
+  regression_confidence = BisectResults.ConfidenceScore(*confidence_params)
   if regression_confidence < REGRESSION_CONFIDENCE:
     error = REGRESSION_CONFIDENCE_ERROR_TEMPLATE.format(
         good_rev=good_revision,
@@ -1399,8 +1400,9 @@ class BisectPerformanceMetrics(object):
   def ShouldSkipRevision(depot, revision):
     """Checks whether a particular revision can be safely skipped.
 
-    Some commits can be safely skipped (such as a DEPS roll), since the tool
-    is git based those changes would have no effect.
+    Some commits can be safely skipped (such as a DEPS roll for the repos
+    still using .DEPS.git), since the tool is git based those changes
+    would have no effect.
 
     Args:
       depot: The depot being bisected.
@@ -1409,7 +1411,8 @@ class BisectPerformanceMetrics(object):
     Returns:
       True if we should skip building/testing this revision.
     """
-    if depot == 'chromium':
+    # Skips revisions with DEPS on android-chrome.
+    if depot == 'android-chrome':
       cmd = ['diff-tree', '--no-commit-id', '--name-only', '-r', revision]
       output = bisect_utils.CheckRunGit(cmd)
 
@@ -1900,6 +1903,10 @@ class BisectPerformanceMetrics(object):
     cwd = self.depot_registry.GetDepotDir(target_depot)
     good_position = source_control.GetCommitPosition(good_revision, cwd)
     bad_position = source_control.GetCommitPosition(bad_revision, cwd)
+    # Compare commit timestamp for repos that don't support commit position.
+    if not (bad_position and good_position):
+      good_position = source_control.GetCommitTime(good_revision, cwd=cwd)
+      bad_position = source_control.GetCommitTime(bad_revision, cwd=cwd)
 
     return good_position <= bad_position
 

@@ -26,12 +26,13 @@ class HIDDetectionScreenActor;
 class HostPairingScreenActor;
 class KioskAutolaunchScreenActor;
 class KioskEnableScreenActor;
-class NetworkScreenActor;
+class NetworkView;
 class ResetScreenActor;
 class SupervisedUserCreationScreenHandler;
 class TermsOfServiceScreenActor;
 class UpdateScreenActor;
 class UserImageScreenActor;
+class UserBoardView;
 class WrongHWIDScreenActor;
 
 // Interface which is used by WizardController to do actual OOBE screens
@@ -74,7 +75,7 @@ class OobeDisplay {
   // must be owned by the OobeDisplay implementation.
   virtual CoreOobeActor* GetCoreOobeActor() = 0;
   virtual UpdateScreenActor* GetUpdateScreenActor() = 0;
-  virtual NetworkScreenActor* GetNetworkScreenActor() = 0;
+  virtual NetworkView* GetNetworkView() = 0;
   virtual EulaView* GetEulaView() = 0;
   virtual EnableDebuggingScreenActor* GetEnableDebuggingScreenActor() = 0;
   virtual EnrollmentScreenActor* GetEnrollmentScreenActor() = 0;
@@ -95,6 +96,7 @@ class OobeDisplay {
   virtual HostPairingScreenActor* GetHostPairingScreenActor() = 0;
   virtual DeviceDisabledScreenActor* GetDeviceDisabledScreenActor() = 0;
   virtual GaiaScreenHandler* GetGaiaScreenActor() = 0;
+  virtual UserBoardView* GetUserBoardScreenActor() = 0;
 
   // Returns if JS side is fully loaded and ready to accept messages.
   // If |false| is returned, then |display_is_ready_callback| is stored

@@ -23,7 +23,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
-#include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
@@ -31,6 +30,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/ui/zoom/zoom_event_manager.h"
 #include "content/public/test/test_utils.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -44,9 +44,9 @@ namespace {
 
 class ZoomLevelChangeObserver {
  public:
-  explicit ZoomLevelChangeObserver(Profile* profile)
+  explicit ZoomLevelChangeObserver(content::BrowserContext* context)
       : message_loop_runner_(new content::MessageLoopRunner) {
-    subscription_ = ZoomEventManager::GetForBrowserContext(profile)
+    subscription_ = ui_zoom::ZoomEventManager::GetForBrowserContext(context)
                         ->AddZoomLevelChangedCallback(base::Bind(
                             &ZoomLevelChangeObserver::OnZoomLevelChanged,
                             base::Unretained(this)));
@@ -212,11 +212,35 @@ class HostZoomMapSanitizationBrowserTest
   DISALLOW_COPY_AND_ASSIGN(HostZoomMapSanitizationBrowserTest);
 };
 
+// Regression test for crbug.com/437392
+IN_PROC_BROWSER_TEST_F(HostZoomMapBrowserTest, ZoomEventsWorkForOffTheRecord) {
+  GURL test_url(url::kAboutBlankURL);
+  std::string test_host(test_url.host());
+  std::string test_scheme(test_url.scheme());
+  Browser* incognito_browser =
+      ui_test_utils::OpenURLOffTheRecord(browser()->profile(), test_url);
+
+  content::WebContents* web_contents =
+      incognito_browser->tab_strip_model()->GetActiveWebContents();
+
+  content::BrowserContext* context = web_contents->GetBrowserContext();
+  EXPECT_TRUE(context->IsOffTheRecord());
+  ZoomLevelChangeObserver observer(context);
+  HostZoomMap* host_zoom_map = HostZoomMap::GetForWebContents(web_contents);
+
+  double new_zoom_level =
+      host_zoom_map->GetZoomLevelForHostAndScheme(test_scheme, test_host) + 0.5;
+  host_zoom_map->SetZoomLevelForHostAndScheme(test_scheme, test_host,
+                                              new_zoom_level);
+  observer.BlockUntilZoomLevelForHostHasChanged(test_host);
+  EXPECT_EQ(new_zoom_level, host_zoom_map->GetZoomLevelForHostAndScheme(
+                                test_scheme, test_host));
+}
+
 // Regression test for crbug.com/435017.
 IN_PROC_BROWSER_TEST_F(HostZoomMapBrowserTest,
                        EventsForNonDefaultStoragePartition) {
   ZoomLevelChangeObserver observer(browser()->profile());
-
   // TODO(wjmaclean): Make this test more general by implementing a way to
   // force a generic URL to be loaded in a non-default storage partition. This
   // test currently relies on the signin page being loaded into a non-default

@@ -20,6 +20,9 @@ PasswordManagerClient::GetProbabilityForExperiment(
   return 0;
 }
 
+void PasswordManagerClient::AskUserAndMaybeReportURL(const GURL& url) const {
+}
+
 bool PasswordManagerClient::IsPasswordSyncEnabled(CustomPassphraseState state) {
   return false;
 }
@@ -33,6 +36,10 @@ void PasswordManagerClient::LogSavePasswordProgress(
 }
 
 bool PasswordManagerClient::IsLoggingActive() const {
+  return false;
+}
+
+bool PasswordManagerClient::ShouldAskUserToSubmitURL(const GURL& url) {
   return false;
 }
 
@@ -54,6 +61,27 @@ PasswordManagerClient::GetAuthorizationPromptPolicy(
   // relevant tags anyways (7/11/2014).
   // http://crbug.com/178358
   return PasswordStore::DISALLOW_PROMPT;
+}
+
+bool PasswordManagerClient::DidLastPageLoadEncounterSSLErrors() {
+  return false;
+}
+
+bool PasswordManagerClient::IsOffTheRecord() {
+  return false;
+}
+
+PasswordManager* PasswordManagerClient::GetPasswordManager() {
+  return nullptr;
+}
+
+autofill::AutofillManager*
+PasswordManagerClient::GetAutofillManagerForMainFrame() {
+  return nullptr;
+}
+
+const GURL& PasswordManagerClient::GetMainFrameURL() {
+  return GURL::EmptyGURL();
 }
 
 }  // namespace password_manager

@@ -9,7 +9,8 @@ define([
     "mojo/public/interfaces/bindings/tests/sample_service.mojom",
     "mojo/public/interfaces/bindings/tests/sample_import.mojom",
     "mojo/public/interfaces/bindings/tests/sample_import2.mojom",
-  ], function(console, hexdump, expect, sample, imported, imported2) {
+    "mojo/public/js/core",
+  ], function(console, hexdump, expect, sample, imported, imported2, core) {
 
   var global = this;
 
@@ -138,7 +139,7 @@ define([
   ServiceImpl.prototype.frobinate = function(foo, baz, port) {
     checkFoo(foo);
     expect(baz).toBe(sample.Service.BazOptions.EXTRA);
-    expect(port).toBe(10);
+    expect(core.isHandle(port)).toBeTruthy();
     global.result = "PASS";
   };
 
@@ -155,14 +156,16 @@ define([
     serviceImpl.accept(message);
   };
 
-  var receiver = new SimpleMessageReceiver();
-  var serviceProxy = new sample.Service.proxyClass(receiver);
+  var serviceProxy = new sample.Service.proxyClass;
+  serviceProxy.receiver_ = new SimpleMessageReceiver;
 
   checkDefaultValues();
 
   var foo = makeFoo();
   checkFoo(foo);
 
-  var port = 10;
-  serviceProxy.frobinate(foo, sample.Service.BazOptions.EXTRA, port);
+  var pipe = core.createMessagePipe();
+  serviceProxy.frobinate(foo, sample.Service.BazOptions.EXTRA, pipe.handle0);
+  expect(core.close(pipe.handle0)).toBe(core.RESULT_OK);
+  expect(core.close(pipe.handle1)).toBe(core.RESULT_OK);
 });

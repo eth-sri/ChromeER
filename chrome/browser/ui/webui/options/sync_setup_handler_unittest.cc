@@ -276,11 +276,8 @@ class SyncSetupHandlerTest : public testing::Test {
     mock_signin_ = static_cast<SigninManagerBase*>(
         SigninManagerFactory::GetForProfile(profile_.get()));
     std::string username = GetTestUser();
-    if (!username.empty()) {
+    if (!username.empty())
       mock_signin_->SetAuthenticatedUsername(username);
-      profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
-                                      username);
-    }
 
     mock_pss_ = static_cast<ProfileSyncServiceMock*>(
         ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
@@ -517,7 +514,6 @@ TEST_F(SyncSetupHandlerTest,
   base::DictionaryValue* dictionary;
   ASSERT_TRUE(data1.arg2->GetAsDictionary(&dictionary));
   CheckBool(dictionary, "passphraseFailed", false);
-  CheckBool(dictionary, "showSyncEverythingPage", false);
   CheckBool(dictionary, "syncAllDataTypes", true);
   CheckBool(dictionary, "encryptAllDataAllowed", true);
   CheckBool(dictionary, "encryptAllData", false);
@@ -922,7 +918,6 @@ TEST_F(SyncSetupHandlerTest, ShowSetupSyncEverything) {
   const TestWebUI::CallData& data = web_ui_.call_data()[0];
   base::DictionaryValue* dictionary;
   ASSERT_TRUE(data.arg2->GetAsDictionary(&dictionary));
-  CheckBool(dictionary, "showSyncEverythingPage", false);
   CheckBool(dictionary, "syncAllDataTypes", true);
   CheckBool(dictionary, "appsRegistered", true);
   CheckBool(dictionary, "autofillRegistered", true);

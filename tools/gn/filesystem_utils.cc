@@ -422,7 +422,7 @@ bool MakeAbsolutePathRelativeIfPossible(const base::StringPiece& source_root,
 }
 
 void NormalizePath(std::string* path) {
-  char* pathbuf = path->empty() ? NULL : &(*path)[0];
+  char* pathbuf = path->empty() ? nullptr : &(*path)[0];
 
   // top_index is the first character we can modify in the path. Anything
   // before this indicates where the path is relative to.
@@ -627,7 +627,7 @@ SourceDir SourceDirForPath(const base::FilePath& source_root,
   // See if path is inside the source root by looking for each of source root's
   // components at the beginning of path.
   bool is_inside_source;
-  if (path_comp.size() < source_comp.size()) {
+  if (path_comp.size() < source_comp.size() || source_root.empty()) {
     // Too small to fit.
     is_inside_source = false;
   } else {

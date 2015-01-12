@@ -104,6 +104,14 @@ bool FakeProfile::IsSupervised() {
   return false;
 }
 
+bool FakeProfile::IsChild() {
+  return false;
+}
+
+bool FakeProfile::IsLegacySupervised() {
+  return false;
+}
+
 history::TopSites* FakeProfile::GetTopSites() {
   return NULL;
 }

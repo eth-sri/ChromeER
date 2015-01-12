@@ -8,15 +8,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
-#include "ui/gfx/size_f.h"
-#include "ui/gfx/vector2d_f.h"
+#include "ui/gfx/geometry/size_f.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 namespace cc {
 class Layer;
 }
 
 namespace ui {
-class SystemUIResourceManager;
+class ResourceManager;
 }
 
 namespace content {
@@ -47,7 +47,7 @@ class CONTENT_EXPORT OverscrollRefresh {
   // Both |resource_manager| and |client| must not be null.
   // |target_drag_offset_pixels| is the threshold beyond which the effect
   // will trigger a refresh action when released.
-  OverscrollRefresh(ui::SystemUIResourceManager* resource_manager,
+  OverscrollRefresh(ui::ResourceManager* resource_manager,
                     OverscrollRefreshClient* client,
                     float target_drag_offset_pixels);
   ~OverscrollRefresh();

@@ -20,6 +20,7 @@ class CrtcController;
 class MockDriWrapper : public ui::DriWrapper {
  public:
   MockDriWrapper(int fd);
+  MockDriWrapper(int fd, std::vector<uint32_t> crtcs, size_t planes_per_crtc);
   ~MockDriWrapper() override;
 
   int get_get_crtc_call_count() const { return get_crtc_call_count_; }
@@ -71,11 +72,12 @@ class MockDriWrapper : public ui::DriWrapper {
                       uint32_t handle,
                       uint32_t* framebuffer) override;
   bool RemoveFramebuffer(uint32_t framebuffer) override;
+  ScopedDrmFramebufferPtr GetFramebuffer(uint32_t framebuffer) override;
   bool PageFlip(uint32_t crtc_id, uint32_t framebuffer, void* data) override;
   bool PageFlipOverlay(uint32_t crtc_id,
                        uint32_t framebuffer,
                        const gfx::Rect& location,
-                       const gfx::RectF& source,
+                       const gfx::Rect& source,
                        int overlay_plane) override;
   ScopedDrmPropertyPtr GetProperty(drmModeConnector* connector,
                                    const char* name) override;

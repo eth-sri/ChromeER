@@ -22,7 +22,7 @@ class BasicTestPage(page_module.Page):
   def __init__(self, url, page_set, base_dir):
     super(BasicTestPage, self).__init__(url, page_set, base_dir)
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     interaction = action_runner.BeginGestureInteraction(
         'ScrollAction', is_smooth=True)
     action_runner.ScrollPage()
@@ -40,7 +40,7 @@ class PageTestTestCase(unittest.TestCase):
   def CreatePageSetFromFileInUnittestDataDir(self, test_filename):
     ps = self.CreateEmptyPageSet()
     page = BasicTestPage('file://' + test_filename, ps, base_dir=ps.base_dir)
-    ps.AddPage(page)
+    ps.AddUserStory(page)
     return ps
 
   def CreateEmptyPageSet(self):
@@ -103,7 +103,7 @@ class PageTestTestCase(unittest.TestCase):
     measurement = BuggyMeasurement()
     try:
       self.RunMeasurement(measurement, ps, options=options)
-    except page_test.TestNotSupportedOnPlatformFailure:
+    except page_test.TestNotSupportedOnPlatformError:
       pass
     if start_tracing_called[0]:
       self.assertTrue(stop_tracing_called[0])

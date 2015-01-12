@@ -77,9 +77,13 @@ gfx::Rect DriWindow::GetBounds() {
   return bounds_;
 }
 
-void DriWindow::SetCapture() {}
+void DriWindow::SetCapture() {
+  window_manager_->GrabEvents(widget_);
+}
 
-void DriWindow::ReleaseCapture() {}
+void DriWindow::ReleaseCapture() {
+  window_manager_->UngrabEvents(widget_);
+}
 
 void DriWindow::ToggleFullscreen() {}
 
@@ -102,10 +106,14 @@ bool DriWindow::CanDispatchEvent(const PlatformEvent& ne) {
   DCHECK(ne);
   Event* event = static_cast<Event*>(ne);
 
+  // If there is a grab, capture events here.
+  gfx::AcceleratedWidget grabber = window_manager_->event_grabber();
+  if (grabber != gfx::kNullAcceleratedWidget)
+    return grabber == widget_;
+
   if (event->IsLocatedEvent()) {
     LocatedEvent* located_event = static_cast<LocatedEvent*>(event);
-    return bounds_.Contains(
-        gfx::ToFlooredPoint(located_event->root_location()));
+    return bounds_.Contains(gfx::ToFlooredPoint(located_event->location()));
   }
 
   // TODO(spang): For non-ash builds we would need smarter keyboard focus.
@@ -119,9 +127,10 @@ uint32_t DriWindow::DispatchEvent(const PlatformEvent& native_event) {
   if (event->IsLocatedEvent()) {
     // Make the event location relative to this window's origin.
     LocatedEvent* located_event = static_cast<LocatedEvent*>(event);
-    gfx::PointF location = located_event->root_location();
+    gfx::PointF location = located_event->location();
     location -= bounds_.OffsetFromOrigin();
     located_event->set_location(location);
+    located_event->set_root_location(location);
   }
   DispatchEventFromNativeUiEvent(
       native_event, base::Bind(&PlatformWindowDelegate::DispatchEvent,

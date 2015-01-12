@@ -79,11 +79,7 @@ class BrowserBackend(app_backend.AppBackend):
                    timeout=web_contents.DEFAULT_WEB_CONTENTS_TIMEOUT):
     raise NotImplementedError()
 
-  @property
-  def is_tracing_running(self):
-    return False
-
-  def StopTracing(self):
+  def StopTracing(self, trace_data_builder):
     raise NotImplementedError()
 
   def GetRemotePort(self, port):

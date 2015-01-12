@@ -125,7 +125,7 @@ class TraceEventTestFixture : public testing::Test {
                    base::Unretained(flush_complete_event)));
   }
 
-  virtual void SetUp() override {
+  void SetUp() override {
     const char* name = PlatformThread::GetName();
     old_thread_name_ = name ? strdup(name) : NULL;
 
@@ -136,7 +136,7 @@ class TraceEventTestFixture : public testing::Test {
     trace_buffer_.SetOutputCallback(json_output_.GetCallback());
     event_watch_notification_ = 0;
   }
-  virtual void TearDown() override {
+  void TearDown() override {
     if (TraceLog::GetInstance())
       EXPECT_FALSE(TraceLog::GetInstance()->IsEnabled());
     PlatformThread::SetName(old_thread_name_ ? old_thread_name_ : "");
@@ -1615,6 +1615,22 @@ TEST_F(TraceEventTestFixture, DisabledCategories) {
     EXPECT_FIND_("disabled-by-default-cc");
     EXPECT_FIND_("other_included");
   }
+
+  Clear();
+
+  BeginSpecificTrace("other_included");
+  TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("cc") ",other_included",
+                       "first", TRACE_EVENT_SCOPE_THREAD);
+  TRACE_EVENT_INSTANT0("other_included," TRACE_DISABLED_BY_DEFAULT("cc"),
+                       "second", TRACE_EVENT_SCOPE_THREAD);
+  EndTraceAndFlush();
+
+  {
+    const DictionaryValue* item = NULL;
+    ListValue& trace_parsed = trace_parsed_;
+    EXPECT_FIND_("disabled-by-default-cc,other_included");
+    EXPECT_FIND_("other_included,disabled-by-default-cc");
+  }
 }
 
 TEST_F(TraceEventTestFixture, NormallyNoDeepCopy) {
@@ -2199,12 +2215,12 @@ TEST_F(TraceEventTestFixture, PrimitiveArgs) {
 
 class TraceEventCallbackTest : public TraceEventTestFixture {
  public:
-  virtual void SetUp() override {
+  void SetUp() override {
     TraceEventTestFixture::SetUp();
     ASSERT_EQ(NULL, s_instance);
     s_instance = this;
   }
-  virtual void TearDown() override {
+  void TearDown() override {
     TraceLog::GetInstance()->SetDisabled();
     ASSERT_TRUE(!!s_instance);
     s_instance = NULL;

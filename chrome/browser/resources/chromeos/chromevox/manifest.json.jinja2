@@ -10,19 +10,17 @@
   "incognito": "split",
 {% endif %}
   "background": {
-{% if is_chromevox_next == '1' %}
-    "page": "cvox2/background/background.html"
-{% else %}
+{% if is_chromevox_classic == '1' %}
     "page": "chromevox/background/background.html"
+{% else %}
+    "page": "cvox2/background/background.html"
 {% endif %}
   },
   "permissions": [
     "accessibilityPrivate",
     "bookmarks",
     "brailleDisplayPrivate",
-{% if is_chromevox_next == '1' %}
     "commands.accessibility",
-{% endif %}
     "commandLinePrivate",
     "experimental",
     "history",
@@ -33,11 +31,12 @@
     "virtualKeyboardPrivate",
     "<all_urls>"
   ],
-{% if is_chromevox_next == '0' %}
   "content_scripts": [
     {
       "matches": [ "<all_urls>" ],
-      "exclude_globs": [ "chrome-extension://mndnfokpggljbaajbnioimlmbfngpief/chromevox/background/background.html" ],
+      "exclude_globs": [
+          "chrome-extension://mndnfokpggljbaajbnioimlmbfngpief/chromevox/background/background.html"
+      ],
       "all_frames": true,
       "js": [
 {% if is_js_compressed == '1' %}
@@ -51,14 +50,13 @@
       ]
     }
   ],
-{% endif %}
   "web_accessible_resources": [
     "chromevox/injected/api.js",
     "chromevox/injected/api_util.js",
     "chromevox/injected/mathjax.js",
     "chromevox/injected/mathjax_external_util.js"
   ],
-{% if is_chromevox_next == '1' %}
+{% if is_chromevox_classic == '0' %}
   "automation": {
     "desktop": true
   },

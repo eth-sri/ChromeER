@@ -10,10 +10,11 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
-#include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/enrollment/auto_enrollment_check_screen_actor.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/consumer_management_service.h"
@@ -40,12 +41,12 @@
 #include "chrome/browser/ui/webui/chromeos/login/network_dropdown_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/network_state_informer.h"
-#include "chrome/browser/ui/webui/chromeos/login/polymer_resources_map.h"
 #include "chrome/browser/ui/webui/chromeos/login/reset_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/terms_of_service_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/update_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/user_board_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/user_image_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/wrong_hwid_screen_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/user_image_source.h"
@@ -53,6 +54,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
@@ -69,14 +71,14 @@ const char* kKnownDisplayTypes[] = {
   OobeUI::kLoginDisplay,
   OobeUI::kLockDisplay,
   OobeUI::kUserAddingDisplay,
-  OobeUI::kAppLaunchSplashDisplay
+  OobeUI::kAppLaunchSplashDisplay,
+  OobeUI::kNewOobeDisplay
 };
 
 const char kStringsJSPath[] = "strings.js";
 const char kLoginJSPath[] = "login.js";
 const char kOobeJSPath[] = "oobe.js";
 const char kKeyboardUtilsJSPath[] = "keyboard_utils.js";
-const char kDemoUserLoginJSPath[] = "demo_user_login.js";
 const char kCustomElementsHTMLPath[] = "custom_elements.html";
 const char kCustomElementsJSPath[] = "custom_elements.js";
 
@@ -85,25 +87,29 @@ const char kEnrollmentHTMLPath[] = "enrollment.html";
 const char kEnrollmentCSSPath[] = "enrollment.css";
 const char kEnrollmentJSPath[] = "enrollment.js";
 
-void AddPolymerResourcesPaths(content::WebUIDataSource* source) {
-  for (const auto& mapping: GetPolymerResourcesMap())
-    source->AddResourcePath(mapping.first, mapping.second);
+content::WebUIDataSource* CreateNewOobeUIDataSource(
+    const base::DictionaryValue& localized_strings) {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIOobeHost);
+  source->AddLocalizedStrings(localized_strings);
+  source->SetJsonPath(kStringsJSPath);
+  source->SetDefaultResource(IDR_NEW_OOBE_HTML);
+  source->AddResourcePath(kOobeJSPath, IDR_NEW_OOBE_JS);
+  return source;
 }
 
 // Creates a WebUIDataSource for chrome://oobe
 content::WebUIDataSource* CreateOobeUIDataSource(
     const base::DictionaryValue& localized_strings,
     const std::string& display_type) {
+  if (display_type == OobeUI::kNewOobeDisplay) {
+    return CreateNewOobeUIDataSource(localized_strings);
+  }
   content::WebUIDataSource* source =
       content::WebUIDataSource::Create(chrome::kChromeUIOobeHost);
   source->AddLocalizedStrings(localized_strings);
   source->SetJsonPath(kStringsJSPath);
 
-  if (chromeos::KioskModeSettings::Get()->IsKioskModeEnabled()) {
-    source->SetDefaultResource(IDR_DEMO_USER_LOGIN_HTML);
-    source->AddResourcePath(kDemoUserLoginJSPath, IDR_DEMO_USER_LOGIN_JS);
-    return source;
-  }
   if (display_type == OobeUI::kOobeDisplay) {
     source->SetDefaultResource(IDR_OOBE_HTML);
     source->AddResourcePath(kOobeJSPath, IDR_OOBE_JS);
@@ -124,7 +130,6 @@ content::WebUIDataSource* CreateOobeUIDataSource(
   source->AddResourcePath(kEnrollmentJSPath, IDR_OOBE_ENROLLMENT_JS);
 
   if (display_type == OobeUI::kOobeDisplay) {
-    AddPolymerResourcesPaths(source);
     source->AddResourcePath(kCustomElementsHTMLPath, IDR_CUSTOM_ELEMENTS_HTML);
     source->AddResourcePath(kCustomElementsJSPath, IDR_CUSTOM_ELEMENTS_JS);
 
@@ -157,6 +162,7 @@ const char OobeUI::kLoginDisplay[] = "login";
 const char OobeUI::kLockDisplay[] = "lock";
 const char OobeUI::kUserAddingDisplay[] = "user-adding";
 const char OobeUI::kAppLaunchSplashDisplay[] = "app-launch-splash";
+const char OobeUI::kNewOobeDisplay[] = "new-oobe";
 
 // static
 const char OobeUI::kScreenOobeHIDDetection[] = "hid-detection";
@@ -189,28 +195,28 @@ const char OobeUI::kScreenDeviceDisabled[] = "device-disabled";
 
 OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
     : WebUIController(web_ui),
-      core_handler_(NULL),
-      network_dropdown_handler_(NULL),
-      update_screen_handler_(NULL),
-      network_screen_actor_(NULL),
-      debugging_screen_actor_(NULL),
-      eula_view_(NULL),
-      hid_detection_screen_actor_(NULL),
-      reset_screen_actor_(NULL),
-      autolaunch_screen_actor_(NULL),
-      kiosk_enable_screen_actor_(NULL),
-      wrong_hwid_screen_actor_(NULL),
-      auto_enrollment_check_screen_actor_(NULL),
-      supervised_user_creation_screen_actor_(NULL),
-      app_launch_splash_screen_actor_(NULL),
-      controller_pairing_screen_actor_(NULL),
-      host_pairing_screen_actor_(NULL),
-      device_disabled_screen_actor_(NULL),
-      error_screen_handler_(NULL),
-      signin_screen_handler_(NULL),
-      terms_of_service_screen_actor_(NULL),
-      user_image_screen_actor_(NULL),
-      kiosk_app_menu_handler_(NULL),
+      core_handler_(nullptr),
+      network_dropdown_handler_(nullptr),
+      update_screen_handler_(nullptr),
+      network_view_(nullptr),
+      debugging_screen_actor_(nullptr),
+      eula_view_(nullptr),
+      hid_detection_screen_actor_(nullptr),
+      reset_screen_actor_(nullptr),
+      autolaunch_screen_actor_(nullptr),
+      kiosk_enable_screen_actor_(nullptr),
+      wrong_hwid_screen_actor_(nullptr),
+      auto_enrollment_check_screen_actor_(nullptr),
+      supervised_user_creation_screen_actor_(nullptr),
+      app_launch_splash_screen_actor_(nullptr),
+      controller_pairing_screen_actor_(nullptr),
+      host_pairing_screen_actor_(nullptr),
+      device_disabled_screen_actor_(nullptr),
+      error_screen_handler_(nullptr),
+      signin_screen_handler_(nullptr),
+      terms_of_service_screen_actor_(nullptr),
+      user_image_screen_actor_(nullptr),
+      kiosk_app_menu_handler_(nullptr),
       current_screen_(SCREEN_UNKNOWN),
       previous_screen_(SCREEN_UNKNOWN),
       ready_(false) {
@@ -231,10 +237,10 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   AddScreenHandler(update_screen_handler_);
   network_dropdown_handler_->AddObserver(update_screen_handler_);
 
-  if (display_type_ == kOobeDisplay) {
+  if (display_type_ == kOobeDisplay || display_type_ == kNewOobeDisplay) {
     NetworkScreenHandler* network_screen_handler =
         new NetworkScreenHandler(core_handler_);
-    network_screen_actor_ = network_screen_handler;
+    network_view_ = network_screen_handler;
     AddScreenHandler(network_screen_handler);
   }
 
@@ -313,6 +319,10 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
   policy::ConsumerManagementService* consumer_management =
       g_browser_process->platform_part()->browser_policy_connector_chromeos()->
           GetConsumerManagementService();
+
+  user_board_screen_handler_ = new UserBoardScreenHandler();
+  AddScreenHandler(user_board_screen_handler_);
+
   gaia_screen_handler_ =
       new GaiaScreenHandler(
           core_handler_, network_state_informer_, consumer_management);
@@ -381,7 +391,7 @@ OobeUI::OobeUI(content::WebUI* web_ui, const GURL& url)
 }
 
 OobeUI::~OobeUI() {
-  core_handler_->SetDelegate(NULL);
+  core_handler_->SetDelegate(nullptr);
   network_dropdown_handler_->RemoveObserver(update_screen_handler_);
 }
 
@@ -393,8 +403,8 @@ UpdateScreenActor* OobeUI::GetUpdateScreenActor() {
   return update_screen_handler_;
 }
 
-NetworkScreenActor* OobeUI::GetNetworkScreenActor() {
-  return network_screen_actor_;
+NetworkView* OobeUI::GetNetworkView() {
+  return network_view_;
 }
 
 EulaView* OobeUI::GetEulaView() {
@@ -466,6 +476,10 @@ GaiaScreenHandler* OobeUI::GetGaiaScreenActor() {
   return gaia_screen_handler_;
 }
 
+UserBoardView* OobeUI::GetUserBoardScreenActor() {
+  return user_board_screen_handler_;
+}
+
 AppLaunchSplashScreenActor*
       OobeUI::GetAppLaunchSplashScreenActor() {
   return app_launch_splash_screen_actor_;
@@ -486,7 +500,7 @@ void OobeUI::GetLocalizedStrings(base::DictionaryValue* localized_strings) {
 
   // If we're not doing boot animation then WebUI should trigger
   // wallpaper load on boot.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableBootAnimation)) {
     localized_strings->SetString("bootIntoWallpaper", "on");
   } else {
@@ -573,13 +587,20 @@ void OobeUI::ShowOobeUI(bool show) {
   core_handler_->ShowOobeUI(show);
 }
 
-void OobeUI::ShowRetailModeLoginSpinner() {
-  signin_screen_handler_->ShowRetailModeLoginSpinner();
-}
-
 void OobeUI::ShowSigninScreen(const LoginScreenContext& context,
                               SigninScreenHandlerDelegate* delegate,
                               NativeWindowDelegate* native_window_delegate) {
+  // Check our device mode.
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  if (connector->GetDeviceMode() == policy::DEVICE_MODE_LEGACY_RETAIL_MODE) {
+    // If we're in legacy retail mode, the best thing we can do is launch the
+    // new offline demo mode.
+    LoginDisplayHost* host = LoginDisplayHostImpl::default_host();
+    host->StartDemoAppLaunch();
+    return;
+  }
+
   signin_screen_handler_->SetDelegate(delegate);
   signin_screen_handler_->SetNativeWindowDelegate(native_window_delegate);
 
@@ -589,8 +610,8 @@ void OobeUI::ShowSigninScreen(const LoginScreenContext& context,
 }
 
 void OobeUI::ResetSigninScreenHandlerDelegate() {
-  signin_screen_handler_->SetDelegate(NULL);
-  signin_screen_handler_->SetNativeWindowDelegate(NULL);
+  signin_screen_handler_->SetDelegate(nullptr);
+  signin_screen_handler_->SetNativeWindowDelegate(nullptr);
 }
 
 

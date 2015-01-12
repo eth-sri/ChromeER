@@ -9,62 +9,32 @@
 #include "base/message_loop/message_loop.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/renderer/pepper/pepper_plugin_instance_throttler.h"
-#include "content/renderer/pepper/plugin_power_saver_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebPluginParams.h"
 #include "ui/gfx/canvas.h"
 
 using testing::_;
 using testing::Return;
 
+class GURL;
+
 namespace content {
-
-namespace {
-
-class MockPluginPowerSaverHelper : public PluginPowerSaverHelper {
- public:
-  MockPluginPowerSaverHelper() : PluginPowerSaverHelper(NULL) {
-    EXPECT_CALL(*this, ShouldThrottleContent(_, _, _, _))
-        .WillRepeatedly(Return(true));
-  }
-
-  MOCK_CONST_METHOD4(ShouldThrottleContent, bool(const GURL&, int, int, bool*));
-
-  void RegisterPeripheralPlugin(
-      const GURL& content_origin,
-      const base::Closure& unthrottle_callback) override {
-    unthrottle_callback_ = unthrottle_callback;
-  }
-
-  void WhitelistContentOrigin(const GURL& content_origin) override {
-    DCHECK(!unthrottle_callback_.is_null());
-    unthrottle_callback_.Run();
-  }
-
-  base::Closure& unthrottle_callback() { return unthrottle_callback_; }
-
- private:
-  base::Closure unthrottle_callback_;
-};
-
-}  // namespace
 
 class PepperPluginInstanceThrottlerTest : public testing::Test {
  protected:
   PepperPluginInstanceThrottlerTest() : change_callback_calls_(0) {}
 
   void SetUp() override {
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnablePluginPowerSaver);
-
     blink::WebRect rect;
     rect.width = 100;
     rect.height = 100;
     throttler_.reset(new PepperPluginInstanceThrottler(
-        &power_saver_helper_, rect, kFlashPluginName,
-        GURL("http://example.com"),
+        nullptr, rect, kFlashPluginName, GURL("http://example.com"),
+        content::RenderFrame::POWER_SAVER_MODE_PERIPHERAL_THROTTLED,
         base::Bind(&PepperPluginInstanceThrottlerTest::ChangeCallback,
                    base::Unretained(this))));
   }
@@ -74,8 +44,9 @@ class PepperPluginInstanceThrottlerTest : public testing::Test {
     return throttler_.get();
   }
 
-  MockPluginPowerSaverHelper& power_saver_helper() {
-    return power_saver_helper_;
+  void DisablePowerSaverByRetroactiveWhitelist() {
+    throttler()->DisablePowerSaver(
+        PepperPluginInstanceThrottler::UNTHROTTLE_METHOD_BY_WHITELIST);
   }
 
   int change_callback_calls() { return change_callback_calls_; }
@@ -90,6 +61,7 @@ class PepperPluginInstanceThrottlerTest : public testing::Test {
                         int expect_change_callback_count) {
     blink::WebMouseEvent event;
     event.type = event_type;
+    event.modifiers = blink::WebInputEvent::Modifiers::LeftButtonDown;
     EXPECT_EQ(expect_consumed, throttler()->ConsumeInputEvent(event));
     EXPECT_EQ(expect_throttled, throttler()->is_throttled());
     EXPECT_EQ(expect_change_callback_count, change_callback_calls());
@@ -99,7 +71,6 @@ class PepperPluginInstanceThrottlerTest : public testing::Test {
   void ChangeCallback() { ++change_callback_calls_; }
 
   scoped_ptr<PepperPluginInstanceThrottler> throttler_;
-  MockPluginPowerSaverHelper power_saver_helper_;
 
   int change_callback_calls_;
 
@@ -170,7 +141,7 @@ TEST_F(PepperPluginInstanceThrottlerTest, FastWhitelisting) {
   EXPECT_FALSE(throttler()->is_throttled());
   EXPECT_EQ(0, change_callback_calls());
 
-  power_saver_helper().WhitelistContentOrigin(GURL("http://example.com"));
+  DisablePowerSaverByRetroactiveWhitelist();
 
   EngageThrottle();
   EXPECT_FALSE(throttler()->is_throttled());
@@ -185,7 +156,7 @@ TEST_F(PepperPluginInstanceThrottlerTest, SlowWhitelisting) {
   EXPECT_TRUE(throttler()->is_throttled());
   EXPECT_EQ(1, change_callback_calls());
 
-  power_saver_helper().WhitelistContentOrigin(GURL("http://example.com"));
+  DisablePowerSaverByRetroactiveWhitelist();
   EXPECT_FALSE(throttler()->is_throttled());
   EXPECT_EQ(2, change_callback_calls());
 }
@@ -217,6 +188,30 @@ TEST_F(PepperPluginInstanceThrottlerTest, EventConsumption) {
 
   // Subsequent MouseUps should also not be consumed.
   SendEventAndTest(blink::WebInputEvent::Type::MouseUp, false, false, 2);
+}
+
+TEST_F(PepperPluginInstanceThrottlerTest, ThrottleOnLeftClickOnly) {
+  EXPECT_FALSE(throttler()->is_throttled());
+  EXPECT_EQ(0, change_callback_calls());
+
+  EngageThrottle();
+  EXPECT_TRUE(throttler()->is_throttled());
+  EXPECT_EQ(1, change_callback_calls());
+
+  blink::WebMouseEvent event;
+  event.type = blink::WebInputEvent::Type::MouseUp;
+
+  event.modifiers = blink::WebInputEvent::Modifiers::RightButtonDown;
+  EXPECT_FALSE(throttler()->ConsumeInputEvent(event));
+  EXPECT_TRUE(throttler()->is_throttled());
+
+  event.modifiers = blink::WebInputEvent::Modifiers::MiddleButtonDown;
+  EXPECT_TRUE(throttler()->ConsumeInputEvent(event));
+  EXPECT_TRUE(throttler()->is_throttled());
+
+  event.modifiers = blink::WebInputEvent::Modifiers::LeftButtonDown;
+  EXPECT_TRUE(throttler()->ConsumeInputEvent(event));
+  EXPECT_FALSE(throttler()->is_throttled());
 }
 
 }  // namespace content

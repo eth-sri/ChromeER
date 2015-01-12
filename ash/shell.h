@@ -23,9 +23,9 @@
 #include "ui/aura/window.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/events/event_target.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size.h"
 #include "ui/wm/core/cursor_manager.h"
 #include "ui/wm/public/activation_change_observer.h"
 
@@ -41,6 +41,12 @@ class ActivationClient;
 class FocusClient;
 }
 }
+
+#if defined(OS_CHROMEOS)
+namespace chromeos {
+class AccelerometerReader;
+}
+#endif
 
 namespace gfx {
 class ImageSkia;
@@ -75,7 +81,6 @@ class WindowModalityController;
 namespace ash {
 
 class AcceleratorController;
-class AccelerometerController;
 class AccessibilityDelegate;
 class AppListController;
 class AshNativeCursorManager;
@@ -508,15 +513,15 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   // Starts the animation that occurs on first login.
   void DoInitialWorkspaceAnimation();
 
-  AccelerometerController* accelerometer_controller() {
-    return accelerometer_controller_.get();
-  }
-
   MaximizeModeController* maximize_mode_controller() {
     return maximize_mode_controller_.get();
   }
 
 #if defined(OS_CHROMEOS)
+  chromeos::AccelerometerReader* accelerometer_reader() {
+    return accelerometer_reader_.get();
+  }
+
   // TODO(oshima): Move these objects to DisplayController.
   ui::DisplayConfigurator* display_configurator() {
     return display_configurator_.get();
@@ -709,9 +714,8 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
 
   scoped_ptr<LocaleNotificationController> locale_notification_controller_;
 
-  scoped_ptr<AccelerometerController> accelerometer_controller_;
-
 #if defined(OS_CHROMEOS)
+  scoped_ptr<chromeos::AccelerometerReader> accelerometer_reader_;
   scoped_ptr<PowerEventObserver> power_event_observer_;
   scoped_ptr<ui::UserActivityPowerManagerNotifier> user_activity_notifier_;
   scoped_ptr<VideoActivityNotifier> video_activity_notifier_;
@@ -738,10 +742,8 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
 
   scoped_ptr<TouchTransformerController> touch_transformer_controller_;
 
-#if defined(USE_X11)
   scoped_ptr<ui::EventHandler> magnifier_key_scroll_handler_;
   scoped_ptr<ui::EventHandler> speech_feedback_handler_;
-#endif  // defined(USE_X11)
 #endif  // defined(OS_CHROMEOS)
 
   scoped_ptr<MaximizeModeController> maximize_mode_controller_;

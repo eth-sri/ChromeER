@@ -29,6 +29,7 @@
 
 #include "base/at_exit.h"
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
@@ -60,9 +61,6 @@
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
 #include "content/common/gpu/media/vaapi_wrapper.h"
-#if defined(USE_X11)
-#include "ui/gl/gl_implementation.h"
-#endif  // USE_X11
 #else
 #error The VideoAccelerator tests are not supported on this platform.
 #endif  // OS_WIN
@@ -103,6 +101,12 @@ double g_rendering_fps = 60;
 
 // The value is set by the switch "--rendering_warm_up".
 int g_rendering_warm_up = 0;
+
+// The value is set by the switch "--num_play_throughs". The video will play
+// the specified number of times. In different test cases, we have different
+// values for |num_play_throughs|. This setting will override the value. A
+// special value "0" means no override.
+int g_num_play_throughs = 0;
 
 // Magic constants for differentiating the reasons for NotifyResetDone being
 // called.
@@ -192,6 +196,22 @@ enum ClientState {
   CS_MAX,  // Must be last entry.
 };
 
+// A helper class used to manage the lifetime of a Texture.
+class TextureRef : public base::RefCounted<TextureRef> {
+ public:
+  TextureRef(const base::Closure& no_longer_needed_cb)
+      : no_longer_needed_cb_(no_longer_needed_cb) {}
+
+ private:
+  friend class base::RefCounted<TextureRef>;
+  ~TextureRef();
+  base::Closure no_longer_needed_cb_;
+};
+
+TextureRef::~TextureRef() {
+  base::ResetAndReturn(&no_longer_needed_cb_).Run();
+}
+
 // Client that can accept callbacks from a VideoDecodeAccelerator and is used by
 // the TESTs below.
 class GLRenderingVDAClient
@@ -260,7 +280,7 @@ class GLRenderingVDAClient
   bool decoder_deleted() { return !decoder_.get(); }
 
  private:
-  typedef std::map<int, media::PictureBuffer*> PictureBufferById;
+  typedef std::map<int32, scoped_refptr<TextureRef>> TextureRefMap;
 
   void SetState(ClientState new_state);
   void FinishInitialization();
@@ -296,7 +316,6 @@ class GLRenderingVDAClient
   scoped_ptr<VideoDecodeAccelerator> decoder_;
   scoped_ptr<base::WeakPtrFactory<VideoDecodeAccelerator> >
       weak_decoder_factory_;
-  std::set<int> outstanding_texture_ids_;
   int remaining_play_throughs_;
   int reset_after_frame_num_;
   int delete_decoder_state_;
@@ -305,7 +324,6 @@ class GLRenderingVDAClient
   int num_queued_fragments_;
   int num_decoded_frames_;
   int num_done_bitstream_buffers_;
-  PictureBufferById picture_buffers_by_id_;
   base::TimeTicks initialize_done_ticks_;
   media::VideoCodecProfile profile_;
   GLenum texture_target_;
@@ -319,10 +337,18 @@ class GLRenderingVDAClient
   // The number of VDA::Decode calls per second. This is to simulate webrtc.
   int decode_calls_per_second_;
   bool render_as_thumbnails_;
-  // The number of frames that are not returned from rendering_helper_. We
-  // checks this count to ensure all frames are rendered before entering the
-  // CS_RESET state.
-  int frames_at_render_;
+
+  // A map of the textures that are currently active for the decoder, i.e.,
+  // have been created via AssignPictureBuffers() and not dismissed via
+  // DismissPictureBuffer(). The keys in the map are the IDs of the
+  // corresponding picture buffers, and the values are TextureRefs to the
+  // textures.
+  TextureRefMap active_textures_;
+
+  // A map of the textures that are still pending in the renderer.
+  // We check this to ensure all frames are rendered before entering the
+  // CS_RESET_State.
+  TextureRefMap pending_textures_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(GLRenderingVDAClient);
 };
@@ -364,8 +390,7 @@ GLRenderingVDAClient::GLRenderingVDAClient(
       suppress_rendering_(suppress_rendering),
       delay_reuse_after_frame_num_(delay_reuse_after_frame_num),
       decode_calls_per_second_(decode_calls_per_second),
-      render_as_thumbnails_(render_as_thumbnails),
-      frames_at_render_(0) {
+      render_as_thumbnails_(render_as_thumbnails) {
   CHECK_GT(num_in_flight_decodes, 0);
   CHECK_GT(num_play_throughs, 0);
   // |num_in_flight_decodes_| is unsupported if |decode_calls_per_second_| > 0.
@@ -381,7 +406,6 @@ GLRenderingVDAClient::GLRenderingVDAClient(
 GLRenderingVDAClient::~GLRenderingVDAClient() {
   DeleteDecoder();  // Clean up in case of expected error.
   CHECK(decoder_deleted());
-  STLDeleteValues(&picture_buffers_by_id_);
   SetState(CS_DESTROYED);
 }
 
@@ -405,17 +429,12 @@ void GLRenderingVDAClient::CreateAndStartDecoder() {
   }
   decoder_.reset(new V4L2VideoDecodeAccelerator(
       static_cast<EGLDisplay>(rendering_helper_->GetGLDisplay()),
-      static_cast<EGLContext>(rendering_helper_->GetGLContext()),
-      weak_client,
-      base::Bind(&DoNothingReturnTrue),
-      device.Pass(),
+      static_cast<EGLContext>(rendering_helper_->GetGLContextHandle()),
+      weak_client, base::Bind(&DoNothingReturnTrue), device.Pass(),
       base::MessageLoopProxy::current()));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
-  CHECK_EQ(gfx::kGLImplementationDesktopGL, gfx::GetGLImplementation())
-      << "Hardware video decode does not work with OSMesa";
-  decoder_.reset(new VaapiVideoDecodeAccelerator(
-      static_cast<Display*>(rendering_helper_->GetGLDisplay()),
-      base::Bind(&DoNothingReturnTrue)));
+  decoder_.reset(
+      new VaapiVideoDecodeAccelerator(base::Bind(&DoNothingReturnTrue)));
 #endif  // OS_WIN
   CHECK(decoder_.get());
   weak_decoder_factory_.reset(
@@ -438,29 +457,28 @@ void GLRenderingVDAClient::ProvidePictureBuffers(
 
   texture_target_ = texture_target;
   for (uint32 i = 0; i < requested_num_of_buffers; ++i) {
-    uint32 id = picture_buffers_by_id_.size();
     uint32 texture_id;
     base::WaitableEvent done(false, false);
     rendering_helper_->CreateTexture(
         texture_target_, &texture_id, dimensions, &done);
     done.Wait();
-    CHECK(outstanding_texture_ids_.insert(texture_id).second);
-    media::PictureBuffer* buffer =
-        new media::PictureBuffer(id, dimensions, texture_id);
-    CHECK(picture_buffers_by_id_.insert(std::make_pair(id, buffer)).second);
-    buffers.push_back(*buffer);
+
+    // Use the texture_id as the picture's id.
+    int32 id = static_cast<int32>(texture_id);
+    CHECK(
+        active_textures_.insert(std::make_pair(
+                                    id, new TextureRef(base::Bind(
+                                            &RenderingHelper::DeleteTexture,
+                                            base::Unretained(rendering_helper_),
+                                            texture_id)))).second);
+
+    buffers.push_back(media::PictureBuffer(id, dimensions, texture_id));
   }
   decoder_->AssignPictureBuffers(buffers);
 }
 
 void GLRenderingVDAClient::DismissPictureBuffer(int32 picture_buffer_id) {
-  PictureBufferById::iterator it =
-      picture_buffers_by_id_.find(picture_buffer_id);
-  CHECK(it != picture_buffers_by_id_.end());
-  CHECK_EQ(outstanding_texture_ids_.erase(it->second->texture_id()), 1U);
-  rendering_helper_->DeleteTexture(it->second->texture_id());
-  delete it->second;
-  picture_buffers_by_id_.erase(it);
+  CHECK_EQ(1U, active_textures_.erase(picture_buffer_id));
 }
 
 void GLRenderingVDAClient::PictureReady(const media::Picture& picture) {
@@ -495,17 +513,16 @@ void GLRenderingVDAClient::PictureReady(const media::Picture& picture) {
     encoded_data_next_pos_to_decode_ = 0;
   }
 
-  media::PictureBuffer* picture_buffer =
-      picture_buffers_by_id_[picture.picture_buffer_id()];
-  CHECK(picture_buffer);
+  TextureRefMap::iterator texture_it =
+      active_textures_.find(picture.picture_buffer_id());
+  ASSERT_NE(active_textures_.end(), texture_it);
 
-  scoped_refptr<VideoFrameTexture> video_frame =
-      new VideoFrameTexture(texture_target_,
-                            picture_buffer->texture_id(),
-                            base::Bind(&GLRenderingVDAClient::ReturnPicture,
-                                       AsWeakPtr(),
-                                       picture.picture_buffer_id()));
-  ++frames_at_render_;
+  scoped_refptr<VideoFrameTexture> video_frame = new VideoFrameTexture(
+      texture_target_,
+      static_cast<uint32>(texture_it->first),  // the texture id
+      base::Bind(&GLRenderingVDAClient::ReturnPicture, AsWeakPtr(),
+                 picture.picture_buffer_id()));
+  ASSERT_TRUE(pending_textures_.insert(*texture_it).second);
 
   if (render_as_thumbnails_) {
     rendering_helper_->RenderThumbnail(video_frame->texture_target(),
@@ -518,9 +535,9 @@ void GLRenderingVDAClient::PictureReady(const media::Picture& picture) {
 void GLRenderingVDAClient::ReturnPicture(int32 picture_buffer_id) {
   if (decoder_deleted())
     return;
+  CHECK_EQ(1U, pending_textures_.erase(picture_buffer_id));
 
-  --frames_at_render_;
-  if (frames_at_render_ == 0 && state_ == CS_RESETTING) {
+  if (pending_textures_.empty() && state_ == CS_RESETTING) {
     SetState(CS_RESET);
     DeleteDecoder();
     return;
@@ -586,7 +603,7 @@ void GLRenderingVDAClient::NotifyResetDone() {
 
   rendering_helper_->Flush(window_id_);
 
-  if (frames_at_render_ == 0) {
+  if (pending_textures_.empty()) {
     SetState(CS_RESET);
     DeleteDecoder();
   }
@@ -645,11 +662,8 @@ void GLRenderingVDAClient::DeleteDecoder() {
   weak_decoder_factory_.reset();
   decoder_.reset();
   STLClearObject(&encoded_data_);
-  for (std::set<int>::iterator it = outstanding_texture_ids_.begin();
-       it != outstanding_texture_ids_.end(); ++it) {
-    rendering_helper_->DeleteTexture(*it);
-  }
-  outstanding_texture_ids_.clear();
+  active_textures_.clear();
+
   // Cascade through the rest of the states to simplify test code below.
   for (int i = state_ + 1; i < CS_MAX; ++i)
     SetState(static_cast<ClientState>(i));
@@ -1010,7 +1024,9 @@ void VideoDecodeAcceleratorTest::OutputLogFile(
 }
 
 // Test parameters:
-// - Number of concurrent decoders.
+// - Number of concurrent decoders. The value takes effect when there is only
+//   one input stream; otherwise, one decoder per input stream will be
+//   instantiated.
 // - Number of concurrent in-flight Decode() calls per decoder.
 // - Number of play-throughs.
 // - reset_after_frame_num: see GLRenderingVDAClient ctor.
@@ -1020,16 +1036,17 @@ void VideoDecodeAcceleratorTest::OutputLogFile(
 class VideoDecodeAcceleratorParamTest
     : public VideoDecodeAcceleratorTest,
       public ::testing::WithParamInterface<
-        Tuple7<int, int, int, ResetPoint, ClientState, bool, bool> > {
+        Tuple<int, int, int, ResetPoint, ClientState, bool, bool> > {
 };
 
 // Helper so that gtest failures emit a more readable version of the tuple than
 // its byte representation.
 ::std::ostream& operator<<(
     ::std::ostream& os,
-    const Tuple7<int, int, int, ResetPoint, ClientState, bool, bool>& t) {
-  return os << t.a << ", " << t.b << ", " << t.c << ", " << t.d << ", " << t.e
-            << ", " << t.f << ", " << t.g;
+    const Tuple<int, int, int, ResetPoint, ClientState, bool, bool>& t) {
+  return os << get<0>(t) << ", " << get<1>(t) << ", " << get<2>(t) << ", "
+            << get<3>(t) << ", " << get<4>(t) << ", " << get<5>(t) << ", "
+            << get<6>(t);
 }
 
 // Wait for |note| to report a state and if it's not |expected_state| then
@@ -1053,13 +1070,19 @@ enum { kMinSupportedNumConcurrentDecoders = 3 };
 // Test the most straightforward case possible: data is decoded from a single
 // chunk and rendered to the screen.
 TEST_P(VideoDecodeAcceleratorParamTest, TestSimpleDecode) {
-  const size_t num_concurrent_decoders = GetParam().a;
-  const size_t num_in_flight_decodes = GetParam().b;
-  const int num_play_throughs = GetParam().c;
-  const int reset_point = GetParam().d;
-  const int delete_decoder_state = GetParam().e;
-  bool test_reuse_delay = GetParam().f;
-  const bool render_as_thumbnails = GetParam().g;
+  size_t num_concurrent_decoders = get<0>(GetParam());
+  const size_t num_in_flight_decodes = get<1>(GetParam());
+  int num_play_throughs = get<2>(GetParam());
+  const int reset_point = get<3>(GetParam());
+  const int delete_decoder_state = get<4>(GetParam());
+  bool test_reuse_delay = get<5>(GetParam());
+  const bool render_as_thumbnails = get<6>(GetParam());
+
+  if (test_video_files_.size() > 1)
+    num_concurrent_decoders = test_video_files_.size();
+
+  if (g_num_play_throughs > 0)
+    num_play_throughs = g_num_play_throughs;
 
   UpdateTestVideoFileParams(
       num_concurrent_decoders, reset_point, &test_video_files_);
@@ -1408,7 +1431,7 @@ int main(int argc, char **argv) {
   DCHECK(cmd_line);
 
   base::CommandLine::SwitchMap switches = cmd_line->GetSwitches();
-  for (CommandLine::SwitchMap::const_iterator it = switches.begin();
+  for (base::CommandLine::SwitchMap::const_iterator it = switches.begin();
        it != switches.end(); ++it) {
     if (it->first == "test_video_data") {
       content::g_test_video_data = it->second.c_str();
@@ -1434,6 +1457,12 @@ int main(int argc, char **argv) {
     // TODO(owenlin): Remove this flag once it is not used in autotest.
     if (it->first == "disable_rendering") {
       content::g_rendering_fps = 0;
+      continue;
+    }
+
+    if (it->first == "num_play_throughs") {
+      std::string input(it->second.begin(), it->second.end());
+      CHECK(base::StringToInt(input, &content::g_num_play_throughs));
       continue;
     }
     if (it->first == "v" || it->first == "vmodule")

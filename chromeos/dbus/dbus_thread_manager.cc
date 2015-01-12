@@ -36,6 +36,7 @@
 #include "chromeos/dbus/nfc_manager_client.h"
 #include "chromeos/dbus/nfc_record_client.h"
 #include "chromeos/dbus/nfc_tag_client.h"
+#include "chromeos/dbus/peer_daemon_manager_client.h"
 #include "chromeos/dbus/permission_broker_client.h"
 #include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/dbus/privet_daemon_client.h"
@@ -49,6 +50,7 @@
 #include "chromeos/dbus/sms_client.h"
 #include "chromeos/dbus/system_clock_client.h"
 #include "chromeos/dbus/update_engine_client.h"
+#include "chromeos/device_event_log.h"
 #include "dbus/bus.h"
 #include "dbus/dbus_statistics.h"
 
@@ -59,6 +61,7 @@ static bool g_using_dbus_thread_manager_for_testing = false;
 
 DBusThreadManager::DBusThreadManager(scoped_ptr<DBusClientBundle> client_bundle)
     : client_bundle_(client_bundle.Pass()) {
+  device_event_log::Initialize(0 /* default max entries */);
   dbus::statistics::Initialize();
 
   if (client_bundle_->IsUsingAnyRealClient()) {
@@ -92,6 +95,7 @@ DBusThreadManager::~DBusThreadManager() {
     dbus_thread_->Stop();
 
   dbus::statistics::Shutdown();
+  device_event_log::Shutdown();
 
   if (!g_dbus_thread_manager)
     return;  // Called form Shutdown() or local test instance.
@@ -252,6 +256,10 @@ NfcTagClient* DBusThreadManager::GetNfcTagClient() {
   return client_bundle_->nfc_tag_client();
 }
 
+PeerDaemonManagerClient* DBusThreadManager::GetPeerDaemonManagerClient() {
+  return client_bundle_->peer_daemon_manager_client();
+}
+
 PermissionBrokerClient* DBusThreadManager::GetPermissionBrokerClient() {
   return client_bundle_->permission_broker_client();
 }
@@ -346,14 +354,14 @@ void DBusThreadManager::Initialize() {
 
   CHECK(!g_dbus_thread_manager);
   bool use_dbus_stub = !base::SysInfo::IsRunningOnChromeOS() ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kDbusStub);
-  bool force_unstub_clients = CommandLine::ForCurrentProcess()->HasSwitch(
+                       base::CommandLine::ForCurrentProcess()->HasSwitch(
+                           chromeos::switches::kDbusStub);
+  bool force_unstub_clients = base::CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kDbusUnstubClients);
   // Determine whether we use stub or real client implementations.
   if (force_unstub_clients) {
     InitializeWithPartialStub(
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             chromeos::switches::kDbusUnstubClients));
   } else if (use_dbus_stub) {
     InitializeWithStubs();
@@ -609,6 +617,12 @@ void DBusThreadManagerSetter::SetNfcRecordClient(
 void DBusThreadManagerSetter::SetNfcTagClient(
     scoped_ptr<NfcTagClient> client) {
   DBusThreadManager::Get()->client_bundle_->nfc_tag_client_ = client.Pass();
+}
+
+void DBusThreadManagerSetter::SetPeerDaemonManagerClient(
+    scoped_ptr<PeerDaemonManagerClient> client) {
+  DBusThreadManager::Get()->client_bundle_->peer_daemon_manager_client_ =
+      client.Pass();
 }
 
 void DBusThreadManagerSetter::SetPermissionBrokerClient(

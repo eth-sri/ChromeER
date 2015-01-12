@@ -173,6 +173,11 @@
             'linux/text_edit_key_bindings_delegate_auralinux.h',
           ],
         }],
+        ['use_ozone==1', {
+          'dependencies': [
+            'ozone/events_ozone.gyp:events_ozone_layout',
+          ],
+        }],
       ],
     },
     {
@@ -296,6 +301,7 @@
         '<(DEPTH)/base/base.gyp:test_support_base',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/mesa/mesa.gyp:osmesa',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gfx/gfx.gyp:gfx_test_support',
@@ -317,6 +323,7 @@
         'event_rewriter_unittest.cc',
         'event_unittest.cc',
         'gesture_detection/bitset_32_unittest.cc',
+        'gesture_detection/filtered_gesture_provider_unittest.cc',
         'gesture_detection/gesture_event_data_packet_unittest.cc',
         'gesture_detection/gesture_provider_unittest.cc',
         'gesture_detection/motion_event_buffer_unittest.cc',
@@ -353,6 +360,12 @@
           'dependencies': [
             'ozone/events_ozone.gyp:events_ozone',
             'ozone/events_ozone.gyp:events_ozone_evdev',
+            'ozone/events_ozone.gyp:events_ozone_layout',
+          ]
+        }],
+        ['use_xkbcommon==1', {
+          'sources': [
+            'ozone/layout/xkb/xkb_keyboard_layout_engine_unittest.cc',
           ]
         }],
         ['use_aura==0', {
@@ -394,6 +407,30 @@
             'test_suite_name': 'events_unittests',
           },
           'includes': [ '../../build/apk_test.gypi' ],
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'events_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'events_unittests',
+          ],
+          'includes': [
+            '../../build/isolate.gypi',
+          ],
+          'sources': [
+            'events_unittests.isolate',
+          ],
+          'conditions': [
+            ['use_x11 == 1', {
+              'dependencies': [
+                '../../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+              ],
+            }],
+          ],
         },
       ],
     }],

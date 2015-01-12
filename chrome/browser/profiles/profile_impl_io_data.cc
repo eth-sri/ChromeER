@@ -10,6 +10,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/prefs/pref_member.h"
 #include "base/prefs/pref_service.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
@@ -37,6 +38,7 @@
 #include "chrome/common/url_constants.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_interceptor.h"
+#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_network_delegate.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_protocol.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats.h"
@@ -66,7 +68,8 @@ net::BackendType ChooseCacheBackendType() {
 #if defined(OS_ANDROID)
   return net::CACHE_BACKEND_SIMPLE;
 #else
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kUseSimpleCacheBackend)) {
     const std::string opt_value =
         command_line.GetSwitchValueASCII(switches::kUseSimpleCacheBackend);
@@ -117,7 +120,7 @@ ProfileImplIOData::Handle::~Handle() {
   if (io_data_->http_server_properties_manager_)
     io_data_->http_server_properties_manager_->ShutdownOnPrefThread();
 
-  io_data_->data_reduction_proxy_enabled()->Destroy();
+  io_data_->data_reduction_proxy_enabled_.Destroy();
   io_data_->ShutdownOnUIThread(GetAllContextGetters().Pass());
 }
 
@@ -365,9 +368,9 @@ void ProfileImplIOData::Handle::LazyInitialize() const {
   io_data_->safe_browsing_enabled()->MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 #endif
-  io_data_->data_reduction_proxy_enabled()->Init(
+  io_data_->data_reduction_proxy_enabled_.Init(
       data_reduction_proxy::prefs::kDataReductionProxyEnabled, pref_service);
-  io_data_->data_reduction_proxy_enabled()->MoveToThread(
+  io_data_->data_reduction_proxy_enabled_.MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
   io_data_->InitializeOnUIThread(profile_);
 }
@@ -414,9 +417,6 @@ ProfileImplIOData::ProfileImplIOData()
 }
 
 ProfileImplIOData::~ProfileImplIOData() {
-  if (initialized())
-    network_delegate()->set_domain_reliability_monitor(NULL);
-
   DestroyResourceContext();
 
   if (media_request_context_)
@@ -424,13 +424,40 @@ ProfileImplIOData::~ProfileImplIOData() {
 }
 
 void ProfileImplIOData::InitializeInternal(
+    scoped_ptr<ChromeNetworkDelegate> chrome_network_delegate,
     ProfileParams* profile_params,
     content::ProtocolHandlerMap* protocol_handlers,
     content::URLRequestInterceptorScopedVector request_interceptors) const {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal"));
+
   net::URLRequestContext* main_context = main_request_context();
 
   IOThread* const io_thread = profile_params->io_thread;
   IOThread::Globals* const io_thread_globals = io_thread->globals();
+
+  chrome_network_delegate->set_predictor(predictor_.get());
+
+  if (domain_reliability_monitor_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+    tracked_objects::ScopedTracker tracking_profile1(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "436671 ProfileImplIOData::InitializeInternal1"));
+
+    domain_reliability::DomainReliabilityMonitor* monitor =
+        domain_reliability_monitor_.get();
+    monitor->InitURLRequestContext(main_context);
+    monitor->AddBakedInConfigs();
+    monitor->SetDiscardUploads(!GetMetricsEnabledStateOnIOThread());
+    chrome_network_delegate->set_domain_reliability_monitor(monitor);
+  }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal2"));
 
   set_data_reduction_proxy_auth_request_handler(
       scoped_ptr<data_reduction_proxy::DataReductionProxyAuthRequestHandler>
@@ -447,25 +474,35 @@ void ProfileImplIOData::InitializeInternal(
   data_reduction_proxy_usage_stats()->set_unavailable_callback(
       data_reduction_proxy_unavailable_callback());
 
-  network_delegate()->set_data_reduction_proxy_enabled_pref(
-      &data_reduction_proxy_enabled_);
-  network_delegate()->set_data_reduction_proxy_params(
-      data_reduction_proxy_params());
-  network_delegate()->set_data_reduction_proxy_usage_stats(
-      data_reduction_proxy_usage_stats());
-  network_delegate()->set_data_reduction_proxy_auth_request_handler(
-      data_reduction_proxy_auth_request_handler());
-  network_delegate()->set_data_reduction_proxy_statistics_prefs(
-      data_reduction_proxy_statistics_prefs());
-  network_delegate()->set_on_resolve_proxy_handler(
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile3(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal3"));
+
+  scoped_ptr<data_reduction_proxy::DataReductionProxyNetworkDelegate>
+  data_reduction_proxy_network_delegate(
+      new data_reduction_proxy::DataReductionProxyNetworkDelegate(
+          chrome_network_delegate.Pass(),
+          data_reduction_proxy_params(),
+          data_reduction_proxy_auth_request_handler(),
+          base::Bind(
+              &DataReductionProxyChromeConfigurator::GetProxyConfigOnIOThread,
+              base::Unretained(data_reduction_proxy_chrome_configurator()))));
+  data_reduction_proxy_network_delegate->InitProxyConfigOverrider(
       base::Bind(data_reduction_proxy::OnResolveProxyHandler));
-  network_delegate()->set_proxy_config_getter(
-      base::Bind(
-          &DataReductionProxyChromeConfigurator::GetProxyConfigOnIOThread,
-          base::Unretained(data_reduction_proxy_chrome_configurator())));
-  network_delegate()->set_predictor(predictor_.get());
+  data_reduction_proxy_network_delegate->InitStatisticsPrefsAndUMA(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+      data_reduction_proxy_statistics_prefs(),
+      &data_reduction_proxy_enabled_,
+      data_reduction_proxy_usage_stats());
+  network_delegate_ = data_reduction_proxy_network_delegate.Pass();
 
   // Initialize context members.
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile4(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal4"));
 
   ApplyProfileParamsToContext(main_context);
 
@@ -476,7 +513,7 @@ void ProfileImplIOData::InitializeInternal(
 
   main_context->set_net_log(io_thread->net_log());
 
-  main_context->set_network_delegate(network_delegate());
+  main_context->set_network_delegate(network_delegate_.get());
 
   main_context->set_http_server_properties(http_server_properties());
 
@@ -511,6 +548,10 @@ void ProfileImplIOData::InitializeInternal(
         base::WorkerPool::GetTaskRunner(true));
   }
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile5(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal5"));
 
   // setup cookie store
   if (!cookie_store.get()) {
@@ -527,6 +568,11 @@ void ProfileImplIOData::InitializeInternal(
   }
 
   main_context->set_cookie_store(cookie_store.get());
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile6(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal6"));
 
   // Setup server bound cert service.
   if (!channel_id_service) {
@@ -546,6 +592,11 @@ void ProfileImplIOData::InitializeInternal(
   set_channel_id_service(channel_id_service);
   main_context->set_channel_id_service(channel_id_service);
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile7(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal7"));
+
   net::HttpCache::DefaultBackend* main_backend =
       new net::HttpCache::DefaultBackend(
           net::DISK_CACHE,
@@ -555,6 +606,12 @@ void ProfileImplIOData::InitializeInternal(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE));
   scoped_ptr<net::HttpCache> main_cache = CreateMainHttpFactory(
       profile_params, main_backend);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile71(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal71"));
+
   main_cache->InitializeInfiniteCache(lazy_params_->infinite_cache_path);
 
   if (chrome_browser_net::ShouldUseInMemoryCookiesAndCache()) {
@@ -571,6 +628,11 @@ void ProfileImplIOData::InitializeInternal(
       new net::FtpNetworkLayer(io_thread_globals->host_resolver.get()));
 #endif  // !defined(DISABLE_FTP_SUPPORT)
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile8(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal8"));
+
   scoped_ptr<net::URLRequestJobFactoryImpl> main_job_factory(
       new net::URLRequestJobFactoryImpl());
   InstallProtocolHandlers(main_job_factory.get(), protocol_handlers);
@@ -586,9 +648,14 @@ void ProfileImplIOData::InitializeInternal(
       main_job_factory.Pass(),
       request_interceptors.Pass(),
       profile_params->protocol_handler_interceptor.Pass(),
-      network_delegate(),
+      main_context->network_delegate(),
       ftp_factory_.get());
   main_context->set_job_factory(main_job_factory_.get());
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/436671 is fixed.
+  tracked_objects::ScopedTracker tracking_profile9(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "436671 ProfileImplIOData::InitializeInternal9"));
 
 #if defined(ENABLE_EXTENSIONS)
   InitializeExtensionsRequestContext(profile_params);
@@ -604,15 +671,6 @@ void ProfileImplIOData::InitializeInternal(
   StoragePartitionDescriptor details(profile_path_, false);
   media_request_context_.reset(InitializeMediaRequestContext(main_context,
                                                              details));
-
-  if (domain_reliability_monitor_) {
-    domain_reliability::DomainReliabilityMonitor* monitor =
-        domain_reliability_monitor_.get();
-    monitor->InitURLRequestContext(main_context);
-    monitor->AddBakedInConfigs();
-    monitor->SetDiscardUploads(!GetMetricsEnabledStateOnIOThread());
-    network_delegate()->set_domain_reliability_monitor(monitor);
-  }
 
   lazy_params_.reset();
 }
@@ -747,7 +805,7 @@ net::URLRequestContext* ProfileImplIOData::InitializeAppRequestContext(
       SetUpJobFactoryDefaults(job_factory.Pass(),
                               request_interceptors.Pass(),
                               protocol_handler_interceptor.Pass(),
-                              network_delegate(),
+                              main_context->network_delegate(),
                               ftp_factory_.get()));
   context->SetJobFactory(top_job_factory.Pass());
 
@@ -855,6 +913,6 @@ void ProfileImplIOData::ClearNetworkingHistorySinceOnIOThread(
 
 bool ProfileImplIOData::IsDataReductionProxyEnabled() const {
   return data_reduction_proxy_enabled_.GetValue() ||
-         CommandLine::ForCurrentProcess()->HasSwitch(
-            data_reduction_proxy::switches::kEnableDataReductionProxy);
+         base::CommandLine::ForCurrentProcess()->HasSwitch(
+             data_reduction_proxy::switches::kEnableDataReductionProxy);
 }

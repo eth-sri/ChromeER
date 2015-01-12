@@ -24,6 +24,9 @@ const char kDisableExtensionInfoDialog[] = "disable-extension-info-dialog";
 // a new tab.
 const char kEmbeddedExtensionOptions[] = "embedded-extension-options";
 
+// Enables the SurfaceWorker experiment.
+const char kSurfaceWorker[] = "surface-worker";
+
 // Show apps windows after the first paint. Windows will be shown significantly
 // later for heavy apps loading resources synchronously but it will be
 // insignificant for apps that load most of their resources asynchronously.
@@ -36,6 +39,9 @@ const char kEnableAppWindowControls[] = "enable-app-window-controls";
 // kEnableScriptsRequireAction.
 const char kEnableEmbeddedExtensionOptions[] =
     "enable-embedded-extension-options";
+
+// Enables the experimental feature SurfaceWorker.
+const char kEnableSurfaceWorker[] = "enable-surface-worker";
 
 // Enables extension APIs that are in development.
 const char kEnableExperimentalExtensionApis[] =
@@ -51,10 +57,6 @@ const char kEnableMojoSerialService[] = "enable-mojo-serial-service";
 
 // Enables extensions to hide bookmarks UI elements.
 const char kEnableOverrideBookmarksUI[] = "enable-override-bookmarks-ui";
-
-// Allows remote assistance connection to this computer using the Chrome Remote
-// Desktop app on Chrome OS.
-const char kEnableRemoteAssistance[] = "enable-remote-assistance";
 
 // Allows the ErrorConsole to collect runtime and manifest errors, and display
 // them in the chrome:extensions page.

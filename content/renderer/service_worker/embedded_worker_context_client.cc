@@ -337,13 +337,21 @@ void EmbeddedWorkerContextClient::didHandleSyncEvent(int request_id) {
   script_context_->DidHandleSyncEvent(request_id);
 }
 
+void EmbeddedWorkerContextClient::didHandleCrossOriginConnectEvent(
+    int request_id,
+    bool accept_connection) {
+  DCHECK(script_context_);
+  script_context_->DidHandleCrossOriginConnectEvent(request_id,
+                                                    accept_connection);
+}
+
 blink::WebServiceWorkerNetworkProvider*
 EmbeddedWorkerContextClient::createServiceWorkerNetworkProvider(
     blink::WebDataSource* data_source) {
   // Create a content::ServiceWorkerNetworkProvider for this data source so
   // we can observe its requests.
   scoped_ptr<ServiceWorkerNetworkProvider> provider(
-      new ServiceWorkerNetworkProvider());
+      new ServiceWorkerNetworkProvider(MSG_ROUTING_NONE));
 
   // Tell the network provider about which version to load.
   provider->SetServiceWorkerVersionId(service_worker_version_id_);
@@ -366,6 +374,27 @@ void EmbeddedWorkerContextClient::postMessageToClient(
   DCHECK(script_context_);
   script_context_->PostMessageToDocument(client_id, message,
                                          make_scoped_ptr(channels));
+}
+
+void EmbeddedWorkerContextClient::postMessageToCrossOriginClient(
+    const blink::WebCrossOriginServiceWorkerClient& client,
+    const blink::WebString& message,
+    blink::WebMessagePortChannelArray* channels) {
+  DCHECK(script_context_);
+  script_context_->PostCrossOriginMessageToClient(client, message,
+                                                  make_scoped_ptr(channels));
+}
+
+void EmbeddedWorkerContextClient::focus(
+    int client_id, blink::WebServiceWorkerClientFocusCallback* callback) {
+  DCHECK(script_context_);
+  script_context_->FocusClient(client_id, callback);
+}
+
+void EmbeddedWorkerContextClient::skipWaiting(
+    blink::WebServiceWorkerSkipWaitingCallbacks* callbacks) {
+  DCHECK(script_context_);
+  script_context_->SkipWaiting(callbacks);
 }
 
 void EmbeddedWorkerContextClient::OnMessageToWorker(

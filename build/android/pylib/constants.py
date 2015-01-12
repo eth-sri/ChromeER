@@ -187,7 +187,9 @@ PYTHON_UNIT_TEST_SUITES = {
   'pylib_py_unittests': {
     'path': os.path.join(DIR_SOURCE_ROOT, 'build', 'android'),
     'test_modules': [
+      'pylib.cmd_helper_test',
       'pylib.device.device_utils_test',
+      'pylib.results.json_results_test',
       'pylib.utils.md5sum_test',
     ]
   },
@@ -200,7 +202,9 @@ PYTHON_UNIT_TEST_SUITES = {
 }
 
 LOCAL_MACHINE_TESTS = ['junit', 'python']
-VALID_ENVIRONMENTS = ['local']
+VALID_ENVIRONMENTS = ['local', 'remote_device']
+VALID_TEST_TYPES = ['gtest', 'instrumentation', 'junit', 'linker', 'monkey',
+                    'perf', 'python', 'uiautomator', 'uirobot']
 
 
 def GetBuildType():

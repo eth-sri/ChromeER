@@ -19,8 +19,8 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/extension_icon_image.h"
 #include "ui/base/ui_base_types.h"  // WindowShowState
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 
 class GURL;
 class SkRegion;
@@ -335,6 +335,10 @@ class AppWindow : public content::NotificationObserver,
   // API. Note that the actual value of this property in the native app window
   // may be false if the bit is silently switched off for security reasons.
   bool IsAlwaysOnTop() const;
+
+  // Set whether the window should get even reserved keys (modulo platform
+  // restrictions).
+  void SetInterceptAllKeys(bool want_all_keys);
 
   // Retrieve the current state of the app window as a dictionary, to pass to
   // the renderer.

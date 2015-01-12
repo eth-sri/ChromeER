@@ -10,11 +10,13 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
 
+import org.chromium.net.HistogramManager;
 import org.chromium.net.HttpUrlRequest;
 import org.chromium.net.HttpUrlRequestFactory;
 import org.chromium.net.HttpUrlRequestListener;
 import org.chromium.net.UrlRequestContext;
 import org.chromium.net.UrlRequestContextConfig;
+import org.chromium.net.urlconnection.CronetURLStreamHandlerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -34,8 +36,11 @@ public class CronetTestActivity extends Activity {
     public static final String CONFIG_KEY = "config";
     public static final String SKIP_FACTORY_INIT_KEY = "skipFactoryInit";
 
+    public CronetURLStreamHandlerFactory mStreamHandlerFactory;
+
     HttpUrlRequestFactory mRequestFactory;
     UrlRequestContext mUrlRequestContext;
+    HistogramManager mHistogramManager = new HistogramManager();
 
     String mUrl;
 
@@ -75,6 +80,9 @@ public class CronetTestActivity extends Activity {
             return;
         }
         mRequestFactory = initRequestFactory();
+        mStreamHandlerFactory = new CronetURLStreamHandlerFactory(
+                getApplicationContext(), null);
+
         if (mRequestFactory == null) {
             return;
         }

@@ -17,6 +17,7 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
 #include "chromeos/dbus/power_manager_client.h"
@@ -53,12 +54,16 @@ void EnableDebuggingScreenHandler::ShowWithParams() {
 #endif
   ShowScreen(kEnableDebuggingScreen, &debugging_screen_params);
 
-  // Check the status of debugging features.
-  chromeos::DebugDaemonClient* client =
-      chromeos::DBusThreadManager::Get()->GetDebugDaemonClient();
-  client->QueryDebuggingFeatures(
-      base::Bind(&EnableDebuggingScreenHandler::OnQueryDebuggingFeatures,
-                 weak_ptr_factory_.GetWeakPtr()));
+  UpdateUIState(UI_STATE_WAIT);
+
+  DVLOG(1) << "Showing enable debugging screen.";
+
+  // Wait for cryptohomed before checking debugd. See http://crbug.com/440506.
+  chromeos::CryptohomeClient* client =
+      chromeos::DBusThreadManager::Get()->GetCryptohomeClient();
+  client->WaitForServiceToBeAvailable(base::Bind(
+      &EnableDebuggingScreenHandler::OnCryptohomeDaemonAvailabilityChecked,
+      weak_ptr_factory_.GetWeakPtr()));
 }
 
 void EnableDebuggingScreenHandler::Show() {
@@ -174,6 +179,41 @@ void EnableDebuggingScreenHandler::HandleOnSetup(
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
+void EnableDebuggingScreenHandler::OnCryptohomeDaemonAvailabilityChecked(
+    bool service_is_available) {
+  DVLOG(1) << "Enable-debugging-screen: cryptohomed availability="
+           << service_is_available;
+  if (!service_is_available) {
+    LOG(ERROR) << "Crypthomed is not available.";
+    UpdateUIState(UI_STATE_ERROR);
+    return;
+  }
+
+  chromeos::DebugDaemonClient* client =
+      chromeos::DBusThreadManager::Get()->GetDebugDaemonClient();
+  client->WaitForServiceToBeAvailable(base::Bind(
+      &EnableDebuggingScreenHandler::OnDebugDaemonServiceAvailabilityChecked,
+      weak_ptr_factory_.GetWeakPtr()));
+}
+
+void EnableDebuggingScreenHandler::OnDebugDaemonServiceAvailabilityChecked(
+    bool service_is_available) {
+  DVLOG(1) << "Enable-debugging-screen: debugd availability="
+           << service_is_available;
+  if (!service_is_available) {
+    LOG(ERROR) << "Debug daemon is not available.";
+    UpdateUIState(UI_STATE_ERROR);
+    return;
+  }
+
+  // Check the status of debugging features.
+  chromeos::DebugDaemonClient* client =
+      chromeos::DBusThreadManager::Get()->GetDebugDaemonClient();
+  client->QueryDebuggingFeatures(
+      base::Bind(&EnableDebuggingScreenHandler::OnQueryDebuggingFeatures,
+                 weak_ptr_factory_.GetWeakPtr()));
+}
+
 // Removes rootfs verification, add flag to start with enable debugging features
 // screen and reboots the machine.
 void EnableDebuggingScreenHandler::OnRemoveRootfsVerification(bool success) {
@@ -188,7 +228,6 @@ void EnableDebuggingScreenHandler::OnRemoveRootfsVerification(bool success) {
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
 }
 
-
 void EnableDebuggingScreenHandler::OnEnableDebuggingFeatures(bool success) {
   if (!success) {
     UpdateUIState(UI_STATE_ERROR);
@@ -198,34 +237,35 @@ void EnableDebuggingScreenHandler::OnEnableDebuggingFeatures(bool success) {
   UpdateUIState(UI_STATE_DONE);
 }
 
-
 void EnableDebuggingScreenHandler::OnQueryDebuggingFeatures(bool success,
                                                             int features_flag) {
+  DVLOG(1) << "Enable-debugging-screen: OnQueryDebuggingFeatures"
+           << ", success=" << success
+           << ", features=" << features_flag;
   if (!success || features_flag == DebugDaemonClient::DEV_FEATURES_DISABLED) {
     UpdateUIState(UI_STATE_ERROR);
     return;
   }
 
-  if (features_flag == DebugDaemonClient::DEV_FEATURE_NONE) {
+  if ((features_flag &
+       DebugDaemonClient::DEV_FEATURE_ROOTFS_VERIFICATION_REMOVED) == 0) {
     UpdateUIState(UI_STATE_REMOVE_PROTECTION);
     return;
   }
 
-  if ((features_flag & DebugDaemonClient::DEV_FEATURE_ALL_ENABLED) ==
-         DebugDaemonClient::DEV_FEATURE_ALL_ENABLED) {
-    UpdateUIState(UI_STATE_DONE);
-  } else if (features_flag &
-               DebugDaemonClient::DEV_FEATURE_ROOTFS_VERIFICATION_REMOVED) {
+  if ((features_flag & DebugDaemonClient::DEV_FEATURE_ALL_ENABLED) !=
+      DebugDaemonClient::DEV_FEATURE_ALL_ENABLED) {
     UpdateUIState(UI_STATE_SETUP);
   } else {
-    LOG(WARNING) << "Unexpected status of debugging features:" << features_flag;
-    UpdateUIState(UI_STATE_ERROR);
+    UpdateUIState(UI_STATE_DONE);
   }
 }
 
 void EnableDebuggingScreenHandler::UpdateUIState(
     EnableDebuggingScreenHandler::UIState state) {
-  if (state == UI_STATE_ERROR || state == UI_STATE_DONE) {
+  if (state == UI_STATE_SETUP ||
+      state == UI_STATE_ERROR ||
+      state == UI_STATE_DONE) {
     PrefService* prefs = g_browser_process->local_state();
     prefs->ClearPref(prefs::kDebuggingFeaturesRequested);
     prefs->CommitPendingWrite();

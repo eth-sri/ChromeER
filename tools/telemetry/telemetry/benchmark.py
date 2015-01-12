@@ -10,6 +10,7 @@ import sys
 import zipfile
 
 from telemetry import decorators
+from telemetry import page
 from telemetry.core import browser_finder
 from telemetry.core import command_line
 from telemetry.core import util
@@ -19,6 +20,7 @@ from telemetry.page import page_test
 from telemetry.page import test_expectations
 from telemetry.results import results_options
 from telemetry.util import cloud_storage
+from telemetry.util import exception_formatter
 
 Disabled = decorators.Disabled
 Enabled = decorators.Enabled
@@ -30,12 +32,18 @@ class InvalidOptionsError(Exception):
 
 
 class BenchmarkMetadata(object):
-  def __init__(self, name):
+  def __init__(self, name, description=''):
     self._name = name
+    self._description = description
 
   @property
   def name(self):
     return self._name
+
+  @property
+  def description(self):
+      return self._description
+
 
 class Benchmark(command_line.Command):
   """Base class for a Telemetry benchmark.
@@ -43,6 +51,15 @@ class Benchmark(command_line.Command):
   A test packages a PageTest and a PageSet together.
   """
   options = {}
+
+  def __init__(self, max_failures=None):
+    """Creates a new Benchmark.
+
+    Args:
+      max_failures: The number of user story run's failures before bailing
+          from executing subsequent page runs. If None, we never bail.
+    """
+    self._max_failures = max_failures
 
   @classmethod
   def Name(cls):
@@ -78,10 +95,15 @@ class Benchmark(command_line.Command):
     """Add browser options that are required by this benchmark."""
 
   def GetMetadata(self):
-    return BenchmarkMetadata(self.Name())
+    return BenchmarkMetadata(self.Name(), self.__doc__)
 
   def Run(self, finder_options):
-    """Run this test with the given options."""
+    """Run this test with the given options.
+
+    Returns:
+      The number of failure values (up to 254) or 255 if there is an uncaught
+      exception.
+    """
     self.CustomizeBrowserOptions(finder_options.browser_options)
 
     pt = self.CreatePageTest(finder_options)
@@ -96,23 +118,31 @@ class Benchmark(command_line.Command):
 
     expectations = self.CreateExpectations()
     us = self.CreateUserStorySet(finder_options)
+    if isinstance(pt, page_test.PageTest):
+      if any(not isinstance(p, page.Page) for p in us.user_stories):
+        raise Exception(
+            'PageTest must be used with UserStorySet containing only '
+            'telemetry.page.Page user stories.')
 
     self._DownloadGeneratedProfileArchive(finder_options)
 
     benchmark_metadata = self.GetMetadata()
     results = results_options.CreateResults(benchmark_metadata, finder_options)
     try:
-      user_story_runner.Run(pt, us, expectations, finder_options, results)
-    except page_test.TestNotSupportedOnPlatformFailure as failure:
-      logging.warning(str(failure))
+      user_story_runner.Run(pt, us, expectations, finder_options, results,
+                            max_failures=self._max_failures)
+      return_code = min(254, len(results.failures))
+    except Exception:
+      exception_formatter.PrintFormattedException()
+      return_code = 255
 
-    bucket = cloud_storage.INTERNAL_BUCKET
+    bucket = cloud_storage.BUCKET_ALIASES[finder_options.upload_bucket]
     if finder_options.upload_results:
       results.UploadTraceFilesToCloud(bucket)
       results.UploadProfilingFilesToCloud(bucket)
 
     results.PrintSummary()
-    return len(results.failures)
+    return return_code
 
   def _DownloadGeneratedProfileArchive(self, options):
     """Download and extract profile directory archive if one exists."""

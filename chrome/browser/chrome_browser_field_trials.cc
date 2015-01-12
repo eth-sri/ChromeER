@@ -24,7 +24,7 @@
 #endif
 
 ChromeBrowserFieldTrials::ChromeBrowserFieldTrials(
-    const CommandLine& parsed_command_line)
+    const base::CommandLine& parsed_command_line)
     : parsed_command_line_(parsed_command_line) {
 }
 
@@ -52,7 +52,6 @@ void ChromeBrowserFieldTrials::InstantiateDynamicTrials() {
   // Mark here so they will be sync-ed.
   base::FieldTrialList::FindValue("CLD1VsCLD2");
   base::FieldTrialList::FindValue("MouseEventPreconnect");
-  base::FieldTrialList::FindValue("UnauthorizedPluginInfoBar");
   base::FieldTrialList::FindValue("DisplayList2dCanvas");
   base::FieldTrialList::FindValue("V8ScriptStreaming");
   // Activate the autocomplete dynamic field trials.

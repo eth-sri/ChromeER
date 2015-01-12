@@ -73,7 +73,6 @@ import org.chromium.content.browser.input.SelectPopup;
 import org.chromium.content.browser.input.SelectPopupDialog;
 import org.chromium.content.browser.input.SelectPopupDropdown;
 import org.chromium.content.browser.input.SelectPopupItem;
-import org.chromium.content.browser.input.SelectionEventType;
 import org.chromium.content.common.ContentSwitches;
 import org.chromium.content_public.browser.GestureStateListener;
 import org.chromium.content_public.browser.WebContents;
@@ -81,7 +80,9 @@ import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.ViewAndroid;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
+import org.chromium.ui.base.ime.TextInputType;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
+import org.chromium.ui.touch_selection.SelectionEventType;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -418,7 +419,8 @@ public class ContentViewCore
     private int mViewportHeightPix;
     private int mPhysicalBackingWidthPix;
     private int mPhysicalBackingHeightPix;
-    private int mTopControlsLayoutHeightPix;
+    private int mTopControlsHeightPix;
+    private boolean mTopControlsShrinkBlinkSize;
 
     // Cached copy of all positions and scales as reported by the renderer.
     private final RenderCoordinates mRenderCoordinates;
@@ -484,6 +486,7 @@ public class ContentViewCore
     private ViewAndroid mViewAndroid;
 
     private SmartClipDataListener mSmartClipDataListener = null;
+    private ObserverList<ContainerViewObserver> mContainerViewObservers;
 
     // This holds the state of editable text (e.g. contents of <input>, contenteditable) of
     // a focused element.
@@ -513,6 +516,9 @@ public class ContentViewCore
     // A ViewAndroidDelegate that delegates to the current container view.
     private ContentViewAndroidDelegate mViewAndroidDelegate;
 
+    // A flag to determine if we enable hover feature or not.
+    private Boolean mEnableTouchHover;
+
     /**
      * Constructs a new ContentViewCore. Embedders must call initialize() after constructing
      * a ContentViewCore and before using it.
@@ -540,6 +546,7 @@ public class ContentViewCore
 
         mEditable = Editable.Factory.getInstance().newEditable("");
         Selection.setSelection(mEditable, 0);
+        mContainerViewObservers = new ObserverList<ContainerViewObserver>();
     }
 
     /**
@@ -564,21 +571,27 @@ public class ContentViewCore
         return mWebContents;
     }
 
-    /* TODO(aelias): Remove this after downstream callers switch to setTopControlsLayoutHeight. */
+    /* TODO(aelias): Remove this after downstream callers switch to setTopControlsHeight. */
     public void setViewportSizeOffset(int offsetXPix, int offsetYPix) {
-        setTopControlsLayoutHeight(offsetYPix);
+        setTopControlsHeight(mTopControlsHeightPix, offsetYPix != 0);
     }
 
     /**
-     * Specifies how much smaller the Blink layout size should be relative to the size of this
-     * view.
-     * @param topControlsLayoutHeightPix The Y amount in pixels to shrink the viewport by.
+     *
+     * @param topControlsHeightPix       The height of the top controls in pixels.
+     * @param topControlsShrinkBlinkSize The Y amount in pixels to shrink the viewport by.  This
+     *                                   specifies how much smaller the Blink layout size should be
+     *                                   relative to the size of this View.
      */
-    public void setTopControlsLayoutHeight(int topControlsLayoutHeightPix) {
-        if (topControlsLayoutHeightPix != mTopControlsLayoutHeightPix) {
-            mTopControlsLayoutHeightPix = topControlsLayoutHeightPix;
-            if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
+    public void setTopControlsHeight(int topControlsHeightPix, boolean topControlsShrinkBlinkSize) {
+        if (topControlsHeightPix == mTopControlsHeightPix
+                && topControlsShrinkBlinkSize == mTopControlsShrinkBlinkSize) {
+            return;
         }
+
+        mTopControlsHeightPix = topControlsHeightPix;
+        mTopControlsShrinkBlinkSize = topControlsShrinkBlinkSize;
+        if (mNativeContentViewCore != 0) nativeWasResized(mNativeContentViewCore);
     }
 
     /**
@@ -792,18 +805,33 @@ public class ContentViewCore
      * </ul>
      */
     public void setContainerView(ViewGroup containerView) {
-        TraceEvent.begin();
-        if (mContainerView != null) {
-            mPastePopupMenu = null;
-            mInputConnection = null;
-            hidePopupsAndClearSelection();
-        }
+        try {
+            TraceEvent.begin("ContentViewCore.setContainerView");
+            if (mContainerView != null) {
+                mPastePopupMenu = null;
+                mInputConnection = null;
+                hidePopupsAndClearSelection();
+            }
 
-        mContainerView = containerView;
-        mPositionObserver = new ViewPositionObserver(mContainerView);
-        mContainerView.setClickable(true);
-        mViewAndroidDelegate.updateCurrentContainerView();
-        TraceEvent.end();
+            mContainerView = containerView;
+            mPositionObserver = new ViewPositionObserver(mContainerView);
+            mContainerView.setWillNotDraw(false); // TODO(epenner): Remove (http://crbug.com/436689)
+            mContainerView.setClickable(true);
+            mViewAndroidDelegate.updateCurrentContainerView();
+            for (ContainerViewObserver observer : mContainerViewObservers) {
+                observer.onContainerViewChanged(mContainerView);
+            }
+        } finally {
+            TraceEvent.end("ContentViewCore.setContainerView");
+        }
+    }
+
+    public void addContainerViewObserver(ContainerViewObserver observer) {
+        mContainerViewObservers.addObserver(observer);
+    }
+
+    public void removeContainerViewObserver(ContainerViewObserver observer) {
+        mContainerViewObservers.removeObserver(observer);
     }
 
     @CalledByNative
@@ -916,6 +944,7 @@ public class ContentViewCore
         mGestureStateListeners.clear();
         ScreenOrientationListener.getInstance().removeObserver(this);
         mPositionObserver.clearListener();
+        mContainerViewObservers.clear();
     }
 
     private void unregisterAccessibilityContentObserver() {
@@ -1010,15 +1039,20 @@ public class ContentViewCore
 
     @VisibleForTesting
     public int getViewportSizeOffsetHeightPix() {
-        return getTopControlsLayoutHeightPix();
+        return mTopControlsShrinkBlinkSize ? mTopControlsHeightPix : 0;
     }
 
     /**
      * @return The amount that the viewport size given to Blink is shrunk by the URL-bar..
      */
     @CalledByNative
-    public int getTopControlsLayoutHeightPix() {
-        return mTopControlsLayoutHeightPix;
+    public boolean doTopControlsShrinkBlinkSize() {
+        return mTopControlsShrinkBlinkSize;
+    }
+
+    @CalledByNative
+    public int getTopControlsHeightPix() {
+        return mTopControlsHeightPix;
     }
 
     /**
@@ -1463,21 +1497,24 @@ public class ContentViewCore
      */
     @SuppressWarnings("javadoc")
     public void onConfigurationChanged(Configuration newConfig) {
-        TraceEvent.begin();
+        try {
+            TraceEvent.begin("ContentViewCore.onConfigurationChanged");
 
-        if (newConfig.keyboard != Configuration.KEYBOARD_NOKEYS) {
-            if (mNativeContentViewCore != 0) {
-                mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore),
-                        ImeAdapter.getTextInputTypeNone(), 0 /* no flags */);
+            if (newConfig.keyboard != Configuration.KEYBOARD_NOKEYS) {
+                if (mNativeContentViewCore != 0) {
+                    mImeAdapter.attach(nativeGetNativeImeAdapter(mNativeContentViewCore),
+                            TextInputType.NONE, 0 /* no flags */);
+                }
+                mInputMethodManagerWrapper.restartInput(mContainerView);
             }
-            mInputMethodManagerWrapper.restartInput(mContainerView);
-        }
-        mContainerViewInternals.super_onConfigurationChanged(newConfig);
+            mContainerViewInternals.super_onConfigurationChanged(newConfig);
 
-        // To request layout has side effect, but it seems OK as it only happen in
-        // onConfigurationChange and layout has to be changed in most case.
-        mContainerView.requestLayout();
-        TraceEvent.end();
+            // To request layout has side effect, but it seems OK as it only happen in
+            // onConfigurationChange and layout has to be changed in most case.
+            mContainerView.requestLayout();
+        } finally {
+            TraceEvent.end("ContentViewCore.onConfigurationChanged");
+        }
     }
 
     /**
@@ -1579,10 +1616,10 @@ public class ContentViewCore
      */
     public boolean dispatchKeyEventPreIme(KeyEvent event) {
         try {
-            TraceEvent.begin();
+            TraceEvent.begin("ContentViewCore.dispatchKeyEventPreIme");
             return mContainerViewInternals.super_dispatchKeyEventPreIme(event);
         } finally {
-            TraceEvent.end();
+            TraceEvent.end("ContentViewCore.dispatchKeyEventPreIme");
         }
     }
 
@@ -1608,6 +1645,7 @@ public class ContentViewCore
      */
     public boolean onHoverEvent(MotionEvent event) {
         TraceEvent.begin("onHoverEvent");
+
         MotionEvent offset = createOffsetMotionEvent(event);
         try {
             if (mBrowserAccessibilityManager != null) {
@@ -1618,6 +1656,16 @@ public class ContentViewCore
             // event are incorrect when touch exploration is on.
             if (mTouchExplorationEnabled && offset.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
                 return true;
+            }
+
+            // TODO(lanwei): Remove this switch once experimentation is complete -
+            // crbug.com/418188
+            if (event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
+                if (mEnableTouchHover == null) {
+                    mEnableTouchHover =
+                            CommandLine.getInstance().hasSwitch(ContentSwitches.ENABLE_TOUCH_HOVER);
+                }
+                if (!mEnableTouchHover.booleanValue()) return false;
             }
 
             mContainerView.removeCallbacks(mFakeMouseMoveRunnable);
@@ -1644,7 +1692,8 @@ public class ContentViewCore
 
                     nativeSendMouseWheelEvent(mNativeContentViewCore, event.getEventTime(),
                             event.getX(), event.getY(),
-                            event.getAxisValue(MotionEvent.AXIS_VSCROLL));
+                            event.getAxisValue(MotionEvent.AXIS_VSCROLL),
+                            event.getAxisValue(MotionEvent.AXIS_HSCROLL));
 
                     mContainerView.removeCallbacks(mFakeMouseMoveRunnable);
                     // Send a delayed onMouseMove event so that we end
@@ -2220,20 +2269,23 @@ public class ContentViewCore
             int textInputFlags, String text, int selectionStart, int selectionEnd,
             int compositionStart, int compositionEnd, boolean showImeIfNeeded,
             boolean isNonImeChange) {
-        TraceEvent.begin();
-        mFocusedNodeEditable = (textInputType != ImeAdapter.getTextInputTypeNone());
-        if (!mFocusedNodeEditable) hidePastePopup();
+        try {
+            TraceEvent.begin("ContentViewCore.updateImeAdapter");
+            mFocusedNodeEditable = (textInputType != TextInputType.NONE);
+            if (!mFocusedNodeEditable) hidePastePopup();
 
-        mImeAdapter.updateKeyboardVisibility(
-                nativeImeAdapterAndroid, textInputType, textInputFlags, showImeIfNeeded);
+            mImeAdapter.updateKeyboardVisibility(
+                    nativeImeAdapterAndroid, textInputType, textInputFlags, showImeIfNeeded);
 
-        if (mInputConnection != null) {
-            mInputConnection.updateState(text, selectionStart, selectionEnd, compositionStart,
-                    compositionEnd, isNonImeChange);
+            if (mInputConnection != null) {
+                mInputConnection.updateState(text, selectionStart, selectionEnd, compositionStart,
+                        compositionEnd, isNonImeChange);
+            }
+
+            if (mActionMode != null) mActionMode.invalidate();
+        } finally {
+            TraceEvent.end("ContentViewCore.updateImeAdapter");
         }
-
-        if (mActionMode != null) mActionMode.invalidate();
-        TraceEvent.end();
     }
 
     @SuppressWarnings("unused")
@@ -3003,7 +3055,8 @@ public class ContentViewCore
             long nativeContentViewCoreImpl, long timeMs, float x, float y);
 
     private native int nativeSendMouseWheelEvent(
-            long nativeContentViewCoreImpl, long timeMs, float x, float y, float verticalAxis);
+            long nativeContentViewCoreImpl, long timeMs, float x, float y, float verticalAxis,
+            float horizontalAxis);
 
     private native void nativeScrollBegin(
             long nativeContentViewCoreImpl, long timeMs, float x, float y, float hintX,

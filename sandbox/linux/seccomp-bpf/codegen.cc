@@ -49,7 +49,7 @@ const size_t kBranchRange = std::numeric_limits<uint8_t>::max();
 
 const CodeGen::Node CodeGen::kNullNode;
 
-CodeGen::CodeGen() : program_(), memos_() {
+CodeGen::CodeGen() : program_(), equivalent_(), memos_() {
 }
 
 CodeGen::~CodeGen() {
@@ -81,11 +81,11 @@ CodeGen::Node CodeGen::AppendInstruction(uint16_t code,
   if (BPF_CLASS(code) == BPF_JMP) {
     CHECK_NE(BPF_JA, BPF_OP(code)) << "CodeGen inserts JAs as needed";
 
-    // We need to check |jt| twice because it might get pushed
-    // out-of-range by appending a jump for |jf|.
-    jt = WithinRange(jt, kBranchRange);
+    // Optimally adding jumps is rather tricky, so we use a quick
+    // approximation: by artificially reducing |jt|'s range, |jt| will
+    // stay within its true range even if we add a jump for |jf|.
+    jt = WithinRange(jt, kBranchRange - 1);
     jf = WithinRange(jf, kBranchRange);
-    jt = WithinRange(jt, kBranchRange);
     return Append(code, k, Offset(jt), Offset(jf));
   }
 
@@ -97,24 +97,26 @@ CodeGen::Node CodeGen::AppendInstruction(uint16_t code,
     // proceeds to the next instruction; so we need to arrange for
     // that to be |jt|.
     jt = WithinRange(jt, 0);
+    CHECK_EQ(0U, Offset(jt)) << "ICE: Failed to setup next instruction";
   }
   return Append(code, k, 0, 0);
 }
 
 CodeGen::Node CodeGen::WithinRange(Node target, size_t range) {
-  if (Offset(target) > range) {
-    // TODO(mdempsky): If |range > 0|, we might be able to reuse an
-    // existing instruction within that range.
-
-    // TODO(mdempsky): If |target| is a branch or return, it might be
-    // possible to duplicate that instruction rather than jump to it.
-
-    // Fall back to emitting a jump instruction.
-    target = Append(BPF_JMP | BPF_JA, Offset(target), 0, 0);
+  // Just use |target| if it's already within range.
+  if (Offset(target) <= range) {
+    return target;
   }
 
-  CHECK_LE(Offset(target), range) << "ICE: Failed to bring target within range";
-  return target;
+  // Alternatively, look for an equivalent instruction within range.
+  if (Offset(equivalent_.at(target)) <= range) {
+    return equivalent_.at(target);
+  }
+
+  // Otherwise, fall back to emitting a jump instruction.
+  Node jump = Append(BPF_JMP | BPF_JA, Offset(target), 0, 0);
+  equivalent_.at(target) = jump;
+  return jump;
 }
 
 CodeGen::Node CodeGen::Append(uint16_t code, uint32_t k, size_t jt, size_t jf) {
@@ -127,8 +129,12 @@ CodeGen::Node CodeGen::Append(uint16_t code, uint32_t k, size_t jt, size_t jf) {
   }
 
   CHECK_LT(program_.size(), static_cast<size_t>(BPF_MAXINSNS));
+  CHECK_EQ(program_.size(), equivalent_.size());
+
+  Node res = program_.size();
   program_.push_back(sock_filter{code, jt, jf, k});
-  return program_.size() - 1;
+  equivalent_.push_back(res);
+  return res;
 }
 
 size_t CodeGen::Offset(Node target) const {
@@ -139,14 +145,14 @@ size_t CodeGen::Offset(Node target) const {
 // TODO(mdempsky): Move into a general base::Tuple helper library.
 bool CodeGen::MemoKeyLess::operator()(const MemoKey& lhs,
                                       const MemoKey& rhs) const {
-  if (lhs.a != rhs.a)
-    return lhs.a < rhs.a;
-  if (lhs.b != rhs.b)
-    return lhs.b < rhs.b;
-  if (lhs.c != rhs.c)
-    return lhs.c < rhs.c;
-  if (lhs.d != rhs.d)
-    return lhs.d < rhs.d;
+  if (get<0>(lhs) != get<0>(rhs))
+    return get<0>(lhs) < get<0>(rhs);
+  if (get<1>(lhs) != get<1>(rhs))
+    return get<1>(lhs) < get<1>(rhs);
+  if (get<2>(lhs) != get<2>(rhs))
+    return get<2>(lhs) < get<2>(rhs);
+  if (get<3>(lhs) != get<3>(rhs))
+    return get<3>(lhs) < get<3>(rhs);
   return false;
 }
 

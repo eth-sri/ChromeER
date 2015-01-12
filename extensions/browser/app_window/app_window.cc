@@ -254,7 +254,7 @@ void AppWindow::Init(const GURL& url,
   // Initialize the render interface and web contents
   app_window_contents_.reset(app_window_contents);
   app_window_contents_->Initialize(browser_context(), url);
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableAppsShowOnFirstPaint)) {
     content::WebContentsObserver::Observe(web_contents());
   }
@@ -334,7 +334,7 @@ void AppWindow::Init(const GURL& url,
 
   app_window_contents_->LoadContents(new_params.creator_process_id);
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           extensions::switches::kEnableAppsShowOnFirstPaint)) {
     // We want to show the window only when the content has been painted. For
     // that to happen, we need to define a size for the content, otherwise the
@@ -659,7 +659,7 @@ void AppWindow::Show(ShowType show_type) {
   bool was_hidden = is_hidden_ || !has_been_shown_;
   is_hidden_ = false;
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableAppsShowOnFirstPaint)) {
     show_on_first_paint_ = true;
 
@@ -710,6 +710,10 @@ void AppWindow::SetAlwaysOnTop(bool always_on_top) {
 }
 
 bool AppWindow::IsAlwaysOnTop() const { return cached_always_on_top_; }
+
+void AppWindow::SetInterceptAllKeys(bool want_all_keys) {
+  native_app_window_->SetInterceptAllKeys(want_all_keys);
+}
 
 void AppWindow::WindowEventsReady() {
   can_send_events_ = true;
@@ -878,7 +882,8 @@ void AppWindow::SendOnWindowShownIfShown() {
   if (!can_send_events_ || !has_been_shown_)
     return;
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(::switches::kTestType)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kTestType)) {
     app_window_contents_->DispatchWindowShownForTests();
   }
 }

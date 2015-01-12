@@ -11,6 +11,7 @@
 #include "net/base/connection_type_histograms.h"
 #include "net/base/host_port_pair.h"
 #include "net/ssl/channel_id_service.h"
+#include "net/ssl/ssl_cipher_suite_names.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 
@@ -234,37 +235,45 @@ bool SSLClientSocket::IsChannelIDEnabled(
 }
 
 // static
+bool SSLClientSocket::HasCipherAdequateForHTTP2(
+    const std::vector<uint16>& cipher_suites) {
+  for (uint16 cipher : cipher_suites) {
+    if (IsSecureTLSCipherSuite(cipher))
+      return true;
+  }
+  return false;
+}
+
+// static
+bool SSLClientSocket::IsTLSVersionAdequateForHTTP2(
+    const SSLConfig& ssl_config) {
+  return ssl_config.version_max >= SSL_PROTOCOL_VERSION_TLS1_2;
+}
+
+// static
 std::vector<uint8_t> SSLClientSocket::SerializeNextProtos(
-    const std::vector<std::string>& next_protos) {
-  // Do a first pass to determine the total length.
-  size_t wire_length = 0;
-  for (std::vector<std::string>::const_iterator i = next_protos.begin();
-       i != next_protos.end(); ++i) {
-    if (i->size() > 255) {
-      LOG(WARNING) << "Ignoring overlong NPN/ALPN protocol: " << *i;
+    const NextProtoVector& next_protos,
+    bool can_advertise_http2) {
+  std::vector<uint8_t> wire_protos;
+  for (const NextProto next_proto : next_protos) {
+    if (!can_advertise_http2 && kProtoSPDY4MinimumVersion <= next_proto &&
+        next_proto <= kProtoSPDY4MaximumVersion) {
       continue;
     }
-    if (i->size() == 0) {
+    const std::string proto = NextProtoToString(next_proto);
+    if (proto.size() > 255) {
+      LOG(WARNING) << "Ignoring overlong NPN/ALPN protocol: " << proto;
+      continue;
+    }
+    if (proto.size() == 0) {
       LOG(WARNING) << "Ignoring empty NPN/ALPN protocol";
       continue;
     }
-    wire_length += i->size();
-    wire_length++;
+    wire_protos.push_back(proto.size());
+    for (const char ch : proto) {
+      wire_protos.push_back(static_cast<uint8_t>(ch));
+    }
   }
-
-  // Allocate memory for the result and fill it in.
-  std::vector<uint8_t> wire_protos;
-  wire_protos.reserve(wire_length);
-  for (std::vector<std::string>::const_iterator i = next_protos.begin();
-       i != next_protos.end(); i++) {
-    if (i->size() == 0 || i->size() > 255)
-      continue;
-    wire_protos.push_back(i->size());
-    wire_protos.resize(wire_protos.size() + i->size());
-    memcpy(&wire_protos[wire_protos.size() - i->size()],
-           i->data(), i->size());
-  }
-  DCHECK_EQ(wire_protos.size(), wire_length);
 
   return wire_protos;
 }

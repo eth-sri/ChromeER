@@ -29,7 +29,7 @@
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/events/gesture_detection/gesture_configuration.h"
 #include "ui/gfx/display.h"
-#include "ui/gfx/point.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/screen.h"
 #include "ui/wm/core/coordinate_conversion.h"
 
@@ -160,6 +160,7 @@ void AshTestBase::SetUp() {
 
 void AshTestBase::TearDown() {
   teardown_called_ = true;
+  Shell::GetInstance()->OnAppTerminating();
   // Flush the message loop to finish pending release tasks.
   RunAllPendingInMessageLoop();
 
@@ -317,6 +318,7 @@ void AshTestBase::BlockUserSession(UserSessionBlockReason block_reason) {
       SetSessionStarted(true);
       SetUserAddingScreenRunning(false);
       Shell::GetInstance()->session_state_delegate()->LockScreen();
+      Shell::GetInstance()->OnLockStateChanged(true);
       break;
     case BLOCKED_BY_LOGIN_SCREEN:
       SetUserAddingScreenRunning(false);

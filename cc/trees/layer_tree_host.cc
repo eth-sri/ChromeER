@@ -114,10 +114,10 @@ LayerTreeHost::LayerTreeHost(
       source_frame_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
       output_surface_lost_(true),
-      num_failed_recreate_attempts_(0),
       settings_(settings),
       debug_state_(settings.initial_debug_state),
-      top_controls_layout_height_(0.f),
+      top_controls_shrink_blink_size_(false),
+      top_controls_height_(0.f),
       top_controls_content_offset_(0.f),
       device_scale_factor_(1.f),
       visible_(true),
@@ -216,40 +216,6 @@ static void LayerTreeHostOnOutputSurfaceCreatedCallback(Layer* layer) {
   layer->OnOutputSurfaceCreated();
 }
 
-void LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
-  DCHECK(output_surface_lost_);
-  TRACE_EVENT1("cc",
-               "LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted",
-               "success",
-               success);
-
-  if (!success) {
-    // Tolerate a certain number of recreation failures to work around races
-    // in the output-surface-lost machinery.
-    ++num_failed_recreate_attempts_;
-    if (num_failed_recreate_attempts_ >= 5)
-      LOG(FATAL) << "Failed to create a fallback OutputSurface.";
-    client_->DidFailToInitializeOutputSurface();
-    return;
-  }
-
-  output_surface_lost_ = false;
-
-  if (!contents_texture_manager_ && !settings_.impl_side_painting) {
-    contents_texture_manager_ =
-        PrioritizedResourceManager::Create(proxy_.get());
-    surface_memory_placeholder_ =
-        contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
-  }
-
-  if (root_layer()) {
-    LayerTreeHostCommon::CallFunctionForSubtree(
-        root_layer(), base::Bind(&LayerTreeHostOnOutputSurfaceCreatedCallback));
-  }
-
-  client_->DidInitializeOutputSurface();
-}
-
 void LayerTreeHost::DeleteContentsTexturesOnImplThread(
     ResourceProvider* resource_provider) {
   DCHECK(proxy_->IsImplThread());
@@ -327,12 +293,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     sync_tree->SetRootLayer(TreeSynchronizer::SynchronizeTrees(
         root_layer(), sync_tree->DetachLayerTree(), sync_tree));
   }
-
-  {
-    TRACE_EVENT0("cc", "LayerTreeHost::PushProperties");
-    TreeSynchronizer::PushProperties(root_layer(), sync_tree->root_layer());
-  }
-
   sync_tree->set_needs_full_tree_sync(needs_full_tree_sync_);
   needs_full_tree_sync_ = false;
 
@@ -354,29 +314,38 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
         page_scale_layer_->id(), inner_viewport_scroll_layer_->id(),
         outer_viewport_scroll_layer_.get() ? outer_viewport_scroll_layer_->id()
                                            : Layer::INVALID_ID);
+    DCHECK(inner_viewport_scroll_layer_->IsContainerForFixedPositionLayers());
   } else {
     sync_tree->ClearViewportLayers();
   }
 
   sync_tree->RegisterSelection(selection_start_, selection_end_);
 
-  float page_scale_delta =
-      sync_tree->page_scale_delta() / sync_tree->sent_page_scale_delta();
-  sync_tree->SetPageScaleValues(page_scale_factor_,
-                                min_page_scale_factor_,
-                                max_page_scale_factor_,
-                                page_scale_delta);
-  sync_tree->set_sent_page_scale_delta(1.f);
+  sync_tree->PushPageScaleFromMainThread(
+      page_scale_factor_, min_page_scale_factor_, max_page_scale_factor_);
+  sync_tree->elastic_overscroll()->PushFromMainThread(elastic_overscroll_);
+  if (sync_tree->IsActiveTree())
+    sync_tree->elastic_overscroll()->PushPendingToActive();
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
-  sync_tree->set_top_controls_layout_height(top_controls_layout_height_);
+  // Track the change in top controls height to offset the top_controls_delta
+  // properly.  This is so that the top controls offset will be maintained
+  // across height changes.
+  float top_controls_height_delta =
+      sync_tree->top_controls_height() - top_controls_height_;
+
+  sync_tree->set_top_controls_shrink_blink_size(
+      top_controls_shrink_blink_size_);
+  sync_tree->set_top_controls_height(top_controls_height_);
   sync_tree->set_top_controls_content_offset(top_controls_content_offset_);
   sync_tree->set_top_controls_delta(sync_tree->top_controls_delta() -
-      sync_tree->sent_top_controls_delta());
+                                    sync_tree->sent_top_controls_delta() -
+                                    top_controls_height_delta);
   sync_tree->set_sent_top_controls_delta(0.f);
 
   host_impl->SetUseGpuRasterization(UseGpuRasterization());
+  host_impl->set_gpu_rasterization_status(GetGpuRasterizationStatus());
   RecordGpuRasterizationHistogram();
 
   host_impl->SetViewportSize(device_viewport_size_);
@@ -406,6 +375,11 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->set_has_ever_been_drawn(false);
 
+  {
+    TRACE_EVENT0("cc", "LayerTreeHost::PushProperties");
+    TreeSynchronizer::PushProperties(root_layer(), sync_tree->root_layer());
+  }
+
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
 }
 
@@ -432,11 +406,38 @@ void LayerTreeHost::CommitComplete() {
 }
 
 void LayerTreeHost::SetOutputSurface(scoped_ptr<OutputSurface> surface) {
+  TRACE_EVENT0("cc", "LayerTreeHost::SetOutputSurface");
+  DCHECK(output_surface_lost_);
+  DCHECK(surface);
+
   proxy_->SetOutputSurface(surface.Pass());
 }
 
 void LayerTreeHost::RequestNewOutputSurface() {
-  client_->RequestNewOutputSurface(num_failed_recreate_attempts_ >= 4);
+  client_->RequestNewOutputSurface();
+}
+
+void LayerTreeHost::DidInitializeOutputSurface() {
+  output_surface_lost_ = false;
+
+  if (!contents_texture_manager_ && !settings_.impl_side_painting) {
+    contents_texture_manager_ =
+        PrioritizedResourceManager::Create(proxy_.get());
+    surface_memory_placeholder_ =
+        contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
+  }
+
+  if (root_layer()) {
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        root_layer(), base::Bind(&LayerTreeHostOnOutputSurfaceCreatedCallback));
+  }
+
+  client_->DidInitializeOutputSurface();
+}
+
+void LayerTreeHost::DidFailToInitializeOutputSurface() {
+  DCHECK(output_surface_lost_);
+  client_->DidFailToInitializeOutputSurface();
 }
 
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
@@ -469,7 +470,6 @@ void LayerTreeHost::DidLoseOutputSurface() {
   if (output_surface_lost_)
     return;
 
-  num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
   SetNeedsCommit();
 }
@@ -636,6 +636,21 @@ bool LayerTreeHost::UseGpuRasterization() const {
   }
 }
 
+GpuRasterizationStatus LayerTreeHost::GetGpuRasterizationStatus() const {
+  if (settings_.gpu_rasterization_forced) {
+    return GpuRasterizationStatus::ON_FORCED;
+  } else if (settings_.gpu_rasterization_enabled) {
+    if (!has_gpu_rasterization_trigger_) {
+      return GpuRasterizationStatus::OFF_VIEWPORT;
+    } else if (!content_is_suitable_for_gpu_rasterization_) {
+      return GpuRasterizationStatus::OFF_CONTENT;
+    } else {
+      return GpuRasterizationStatus::ON;
+    }
+  }
+  return GpuRasterizationStatus::OFF_DEVICE;
+}
+
 void LayerTreeHost::SetHasGpuRasterizationTrigger(bool has_trigger) {
   if (has_trigger == has_gpu_rasterization_trigger_)
     return;
@@ -657,11 +672,19 @@ void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::SetTopControlsLayoutHeight(float height) {
-  if (top_controls_layout_height_ == height)
+void LayerTreeHost::SetTopControlsShrinkBlinkSize(bool shrink) {
+  if (top_controls_shrink_blink_size_ == shrink)
     return;
 
-  top_controls_layout_height_ = height;
+  top_controls_shrink_blink_size_ = shrink;
+  SetNeedsCommit();
+}
+
+void LayerTreeHost::SetTopControlsHeight(float height) {
+  if (top_controls_height_ == height)
+    return;
+
+  top_controls_height_ = height;
   SetNeedsCommit();
 }
 
@@ -846,10 +869,12 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
     LayerTreeHostCommon::CalcDrawPropsMainInputs inputs(
         root_layer, device_viewport_size(), gfx::Transform(),
         device_scale_factor_, page_scale_factor_, page_scale_layer,
+        elastic_overscroll_, overscroll_elasticity_layer_.get(),
         GetRendererCapabilities().max_texture_size, settings_.can_use_lcd_text,
         settings_.layers_always_allowed_lcd_text,
         can_render_to_separate_surface,
-        settings_.layer_transforms_should_scale_layer_contents, &update_list,
+        settings_.layer_transforms_should_scale_layer_contents,
+        settings_.verify_property_trees, &update_list,
         render_surface_layer_list_id);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
@@ -1097,9 +1122,8 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
   }
 
   if (!inner_viewport_scroll_delta.IsZero() ||
-      !outer_viewport_scroll_delta.IsZero() ||
-      info->page_scale_delta != 1.f ||
-      info->top_controls_delta) {
+      !outer_viewport_scroll_delta.IsZero() || info->page_scale_delta != 1.f ||
+      !info->elastic_overscroll_delta.IsZero() || info->top_controls_delta) {
     // Preemptively apply the scroll offset and scale delta here before sending
     // it to the client.  If the client comes back and sets it to the same
     // value, then the layer can early out without needing a full commit.
@@ -1118,16 +1142,18 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
     }
 
     ApplyPageScaleDeltaFromImplSide(info->page_scale_delta);
+    elastic_overscroll_ += info->elastic_overscroll_delta;
     if (!settings_.use_pinch_virtual_viewport) {
       client_->ApplyViewportDeltas(
           inner_viewport_scroll_delta + outer_viewport_scroll_delta,
           info->page_scale_delta,
           info->top_controls_delta);
     } else {
+      // TODO(ccameron): pass the elastic overscroll here so that input events
+      // may be translated appropriately.
       client_->ApplyViewportDeltas(
-          inner_viewport_scroll_delta,
-          outer_viewport_scroll_delta,
-          info->page_scale_delta,
+          inner_viewport_scroll_delta, outer_viewport_scroll_delta,
+          info->elastic_overscroll_delta, info->page_scale_delta,
           info->top_controls_delta);
     }
   }

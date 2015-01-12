@@ -5,9 +5,10 @@
 #ifndef UI_APP_LIST_VIEWS_START_PAGE_VIEW_H_
 #define UI_APP_LIST_VIEWS_START_PAGE_VIEW_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "ui/app_list/app_list_export.h"
-#include "ui/app_list/views/search_box_view_delegate.h"
 #include "ui/app_list/views/search_result_container_view.h"
 
 namespace app_list {
@@ -19,8 +20,7 @@ class SearchResultTileItemView;
 class TileItemView;
 
 // The start page for the experimental app list.
-class APP_LIST_EXPORT StartPageView : public SearchResultContainerView,
-                                      public SearchBoxViewDelegate {
+class APP_LIST_EXPORT StartPageView : public SearchResultContainerView {
  public:
   StartPageView(AppListMainView* app_list_main_view,
                 AppListViewDelegate* view_delegate);
@@ -34,7 +34,6 @@ class APP_LIST_EXPORT StartPageView : public SearchResultContainerView,
     return search_result_tile_views_;
   }
   TileItemView* all_apps_button() const;
-  SearchBoxView* dummy_search_box_view() { return search_box_view_; }
 
   // Called when the start page view is displayed.
   void OnShow();
@@ -45,9 +44,16 @@ class APP_LIST_EXPORT StartPageView : public SearchResultContainerView,
 
   // Overridden from views::View:
   void Layout() override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
 
   // Overridden from SearchResultContainerView:
   void OnContainerSelected(bool from_bottom) override;
+
+  // Returns search box bounds to use when the start page is active.
+  gfx::Rect GetSearchBoxBounds() const;
+
+  // Updates whether the custom page clickzone is visible.
+  void UpdateCustomPageClickzoneVisibility();
 
  private:
   // Overridden from SearchResultContainerView:
@@ -57,16 +63,14 @@ class APP_LIST_EXPORT StartPageView : public SearchResultContainerView,
   void InitInstantContainer();
   void InitTilesContainer();
 
-  // Overridden from SearchBoxViewDelegate:
-  void QueryChanged(SearchBoxView* sender) override;
-  void BackButtonPressed() override;
+  TileItemView* GetTileItemView(size_t index);
 
   // The parent view of ContentsView which is the parent of this view.
   AppListMainView* app_list_main_view_;
 
   AppListViewDelegate* view_delegate_;  // Owned by AppListView.
 
-  SearchBoxView* search_box_view_;      // Owned by views hierarchy.
+  views::View* search_box_spacer_view_;  // Owned by views hierarchy.
   views::View* instant_container_;  // Owned by views hierarchy.
   views::View* tiles_container_;    // Owned by views hierarchy.
 

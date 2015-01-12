@@ -14,7 +14,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
-#include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -23,10 +22,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
-#include "base/values.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -59,7 +56,6 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/geoposition.h"
@@ -74,9 +70,7 @@
 #include "net/test/python_utils.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
 
 #if defined(USE_AURA)
 #include "ash/shell.h"
@@ -88,8 +82,6 @@ using content::NativeWebKeyboardEvent;
 using content::NavigationController;
 using content::NavigationEntry;
 using content::OpenURLParams;
-using content::RenderViewHost;
-using content::RenderWidgetHost;
 using content::Referrer;
 using content::WebContents;
 
@@ -183,11 +175,7 @@ void NavigateToURL(Browser* browser, const GURL& url) {
                                BROWSER_TEST_WAIT_FOR_NAVIGATION);
 }
 
-// Navigates the specified tab (via |disposition|) of |browser| to |url|,
-// blocking until the |number_of_navigations| specified complete.
-// |disposition| indicates what tab the download occurs in, and
-// |browser_test_flags| controls what to wait for before continuing.
-static void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
+void NavigateToURLWithDispositionBlockUntilNavigationsComplete(
     Browser* browser,
     const GURL& url,
     int number_of_navigations,
@@ -287,7 +275,7 @@ bool GetRelativeBuildDirectory(base::FilePath* build_dir) {
   // built files (nexes, etc).  TestServer expects a path relative to the source
   // root.
   base::FilePath exe_dir =
-      CommandLine::ForCurrentProcess()->GetProgram().DirName();
+      base::CommandLine::ForCurrentProcess()->GetProgram().DirName();
   base::FilePath src_dir;
   if (!PathService::Get(base::DIR_SOURCE_ROOT, &src_dir))
     return false;

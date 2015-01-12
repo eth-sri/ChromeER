@@ -110,15 +110,6 @@ gfx::Size GetTileViewSize() {
              : gfx::Size(kPreferredTileWidth, kPreferredTileHeight);
 }
 
-// Returns the size of a tile view inccluding its padding.
-gfx::Size GetTotalTileSize() {
-  gfx::Size size = GetTileViewSize();
-  if (switches::IsExperimentalAppListEnabled())
-    size.Enlarge(2 * kExperimentalTileLeftRightPadding,
-                 2 * kExperimentalTileTopBottomPadding);
-  return size;
-}
-
 // RowMoveAnimationDelegate is used when moving an item into a different row.
 // Before running the animation, the item's layer is re-created and kept in
 // the original position, then the item is moved to just before its target
@@ -300,14 +291,11 @@ class SynchronousDrag : public ui::DragSourceWin {
 
  private:
   // Overridden from ui::DragSourceWin.
-  virtual void OnDragSourceCancel() override {
-    canceled_ = true;
-  }
+  void OnDragSourceCancel() override { canceled_ = true; }
 
-  virtual void OnDragSourceDrop() override {
-  }
+  void OnDragSourceDrop() override {}
 
-  virtual void OnDragSourceMove() override {
+  void OnDragSourceMove() override {
     grid_view_->UpdateDrag(AppsGridView::MOUSE, GetCursorInGridViewCoords());
   }
 
@@ -423,6 +411,16 @@ void AppsGridView::SetLayout(int cols, int rows_per_page) {
     SetBorder(views::Border::CreateEmptyBorder(
         0, kLeftRightPadding, kBottomPadding, kLeftRightPadding));
   }
+}
+
+// static
+gfx::Size AppsGridView::GetTotalTileSize() {
+  gfx::Size size = GetTileViewSize();
+  if (switches::IsExperimentalAppListEnabled()) {
+    size.Enlarge(2 * kExperimentalTileLeftRightPadding,
+                 2 * kExperimentalTileTopBottomPadding);
+  }
+  return size;
 }
 
 void AppsGridView::ResetForShowApps() {
@@ -710,17 +708,19 @@ void AppsGridView::EndDrag(bool cancel) {
     // If we had a drag and drop proxy icon, we delete it and make the real
     // item visible again.
     drag_and_drop_host_->DestroyDragIconProxy();
-    if (landed_in_drag_and_drop_host) {
-      // Move the item directly to the target location, avoiding the "zip back"
-      // animation if the user was pinning it to the shelf.
-      int i = reorder_drop_target_.slot;
-      gfx::Rect bounds = view_model_.ideal_bounds(i);
-      drag_view_->SetBoundsRect(bounds);
+    // Issue 439055: MoveItemToFolder() can sometimes delete |drag_view_|
+    if (drag_view_) {
+      if (landed_in_drag_and_drop_host) {
+        // Move the item directly to the target location, avoiding the
+        // "zip back" animation if the user was pinning it to the shelf.
+        int i = reorder_drop_target_.slot;
+        gfx::Rect bounds = view_model_.ideal_bounds(i);
+        drag_view_->SetBoundsRect(bounds);
+      }
+      // Fade in slowly if it landed in the shelf.
+      SetViewHidden(drag_view_, false /* show */,
+                    !landed_in_drag_and_drop_host /* animate */);
     }
-    // Fade in slowly if it landed in the shelf.
-    SetViewHidden(drag_view_,
-                  false /* show */,
-                  !landed_in_drag_and_drop_host /* animate */);
   }
 
   // The drag can be ended after the synchronous drag is created but before it

@@ -73,15 +73,10 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
       blink::WebLocalFrame* frame,
       const blink::WebVector<blink::WebString>& newly_matching_selectors,
       const blink::WebVector<blink::WebString>& stopped_matching_selectors) {}
-  virtual void WillSendSubmitEvent(blink::WebLocalFrame* frame,
-                                   const blink::WebFormElement& form) {}
-  virtual void WillSubmitForm(blink::WebLocalFrame* frame,
-                              const blink::WebFormElement& form) {}
   virtual void DidCreateDataSource(blink::WebLocalFrame* frame,
                                    blink::WebDataSource* ds) {}
   virtual void PrintPage(blink::WebLocalFrame* frame, bool user_initiated) {}
   virtual void FocusedNodeChanged(const blink::WebNode& node) {}
-  virtual void DidChangeScrollOffset(blink::WebLocalFrame* frame) {}
   virtual void DraggableRegionsChanged(blink::WebFrame* frame) {}
   virtual void DidCommitCompositorFrame() {}
   virtual void DidUpdateLayout() {}
@@ -94,7 +89,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // These match incoming IPCs.
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
-  virtual void OrientationChangeEvent() {}
   virtual void Resized() {}
 
   virtual void OnStop() {}

@@ -33,8 +33,10 @@
 
 namespace gpu {
 struct Mailbox;
+class ValueStateMap;
 namespace gles2 {
 class MailboxManager;
+class SubscriptionRefSet;
 }
 }
 
@@ -69,6 +71,8 @@ class GpuCommandBufferStub
       GpuCommandBufferStub* share_group,
       const gfx::GLSurfaceHandle& handle,
       gpu::gles2::MailboxManager* mailbox_manager,
+      gpu::gles2::SubscriptionRefSet* subscription_ref_set,
+      gpu::ValueStateMap* pending_valuebuffer_state,
       const gfx::Size& size,
       const gpu::gles2::DisallowedFeatures& disallowed_features,
       const std::vector<int32>& attribs,

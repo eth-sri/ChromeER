@@ -16,7 +16,7 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/win/shell.h"
 #include "ui/compositor/compositor_constants.h"
-#include "ui/gfx/insets.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/path_win.h"
@@ -941,7 +941,7 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
   if (compositor() && need_synchronous_paint_) {
-    compositor()->FinishAllRendering();
+    compositor()->DisableSwapUntilResize();
     // If we received the window size changing notification due to a restore or
     // maximize operation, then we can reset the need_synchronous_paint_ flag
     // here. For a sizing operation, the flag will be reset at the end of the

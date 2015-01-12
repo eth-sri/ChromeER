@@ -154,7 +154,7 @@ void WebContentsAndroid::ResumeResponseDeferredAtStart(JNIEnv* env,
 void WebContentsAndroid::SetHasPendingNavigationTransitionForTesting(
     JNIEnv* env,
     jobject obj) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableExperimentalWebPlatformFeatures);
   RenderFrameHost* frame =
       static_cast<WebContentsImpl*>(web_contents_)->GetMainFrame();
@@ -184,6 +184,12 @@ void WebContentsAndroid::BeginExitTransition(JNIEnv* env,
       web_contents_->GetMainFrame()->GetRoutingID(),
       ConvertJavaStringToUTF8(env, css_selector),
       exit_to_native_app));
+}
+
+void WebContentsAndroid::RevertExitTransition(JNIEnv* env,
+                                              jobject jobj) {
+  web_contents_->GetMainFrame()->Send(new FrameMsg_RevertExitTransition(
+      web_contents_->GetMainFrame()->GetRoutingID()));
 }
 
 void WebContentsAndroid::HideTransitionElements(JNIEnv* env,

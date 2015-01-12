@@ -9,6 +9,7 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
+#include "content/public/renderer/render_frame.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 
@@ -20,8 +21,6 @@ class GURL;
 class SkBitmap;
 
 namespace content {
-
-class PluginPowerSaverHelper;
 
 // Manages the Plugin Power Saver feature for a single Pepper plugin instance.
 //
@@ -44,11 +43,23 @@ class PluginPowerSaverHelper;
 // representative keyframe.
 class CONTENT_EXPORT PepperPluginInstanceThrottler {
  public:
-  PepperPluginInstanceThrottler(PluginPowerSaverHelper* power_saver_helper,
-                                const blink::WebRect& bounds,
-                                const std::string& module_name,
-                                const GURL& plugin_url,
-                                const base::Closure& throttle_change_callback);
+  // How the throttled power saver is unthrottled, if ever.
+  // These numeric values are used in UMA logs; do not change them.
+  enum PowerSaverUnthrottleMethod {
+    UNTHROTTLE_METHOD_NEVER = 0,
+    UNTHROTTLE_METHOD_BY_CLICK = 1,
+    UNTHROTTLE_METHOD_BY_WHITELIST = 2,
+    UNTHROTTLE_METHOD_BY_AUDIO = 3,
+    UNTHROTTLE_METHOD_NUM_ITEMS
+  };
+
+  PepperPluginInstanceThrottler(
+      RenderFrame* frame,
+      const blink::WebRect& bounds,
+      const std::string& module_name,
+      const GURL& plugin_url,
+      RenderFrame::PluginPowerSaverMode power_saver_mode,
+      const base::Closure& throttle_change_callback);
 
   virtual ~PepperPluginInstanceThrottler();
 
@@ -56,23 +67,26 @@ class CONTENT_EXPORT PepperPluginInstanceThrottler {
     return needs_representative_keyframe_;
   }
 
+  bool power_saver_enabled() const {
+    return power_saver_enabled_;
+  }
+
   // Called when the plugin flushes it's graphics context. Supplies the
   // throttler with a candidate to use as the representative keyframe.
   void OnImageFlush(const SkBitmap* bitmap);
 
   bool is_throttled() const { return plugin_throttled_; }
-  const ppapi::ViewData& throttled_view_data() const {
-    return empty_view_data_;
-  }
 
   // Returns true if |event| was handled and shouldn't be further processed.
   bool ConsumeInputEvent(const blink::WebInputEvent& event);
+
+  // Disables Power Saver and unthrottles the plugin if already throttled.
+  void DisablePowerSaver(PowerSaverUnthrottleMethod method);
 
  private:
   friend class PepperPluginInstanceThrottlerTest;
 
   void SetPluginThrottled(bool throttled);
-  void DisablePowerSaverByRetroactiveWhitelist();
 
   // Plugin's bounds in view space.
   blink::WebRect bounds_;
@@ -102,9 +116,6 @@ class CONTENT_EXPORT PepperPluginInstanceThrottler {
 
   // Indicates if the plugin is currently throttled.
   bool plugin_throttled_;
-
-  // Fake view data used by the Power Saver feature to throttle plugins.
-  const ppapi::ViewData empty_view_data_;
 
   base::WeakPtrFactory<PepperPluginInstanceThrottler> weak_factory_;
 

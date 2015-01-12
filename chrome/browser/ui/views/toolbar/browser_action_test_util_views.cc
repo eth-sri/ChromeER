@@ -9,21 +9,25 @@
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/browser_window_testing_views.h"
 #include "chrome/browser/ui/extensions/extension_action_view_controller.h"
+#include "chrome/browser/ui/toolbar/toolbar_actions_bar.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
+#include "chrome/browser/ui/views/frame/browser_window_testing_views.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_action_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "ui/aura/window.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
 
-BrowserActionsContainer* GetContainer(Browser* browser) {
+BrowserActionsContainer* GetContainer(Browser* browser,
+                                      ToolbarActionsBarDelegate* bar_delegate) {
+  if (bar_delegate)
+    return static_cast<BrowserActionsContainer*>(bar_delegate);
   return browser->window()->GetBrowserWindowTesting()->GetToolbarView()->
       browser_actions();
 }
@@ -31,15 +35,15 @@ BrowserActionsContainer* GetContainer(Browser* browser) {
 }  // namespace
 
 int BrowserActionTestUtil::NumberOfBrowserActions() {
-  return GetContainer(browser_)->num_toolbar_actions();
+  return GetContainer(browser_, bar_delegate_)->num_toolbar_actions();
 }
 
 int BrowserActionTestUtil::VisibleBrowserActions() {
-  return GetContainer(browser_)->VisibleBrowserActions();
+  return GetContainer(browser_, bar_delegate_)->VisibleBrowserActions();
 }
 
 bool BrowserActionTestUtil::IsChevronShowing() {
-  BrowserActionsContainer* container = GetContainer(browser_);
+  BrowserActionsContainer* container = GetContainer(browser_, bar_delegate_);
   gfx::Size visible_size = container->GetVisibleBounds().size();
   return container->chevron() &&
       container->chevron()->visible() &&
@@ -50,55 +54,56 @@ bool BrowserActionTestUtil::IsChevronShowing() {
 
 void BrowserActionTestUtil::InspectPopup(int index) {
   ToolbarActionView* view =
-      GetContainer(browser_)->GetToolbarActionViewAt(index);
+      GetContainer(browser_, bar_delegate_)->GetToolbarActionViewAt(index);
   static_cast<ExtensionActionViewController*>(view->view_controller())->
       InspectPopup();
 }
 
 bool BrowserActionTestUtil::HasIcon(int index) {
-  return !GetContainer(browser_)->GetToolbarActionViewAt(index)->
+  return !GetContainer(browser_, bar_delegate_)->GetToolbarActionViewAt(index)->
       GetImage(views::Button::STATE_NORMAL).isNull();
 }
 
 gfx::Image BrowserActionTestUtil::GetIcon(int index) {
-  gfx::ImageSkia icon = GetContainer(browser_)->GetToolbarActionViewAt(index)->
-      GetIconForTest();
+  gfx::ImageSkia icon =
+      GetContainer(browser_, bar_delegate_)->GetToolbarActionViewAt(index)->
+          GetIconForTest();
   return gfx::Image(icon);
 }
 
 void BrowserActionTestUtil::Press(int index) {
-  GetContainer(browser_)->GetToolbarActionViewAt(index)->
+  GetContainer(browser_, bar_delegate_)->GetToolbarActionViewAt(index)->
       view_controller()->ExecuteAction(true);
 }
 
 std::string BrowserActionTestUtil::GetExtensionId(int index) {
-  return GetContainer(browser_)->GetToolbarActionViewAt(index)->
+  return GetContainer(browser_, bar_delegate_)->GetToolbarActionViewAt(index)->
       view_controller()->GetId();
 }
 
 std::string BrowserActionTestUtil::GetTooltip(int index) {
   base::string16 text;
-  GetContainer(browser_)->GetToolbarActionViewAt(index)->
+  GetContainer(browser_, bar_delegate_)->GetToolbarActionViewAt(index)->
       GetTooltipText(gfx::Point(), &text);
   return base::UTF16ToUTF8(text);
 }
 
 gfx::NativeView BrowserActionTestUtil::GetPopupNativeView() {
-  return GetContainer(browser_)->TestGetPopup();
+  return GetContainer(browser_, bar_delegate_)->TestGetPopup();
 }
 
 bool BrowserActionTestUtil::HasPopup() {
-  return GetContainer(browser_)->TestGetPopup() != NULL;
+  return GetContainer(browser_, bar_delegate_)->TestGetPopup() != NULL;
 }
 
 gfx::Size BrowserActionTestUtil::GetPopupSize() {
-  gfx::NativeView popup = GetContainer(browser_)->TestGetPopup();
+  gfx::NativeView popup = GetContainer(browser_, bar_delegate_)->TestGetPopup();
   views::Widget* widget = views::Widget::GetWidgetForNativeView(popup);
   return widget->GetWindowBoundsInScreen().size();
 }
 
 bool BrowserActionTestUtil::HidePopup() {
-  GetContainer(browser_)->HideActivePopup();
+  GetContainer(browser_, bar_delegate_)->HideActivePopup();
   return !HasPopup();
 }
 
@@ -109,12 +114,12 @@ void BrowserActionTestUtil::SetIconVisibilityCount(size_t icons) {
 
 // static
 void BrowserActionTestUtil::DisableAnimations() {
-  BrowserActionsContainer::disable_animations_during_testing_ = true;
+  ToolbarActionsBar::disable_animations_for_testing_ = true;
 }
 
 // static
 void BrowserActionTestUtil::EnableAnimations() {
-  BrowserActionsContainer::disable_animations_during_testing_ = false;
+  ToolbarActionsBar::disable_animations_for_testing_ = false;
 }
 
 // static

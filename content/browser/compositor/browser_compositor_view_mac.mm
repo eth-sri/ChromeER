@@ -6,9 +6,12 @@
 
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
-#include "content/browser/compositor/browser_compositor_ca_layer_tree_mac.h"
+#include "content/browser/compositor/image_transport_factory.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/render_widget_resize_helper.h"
 #include "content/public/browser/context_factory.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
+#include "ui/accelerated_widget_mac/accelerated_widget_mac.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserCompositorMac
@@ -16,6 +19,9 @@
 namespace content {
 
 namespace {
+
+// Set when no browser compositors should remain alive.
+bool g_has_shut_down = false;
 
 // The number of placeholder objects allocated. If this reaches zero, then
 // the BrowserCompositorMac being held on to for recycling,
@@ -26,15 +32,23 @@ uint32 g_placeholder_count = 0;
 base::LazyInstance<scoped_ptr<BrowserCompositorMac>>
   g_recyclable_browser_compositor;
 
+bool WidgetNeedsGLFinishWorkaround() {
+  return GpuDataManagerImpl::GetInstance()->IsDriverBugWorkaroundActive(
+      gpu::FORCE_GL_FINISH_AFTER_COMPOSITING);
+}
+
 }  // namespace
 
 BrowserCompositorMac::BrowserCompositorMac()
-    : compositor_(
-          accelerated_widget_mac_.accelerated_widget(),
+    : accelerated_widget_mac_(
+          new ui::AcceleratedWidgetMac(WidgetNeedsGLFinishWorkaround())),
+      compositor_(
+          accelerated_widget_mac_->accelerated_widget(),
           content::GetContextFactory(),
           RenderWidgetResizeHelper::Get()->task_runner()) {
-  compositor_.SetVisible(false);
 }
+
+BrowserCompositorMac::~BrowserCompositorMac() {}
 
 // static
 scoped_ptr<BrowserCompositorMac> BrowserCompositorMac::Create() {
@@ -47,6 +61,12 @@ scoped_ptr<BrowserCompositorMac> BrowserCompositorMac::Create() {
 void BrowserCompositorMac::Recycle(
     scoped_ptr<BrowserCompositorMac> compositor) {
   DCHECK(compositor);
+  content::ImageTransportFactory::GetInstance()->OnCompositorRecycled(
+      compositor->compositor());
+
+  // It is an error to have a browser compositor continue to exist after
+  // shutdown.
+  CHECK(!g_has_shut_down);
 
   // Make this BrowserCompositorMac recyclable for future instances.
   g_recyclable_browser_compositor.Get().swap(compositor);
@@ -55,6 +75,12 @@ void BrowserCompositorMac::Recycle(
   // BrowserCompositorMac that we just populated.
   if (!g_placeholder_count)
     g_recyclable_browser_compositor.Get().reset();
+}
+
+// static
+void BrowserCompositorMac::DisableRecyclingForShutdown() {
+  g_has_shut_down = true;
+  g_recyclable_browser_compositor.Get().reset();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

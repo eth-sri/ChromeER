@@ -27,8 +27,6 @@ class CdmPromiseTemplate;
 
 typedef CdmPromiseTemplate<std::string> NewSessionCdmPromise;
 typedef CdmPromiseTemplate<> SimpleCdmPromise;
-typedef std::vector<std::vector<uint8> > KeyIdsVector;
-typedef CdmPromiseTemplate<KeyIdsVector> KeyIdsPromise;
 
 // Performs media key operations.
 //
@@ -112,11 +110,6 @@ class MEDIA_EXPORT MediaKeys{
   virtual void RemoveSession(const std::string& web_session_id,
                              scoped_ptr<SimpleCdmPromise> promise) = 0;
 
-  // Retrieves the key IDs for keys in the session that the CDM knows are
-  // currently usable to decrypt media data.
-  virtual void GetUsableKeyIds(const std::string& web_session_id,
-                               scoped_ptr<KeyIdsPromise> promise) = 0;
-
   // Returns the CdmContext associated with |this|, which must NOT be null.
   // Usually the CdmContext is owned by |this|. Caller needs to make sure it is
   // not used after |this| is destructed.
@@ -134,8 +127,6 @@ class MEDIA_EXPORT MediaKeys{
 typedef base::Callback<void(const std::string& web_session_id,
                             const std::vector<uint8>& message,
                             const GURL& destination_url)> SessionMessageCB;
-
-typedef base::Callback<void(const std::string& web_session_id)> SessionReadyCB;
 
 typedef base::Callback<void(const std::string& web_session_id)> SessionClosedCB;
 

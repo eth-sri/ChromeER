@@ -70,7 +70,7 @@ InProcessContextFactory::InProcessContextFactory()
       << "gfx::GLSurface::InitializeOneOffForTests()";
 
 #if defined(OS_CHROMEOS)
-  bool use_thread = !CommandLine::ForCurrentProcess()->HasSwitch(
+  bool use_thread = !base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kUIDisableThreadedCompositing);
 #else
   bool use_thread = false;
@@ -163,6 +163,10 @@ scoped_ptr<cc::SurfaceIdAllocator>
 InProcessContextFactory::CreateSurfaceIdAllocator() {
   return make_scoped_ptr(
       new cc::SurfaceIdAllocator(next_surface_id_namespace_++));
+}
+
+void InProcessContextFactory::ResizeDisplay(ui::Compositor* compositor,
+                                            const gfx::Size& size) {
 }
 
 }  // namespace ui

@@ -19,7 +19,7 @@ namespace cc {
 
 class CC_EXPORT FilterDisplayItem : public DisplayItem {
  public:
-  virtual ~FilterDisplayItem();
+  ~FilterDisplayItem() override;
 
   static scoped_ptr<FilterDisplayItem> Create(
       skia::RefPtr<SkImageFilter> filter,
@@ -31,6 +31,7 @@ class CC_EXPORT FilterDisplayItem : public DisplayItem {
 
   bool IsSuitableForGpuRasterization() const override;
   int ApproximateOpCount() const override;
+  size_t PictureMemoryUsage() const override;
 
  protected:
   FilterDisplayItem(skia::RefPtr<SkImageFilter> filter, gfx::RectF bounds);
@@ -42,7 +43,7 @@ class CC_EXPORT FilterDisplayItem : public DisplayItem {
 
 class CC_EXPORT EndFilterDisplayItem : public DisplayItem {
  public:
-  virtual ~EndFilterDisplayItem();
+  ~EndFilterDisplayItem() override;
 
   static scoped_ptr<EndFilterDisplayItem> Create() {
     return make_scoped_ptr(new EndFilterDisplayItem());
@@ -52,6 +53,7 @@ class CC_EXPORT EndFilterDisplayItem : public DisplayItem {
 
   bool IsSuitableForGpuRasterization() const override;
   int ApproximateOpCount() const override;
+  size_t PictureMemoryUsage() const override;
 
  protected:
   EndFilterDisplayItem();

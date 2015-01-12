@@ -20,6 +20,8 @@
  *     function.
  * @constructor
  * @struct
+ * @suppress {checkStructDictInheritance}
+ * @extends {cr.EventTarget}
  */
 function SlideMode(container, content, toolbar, prompt, errorBanner, dataModel,
     selectionModel, context, volumeManager, toggleMode, displayStringFunction) {
@@ -156,10 +158,10 @@ function SlideMode(container, content, toolbar, prompt, errorBanner, dataModel,
   this.savedSelection_ = null;
 
   /**
-   * @type {number}
+   * @type {Gallery.Item}
    * @private
    */
-  this.displayedIndex_ = -1;
+  this.displayedItem_ = null;
 
   /**
    * @type {?number}
@@ -460,7 +462,7 @@ function SlideMode(container, content, toolbar, prompt, errorBanner, dataModel,
  * @type {!Array.<ImageEditor.Mode>}
  * @const
  */
-SlideMode.EDITOR_MODES = Object.freeze([
+SlideMode.EDITOR_MODES = [
   new ImageEditor.Mode.InstantAutofix(),
   new ImageEditor.Mode.Crop(),
   new ImageEditor.Mode.Exposure(),
@@ -468,7 +470,7 @@ SlideMode.EDITOR_MODES = Object.freeze([
       'rotate_left', 'GALLERY_ROTATE_LEFT', new Command.Rotate(-1)),
   new ImageEditor.Mode.OneClick(
       'rotate_right', 'GALLERY_ROTATE_RIGHT', new Command.Rotate(1))
-]);
+];
 
 /**
  * Map of the key identifier and offset delta.
@@ -504,7 +506,7 @@ SlideMode.prototype.getViewport = function() { return this.viewport_; };
 
 /**
  * Load items, display the selected item.
- * @param {!ImageRect} zoomFromRect Rectangle for zoom effect.
+ * @param {ImageRect} zoomFromRect Rectangle for zoom effect.
  * @param {function()} displayCallback Called when the image is displayed.
  * @param {function()} loadCallback Called when the image is displayed.
  */
@@ -534,7 +536,7 @@ SlideMode.prototype.enter = function(
   new Promise(function(fulfill) {
     // If the items are empty, just show the error message.
     if (this.getItemCount_() === 0) {
-      this.displayedIndex_ = -1;
+      this.displayedItem_ = null;
       //TODO(hirono) Show this message in the grid mode too.
       this.errorBanner_.show('GALLERY_NO_IMAGES');
       fulfill();
@@ -552,16 +554,18 @@ SlideMode.prototype.enter = function(
     // Ensure valid single selection.
     // Note that the SlideMode object is not listening to selection change yet.
     this.select(Math.max(0, this.getSelectedIndex()));
-    this.displayedIndex_ = this.getSelectedIndex();
 
     // Show the selected item ASAP, then complete the initialization
     // (loading the ribbon thumbnails can take some time).
     var selectedItem = this.getSelectedItem();
+    this.displayedItem_ = selectedItem;
 
     // Load the image of the item.
     this.loadItem_(
         selectedItem,
-        zoomFromRect && this.imageView_.createZoomEffect(zoomFromRect),
+        zoomFromRect ?
+            this.imageView_.createZoomEffect(zoomFromRect) :
+            new ImageView.Effect.None(),
         displayCallback,
         function(loadType, delay) {
           fulfill(delay);
@@ -590,7 +594,7 @@ SlideMode.prototype.enter = function(
 
 /**
  * Leave the mode.
- * @param {!ImageRect} zoomToRect Rectangle for zoom effect.
+ * @param {ImageRect} zoomToRect Rectangle for zoom effect.
  * @param {function()} callback Called when the image is committed and
  *   the zoom-out animation has started.
  */
@@ -708,7 +712,7 @@ SlideMode.prototype.onSelection_ = function() {
   if (!this.isSlideshowOn_())
     this.savedSelection_ = null;
 
-  if (this.getSelectedIndex() === this.displayedIndex_)
+  if (this.getSelectedItem() === this.displayedItem_)
     return;  // Do not reselect.
 
   this.commitItem_(this.loadSelectedItem_.bind(this));
@@ -747,11 +751,13 @@ SlideMode.prototype.loadSelectedItem_ = function() {
   var slideHint = this.slideHint_;
   this.slideHint_ = null;
 
-  var index = this.getSelectedIndex();
-  if (index === this.displayedIndex_)
+  if (this.getSelectedItem() === this.displayedItem_)
     return;  // Do not reselect.
 
-  var step = slideHint || (index - this.displayedIndex_);
+  var index = this.getSelectedIndex();
+  var displayedIndex = this.dataModel_.indexOf(this.displayedItem_);
+  var step =
+      slideHint || (displayedIndex > 0 ? index - displayedIndex : 1);
 
   if (Math.abs(step) != 1) {
     // Long leap, the sequence is broken, we have no good prefetch candidate.
@@ -766,7 +772,7 @@ SlideMode.prototype.loadSelectedItem_ = function() {
     this.sequenceLength_ = 1;
   }
 
-  this.displayedIndex_ = index;
+  this.displayedItem_ = this.getSelectedItem();
   var selectedItem = assertInstanceof(this.getSelectedItem(), Gallery.Item);
 
   if (this.sequenceLength_ <= 1) {
@@ -781,7 +787,7 @@ SlideMode.prototype.loadSelectedItem_ = function() {
       return false;
 
     // Always prefetch if the previous load was from cache.
-    if (loadType === ImageView.LOAD_TYPE_CACHED_FULL)
+    if (loadType === ImageView.LoadType.CACHED_FULL)
       return true;
 
     // Prefetch if we have been going in the same direction for long enough.
@@ -837,17 +843,22 @@ SlideMode.prototype.onSplice_ = function(event) {
 
   // Delay the selection to let the ribbon splice handler work first.
   setTimeout(function() {
+    var displayedItemNotRemvoed = event.removed.every(function(item) {
+      return item !== this.displayedItem_;
+    }.bind(this));
+    if (displayedItemNotRemvoed)
+      return;
+    var nextIndex;
     if (event.index < this.dataModel_.length) {
       // There is the next item, select it.
       // The next item is now at the same index as the removed one, so we need
       // to correct displayIndex_ so that loadSelectedItem_ does not think
       // we are re-selecting the same item (and does right-to-left slide-in
       // animation).
-      this.displayedIndex_ = event.index - 1;
-      this.select(event.index);
+      nextIndex = event.index;
     } else if (this.dataModel_.length) {
       // Removed item is the rightmost, but there are more items.
-      this.select(event.index - 1);  // Select the new last index.
+      nextIndex = event.index - 1;  // Select the new last index.
     } else {
       // No items left. Unload the image, disable edit and print button, and
       // show the banner.
@@ -857,7 +868,11 @@ SlideMode.prototype.onSplice_ = function(event) {
         this.editButton_.disabled = true;
         this.errorBanner_.show('GALLERY_NO_IMAGES');
       }.bind(this));
+      return;
     }
+    // To force to dispatch a selection change event, clear selection before.
+    this.selectionModel_.clear();
+    this.select(nextIndex);
   }.bind(this), 0);
 };
 
@@ -939,7 +954,7 @@ SlideMode.prototype.selectLast = function() {
  * Load and display an item.
  *
  * @param {!Gallery.Item} item Item.
- * @param {!Object} effect Transition effect object.
+ * @param {!ImageView.Effect} effect Transition effect object.
  * @param {function()} displayCallback Called when the image is displayed
  *     (which can happen before the image load due to caching).
  * @param {function(number, number)} loadCallback Called when the image is fully
@@ -981,7 +996,7 @@ SlideMode.prototype.itemLoaded_ = function(
   var metadata = item.getMetadata();
 
   this.showSpinner_(false);
-  if (loadType === ImageView.LOAD_TYPE_ERROR) {
+  if (loadType === ImageView.LoadType.ERROR) {
     // if we have a specific error, then display it
     if (opt_error) {
       this.errorBanner_.show(/** @type {string} */ (opt_error));
@@ -989,7 +1004,7 @@ SlideMode.prototype.itemLoaded_ = function(
       // otherwise try to infer general error
       this.errorBanner_.show('GALLERY_IMAGE_ERROR');
     }
-  } else if (loadType === ImageView.LOAD_TYPE_OFFLINE) {
+  } else if (loadType === ImageView.LoadType.OFFLINE) {
     this.errorBanner_.show('GALLERY_IMAGE_OFFLINE');
   }
 
@@ -1066,17 +1081,10 @@ SlideMode.prototype.requestPrefetch = function(direction, delay) {
   if (this.getItemCount_() <= 1) return;
 
   var index = this.getNextSelectedIndex_(direction);
-  this.imageView_.prefetch(this.getItem(index), delay);
+  this.imageView_.prefetch(assert(this.getItem(index)), delay);
 };
 
 // Event handlers.
-
-/**
- * Unload handler, to be called from the top frame.
- * @param {boolean} exiting True if the app is exiting.
- */
-SlideMode.prototype.onUnload = function(exiting) {
-};
 
 /**
  * Click handler for the image container.

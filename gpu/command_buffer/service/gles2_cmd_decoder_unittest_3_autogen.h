@@ -12,6 +12,49 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_
 
+TEST_P(GLES2DecoderTest3, EndTransformFeedbackValidArgs) {
+  EXPECT_CALL(*gl_, EndTransformFeedback());
+  SpecializedSetup<cmds::EndTransformFeedback, 0>(true);
+  cmds::EndTransformFeedback cmd;
+  cmd.Init();
+  decoder_->set_unsafe_es3_apis_enabled(true);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+  decoder_->set_unsafe_es3_apis_enabled(false);
+  EXPECT_EQ(error::kUnknownCommand, ExecuteCmd(cmd));
+}
+// TODO(gman): InsertEventMarkerEXT
+
+// TODO(gman): PushGroupMarkerEXT
+
+TEST_P(GLES2DecoderTest3, PopGroupMarkerEXTValidArgs) {
+  SpecializedSetup<cmds::PopGroupMarkerEXT, 0>(true);
+  cmds::PopGroupMarkerEXT cmd;
+  cmd.Init();
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+// TODO(gman): GenVertexArraysOESImmediate
+// TODO(gman): DeleteVertexArraysOESImmediate
+// TODO(gman): IsVertexArrayOES
+// TODO(gman): BindVertexArrayOES
+// TODO(gman): SwapBuffers
+// TODO(gman): GetMaxValueInBufferCHROMIUM
+// TODO(gman): EnableFeatureCHROMIUM
+
+// TODO(gman): ResizeCHROMIUM
+// TODO(gman): GetRequestableExtensionsCHROMIUM
+
+// TODO(gman): RequestExtensionCHROMIUM
+
+// TODO(gman): GetProgramInfoCHROMIUM
+
+// TODO(gman): GetTranslatedShaderSourceANGLE
+// TODO(gman): PostSubBufferCHROMIUM
+// TODO(gman): TexImageIOSurface2DCHROMIUM
+// TODO(gman): CopyTextureCHROMIUM
+// TODO(gman): DrawArraysInstancedANGLE
+// TODO(gman): DrawElementsInstancedANGLE
 // TODO(gman): VertexAttribDivisorANGLE
 // TODO(gman): GenMailboxCHROMIUM
 
@@ -67,4 +110,5 @@ TEST_P(GLES2DecoderTest3, IsValuebufferCHROMIUMInvalidArgsBadSharedMemoryId) {
 // TODO(gman): DiscardBackbufferCHROMIUM
 
 // TODO(gman): ScheduleOverlayPlaneCHROMIUM
+// TODO(gman): SwapInterval
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_3_AUTOGEN_H_

@@ -84,6 +84,7 @@ SearchBoxView::SearchBoxView(SearchBoxViewDelegate* delegate,
       icon_view_(NULL),
       back_button_(NULL),
       speech_button_(NULL),
+      menu_button_(NULL),
       search_box_(new views::Textfield),
       contents_view_(NULL) {
   if (switches::IsExperimentalAppListEnabled()) {
@@ -186,6 +187,14 @@ bool SearchBoxView::OnMouseWheel(const ui::MouseWheelEvent& event) {
   return false;
 }
 
+void SearchBoxView::OnEnabledChanged() {
+  search_box_->SetEnabled(enabled());
+  if (menu_button_)
+    menu_button_->SetEnabled(enabled());
+  if (speech_button_)
+    speech_button_->SetEnabled(enabled());
+}
+
 void SearchBoxView::UpdateModel() {
   // Temporarily remove from observer to ignore notifications caused by us.
   model_->search_box()->RemoveObserver(this);
@@ -211,6 +220,13 @@ bool SearchBoxView::HandleKeyEvent(views::Textfield* sender,
   bool handled = false;
   if (contents_view_ && contents_view_->visible())
     handled = contents_view_->OnKeyPressed(key_event);
+
+  // Prevent Shift+Tab from locking up the whole chrome browser process.
+  // Explicitly capturing the Shift+Tab event here compensates for a focus
+  // search issue. We get away with this because there are no other focus
+  // targets. See http://crbug.com/438425 for details.
+  if (key_event.key_code() == ui::VKEY_TAB && key_event.IsShiftDown())
+    handled = true;
 
   return handled;
 }
@@ -266,6 +282,7 @@ void SearchBoxView::SpeechRecognitionButtonPropChanged() {
       speech_button_ = NULL;
     }
   }
+  Layout();
 }
 
 void SearchBoxView::HintTextChanged() {

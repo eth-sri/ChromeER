@@ -22,6 +22,7 @@
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
+#include "components/proximity_auth/switches.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/common/content_switches.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
@@ -78,7 +79,7 @@ void SetUpBluetoothMock(
 class EasyUnlockServiceTest : public InProcessBrowserTest {
  public:
   EasyUnlockServiceTest() : is_bluetooth_adapter_present_(true) {}
-  virtual ~EasyUnlockServiceTest() {}
+  ~EasyUnlockServiceTest() override {}
 
   void SetEasyUnlockAllowedPolicy(bool allowed) {
     policy::PolicyMap policy;
@@ -98,7 +99,7 @@ class EasyUnlockServiceTest : public InProcessBrowserTest {
 #endif
 
   // InProcessBrowserTest:
-  virtual void SetUpInProcessBrowserTestFixture() override {
+  void SetUpInProcessBrowserTestFixture() override {
     EXPECT_CALL(provider_, IsInitializationComplete(_))
         .WillRepeatedly(Return(true));
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
@@ -111,6 +112,11 @@ class EasyUnlockServiceTest : public InProcessBrowserTest {
     power_manager_client_ = new FakePowerManagerClient;
     dbus_setter->SetPowerManagerClient(
         scoped_ptr<PowerManagerClient>(power_manager_client_));
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitch(
+        proximity_auth::switches::kForceLoadEasyUnlockAppInTests);
   }
 
   Profile* profile() const { return browser()->profile(); }
@@ -136,51 +142,7 @@ class EasyUnlockServiceTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceTest);
 };
 
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceTest, NoFinchNoService) {
-  EXPECT_FALSE(service()->IsAllowed());
-#if defined(GOOGLE_CHROME_BUILD)
-  EXPECT_FALSE(HasEasyUnlockApp());
-#endif
-}
-
-class EasyUnlockServiceNoBluetoothTest : public EasyUnlockServiceTest {
- public:
-  EasyUnlockServiceNoBluetoothTest() {}
-  virtual ~EasyUnlockServiceNoBluetoothTest() {}
-
-  // InProcessBrowserTest:
-  virtual void SetUpInProcessBrowserTestFixture() override {
-    set_is_bluetooth_adapter_present(false);
-    EasyUnlockServiceTest::SetUpInProcessBrowserTestFixture();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceNoBluetoothTest);
-};
-
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceNoBluetoothTest, NoService) {
-  EXPECT_FALSE(service()->IsAllowed());
-#if defined(GOOGLE_CHROME_BUILD)
-  EXPECT_FALSE(HasEasyUnlockApp());
-#endif
-}
-
-class EasyUnlockServiceFinchEnabledTest : public EasyUnlockServiceTest {
- public:
-  EasyUnlockServiceFinchEnabledTest() {}
-  virtual ~EasyUnlockServiceFinchEnabledTest() {}
-
-  // InProcessBrowserTest:
-  virtual void SetUpCommandLine(CommandLine* command_line) override {
-    command_line->AppendSwitchASCII(switches::kForceFieldTrials,
-                                    "EasyUnlock/Enable/");
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceFinchEnabledTest);
-};
-
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, Enabled) {
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceTest, DefaultOn) {
   EXPECT_TRUE(service()->IsAllowed());
 #if defined(GOOGLE_CHROME_BUILD)
   EXPECT_TRUE(HasEasyUnlockApp());
@@ -188,7 +150,7 @@ IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, Enabled) {
 }
 
 #if defined(GOOGLE_CHROME_BUILD)
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, UnloadsOnSuspend) {
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceTest, UnloadsOnSuspend) {
   EXPECT_TRUE(HasEasyUnlockApp());
   power_manager_client()->SendSuspendImminent();
   EXPECT_FALSE(HasEasyUnlockApp());
@@ -197,8 +159,7 @@ IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, UnloadsOnSuspend) {
 }
 #endif
 
-// Tests that policy can override finch to turn easy unlock off.
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, PolicyOveride) {
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceTest, PolicyOveride) {
   EXPECT_TRUE(service()->IsAllowed());
 #if defined(GOOGLE_CHROME_BUILD)
   EXPECT_TRUE(HasEasyUnlockApp());
@@ -218,25 +179,51 @@ IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchEnabledTest, PolicyOveride) {
 #endif
 }
 
-class EasyUnlockServiceFinchDisabledTest : public EasyUnlockServiceTest {
+class EasyUnlockServiceNoBluetoothTest : public EasyUnlockServiceTest {
  public:
-  EasyUnlockServiceFinchDisabledTest() {}
-  virtual ~EasyUnlockServiceFinchDisabledTest() {}
+  EasyUnlockServiceNoBluetoothTest() {}
+  ~EasyUnlockServiceNoBluetoothTest() override {}
 
   // InProcessBrowserTest:
-  virtual void SetUpCommandLine(CommandLine* command_line) override {
-    command_line->AppendSwitchASCII(switches::kForceFieldTrials,
-                                    "EasyUnlock/Disable/");
+  void SetUpInProcessBrowserTestFixture() override {
+    set_is_bluetooth_adapter_present(false);
+    EasyUnlockServiceTest::SetUpInProcessBrowserTestFixture();
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceFinchDisabledTest);
+  DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceNoBluetoothTest);
 };
 
-// Tests that easy unlock is off when finch is disabled and policy overrides
-// finch.
-IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchDisabledTest, PolicyOverride) {
-  // Finch is disabled.
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceNoBluetoothTest, NoService) {
+  EXPECT_FALSE(service()->IsAllowed());
+#if defined(GOOGLE_CHROME_BUILD)
+  EXPECT_FALSE(HasEasyUnlockApp());
+#endif
+}
+
+class EasyUnlockServiceDisabledTest : public EasyUnlockServiceTest {
+ public:
+  EasyUnlockServiceDisabledTest() {}
+  ~EasyUnlockServiceDisabledTest() override {}
+
+  // InProcessBrowserTest:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitch(proximity_auth::switches::kDisableEasyUnlock);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EasyUnlockServiceDisabledTest);
+};
+
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceDisabledTest, Disabled) {
+  EXPECT_FALSE(service()->IsAllowed());
+#if defined(GOOGLE_CHROME_BUILD)
+  EXPECT_FALSE(HasEasyUnlockApp());
+#endif
+}
+
+// Tests that policy does not override disabled switch.
+IN_PROC_BROWSER_TEST_F(EasyUnlockServiceDisabledTest, NoPolicyOverride) {
   EXPECT_FALSE(service()->IsAllowed());
 #if defined(GOOGLE_CHROME_BUILD)
   EXPECT_FALSE(HasEasyUnlockApp());
@@ -244,19 +231,19 @@ IN_PROC_BROWSER_TEST_F(EasyUnlockServiceFinchDisabledTest, PolicyOverride) {
 
   // Policy overrides finch and turns on Easy unlock.
   SetEasyUnlockAllowedPolicy(true);
-  EXPECT_TRUE(service()->IsAllowed());
+  EXPECT_FALSE(service()->IsAllowed());
 #if defined(GOOGLE_CHROME_BUILD)
-  EXPECT_TRUE(HasEasyUnlockApp());
+  EXPECT_FALSE(HasEasyUnlockApp());
 #endif
 }
 
 class EasyUnlockServiceMultiProfileTest : public LoginManagerTest {
  public:
   EasyUnlockServiceMultiProfileTest() : LoginManagerTest(false) {}
-  virtual ~EasyUnlockServiceMultiProfileTest() {}
+  ~EasyUnlockServiceMultiProfileTest() override {}
 
   // InProcessBrowserTest:
-  virtual void SetUpInProcessBrowserTestFixture() override {
+  void SetUpInProcessBrowserTestFixture() override {
     LoginManagerTest::SetUpInProcessBrowserTestFixture();
 
     mock_adapter_ = new testing::NiceMock<MockBluetoothAdapter>();

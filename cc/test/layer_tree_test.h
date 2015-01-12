@@ -17,7 +17,7 @@ class WebGraphicsContext3D;
 }
 
 namespace cc {
-class ExternalBeginFrameSourceForTest;
+class FakeExternalBeginFrameSource;
 class FakeLayerTreeHostClient;
 class FakeOutputSurface;
 class LayerImpl;
@@ -35,15 +35,15 @@ class TestHooks : public AnimationDelegate {
 
   void ReadSettings(const LayerTreeSettings& settings);
 
-  virtual void CreateResourceAndRasterWorkerPool(
+  virtual void CreateResourceAndTileTaskWorkerPool(
       LayerTreeHostImpl* host_impl,
-      scoped_ptr<RasterWorkerPool>* raster_worker_pool,
+      scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
       scoped_ptr<ResourcePool>* resource_pool,
       scoped_ptr<ResourcePool>* staging_resource_pool);
   virtual void WillBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
                                           const BeginFrameArgs& args) {}
   virtual void BeginMainFrameAbortedOnThread(LayerTreeHostImpl* host_impl,
-                                             bool did_handle) {}
+                                             CommitEarlyOutReason reason) {}
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void WillActivateTreeOnThread(LayerTreeHostImpl* host_impl) {}
@@ -67,10 +67,12 @@ class TestHooks : public AnimationDelegate {
                                     bool has_unfinished_animation) {}
   virtual void WillAnimateLayers(LayerTreeHostImpl* host_impl,
                                  base::TimeTicks monotonic_time) {}
-  virtual void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
-                                   const gfx::Vector2d& outer_delta,
-                                   float scale,
-                                   float top_controls_delta) {}
+  virtual void ApplyViewportDeltas(
+      const gfx::Vector2d& inner_delta,
+      const gfx::Vector2d& outer_delta,
+      const gfx::Vector2dF& elastic_overscroll_delta,
+      float scale,
+      float top_controls_delta) {}
   virtual void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
                                    float scale,
                                    float top_controls_delta) {}
@@ -98,6 +100,7 @@ class TestHooks : public AnimationDelegate {
   virtual void ScheduledActionAnimate() {}
   virtual void ScheduledActionCommit() {}
   virtual void ScheduledActionBeginOutputSurfaceCreation() {}
+  virtual void ScheduledActionPrepareTiles() {}
 
   // Implementation of AnimationDelegate:
   void NotifyAnimationStarted(base::TimeTicks monotonic_time,
@@ -107,7 +110,7 @@ class TestHooks : public AnimationDelegate {
                                Animation::TargetProperty target_property,
                                int group) override {}
 
-  virtual void RequestNewOutputSurface(bool fallback) = 0;
+  virtual void RequestNewOutputSurface() = 0;
 };
 
 class BeginTask;
@@ -129,7 +132,7 @@ class TimeoutTask;
 // thread, but be aware that ending the test is an asynchronous process.
 class LayerTreeTest : public testing::Test, public TestHooks {
  public:
-  virtual ~LayerTreeTest();
+  ~LayerTreeTest() override;
 
   virtual void EndTest();
   void EndTestAfterDelayMs(int delay_milliseconds);
@@ -147,6 +150,11 @@ class LayerTreeTest : public testing::Test, public TestHooks {
 
   void DoBeginTest();
   void Timeout();
+
+  bool verify_property_trees() const { return verify_property_trees_; }
+  void set_verify_property_trees(bool verify_property_trees) {
+    verify_property_trees_ = verify_property_trees;
+  }
 
  protected:
   LayerTreeTest();
@@ -199,21 +207,20 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   void DestroyLayerTreeHost();
 
   // By default, output surface recreation is synchronous.
-  void RequestNewOutputSurface(bool fallback) override;
+  void RequestNewOutputSurface() override;
   // Override this for pixel tests, where you need a real output surface.
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback);
+  virtual scoped_ptr<OutputSurface> CreateOutputSurface();
   // Override this for unit tests, which should not produce pixel output.
-  virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback);
+  virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface();
 
   TestWebGraphicsContext3D* TestContext();
-
 
  private:
   LayerTreeSettings settings_;
   scoped_ptr<LayerTreeHostClientForTesting> client_;
   scoped_ptr<LayerTreeHost> layer_tree_host_;
   FakeOutputSurface* output_surface_;
-  ExternalBeginFrameSourceForTest* external_begin_frame_source_;
+  FakeExternalBeginFrameSource* external_begin_frame_source_;
 
   bool beginning_;
   bool end_when_begin_returns_;
@@ -222,6 +229,7 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   bool started_;
   bool ended_;
   bool delegating_renderer_;
+  bool verify_property_trees_;
 
   int timeout_seconds_;
 

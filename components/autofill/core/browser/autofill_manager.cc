@@ -46,12 +46,10 @@
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "url/gurl.h"
 
 namespace autofill {
-
-typedef PersonalDataManager::GUIDPair GUIDPair;
 
 using base::TimeTicks;
 
@@ -69,35 +67,17 @@ const size_t kMaxRecentFormSignaturesToRemember = 3;
 const size_t kMaxFormCacheSize = 100;
 
 // Removes duplicate suggestions whilst preserving their original order.
-void RemoveDuplicateSuggestions(std::vector<base::string16>* values,
-                                std::vector<base::string16>* labels,
-                                std::vector<base::string16>* icons,
-                                std::vector<int>* unique_ids) {
-  DCHECK_EQ(values->size(), labels->size());
-  DCHECK_EQ(values->size(), icons->size());
-  DCHECK_EQ(values->size(), unique_ids->size());
+void RemoveDuplicateSuggestions(std::vector<Suggestion>* suggestions) {
+  std::set<std::pair<base::string16, base::string16>> seen_suggestions;
 
-  std::set<std::pair<base::string16, base::string16> > seen_suggestions;
-  std::vector<base::string16> values_copy;
-  std::vector<base::string16> labels_copy;
-  std::vector<base::string16> icons_copy;
-  std::vector<int> unique_ids_copy;
-
-  for (size_t i = 0; i < values->size(); ++i) {
-    const std::pair<base::string16, base::string16> suggestion(
-        (*values)[i], (*labels)[i]);
-    if (seen_suggestions.insert(suggestion).second) {
-      values_copy.push_back((*values)[i]);
-      labels_copy.push_back((*labels)[i]);
-      icons_copy.push_back((*icons)[i]);
-      unique_ids_copy.push_back((*unique_ids)[i]);
+  for (int i = 0; i < static_cast<int>(suggestions->size()); ++i) {
+    if (!seen_suggestions.insert(std::make_pair(
+            (*suggestions)[i].value, (*suggestions)[i].label)).second) {
+      // Duplicate found, delete it.
+      suggestions->erase(suggestions->begin() + i);
+      i--;
     }
   }
-
-  values->swap(values_copy);
-  labels->swap(labels_copy);
-  icons->swap(icons_copy);
-  unique_ids->swap(unique_ids_copy);
 }
 
 // Precondition: |form_structure| and |form| should correspond to the same
@@ -168,7 +148,6 @@ AutofillManager::AutofillManager(
       personal_data_(client->GetPersonalDataManager()),
       autocomplete_history_manager_(
           new AutocompleteHistoryManager(driver, client)),
-      metric_logger_(new AutofillMetrics),
       has_logged_autofill_enabled_(false),
       has_logged_address_suggestions_count_(false),
       did_show_suggestions_(false),
@@ -310,8 +289,8 @@ int AutofillManager::AccessAddressBookPromptCount() {
 
 bool AutofillManager::ShouldShowScanCreditCard(const FormData& form,
                                                const FormFieldData& field) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          autofill::switches::kEnableCreditCardScan)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          autofill::switches::kDisableCreditCardScan)) {
     return false;
   }
 
@@ -404,7 +383,7 @@ void AutofillManager::OnFormsSeen(const std::vector<FormData>& forms,
 
   bool enabled = IsAutofillEnabled();
   if (!has_logged_autofill_enabled_) {
-    metric_logger_->LogIsAutofillEnabledAtPageLoad(enabled);
+    AutofillMetrics::LogIsAutofillEnabledAtPageLoad(enabled);
     has_logged_autofill_enabled_ = true;
   }
 
@@ -431,17 +410,17 @@ void AutofillManager::OnTextFieldDidChange(const FormData& form,
 
   if (!user_did_type_) {
     user_did_type_ = true;
-    metric_logger_->LogUserHappinessMetric(AutofillMetrics::USER_DID_TYPE);
+    AutofillMetrics::LogUserHappinessMetric(AutofillMetrics::USER_DID_TYPE);
   }
 
   if (autofill_field->is_autofilled) {
     autofill_field->is_autofilled = false;
-    metric_logger_->LogUserHappinessMetric(
+    AutofillMetrics::LogUserHappinessMetric(
         AutofillMetrics::USER_DID_EDIT_AUTOFILLED_FIELD);
 
     if (!user_did_edit_autofilled_field_) {
       user_did_edit_autofilled_field_ = true;
-      metric_logger_->LogUserHappinessMetric(
+      AutofillMetrics::LogUserHappinessMetric(
           AutofillMetrics::USER_DID_EDIT_AUTOFILLED_FIELD_ONCE);
     }
   }
@@ -457,10 +436,7 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
   if (!IsValidFormData(form) || !IsValidFormFieldData(field))
     return;
 
-  std::vector<base::string16> values;
-  std::vector<base::string16> labels;
-  std::vector<base::string16> icons;
-  std::vector<int> unique_ids;
+  std::vector<Suggestion> suggestions;
 
   external_delegate_->OnQuery(query_id,
                               form,
@@ -477,23 +453,13 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
     AutofillType type = autofill_field->Type();
     bool is_filling_credit_card = (type.group() == CREDIT_CARD);
     if (is_filling_credit_card) {
-      GetCreditCardSuggestions(
-          field, type, &values, &labels, &icons, &unique_ids);
+      suggestions = GetCreditCardSuggestions(field, type);
     } else {
-      GetProfileSuggestions(*form_structure,
-                            field,
-                            *autofill_field,
-                            &values,
-                            &labels,
-                            &icons,
-                            &unique_ids);
+      suggestions =
+          GetProfileSuggestions(*form_structure, field, *autofill_field);
     }
 
-    DCHECK_EQ(values.size(), labels.size());
-    DCHECK_EQ(values.size(), icons.size());
-    DCHECK_EQ(values.size(), unique_ids.size());
-
-    if (!values.empty()) {
+    if (!suggestions.empty()) {
       // Don't provide Autofill suggestions when Autofill is disabled, and don't
       // provide credit card suggestions for non-HTTPS pages. However, provide a
       // warning to the user in these cases.
@@ -502,10 +468,9 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
         warning = IDS_AUTOFILL_WARNING_INSECURE_CONNECTION;
       }
       if (warning) {
-        values.assign(1, l10n_util::GetStringUTF16(warning));
-        labels.assign(1, base::string16());
-        icons.assign(1, base::string16());
-        unique_ids.assign(1, POPUP_ITEM_ID_WARNING_MESSAGE);
+        Suggestion warning_suggestion(l10n_util::GetStringUTF16(warning));
+        warning_suggestion.frontend_id = POPUP_ITEM_ID_WARNING_MESSAGE;
+        suggestions.assign(1, warning_suggestion);
       } else {
         bool section_is_autofilled =
             SectionIsAutofilled(*form_structure, form,
@@ -515,8 +480,10 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
           // for suggestions, then the user is editing the value of a field.
           // In this case, mimic autocomplete: don't display labels or icons,
           // as that information is redundant.
-          labels.assign(labels.size(), base::string16());
-          icons.assign(icons.size(), base::string16());
+          for (size_t i = 0; i < suggestions.size(); i++) {
+            suggestions[i].label = base::string16();
+            suggestions[i].icon = base::string16();
+          }
         }
 
         // When filling credit card suggestions, the values and labels are
@@ -524,12 +491,12 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
         // duplicates only tend to be a problem when filling address forms
         // anyway, only don't de-dup credit card suggestions.
         if (!is_filling_credit_card)
-          RemoveDuplicateSuggestions(&values, &labels, &icons, &unique_ids);
+          RemoveDuplicateSuggestions(&suggestions);
 
         // The first time we show suggestions on this page, log the number of
         // suggestions shown.
         if (!has_logged_address_suggestions_count_ && !section_is_autofilled) {
-          metric_logger_->LogAddressSuggestionsCount(values.size());
+          AutofillMetrics::LogAddressSuggestionsCount(suggestions.size());
           has_logged_address_suggestions_count_ = true;
         }
       }
@@ -541,14 +508,14 @@ void AutofillManager::OnQueryFormFieldAutofill(int query_id,
     // hand off what we generated and they will send the results back to the
     // renderer.
     autocomplete_history_manager_->OnGetAutocompleteSuggestions(
-        query_id, field.name, field.value, field.form_control_type, values,
-        labels, icons, unique_ids);
+        query_id, field.name, field.value, field.form_control_type,
+        suggestions);
   } else {
     // Autocomplete is disabled for this field; only pass back Autofill
     // suggestions.
     autocomplete_history_manager_->CancelPendingQuery();
     external_delegate_->OnSuggestionsReturned(
-        query_id, values, labels, icons, unique_ids);
+        query_id, suggestions);
   }
 }
 
@@ -600,10 +567,10 @@ void AutofillManager::OnDidFillAutofillFormData(const TimeTicks& timestamp) {
   if (test_delegate_)
     test_delegate_->DidFillFormData();
 
-  metric_logger_->LogUserHappinessMetric(AutofillMetrics::USER_DID_AUTOFILL);
+  AutofillMetrics::LogUserHappinessMetric(AutofillMetrics::USER_DID_AUTOFILL);
   if (!user_did_autofill_) {
     user_did_autofill_ = true;
-    metric_logger_->LogUserHappinessMetric(
+    AutofillMetrics::LogUserHappinessMetric(
         AutofillMetrics::USER_DID_AUTOFILL_ONCE);
   }
 
@@ -615,11 +582,11 @@ void AutofillManager::DidShowSuggestions(bool is_new_popup) {
     test_delegate_->DidShowSuggestions();
 
   if (is_new_popup) {
-    metric_logger_->LogUserHappinessMetric(AutofillMetrics::SUGGESTIONS_SHOWN);
+    AutofillMetrics::LogUserHappinessMetric(AutofillMetrics::SUGGESTIONS_SHOWN);
 
     if (!did_show_suggestions_) {
       did_show_suggestions_ = true;
-      metric_logger_->LogUserHappinessMetric(
+      AutofillMetrics::LogUserHappinessMetric(
           AutofillMetrics::SUGGESTIONS_SHOWN_ONCE);
     }
   }
@@ -678,13 +645,11 @@ void AutofillManager::OnSetDataList(const std::vector<base::string16>& values,
 void AutofillManager::OnLoadedServerPredictions(
     const std::string& response_xml) {
   // Parse and store the server predictions.
-  FormStructure::ParseQueryResponse(response_xml,
-                                    form_structures_.get(),
-                                    *metric_logger_);
+  FormStructure::ParseQueryResponse(response_xml, form_structures_.get());
 
   // Forward form structures to the password generation manager to detect
   // account creation forms.
-  client_->DetectAccountCreationForms(form_structures_.get());
+  driver_->DetectAccountCreationForms(form_structures_.get());
 
   // If the corresponding flag is set, annotate forms with the predicted types.
   driver_->SendAutofillTypePredictionsToRenderer(form_structures_.get());
@@ -707,7 +672,6 @@ void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
   // save it.
   if (imported_credit_card) {
     client_->ConfirmSaveCreditCard(
-        *metric_logger_,
         base::Bind(
             base::IgnoreResult(&PersonalDataManager::SaveImportedCreditCard),
             base::Unretained(personal_data_),
@@ -724,9 +688,7 @@ void AutofillManager::UploadFormDataAsyncCallback(
     const TimeTicks& load_time,
     const TimeTicks& interaction_time,
     const TimeTicks& submission_time) {
-  submitted_form->LogQualityMetrics(*metric_logger_,
-                                    load_time,
-                                    interaction_time,
+  submitted_form->LogQualityMetrics(load_time, interaction_time,
                                     submission_time);
 
   if (submitted_form->ShouldBeCrowdsourced())
@@ -822,7 +784,6 @@ AutofillManager::AutofillManager(AutofillDriver* driver,
       personal_data_(personal_data),
       autocomplete_history_manager_(
           new AutocompleteHistoryManager(driver, client)),
-      metric_logger_(new AutofillMetrics),
       has_logged_autofill_enabled_(false),
       has_logged_address_suggestions_count_(false),
       did_show_suggestions_(false),
@@ -834,10 +795,6 @@ AutofillManager::AutofillManager(AutofillDriver* driver,
       weak_ptr_factory_(this) {
   DCHECK(driver_);
   DCHECK(client_);
-}
-
-void AutofillManager::set_metric_logger(const AutofillMetrics* metric_logger) {
-  metric_logger_.reset(metric_logger);
 }
 
 bool AutofillManager::RefreshDataModels() const {
@@ -859,22 +816,22 @@ bool AutofillManager::GetProfileOrCreditCard(
     size_t* variant,
     bool* is_credit_card) const {
   // Unpack the |unique_id| into component parts.
-  GUIDPair credit_card_guid;
-  GUIDPair profile_guid;
-  UnpackGUIDs(unique_id, &credit_card_guid, &profile_guid);
-  DCHECK(!base::IsValidGUID(credit_card_guid.first) ||
-         !base::IsValidGUID(profile_guid.first));
+  SuggestionBackendID credit_card_id;
+  SuggestionBackendID profile_id;
+  SplitFrontendID(unique_id, &credit_card_id, &profile_id);
+  DCHECK(!base::IsValidGUID(credit_card_id.guid) ||
+         !base::IsValidGUID(profile_id.guid));
   *is_credit_card = false;
 
   // Find the profile that matches the |profile_guid|, if one is specified.
   // Otherwise find the credit card that matches the |credit_card_guid|,
   // if specified.
-  if (base::IsValidGUID(profile_guid.first)) {
-    *data_model = personal_data_->GetProfileByGUID(profile_guid.first);
-    *variant = profile_guid.second;
-  } else if (base::IsValidGUID(credit_card_guid.first)) {
-    *data_model = personal_data_->GetCreditCardByGUID(credit_card_guid.first);
-    *variant = credit_card_guid.second;
+  if (base::IsValidGUID(profile_id.guid)) {
+    *data_model = personal_data_->GetProfileByGUID(profile_id.guid);
+    *variant = profile_id.variant;
+  } else if (base::IsValidGUID(credit_card_id.guid)) {
+    *data_model = personal_data_->GetCreditCardByGUID(credit_card_id.guid);
+    *variant = credit_card_id.variant;
     *is_credit_card = true;
   }
 
@@ -1105,7 +1062,7 @@ bool AutofillManager::UpdateCachedForm(const FormData& live_form,
   // Add the new or updated form to our cache.
   form_structures_.push_back(new FormStructure(live_form));
   *updated_form = *form_structures_.rbegin();
-  (*updated_form)->DetermineHeuristicTypes(*metric_logger_);
+  (*updated_form)->DetermineHeuristicTypes();
 
   // If we have cached data, propagate it to the updated form.
   if (cached_form) {
@@ -1137,53 +1094,43 @@ bool AutofillManager::UpdateCachedForm(const FormData& live_form,
   return true;
 }
 
-void AutofillManager::GetProfileSuggestions(
+std::vector<Suggestion> AutofillManager::GetProfileSuggestions(
     const FormStructure& form,
     const FormFieldData& field,
-    const AutofillField& autofill_field,
-    std::vector<base::string16>* values,
-    std::vector<base::string16>* labels,
-    std::vector<base::string16>* icons,
-    std::vector<int>* unique_ids) const {
+    const AutofillField& autofill_field) const {
   std::vector<ServerFieldType> field_types(form.field_count());
   for (size_t i = 0; i < form.field_count(); ++i) {
     field_types.push_back(form.field(i)->Type().GetStorableType());
   }
-  std::vector<GUIDPair> guid_pairs;
 
-  personal_data_->GetProfileSuggestions(
-      autofill_field.Type(), field.value, field.is_autofilled, field_types,
-      base::Callback<bool(const AutofillProfile&)>(),
-      values, labels, icons, &guid_pairs);
+  std::vector<Suggestion> suggestions = personal_data_->GetProfileSuggestions(
+      autofill_field.Type(), field.value, field.is_autofilled, field_types);
 
   // Adjust phone number to display in prefix/suffix case.
   if (autofill_field.Type().GetStorableType() == PHONE_HOME_NUMBER) {
-    for (size_t i = 0; i < values->size(); ++i) {
-      (*values)[i] = AutofillField::GetPhoneNumberValue(
-          autofill_field, (*values)[i], field);
+    for (size_t i = 0; i < suggestions.size(); ++i) {
+      suggestions[i].value = AutofillField::GetPhoneNumberValue(
+          autofill_field, suggestions[i].value, field);
     }
   }
 
-  for (size_t i = 0; i < guid_pairs.size(); ++i) {
-    unique_ids->push_back(PackGUIDs(GUIDPair(std::string(), 0),
-                                    guid_pairs[i]));
+  for (size_t i = 0; i < suggestions.size(); ++i) {
+    suggestions[i].frontend_id =
+        MakeFrontendID(SuggestionBackendID(), suggestions[i].backend_id);
   }
+  return suggestions;
 }
 
-void AutofillManager::GetCreditCardSuggestions(
+std::vector<Suggestion> AutofillManager::GetCreditCardSuggestions(
     const FormFieldData& field,
-    const AutofillType& type,
-    std::vector<base::string16>* values,
-    std::vector<base::string16>* labels,
-    std::vector<base::string16>* icons,
-    std::vector<int>* unique_ids) const {
-  std::vector<GUIDPair> guid_pairs;
-  personal_data_->GetCreditCardSuggestions(
-      type, field.value, values, labels, icons, &guid_pairs);
-
-  for (size_t i = 0; i < guid_pairs.size(); ++i) {
-    unique_ids->push_back(PackGUIDs(guid_pairs[i], GUIDPair(std::string(), 0)));
+    const AutofillType& type) const {
+  std::vector<Suggestion> suggestions =
+      personal_data_->GetCreditCardSuggestions(type, field.value);
+  for (size_t i = 0; i < suggestions.size(); i++) {
+    suggestions[i].frontend_id =
+        MakeFrontendID(suggestions[i].backend_id, SuggestionBackendID());
   }
+  return suggestions;
 }
 
 void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
@@ -1194,7 +1141,7 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
     if (!form_structure->ShouldBeParsed())
       continue;
 
-    form_structure->DetermineHeuristicTypes(*metric_logger_);
+    form_structure->DetermineHeuristicTypes();
 
     if (form_structure->ShouldBeCrowdsourced())
       form_structures_.push_back(form_structure.release());
@@ -1204,8 +1151,7 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
 
   if (!form_structures_.empty() && download_manager_) {
     // Query the server if at least one of the forms was parsed.
-    download_manager_->StartQueryRequest(form_structures_.get(),
-                                         *metric_logger_);
+    download_manager_->StartQueryRequest(form_structures_.get());
   }
 
   for (std::vector<FormStructure*>::const_iterator iter =
@@ -1215,7 +1161,7 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
   }
 
   if (!form_structures_.empty())
-    metric_logger_->LogUserHappinessMetric(AutofillMetrics::FORMS_LOADED);
+    AutofillMetrics::LogUserHappinessMetric(AutofillMetrics::FORMS_LOADED);
 
   // For the |non_queryable_forms|, we have all the field type info we're ever
   // going to get about them.  For the other forms, we'll wait until we get a
@@ -1223,60 +1169,66 @@ void AutofillManager::ParseForms(const std::vector<FormData>& forms) {
   driver_->SendAutofillTypePredictionsToRenderer(non_queryable_forms);
 }
 
-int AutofillManager::GUIDToID(const GUIDPair& guid) const {
-  if (!base::IsValidGUID(guid.first))
+int AutofillManager::BackendIDToInt(
+    const SuggestionBackendID& backend_id) const {
+  if (!base::IsValidGUID(backend_id.guid))
     return 0;
 
-  std::map<GUIDPair, int>::const_iterator iter = guid_id_map_.find(guid);
-  if (iter == guid_id_map_.end()) {
-    int id = guid_id_map_.size() + 1;
-    guid_id_map_[guid] = id;
-    id_guid_map_[id] = guid;
-    return id;
-  } else {
-    return iter->second;
+  const auto found = backend_to_int_map_.find(backend_id);
+  if (found == backend_to_int_map_.end()) {
+    // Unknown one, make a new entry.
+    int int_id = backend_to_int_map_.size() + 1;
+    backend_to_int_map_[backend_id] = int_id;
+    int_to_backend_map_[int_id] = backend_id;
+    return int_id;
   }
+  return found->second;
 }
 
-const GUIDPair AutofillManager::IDToGUID(int id) const {
-  if (id == 0)
-    return GUIDPair(std::string(), 0);
+SuggestionBackendID AutofillManager::IntToBackendID(int int_id) const {
+  if (int_id == 0)
+    return SuggestionBackendID();
 
-  std::map<int, GUIDPair>::const_iterator iter = id_guid_map_.find(id);
-  if (iter == id_guid_map_.end()) {
+  const auto found = int_to_backend_map_.find(int_id);
+  if (found == int_to_backend_map_.end()) {
     NOTREACHED();
-    return GUIDPair(std::string(), 0);
+    return SuggestionBackendID();
   }
-
-  return iter->second;
+  return found->second;
 }
 
 // When sending IDs (across processes) to the renderer we pack credit card and
 // profile IDs into a single integer.  Credit card IDs are sent in the high
 // word and profile IDs are sent in the low word.
-int AutofillManager::PackGUIDs(const GUIDPair& cc_guid,
-                               const GUIDPair& profile_guid) const {
-  int cc_id = GUIDToID(cc_guid);
-  int profile_id = GUIDToID(profile_guid);
+int AutofillManager::MakeFrontendID(
+    const SuggestionBackendID& cc_backend_id,
+    const SuggestionBackendID& profile_backend_id) const {
+  int cc_int_id = BackendIDToInt(cc_backend_id);
+  int profile_int_id = BackendIDToInt(profile_backend_id);
 
-  DCHECK(cc_id <= std::numeric_limits<unsigned short>::max());
-  DCHECK(profile_id <= std::numeric_limits<unsigned short>::max());
+  // Should fit in signed 16-bit integers. We use 16-bits each when combining
+  // below, and negative frontend IDs have special meaning so we can never use
+  // the high bit.
+  DCHECK(cc_int_id <= std::numeric_limits<int16_t>::max());
+  DCHECK(profile_int_id <= std::numeric_limits<int16_t>::max());
 
-  return cc_id << std::numeric_limits<unsigned short>::digits | profile_id;
+  // Put CC in the high half of the bits.
+  return (cc_int_id << std::numeric_limits<uint16_t>::digits) | profile_int_id;
 }
 
 // When receiving IDs (across processes) from the renderer we unpack credit card
 // and profile IDs from a single integer.  Credit card IDs are stored in the
 // high word and profile IDs are stored in the low word.
-void AutofillManager::UnpackGUIDs(int id,
-                                  GUIDPair* cc_guid,
-                                  GUIDPair* profile_guid) const {
-  int cc_id = id >> std::numeric_limits<unsigned short>::digits &
-      std::numeric_limits<unsigned short>::max();
-  int profile_id = id & std::numeric_limits<unsigned short>::max();
+void AutofillManager::SplitFrontendID(
+    int frontend_id,
+    SuggestionBackendID* cc_backend_id,
+    SuggestionBackendID* profile_backend_id) const {
+  int cc_int_id = (frontend_id >> std::numeric_limits<uint16_t>::digits) &
+      std::numeric_limits<uint16_t>::max();
+  int profile_int_id = frontend_id & std::numeric_limits<uint16_t>::max();
 
-  *cc_guid = IDToGUID(cc_id);
-  *profile_guid = IDToGUID(profile_id);
+  *cc_backend_id = IntToBackendID(cc_int_id);
+  *profile_backend_id = IntToBackendID(profile_int_id);
 }
 
 void AutofillManager::UpdateInitialInteractionTimestamp(

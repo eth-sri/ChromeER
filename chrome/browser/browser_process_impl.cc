@@ -102,9 +102,7 @@
 #include "chrome/browser/chrome_browser_main_mac.h"
 #endif
 
-#if defined(OS_ANDROID)
-#include "components/gcm_driver/gcm_driver_android.h"
-#else
+#if !defined(OS_ANDROID)
 #include "chrome/browser/chrome_device_client.h"
 #include "chrome/browser/services/gcm/gcm_desktop_utils.h"
 #include "components/gcm_driver/gcm_client_factory.h"
@@ -167,7 +165,7 @@ using content::ResourceDispatcherHost;
 
 BrowserProcessImpl::BrowserProcessImpl(
     base::SequencedTaskRunner* local_state_task_runner,
-    const CommandLine& command_line)
+    const base::CommandLine& command_line)
     : created_watchdog_thread_(false),
       created_browser_policy_connector_(false),
       created_profile_manager_(false),
@@ -448,25 +446,9 @@ bool RundownTaskCounter::TimedWait(const base::TimeDelta& max_time) {
   return waitable_event_.TimedWait(max_time);
 }
 
-bool ExperimentUseBrokenSynchronization() {
-  // The logoff behavior used to have a race, whereby it would perform profile
-  // IO writes on the blocking thread pool, but would sycnhronize to the FILE
-  // thread. Windows feels free to terminate any process that's hidden or
-  // destroyed all it's windows, and sometimes Chrome would be terminated
-  // with pending profile IO due to this mis-synchronization.
-  // Under the "WindowsLogoffRace" experiment group, the broken behavior is
-  // emulated, in order to allow measuring what fraction of unclean shutdowns
-  // are due to this bug.
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("WindowsLogoffRace");
-  return group_name == "BrokenSynchronization";
-}
-
 }  // namespace
 
 void BrowserProcessImpl::EndSession() {
-  bool use_broken_synchronization = ExperimentUseBrokenSynchronization();
-
   // Mark all the profiles as clean.
   ProfileManager* pm = profile_manager();
   std::vector<Profile*> profiles(pm->GetLoadedProfiles());
@@ -475,8 +457,7 @@ void BrowserProcessImpl::EndSession() {
     Profile* profile = profiles[i];
     profile->SetExitType(Profile::EXIT_SESSION_ENDED);
 
-    if (!use_broken_synchronization)
-      rundown_counter->Post(profile->GetIOTaskRunner().get());
+    rundown_counter->Post(profile->GetIOTaskRunner().get());
   }
 
   // Tell the metrics service it was cleanly shutdown.
@@ -489,8 +470,7 @@ void BrowserProcessImpl::EndSession() {
     // commit metrics::prefs::kStabilitySessionEndCompleted change immediately.
     local_state()->CommitPendingWrite();
 
-    if (!use_broken_synchronization)
-      rundown_counter->Post(local_state_task_runner_.get());
+    rundown_counter->Post(local_state_task_runner_.get());
 #endif
   }
 
@@ -504,11 +484,6 @@ void BrowserProcessImpl::EndSession() {
   // If you change the condition here, be sure to also change
   // ProfileBrowserTests to match.
 #if defined(USE_X11) || defined(OS_WIN)
-  if (use_broken_synchronization) {
-    rundown_counter->Post(
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get());
-  }
-
   // Do a best-effort wait on the successful countdown of rundown tasks. Note
   // that if we don't complete "quickly enough", Windows will terminate our
   // process.
@@ -890,7 +865,7 @@ BrowserProcessImpl::component_updater() {
       return NULL;
     component_updater::Configurator* configurator =
         component_updater::MakeChromeComponentUpdaterConfigurator(
-            CommandLine::ForCurrentProcess(),
+            base::CommandLine::ForCurrentProcess(),
             io_thread()->system_url_request_context_getter());
     // Creating the component updater does not do anything, components
     // need to be registered and Start() needs to be called.
@@ -1027,7 +1002,7 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
 #if defined(OS_POSIX)
   // Also find plugins in a user-specific plugins dir,
   // e.g. ~/.config/chromium/Plugins.
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& cmd_line = *base::CommandLine::ForCurrentProcess();
   if (!cmd_line.HasSwitch(switches::kDisablePluginsDiscovery)) {
     base::FilePath user_data_dir;
     if (PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
@@ -1045,7 +1020,8 @@ void BrowserProcessImpl::PreMainMessageLoopRun() {
 #endif
 #endif  // defined(ENABLE_PLUGINS)
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kDisableWebResources)) {
     DCHECK(!promo_resource_service_.get());
     promo_resource_service_ = new PromoResourceService;
@@ -1084,7 +1060,7 @@ void BrowserProcessImpl::CreateBackgroundModeManager() {
 #if defined(ENABLE_BACKGROUND)
   DCHECK(background_mode_manager_.get() == NULL);
   background_mode_manager_.reset(
-      new BackgroundModeManager(CommandLine::ForCurrentProcess(),
+      new BackgroundModeManager(base::CommandLine::ForCurrentProcess(),
                                 &profile_manager()->GetProfileInfoCache()));
 #endif
 }
@@ -1128,7 +1104,11 @@ void BrowserProcessImpl::CreateGCMDriver() {
   DCHECK(!gcm_driver_);
 
 #if defined(OS_ANDROID)
-  gcm_driver_.reset(new gcm::GCMDriverAndroid);
+  // Android's GCMDriver currently makes the assumption that it's a singleton.
+  // Until this gets fixed, instantiating multiple Java GCMDrivers will throw
+  // an exception, but because they're only initialized on demand these crashes
+  // would be very difficult to triage. See http://crbug.com/437827.
+  NOTREACHED();
 #else
   base::FilePath store_path;
   CHECK(PathService::Get(chrome::DIR_GLOBAL_GCM_STORE, &store_path));
@@ -1184,19 +1164,21 @@ const char* const kSwitchesToAddOnAutorestart[] = {
 };
 
 void BrowserProcessImpl::RestartBackgroundInstance() {
-  CommandLine* old_cl = CommandLine::ForCurrentProcess();
-  scoped_ptr<CommandLine> new_cl(new CommandLine(old_cl->GetProgram()));
+  base::CommandLine* old_cl = base::CommandLine::ForCurrentProcess();
+  scoped_ptr<base::CommandLine> new_cl(
+      new base::CommandLine(old_cl->GetProgram()));
 
-  std::map<std::string, CommandLine::StringType> switches =
+  std::map<std::string, base::CommandLine::StringType> switches =
       old_cl->GetSwitches();
 
   switches::RemoveSwitchesForAutostart(&switches);
 
   // Append the rest of the switches (along with their values, if any)
   // to the new command line
-  for (std::map<std::string, CommandLine::StringType>::const_iterator i =
-      switches.begin(); i != switches.end(); ++i) {
-      CommandLine::StringType switch_value = i->second;
+  for (std::map<std::string, base::CommandLine::StringType>::const_iterator i =
+           switches.begin();
+       i != switches.end(); ++i) {
+    base::CommandLine::StringType switch_value = i->second;
       if (switch_value.length() > 0) {
         new_cl->AppendSwitchNative(i->first, i->second);
       } else {

@@ -44,6 +44,7 @@
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/search/hotword_audio_history_handler.h"
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/search/search.h"
@@ -109,6 +110,7 @@
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/chromeos/chromeos_utils.h"
+#include "chrome/browser/chromeos/net/wake_on_wifi_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/reset/metrics.h"
@@ -231,6 +233,7 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       IDS_OPTIONS_AUTOOPENFILETYPES_RESETTODEFAULT },
     { "changeHomePage", IDS_OPTIONS_CHANGE_HOME_PAGE },
     { "certificatesManageButton", IDS_OPTIONS_CERTIFICATES_MANAGE_BUTTON },
+    { "childLabel", IDS_PROFILES_LIST_CHILD_LABEL },
     { "customizeSync", IDS_OPTIONS_CUSTOMIZE_SYNC_BUTTON_LABEL },
     { "defaultFontSizeLabel", IDS_OPTIONS_DEFAULT_FONT_SIZE_LABEL },
     { "defaultSearchManageEngines", IDS_OPTIONS_DEFAULTSEARCH_MANAGE_ENGINES },
@@ -369,6 +372,9 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
     { "themes", IDS_THEMES_GROUP_NAME },
 #endif
     { "themesReset", IDS_THEMES_RESET_BUTTON },
+#if defined(OS_CHROMEOS)
+    { "wakeOnWifiLabel", IDS_OPTIONS_SETTINGS_WAKE_ON_WIFI_DESCRIPTION },
+#endif
     { "accessibilityTitle",
       IDS_OPTIONS_SETTINGS_SECTION_TITLE_ACCESSIBILITY },
     { "accessibilityFeaturesLink",
@@ -538,12 +544,12 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   values->SetString("hotwordManageAudioHistoryURL",
                     chrome::kManageAudioHistoryURL);
 
-  Profile* profile = Profile::FromWebUI(web_ui());
 #if defined(OS_CHROMEOS)
+  Profile* profile = Profile::FromWebUI(web_ui());
   std::string username = profile->GetProfileName();
   if (username.empty()) {
     user_manager::User* user =
-      chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
+        chromeos::ProfileHelper::Get()->GetUserByProfile(profile);
     if (user && (user->GetType() != user_manager::USER_TYPE_GUEST))
       username = user->email();
   }
@@ -552,22 +558,6 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
 
   values->SetString("username", username);
 #endif
-
-  base::string16 user_email;
-  // If the profile is a guest session, it will not be found in the cache.
-  // In that case, just set the value with an empty string for the email since
-  // it won't be displayed anyways for a guest profile.
-  if (!profile->IsGuestSession()) {
-    ProfileInfoCache& cache =
-        g_browser_process->profile_manager()->GetProfileInfoCache();
-    user_email = cache.GetUserNameOfProfileAtIndex(
-        cache.GetIndexOfProfileWithPath(profile->GetPath()));
-  }
-  values->SetString(
-      "hotwordAudioHistoryEnabled",
-      l10n_util::GetStringFUTF16(IDS_HOTWORD_AUDIO_HISTORY_ENABLED,
-                                 user_email));
-
   // Pass along sync status early so it will be available during page init.
   values->Set("syncData", GetSyncStateDictionary().release());
 
@@ -654,16 +644,14 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
       "easyUnlockAllowed",
       EasyUnlockService::Get(Profile::FromWebUI(web_ui()))->IsAllowed());
   values->SetString("easyUnlockLearnMoreURL", chrome::kEasyUnlockLearnMoreUrl);
-  values->SetBoolean(
-      "easyUnlockProximityDetectionAllowed",
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          proximity_auth::switches::kEnableProximityDetection));
+  values->SetBoolean("easyUnlockProximityDetectionAllowed",
+                     base::CommandLine::ForCurrentProcess()->HasSwitch(
+                         proximity_auth::switches::kEnableProximityDetection));
 
 #if defined(OS_CHROMEOS)
-  values->SetBoolean(
-      "consumerManagementEnabled",
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kEnableConsumerManagement));
+  values->SetBoolean("consumerManagementEnabled",
+                     base::CommandLine::ForCurrentProcess()->HasSwitch(
+                         chromeos::switches::kEnableConsumerManagement));
 
   RegisterTitle(values, "thirdPartyImeConfirmOverlay",
                 IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_TITLE);
@@ -674,10 +662,17 @@ void BrowserOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   values->SetBoolean("allowAdvancedSettings", ShouldAllowAdvancedSettings());
 
   values->SetBoolean("websiteSettingsManagerEnabled",
-                     CommandLine::ForCurrentProcess()->HasSwitch(
+                     base::CommandLine::ForCurrentProcess()->HasSwitch(
                          switches::kEnableWebsiteSettingsManager));
 
   values->SetBoolean("usingNewProfilesUI", switches::IsNewAvatarMenu());
+
+#if defined(OS_CHROMEOS)
+  values->SetBoolean(
+      "showWakeOnWifi",
+      chromeos::WakeOnWifiManager::Get()->WakeOnWifiSupported() &&
+      chromeos::switches::WakeOnWifiEnabled());
+#endif
 }
 
 #if defined(ENABLE_PRINT_PREVIEW)
@@ -892,7 +887,8 @@ void BrowserOptionsHandler::InitializeHandler() {
 #if defined(OS_WIN)
   ExtensionRegistry::Get(Profile::FromWebUI(web_ui()))->AddObserver(this);
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kUserDataDir)) {
     BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
         base::Bind(&BrowserOptionsHandler::CheckAutoLaunch,
@@ -1206,6 +1202,8 @@ void BrowserOptionsHandler::OnTemplateURLServiceChanged() {
           template_url_service_->IsExtensionControlledDefaultSearch()));
 
   SetupExtensionControlledIndicators();
+
+  HandleRequestHotwordAvailable(nullptr);
 }
 
 void BrowserOptionsHandler::SetDefaultSearchEngine(
@@ -1316,6 +1314,7 @@ scoped_ptr<base::ListValue> BrowserOptionsHandler::GetProfilesInfoList() {
                               profile_path == current_profile_path);
     profile_value->SetBoolean("isSupervised",
                               cache.ProfileIsSupervisedAtIndex(i));
+    profile_value->SetBoolean("isChild", cache.ProfileIsChildAtIndex(i));
 
     bool is_gaia_picture =
         cache.IsUsingGAIAPictureOfProfileAtIndex(i) &&
@@ -1434,6 +1433,7 @@ BrowserOptionsHandler::GetSyncStateDictionary() {
   }
 
   sync_status->SetBoolean("supervisedUser", profile->IsSupervised());
+  sync_status->SetBoolean("childUser", profile->IsChild());
 
   bool signout_prohibited = false;
 #if !defined(OS_CHROMEOS)
@@ -1547,6 +1547,13 @@ void BrowserOptionsHandler::OnConsumerManagementStatusChanged() {
 void BrowserOptionsHandler::UpdateSyncState() {
   web_ui()->CallJavascriptFunction("BrowserOptions.updateSyncState",
                                    *GetSyncStateDictionary());
+
+  // A change in sign-in state also affects how hotwording and audio history are
+  // displayed. Hide all hotwording and re-display properly.
+  web_ui()->CallJavascriptFunction(
+      "BrowserOptions.setAllHotwordSectionsVisible",
+      base::FundamentalValue(false));
+  HandleRequestHotwordAvailable(nullptr);
 }
 
 void BrowserOptionsHandler::OnSigninAllowedPrefChange() {
@@ -1655,9 +1662,45 @@ void BrowserOptionsHandler::ShowCloudPrintDevicesPage(
 
 #endif
 
+void BrowserOptionsHandler::SetHotwordAudioHistorySectionVisible(
+    bool always_on, const base::string16& audio_history_state,
+    bool success, bool logging_enabled) {
+  web_ui()->CallJavascriptFunction(
+      "BrowserOptions.setAudioHistorySectionVisible",
+      base::FundamentalValue(logging_enabled),
+      base::FundamentalValue(always_on),
+      base::StringValue(audio_history_state));
+
+  // TODO(rlp): Add version with error display if !success.
+}
+
 void BrowserOptionsHandler::HandleRequestHotwordAvailable(
     const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
+
+  bool is_search_provider_google = false;
+  if (template_url_service_) {
+    const TemplateURL* default_url =
+        template_url_service_->GetDefaultSearchProvider();
+    if (default_url && default_url->HasGoogleBaseURLs(
+            template_url_service_->search_terms_data())) {
+      is_search_provider_google = true;
+    }
+  }
+
+  if (!is_search_provider_google) {
+    // If the user has chosen a default search provide other than Google, turn
+    // off hotwording since other providers don't provide that functionality.
+    web_ui()->CallJavascriptFunction(
+        "BrowserOptions.setAllHotwordSectionsVisible",
+        base::FundamentalValue(false));
+    HotwordService* hotword_service =
+        HotwordServiceFactory::GetForProfile(profile);
+    if (hotword_service)
+      hotword_service->DisableHotwordPreferences();
+    return;
+  }
+
   std::string group = base::FieldTrialList::FindFullName("VoiceTrigger");
   if (group != "" && group != "Disabled" &&
       HotwordServiceFactory::IsHotwordAllowed(profile)) {
@@ -1667,8 +1710,11 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
 
     std::string function_name;
     bool always_on = false;
+    SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile);
+    bool authenticated = signin && signin->IsAuthenticated();
     if (HotwordService::IsExperimentalHotwordingEnabled()) {
-      if (HotwordServiceFactory::IsHotwordHardwareAvailable()) {
+      if (HotwordServiceFactory::IsHotwordHardwareAvailable() &&
+          authenticated) {
         function_name = "BrowserOptions.showHotwordAlwaysOnSection";
         always_on = true;
         // Show the retrain link if always-on is enabled.
@@ -1686,12 +1732,25 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
     }
 
     // Audio history should be displayed if it's enabled regardless of the
-    // hotword error state. An additional message is displayed if always-on
-    // hotwording is enabled.
-    if (profile->GetPrefs()->GetBoolean(prefs::kHotwordAudioHistoryEnabled) &&
-        HotwordService::IsExperimentalHotwordingEnabled()) {
-      web_ui()->CallJavascriptFunction("BrowserOptions.showAudioHistorySection",
-                                       base::FundamentalValue(always_on));
+    // hotword error state if the user is signed in. If the user is not signed
+    // in, audio history is meaningless. An additional message is displayed if
+    // always-on hotwording is enabled.
+    if (HotwordService::IsExperimentalHotwordingEnabled() &&
+        authenticated) {
+      std::string user_display_name = signin->GetAuthenticatedUsername();
+      DCHECK(!user_display_name.empty());
+      base::string16 audio_history_state =
+          l10n_util::GetStringFUTF16(IDS_HOTWORD_AUDIO_HISTORY_ENABLED,
+          base::ASCIIToUTF16(user_display_name));
+      HotwordService* hotword_service =
+          HotwordServiceFactory::GetForProfile(profile);
+      if (hotword_service) {
+        hotword_service->GetAudioHistoryHandler()->GetAudioHistoryEnabled(
+            base::Bind(
+                &BrowserOptionsHandler::SetHotwordAudioHistorySectionVisible,
+                weak_ptr_factory_.GetWeakPtr(),
+                always_on, audio_history_state));
+      }
     }
 
     if (!error) {
@@ -1723,16 +1782,13 @@ void BrowserOptionsHandler::HandleLaunchHotwordAudioVerificationApp(
     DCHECK(profile->GetPrefs()->GetBoolean(
         prefs::kHotwordAlwaysOnSearchEnabled));
     DCHECK(profile->GetPrefs()->GetBoolean(
-        prefs::kHotwordAudioHistoryEnabled));
+        prefs::kHotwordAudioLoggingEnabled));
 
     launch_mode = HotwordService::RETRAIN;
   } else if (profile->GetPrefs()->GetBoolean(
-      prefs::kHotwordAudioHistoryEnabled)) {
+      prefs::kHotwordAudioLoggingEnabled)) {
     DCHECK(!profile->GetPrefs()->GetBoolean(
         prefs::kHotwordAlwaysOnSearchEnabled));
-
-    // TODO(kcarattini): Make sure the Chrome Audio History pref is synced
-    // to the account-level Audio History setting from footprints.
     launch_mode = HotwordService::HOTWORD_ONLY;
   } else {
     DCHECK(!profile->GetPrefs()->GetBoolean(

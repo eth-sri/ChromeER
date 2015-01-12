@@ -29,16 +29,9 @@ RendererFreezer::RendererFreezer(scoped_ptr<RendererFreezer::Delegate> delegate)
     : frozen_(false),
       delegate_(delegate.Pass()),
       weak_factory_(this) {
-  if (delegate_->CanFreezeRenderers()) {
-    DBusThreadManager::Get()
-        ->GetPowerManagerClient()
-        ->SetRenderProcessManagerDelegate(weak_factory_.GetWeakPtr());
-
-    registrar_.Add(
-        this,
-        content::NOTIFICATION_RENDERER_PROCESS_CREATED,
-        content::NotificationService::AllBrowserContextsAndSources());
-  }
+  delegate_->CheckCanFreezeRenderers(
+      base::Bind(&RendererFreezer::OnCheckCanFreezeRenderersComplete,
+                 weak_factory_.GetWeakPtr()));
 }
 
 RendererFreezer::~RendererFreezer() {
@@ -51,22 +44,16 @@ RendererFreezer::~RendererFreezer() {
 }
 
 void RendererFreezer::SuspendImminent() {
-  if (delegate_->FreezeRenderers())
-    frozen_ = true;
+  // All the delegate's operations are asynchronous so they may not complete
+  // before the system suspends.  This is ok since the renderers only need to be
+  // frozen in dark resume.  As long as they do get frozen soon after we enter
+  // dark resume, there shouldn't be a problem.
+  delegate_->FreezeRenderers();
 }
 
 void RendererFreezer::SuspendDone() {
-  if (!frozen_)
-    return;
-
-  if (!delegate_->ThawRenderers()) {
-    // We failed to write the thaw command and the renderers are still frozen.
-    // We are in big trouble because none of the tabs will be responsive so
-    // let's crash the browser instead.
-    LOG(FATAL) << "Unable to thaw renderers.";
-  }
-
-  frozen_ = false;
+  delegate_->ThawRenderers(base::Bind(&RendererFreezer::OnThawRenderersComplete,
+                                      weak_factory_.GetWeakPtr()));
 }
 
 void RendererFreezer::Observe(int type,
@@ -115,6 +102,30 @@ void RendererFreezer::RenderProcessHostDestroyed(
   gcm_extension_processes_.erase(it);
 }
 
+void RendererFreezer::OnCheckCanFreezeRenderersComplete(bool can_freeze) {
+  if (!can_freeze)
+    return;
+
+  DBusThreadManager::Get()
+      ->GetPowerManagerClient()
+      ->SetRenderProcessManagerDelegate(weak_factory_.GetWeakPtr());
+
+  registrar_.Add(
+      this,
+      content::NOTIFICATION_RENDERER_PROCESS_CREATED,
+      content::NotificationService::AllBrowserContextsAndSources());
+}
+
+void RendererFreezer::OnThawRenderersComplete(bool success) {
+  if (success)
+    return;
+
+  // We failed to write the thaw command and the renderers are still frozen.  We
+  // are in big trouble because none of the tabs will be responsive so let's
+  // crash the browser instead.
+  LOG(FATAL) << "Unable to thaw renderers.";
+}
+
 void RendererFreezer::OnRenderProcessCreated(content::RenderProcessHost* rph) {
   const int rph_id = rph->GetID();
 
@@ -140,10 +151,11 @@ void RendererFreezer::OnRenderProcessCreated(content::RenderProcessHost* rph) {
       extensions::ExtensionRegistry::Get(context);
   for (const std::string& extension_id :
        extensions::ProcessMap::Get(context)->GetExtensionsInProcess(rph_id)) {
-    if (!registry->GetExtensionById(extension_id,
-                                    extensions::ExtensionRegistry::ENABLED)
-             ->permissions_data()
-             ->HasAPIPermission(extensions::APIPermission::kGcm)) {
+    const extensions::Extension* extension = registry->GetExtensionById(
+        extension_id, extensions::ExtensionRegistry::ENABLED);
+    if (!extension ||
+        !extension->permissions_data()->HasAPIPermission(
+            extensions::APIPermission::kGcm)) {
       continue;
     }
 

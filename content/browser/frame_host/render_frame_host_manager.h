@@ -288,7 +288,8 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   void ClearNavigationTransitionData();
 
   // Called when a renderer's frame navigates.
-  void DidNavigateFrame(RenderFrameHostImpl* render_frame_host);
+  void DidNavigateFrame(RenderFrameHostImpl* render_frame_host,
+                        bool was_caused_by_user_gesture);
 
   // Called when a renderer sets its opener to null.
   void DidDisownOpener(RenderFrameHost* render_frame_host);
@@ -371,6 +372,11 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   RenderFrameHostImpl* GetFrameHostForNavigation(const GURL& url,
                                                  ui::PageTransition transition);
 
+  // Notification methods to tell this RenderFrameHostManager that the frame it
+  // is responsible for has started or stopped loading a document.
+  void OnDidStartLoading();
+  void OnDidStopLoading();
+
  private:
   friend class RenderFrameHostManagerTest;
   friend class TestWebContents;
@@ -419,26 +425,32 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
       const GURL& new_url) const;
 
   // Returns the SiteInstance to use for the navigation.
-  SiteInstance* GetSiteInstanceForNavigation(
-      const GURL& dest_url,
-      SiteInstance* dest_instance,
-      ui::PageTransition dest_transition,
-      bool dest_is_restore,
-      bool dest_is_view_source_mode);
+  SiteInstance* GetSiteInstanceForNavigation(const GURL& dest_url,
+                                             SiteInstance* source_instance,
+                                             SiteInstance* dest_instance,
+                                             ui::PageTransition transition,
+                                             bool dest_is_restore,
+                                             bool dest_is_view_source_mode);
 
   // Returns an appropriate SiteInstance object for the given |dest_url|,
   // possibly reusing the current SiteInstance.  If --process-per-tab is used,
   // this is only called when ShouldSwapBrowsingInstancesForNavigation returns
-  // true. |dest_instance| will be used if it is not null.
+  // true. |source_instance| is the SiteInstance of the frame that initiated the
+  // navigation. |current_instance| is the SiteInstance of the frame that is
+  // currently navigating. |dest_instance|, is a predetermined SiteInstance
+  // that'll be used if not null.
+  // For example, if you have a parent frame A, which has a child frame B, and
+  // A is trying to change the src attribute of B, this will cause a navigation
+  // where the source SiteInstance is A and B is the current SiteInstance.
   // This is a helper function for GetSiteInstanceForNavigation.
-  SiteInstance* GetSiteInstanceForURL(
-      const GURL& dest_url,
-      SiteInstance* dest_instance,
-      ui::PageTransition dest_transition,
-      bool dest_is_restore,
-      bool dest_is_view_source_mode,
-      SiteInstance* current_instance,
-      bool force_browsing_instance_swap);
+  SiteInstance* GetSiteInstanceForURL(const GURL& dest_url,
+                                      SiteInstance* source_instance,
+                                      SiteInstance* current_instance,
+                                      SiteInstance* dest_instance,
+                                      ui::PageTransition transition,
+                                      bool dest_is_restore,
+                                      bool dest_is_view_source_mode,
+                                      bool force_browsing_instance_swap);
 
   // Determines the appropriate url to use as the current url for SiteInstance
   // selection.
@@ -506,8 +518,12 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   // swapped out.
   void ShutdownRenderFrameProxyHostsInSiteInstance(int32 site_instance_id);
 
-  // Helper method to terminate the pending RenderViewHost.
+  // Helper method to terminate the pending RenderFrameHost. The frame may be
+  // deleted immediately, or it may be kept around in hopes of later reuse.
   void CancelPending();
+
+  // Clears pending_render_frame_host_, returning it to the caller for disposal.
+  scoped_ptr<RenderFrameHostImpl> UnsetPendingRenderFrameHost();
 
   // Helper method to set the active RenderFrameHost. Returns the old
   // RenderFrameHost and updates counts.
@@ -515,11 +531,12 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
       scoped_ptr<RenderFrameHostImpl> render_frame_host);
 
   RenderFrameHostImpl* UpdateStateForNavigate(
-      const GURL& url,
-      SiteInstance* instance,
+      const GURL& dest_url,
+      SiteInstance* source_instance,
+      SiteInstance* dest_instance,
       ui::PageTransition transition,
-      bool is_restore,
-      bool is_view_source_mode,
+      bool dest_is_restore,
+      bool dest_is_view_source_mode,
       const GlobalRequestID& transferred_request_id,
       int bindings);
 

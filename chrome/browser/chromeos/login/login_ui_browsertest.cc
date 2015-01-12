@@ -31,7 +31,6 @@ const char kTestUser2[] = "test-user2@gmail.com";
 
 class LoginUITest : public chromeos::LoginManagerTest {
  public:
-  bool enable_test_screenshots_;
   LoginUITest() : LoginManagerTest(false) {
     screenshot_testing_ = new ScreenshotTestingMixin;
     screenshot_testing_->IgnoreArea(areas::kClockArea);
@@ -69,6 +68,7 @@ IN_PROC_BROWSER_TEST_F(LoginUITest, PRE_InterruptedAutoStartEnrollment) {
   StartupUtils::MarkOobeCompleted();
   PrefService* prefs = g_browser_process->local_state();
   prefs->SetBoolean(prefs::kDeviceEnrollmentAutoStart, true);
+  prefs->SetBoolean(prefs::kDeviceEnrollmentCanExit, false);
 }
 
 // Tests that the default first screen is the network screen after OOBE

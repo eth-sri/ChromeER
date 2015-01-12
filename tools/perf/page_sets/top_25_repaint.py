@@ -17,14 +17,14 @@ class TopRepaintPage(page_module.Page):
     self.archive_data_file = 'data/top_25_repaint.json'
     self.credentials = credentials
 
-  def RunRepaint(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     action_runner.RepaintContinuously(seconds=5)
 
 
 def _CreatePageClassWithRepaintInteractions(page_cls):
   class DerivedRepaintPage(page_cls):  # pylint: disable=W0232
 
-    def RunRepaint(self, action_runner):
+    def RunPageInteractions(self, action_runner):
       action_runner.RepaintContinuously(seconds=5)
   return DerivedRepaintPage
 
@@ -60,7 +60,7 @@ class Top25RepaintPageSet(page_set_module.PageSet):
     ]
 
     for cl in top_page_classes:
-      self.AddPage(_CreatePageClassWithRepaintInteractions(cl)(self))
+      self.AddUserStory(_CreatePageClassWithRepaintInteractions(cl)(self))
 
     other_urls = [
         # Why: #1 news worldwide (Alexa global)
@@ -83,4 +83,4 @@ class Top25RepaintPageSet(page_set_module.PageSet):
     ]
 
     for url in other_urls:
-      self.AddPage(TopRepaintPage(url, self))
+      self.AddUserStory(TopRepaintPage(url, self))

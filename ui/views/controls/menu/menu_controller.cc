@@ -13,8 +13,8 @@
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/vector2d.h"
 #include "ui/native_theme/native_theme.h"
@@ -910,13 +910,10 @@ void MenuController::SetSelectionOnPointerDown(SubmenuView* source,
   if (part.type == MenuPart::NONE ||
       (part.type == MenuPart::MENU_ITEM && part.menu &&
        part.menu->GetRootMenuItem() != state_.item->GetRootMenuItem())) {
-    // Remember the time when we repost the event. The owner can then use this
-    // to figure out if this menu was finished with the same click which is
-    // sent to it thereafter. Note that the time stamp front he event cannot be
-    // used since the reposting will set a new timestamp when the event gets
-    // processed. As such it is better to take the current time which will be
-    // closer to the time when it arrives again in the menu handler.
-    closing_event_time_ = ui::EventTimeForNow();
+    // Remember the time stamp of the current (press down) event. The owner can
+    // then use this to figure out if this menu was finished with the same click
+    // which is sent to it thereafter.
+    closing_event_time_ = event.time_stamp();
 
     // Mouse wasn't pressed over any menu, or the active menu, cancel.
 

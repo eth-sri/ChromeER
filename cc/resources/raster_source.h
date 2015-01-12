@@ -12,11 +12,16 @@
 #include "cc/debug/traced_value.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 class SkCanvas;
 class SkPicture;
 
 namespace cc {
+
+class Picture;
 
 class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
  public:
@@ -92,6 +97,7 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   virtual void DidBeginTracing() = 0;
   virtual void AsValueInto(base::debug::TracedValue* array) const = 0;
   virtual skia::RefPtr<SkPicture> GetFlattenedPicture() = 0;
+  virtual size_t GetPictureMemoryUsage() const = 0;
 
   // Return true if LCD anti-aliasing may be used when rastering text.
   virtual bool CanUseLCDText() const = 0;

@@ -24,6 +24,7 @@ from telemetry.core.platform.power_monitor import android_temperature_monitor
 from telemetry.core.platform.power_monitor import monsoon_power_monitor
 from telemetry.core.platform.power_monitor import power_monitor_controller
 from telemetry.core.platform.profiler import android_prebuilt_profiler_helper
+from telemetry.timeline import trace_data as trace_data_module
 from telemetry.util import exception_formatter
 
 util.AddDirToPythonPath(util.GetChromiumSrcDir(),
@@ -43,6 +44,11 @@ try:
   from pylib.perf import surface_stats_collector  # pylint: disable=F0401
 except Exception:
   surface_stats_collector = None
+
+try:
+  import psutil  # pylint: disable=import-error
+except ImportError:
+  psutil = None
 
 
 class AndroidPlatformBackend(
@@ -85,6 +91,8 @@ class AndroidPlatformBackend(
     self._device_cert_util = None
     self._is_test_ca_installed = False
 
+    _FixPossibleAdbInstability()
+
   @classmethod
   def SupportsDevice(cls, device):
     return isinstance(device, android_device.AndroidDevice)
@@ -93,10 +101,10 @@ class AndroidPlatformBackend(
   def adb(self):
     return self._adb
 
-  def IsRawDisplayFrameRateSupported(self):
-    return True
+  def IsDisplayTracingSupported(self):
+    return bool(self.GetOSVersionName() >= 'J')
 
-  def StartRawDisplayFrameRateMeasurement(self):
+  def StartDisplayTracing(self):
     assert not self._surface_stats_collector
     # Clear any leftover data from previous timed out tests
     self._raw_display_frame_rate_measurements = []
@@ -104,22 +112,29 @@ class AndroidPlatformBackend(
         surface_stats_collector.SurfaceStatsCollector(self._device)
     self._surface_stats_collector.Start()
 
-  def StopRawDisplayFrameRateMeasurement(self):
+  def StopDisplayTracing(self):
     if not self._surface_stats_collector:
       return
 
-    self._surface_stats_collector.Stop()
-    for r in self._surface_stats_collector.GetResults():
-      self._raw_display_frame_rate_measurements.append(
-          platform.Platform.RawDisplayFrameRateMeasurement(
-              r.name, r.value, r.unit))
-
+    refresh_period, timestamps = self._surface_stats_collector.Stop()
+    pid = self._surface_stats_collector.GetSurfaceFlingerPid()
     self._surface_stats_collector = None
-
-  def GetRawDisplayFrameRateMeasurements(self):
-    ret = self._raw_display_frame_rate_measurements
-    self._raw_display_frame_rate_measurements = []
-    return ret
+    # TODO(sullivan): should this code be inline, or live elsewhere?
+    events = []
+    for ts in timestamps:
+      events.append({
+        'cat': 'SurfaceFlinger',
+        'name': 'vsync_before',
+        'ts': ts,
+        'pid': pid,
+        'tid': pid,
+        'args': {'data': {
+          'frame_count': 1,
+          'refresh_period': refresh_period,
+        }}
+      })
+    return trace_data_module.TraceData({
+      trace_data_module.SURFACE_FLINGER_PART.raw_field_name: events})
 
   def SetFullPerformanceModeEnabled(self, enabled):
     if not self._enable_performance_mode:
@@ -178,9 +193,6 @@ class AndroidPlatformBackend(
             'PrivateDirty': memory_usage['Private_Dirty'] * 1024,
             'VMPeak': memory_usage['VmHWM'] * 1024}
 
-  def GetIOStats(self, pid):
-    return {}
-
   def GetChildPids(self, pid):
     child_pids = []
     ps = self.GetPsOutput(['pid', 'name'])
@@ -214,7 +226,7 @@ class AndroidPlatformBackend(
     cache = cache_control.CacheControl(self._device)
     cache.DropRamCaches()
 
-  def FlushSystemCacheForDirectory(self, directory, ignoring=None):
+  def FlushSystemCacheForDirectory(self, directory):
     raise NotImplementedError()
 
   def FlushDnsCache(self):
@@ -595,3 +607,25 @@ class AndroidPlatformBackend(
                                         self._adb.device_serial()],
                                        stdout=subprocess.PIPE).communicate()[0])
     return ret
+
+
+def _FixPossibleAdbInstability():
+  """Host side workaround for crbug.com/268450 (adb instability).
+
+  The adb server has a race which is mitigated by binding to a single core.
+  """
+  if not psutil:
+    return
+  for process in psutil.process_iter():
+    try:
+      if 'adb' in process.name:
+        if 'cpu_affinity' in dir(process):
+          process.cpu_affinity([0])      # New versions of psutil.
+        elif 'set_cpu_affinity' in dir(process):
+          process.set_cpu_affinity([0])  # Older versions.
+        else:
+          logging.warn(
+              'Cannot set CPU affinity due to stale psutil version: %s',
+              '.'.join(str(x) for x in psutil.version_info))
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+      logging.warn('Failed to set adb process CPU affinity')

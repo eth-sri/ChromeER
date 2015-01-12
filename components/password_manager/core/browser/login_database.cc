@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -156,9 +157,15 @@ bool LoginDatabase::Init(const base::FilePath& db_path) {
   db_.set_exclusive_locking();
   db_.set_restrict_to_user();
 
-  if (!db_.Open(db_path)) {
-    LOG(WARNING) << "Unable to open the password store database.";
-    return false;
+  {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/138903 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("138903 LoginDatabase::Init db init"));
+
+    if (!db_.Open(db_path)) {
+      LOG(WARNING) << "Unable to open the password store database.";
+      return false;
+    }
   }
 
   sql::Transaction transaction(&db_);
@@ -532,6 +539,11 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(const PasswordForm& form) {
 }
 
 bool LoginDatabase::RemoveLogin(const PasswordForm& form) {
+  if (form.IsPublicSuffixMatch()) {
+    // Do not try to remove |form|. It is a modified copy of a password stored
+    // for a different origin, and it is not contained in the database.
+    return false;
+  }
   // Remove a login by UNIQUE-constrained fields.
   sql::Statement s(db_.GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM logins WHERE "
@@ -648,9 +660,10 @@ bool LoginDatabase::GetLogins(const PasswordForm& form,
   std::string registered_domain = GetRegistryControlledDomain(signon_realm);
   PSLDomainMatchMetric psl_domain_match_metric = PSL_DOMAIN_MATCH_NONE;
   const bool should_PSL_matching_apply =
+      form.scheme == PasswordForm::SCHEME_HTML &&
       ShouldPSLDomainMatchingApply(registered_domain);
   // PSL matching only applies to HTML forms.
-  if (form.scheme == PasswordForm::SCHEME_HTML && should_PSL_matching_apply) {
+  if (should_PSL_matching_apply) {
     // We are extending the original SQL query with one that includes more
     // possible matches based on public suffix domain matching. Using a regexp
     // here is just an optimization to not have to parse all the stored entries

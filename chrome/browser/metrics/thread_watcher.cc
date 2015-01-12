@@ -345,7 +345,8 @@ ThreadWatcherList::CrashDataThresholds::CrashDataThresholds()
 }
 
 // static
-void ThreadWatcherList::StartWatchingAll(const CommandLine& command_line) {
+void ThreadWatcherList::StartWatchingAll(
+    const base::CommandLine& command_line) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   uint32 unresponsive_threshold;
   CrashOnHangThreadMap crash_on_hang_threads;
@@ -441,13 +442,11 @@ ThreadWatcherList::~ThreadWatcherList() {
 
 // static
 void ThreadWatcherList::ParseCommandLine(
-    const CommandLine& command_line,
+    const base::CommandLine& command_line,
     uint32* unresponsive_threshold,
     CrashOnHangThreadMap* crash_on_hang_threads) {
   // Initialize |unresponsive_threshold| to a default value.
-  // TODO(rtenneti): Changed the default value to 4 times, until we can triage
-  // hangs automatically (and to reduce the crash dumps).
-  *unresponsive_threshold = kUnresponsiveCount * 4;
+  *unresponsive_threshold = kUnresponsiveCount;
 
   // Increase the unresponsive_threshold on the Stable and Beta channels to
   // reduce the number of crashes due to ThreadWatcher.

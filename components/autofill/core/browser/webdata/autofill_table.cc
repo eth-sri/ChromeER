@@ -19,7 +19,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "base/tuple.h"
 #include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/autofill_type.h"
@@ -138,6 +137,20 @@ void BindCreditCardToStatement(const CreditCard& credit_card,
   s->BindString(index++, credit_card.origin());
 }
 
+base::string16 UnencryptedCardFromColumn(const sql::Statement& s,
+                                         int column_index) {
+  base::string16 credit_card_number;
+  int encrypted_number_len = s.ColumnByteLength(column_index);
+  if (encrypted_number_len) {
+    std::string encrypted_number;
+    encrypted_number.resize(encrypted_number_len);
+    memcpy(&encrypted_number[0], s.ColumnBlob(column_index),
+           encrypted_number_len);
+    OSCrypt::DecryptString16(encrypted_number, &credit_card_number);
+  }
+  return credit_card_number;
+}
+
 scoped_ptr<CreditCard> CreditCardFromStatement(const sql::Statement& s) {
   scoped_ptr<CreditCard> credit_card(new CreditCard);
 
@@ -149,17 +162,8 @@ scoped_ptr<CreditCard> CreditCardFromStatement(const sql::Statement& s) {
   credit_card->SetRawInfo(CREDIT_CARD_EXP_MONTH, s.ColumnString16(index++));
   credit_card->SetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR,
                           s.ColumnString16(index++));
-  int encrypted_number_len = s.ColumnByteLength(index);
-  base::string16 credit_card_number;
-  if (encrypted_number_len) {
-    std::string encrypted_number;
-    encrypted_number.resize(encrypted_number_len);
-    memcpy(&encrypted_number[0], s.ColumnBlob(index++), encrypted_number_len);
-    OSCrypt::DecryptString16(encrypted_number, &credit_card_number);
-  } else {
-    index++;
-  }
-  credit_card->SetRawInfo(CREDIT_CARD_NUMBER, credit_card_number);
+  credit_card->SetRawInfo(CREDIT_CARD_NUMBER,
+                          UnencryptedCardFromColumn(s, index++));
   // Intentionally skip column 5, which stores the modification date.
   index++;
   credit_card->set_origin(s.ColumnString(index++));
@@ -455,7 +459,9 @@ WebDatabaseTable::TypeKey AutofillTable::GetTypeKey() const {
 bool AutofillTable::CreateTablesIfNecessary() {
   return (InitMainTable() && InitCreditCardsTable() && InitProfilesTable() &&
           InitProfileNamesTable() && InitProfileEmailsTable() &&
-          InitProfilePhonesTable() && InitProfileTrashTable());
+          InitProfilePhonesTable() && InitProfileTrashTable() &&
+          InitMaskedCreditCardsTable() && InitUnmaskedCreditCardsTable() &&
+          InitServerAddressesTable());
 }
 
 bool AutofillTable::IsSyncable() {
@@ -520,6 +526,9 @@ bool AutofillTable::MigrateToVersion(int version,
     case 57:
       *update_compatible_version = true;
       return MigrateToVersion57AddFullNameField();
+    case 60:
+      *update_compatible_version = false;
+      return MigrateToVersion60AddServerCards();
   }
   return true;
 }
@@ -943,6 +952,12 @@ bool AutofillTable::GetAutofillProfiles(
   return s.Succeeded();
 }
 
+bool AutofillTable::GetAutofillServerProfiles(
+    std::vector<AutofillProfile*>* profiles) {
+  // TODO(brettw) write this.
+  return true;
+}
+
 bool AutofillTable::UpdateAutofillProfile(const AutofillProfile& profile) {
   DCHECK(base::IsValidGUID(profile.guid()));
 
@@ -1049,7 +1064,7 @@ bool AutofillTable::GetCreditCard(const std::string& guid,
   DCHECK(base::IsValidGUID(guid));
   sql::Statement s(db_->GetUniqueStatement(
       "SELECT guid, name_on_card, expiration_month, expiration_year, "
-      "       card_number_encrypted, date_modified, origin "
+             "card_number_encrypted, date_modified, origin "
       "FROM credit_cards "
       "WHERE guid = ?"));
   s.BindString(0, guid);
@@ -1080,6 +1095,71 @@ bool AutofillTable::GetCreditCards(
   }
 
   return s.Succeeded();
+}
+
+bool AutofillTable::GetServerCreditCards(
+    std::vector<CreditCard*>* credit_cards) {
+  credit_cards->clear();
+
+  sql::Statement s(db_->GetUniqueStatement(
+      "SELECT "
+      "card_number_encrypted, "  // 0
+      "last_four,"     // 1
+      "masked.id,"     // 2
+      "status,"        // 3
+      "name_on_card,"  // 4
+      "exp_month,"     // 6
+      "exp_year "      // 7
+      "FROM masked_credit_cards masked JOIN unmasked_credit_cards unmasked "
+      "ON masked.id = unmasked.id"));
+  while (s.Step()) {
+    int index = 0;
+
+    // If the card_number_encrypted field is nonempty, we can assume this card
+    // is a full card, otherwise it's masked.
+    base::string16 full_card_number = UnencryptedCardFromColumn(s, index++);
+    base::string16 last_four = s.ColumnString16(index++);
+    CreditCard::RecordType type = full_card_number.empty() ?
+        CreditCard::MASKED_WALLET_CARD :
+        CreditCard::FULL_WALLET_CARD;
+    std::string wallet_id = s.ColumnString(index++);
+
+    CreditCard* card = new CreditCard(wallet_id, type);
+    card->SetRawInfo(
+        CREDIT_CARD_NUMBER,
+        type == CreditCard::MASKED_WALLET_CARD ? last_four : full_card_number);
+
+    index++;  // TODO(brettw) hook up status. For now, skip over it.
+    card->SetRawInfo(CREDIT_CARD_NAME, s.ColumnString16(index++));
+    card->SetRawInfo(CREDIT_CARD_EXP_MONTH, s.ColumnString16(index++));
+    card->SetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR, s.ColumnString16(index++));
+    credit_cards->push_back(card);
+  }
+  return s.Succeeded();
+}
+
+void AutofillTable::UnmaskWalletCreditCard(const std::string& id,
+                                           const base::string16& full_number) {
+  // Make sure there aren't duplicates for this card.
+  MaskWalletCreditCard(id);
+  sql::Statement s(db_->GetUniqueStatement(
+      "INSERT INTO unmasked_credit_cards(id, card_number_encrypted) "
+      "VALUES (?,?)"));
+  s.BindString(0, id);
+
+  std::string encrypted_data;
+  OSCrypt::EncryptString16(full_number, &encrypted_data);
+  s.BindBlob(1, encrypted_data.data(),
+             static_cast<int>(encrypted_data.length()));
+
+  s.Run();
+}
+
+void AutofillTable::MaskWalletCreditCard(const std::string& id) {
+  sql::Statement s(db_->GetUniqueStatement(
+      "DELETE FROM unmasked_credit_cards WHERE id = ?"));
+  s.BindString(0, id);
+  s.Run();
 }
 
 bool AutofillTable::UpdateCreditCard(const CreditCard& credit_card) {
@@ -1404,6 +1484,56 @@ bool AutofillTable::InitProfileTrashTable() {
   if (!db_->DoesTableExist("autofill_profiles_trash")) {
     if (!db_->Execute("CREATE TABLE autofill_profiles_trash ( "
                       "guid VARCHAR)")) {
+      NOTREACHED();
+      return false;
+    }
+  }
+  return true;
+}
+
+bool AutofillTable::InitMaskedCreditCardsTable() {
+  if (!db_->DoesTableExist("masked_credit_cards")) {
+    if (!db_->Execute("CREATE TABLE masked_credit_cards ("
+                      "id VARCHAR,"
+                      "status VARCHAR,"
+                      "name_on_card VARCHAR,"
+                      "type VARCHAR,"
+                      "last_four VARCHAR,"
+                      "exp_month INTEGER DEFAULT 0,"
+                      "exp_year INTEGER DEFAULT 0)")) {
+      NOTREACHED();
+      return false;
+    }
+  }
+  return true;
+}
+
+bool AutofillTable::InitUnmaskedCreditCardsTable() {
+  if (!db_->DoesTableExist("unmasked_credit_cards")) {
+    if (!db_->Execute("CREATE TABLE unmasked_credit_cards ("
+                      "id VARCHAR,"
+                      "card_number_encrypted VARCHAR)")) {
+      NOTREACHED();
+      return false;
+    }
+  }
+  return true;
+}
+
+bool AutofillTable::InitServerAddressesTable() {
+  if (!db_->DoesTableExist("server_addresses")) {
+    if (!db_->Execute("CREATE TABLE server_addresses ("
+                      "id VARCHAR,"
+                      "company_name VARCHAR,"
+                      "street_address VARCHAR,"
+                      "address_1 VARCHAR,"
+                      "address_2 VARCHAR,"
+                      "address_3 VARCHAR,"
+                      "address_4 VARCHAR,"
+                      "postal_code VARCHAR,"
+                      "sorting_code VARCHAR,"
+                      "country_code VARCHAR,"
+                      "language_code VARCHAR)")) {
       NOTREACHED();
       return false;
     }
@@ -2357,6 +2487,12 @@ bool AutofillTable::MigrateToVersion56AddProfileLanguageCodeForFormatting() {
 bool AutofillTable::MigrateToVersion57AddFullNameField() {
   return db_->Execute("ALTER TABLE autofill_profile_names "
                       "ADD COLUMN full_name VARCHAR");
+}
+
+bool AutofillTable::MigrateToVersion60AddServerCards() {
+  return InitMaskedCreditCardsTable() &&
+         InitUnmaskedCreditCardsTable() &&
+         InitServerAddressesTable();
 }
 
 }  // namespace autofill

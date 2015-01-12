@@ -32,7 +32,7 @@ bool VideoCaptureFormat::IsValid() const {
 }
 
 std::string VideoCaptureFormat::ToString() const {
-  return base::StringPrintf("resolution: %s, fps: %f, pixel format: %s",
+  return base::StringPrintf("resolution: %s, fps: %.3f, pixel format: %s",
                             frame_size.ToString().c_str(),
                             frame_rate,
                             PixelFormatToString(pixel_format).c_str());
@@ -54,6 +54,8 @@ std::string VideoCaptureFormat::PixelFormatToString(VideoPixelFormat format) {
     return "ARGB";
   case PIXEL_FORMAT_MJPEG:
     return "MJPEG";
+  case PIXEL_FORMAT_NV12:
+    return "NV12";
   case PIXEL_FORMAT_NV21:
     return "NV21";
   case PIXEL_FORMAT_YV12:

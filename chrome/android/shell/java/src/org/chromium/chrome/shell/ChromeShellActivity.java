@@ -7,6 +7,7 @@ package org.chromium.chrome.shell;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.support.v7.app.ActionBarActivity;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -25,11 +26,13 @@ import org.chromium.base.VisibleForTesting;
 import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.chrome.browser.DevToolsServer;
 import org.chromium.chrome.browser.FileProviderHelper;
+import org.chromium.chrome.browser.Tab;
 import org.chromium.chrome.browser.appmenu.AppMenuHandler;
 import org.chromium.chrome.browser.appmenu.AppMenuPropertiesDelegate;
 import org.chromium.chrome.browser.dom_distiller.DomDistillerTabUtils;
 import org.chromium.chrome.browser.nfc.BeamController;
 import org.chromium.chrome.browser.nfc.BeamProvider;
+import org.chromium.chrome.browser.preferences.PreferencesLauncher;
 import org.chromium.chrome.browser.printing.PrintingControllerFactory;
 import org.chromium.chrome.browser.printing.TabPrinter;
 import org.chromium.chrome.browser.share.ShareHelper;
@@ -51,7 +54,7 @@ import org.chromium.ui.base.WindowAndroid;
 /**
  * The {@link android.app.Activity} component of a basic test shell to test Chrome features.
  */
-public class ChromeShellActivity extends Activity implements AppMenuPropertiesDelegate {
+public class ChromeShellActivity extends ActionBarActivity implements AppMenuPropertiesDelegate {
     private static final String TAG = "ChromeShellActivity";
 
     /**
@@ -234,16 +237,16 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
 
         if (mToolbar != null) mToolbar.hideSuggestions();
 
-        ContentViewCore viewCore = getActiveContentViewCore();
-        if (viewCore != null) viewCore.onHide();
+        Tab activeTab = getActiveTab();
+        if (activeTab != null) activeTab.onActivityStop();
     }
 
     @Override
     protected void onStart() {
         super.onStart();
 
-        ContentViewCore viewCore = getActiveContentViewCore();
-        if (viewCore != null) viewCore.onShow();
+        Tab activeTab = getActiveTab();
+        if (activeTab != null) activeTab.onActivityStart();
 
         if (mSyncController != null) {
             mSyncController.onStart();
@@ -361,6 +364,9 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
             ShareHelper.share(item.getItemId() == R.id.direct_share_menu_id, this,
                     activeTab.getTitle(), activeTab.getUrl(), null);
             return true;
+        } else if (id == R.id.preferences) {
+            PreferencesLauncher.launchSettingsPage(this, null);
+            return true;
         } else {
             return super.onOptionsItemSelected(item);
         }
@@ -427,11 +433,6 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
     @Override
     public int getMenuThemeResourceId() {
         return R.style.OverflowMenuTheme;
-    }
-
-    @Override
-    public int getMenuButtonStartPaddingDimenId() {
-        return 0;
     }
 
     @VisibleForTesting

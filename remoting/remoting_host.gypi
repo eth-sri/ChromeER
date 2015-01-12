@@ -107,6 +107,7 @@
                 'host/disconnect_window_linux.cc',
                 'host/linux/x_server_clipboard.cc',
                 'host/linux/x_server_clipboard.h',
+                'host/local_input_monitor_x11.cc',
                 'host/policy_hack/policy_watcher_linux.cc',
                 'host/remoting_me2me_host.cc',
               ],
@@ -120,16 +121,32 @@
                   'sources!': [
                     'host/input_injector_chromeos.cc',
                     'host/input_injector_chromeos.h',
-                    'host/local_input_monitor_chromeos.cc',
-                    'host/chromeos/mouse_cursor_monitor_aura.cc',
-                    'host/chromeos/mouse_cursor_monitor_aura.h',
                   ],
+                }, {  # use_ozone==1
+                  'dependencies' : [
+                    '../ui/ozone/ozone.gyp:ozone',
+                  ]
                 }],
               ],
             }],
             ['OS=="mac"', {
               'dependencies': [
                 '../third_party/google_toolbox_for_mac/google_toolbox_for_mac.gyp:google_toolbox_for_mac',
+              ],
+              'variables': {
+                # Include internal_mac-inl.h only if it exists.
+                'use_remoting_macosx_internal%':
+                  '<!(python -c "import os; print 1 if os.path.exists(\'tools/internal/internal_mac-inl.h\') else 0")'
+              },
+              'conditions': [
+                ['use_remoting_macosx_internal==1', {
+                  'sources': [
+                    'internal/internal_mac-inl.h'
+                  ],
+                  'defines': [
+                    'USE_REMOTING_MACOSX_INTERNAL'
+                  ]
+                }]
               ],
               'link_settings': {
                 'libraries': [

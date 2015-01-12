@@ -41,7 +41,6 @@
 #include "ppapi/cpp/resource.h"
 #include "ppapi/cpp/url_request_info.h"
 #include "ui/events/keycodes/keyboard_codes.h"
-#include "v8/include/v8.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -332,15 +331,6 @@ Instance::~Instance() {
 }
 
 bool Instance::Init(uint32_t argc, const char* argn[], const char* argv[]) {
-  v8::StartupData natives;
-  v8::StartupData snapshot;
-  pp::PDF::GetV8ExternalSnapshotData(this, &natives.data, &natives.raw_size,
-                                     &snapshot.data, &snapshot.raw_size);
-  if (natives.data) {
-    v8::V8::SetNativesDataBlob(&natives);
-    v8::V8::SetSnapshotDataBlob(&snapshot);
-  }
-
   // For now, we hide HiDPI support behind a flag.
   if (pp::PDF::IsFeatureEnabled(this, PP_PDFFEATURE_HIDPI))
     hidpi_enabled_ = true;
@@ -532,8 +522,11 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
     pp::KeyboardInputEvent keyboard_event(event);
     bool no_h_scrollbar = !h_scrollbar_.get();
     uint32_t key_code = keyboard_event.GetKeyCode();
-    bool page_down = no_h_scrollbar && key_code == ui::VKEY_RIGHT;
-    bool page_up = no_h_scrollbar && key_code == ui::VKEY_LEFT;
+    bool has_modifiers = keyboard_event.GetModifiers() != 0;
+    bool page_down =
+        no_h_scrollbar && !has_modifiers && key_code == ui::VKEY_RIGHT;
+    bool page_up =
+        no_h_scrollbar && !has_modifiers && key_code == ui::VKEY_LEFT;
     if (zoom_mode_ == ZOOM_FIT_TO_PAGE) {
       bool has_shift =
           keyboard_event.GetModifiers() & PP_INPUTEVENT_MODIFIER_SHIFTKEY;

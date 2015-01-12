@@ -34,8 +34,11 @@
 #include "content/child/child_thread.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/geofencing/web_geofencing_provider_impl.h"
+#include "content/child/navigator_connect/navigator_connect_provider.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/notifications/notification_manager.h"
+#include "content/child/push_messaging/push_dispatcher.h"
+#include "content/child/push_messaging/push_provider.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_discardable_memory_impl.h"
 #include "content/child/web_gesture_curve_impl.h"
@@ -448,6 +451,7 @@ void BlinkPlatformImpl::InternalInit() {
     thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
     notification_dispatcher_ =
         ChildThread::current()->notification_dispatcher();
+    push_dispatcher_ = ChildThread::current()->push_dispatcher();
   }
 
   if (main_thread_task_runner_.get()) {
@@ -873,6 +877,8 @@ const DataResource kDataResources[] = {
     ui::SCALE_FACTOR_NONE },
   { "DocumentExecCommand.js", IDR_PRIVATE_SCRIPT_DOCUMENTEXECCOMMAND_JS,
     ui::SCALE_FACTOR_NONE },
+  { "DocumentXMLTreeViewer.css", IDR_PRIVATE_SCRIPT_DOCUMENTXMLTREEVIEWER_CSS,
+    ui::SCALE_FACTOR_NONE },
   { "DocumentXMLTreeViewer.js", IDR_PRIVATE_SCRIPT_DOCUMENTXMLTREEVIEWER_JS,
     ui::SCALE_FACTOR_NONE },
   { "HTMLMarqueeElement.js", IDR_PRIVATE_SCRIPT_HTMLMARQUEEELEMENT_JS,
@@ -1023,10 +1029,13 @@ blink::WebGestureCurve* BlinkPlatformImpl::createFlingAnimationCurve(
     blink::WebGestureDevice device_source,
     const blink::WebFloatPoint& velocity,
     const blink::WebSize& cumulative_scroll) {
-  auto curve = WebGestureCurveImpl::CreateFromDefaultPlatformCurve(
-      gfx::Vector2dF(velocity.x, velocity.y),
-      gfx::Vector2dF(cumulative_scroll.width, cumulative_scroll.height));
-  return curve.release();
+  bool is_main_thread =
+      main_thread_task_runner_.get() &&
+      main_thread_task_runner_->BelongsToCurrentThread();
+  return WebGestureCurveImpl::CreateFromDefaultPlatformCurve(
+             gfx::Vector2dF(velocity.x, velocity.y),
+             gfx::Vector2dF(cumulative_scroll.width, cumulative_scroll.height),
+             is_main_thread).release();
 }
 
 void BlinkPlatformImpl::didStartWorkerRunLoop(
@@ -1062,6 +1071,23 @@ BlinkPlatformImpl::notificationManager() {
       thread_safe_sender_.get(),
       main_thread_task_runner_.get(),
       notification_dispatcher_.get());
+}
+
+blink::WebPushProvider* BlinkPlatformImpl::pushProvider() {
+  if (!thread_safe_sender_.get() || !push_dispatcher_.get())
+    return nullptr;
+
+  return PushProvider::ThreadSpecificInstance(thread_safe_sender_.get(),
+                                              push_dispatcher_.get());
+}
+
+blink::WebNavigatorConnectProvider*
+BlinkPlatformImpl::navigatorConnectProvider() {
+  if (!thread_safe_sender_.get())
+    return nullptr;
+
+  return NavigatorConnectProvider::ThreadSpecificInstance(
+      thread_safe_sender_.get(), main_thread_task_runner_);
 }
 
 WebThemeEngine* BlinkPlatformImpl::themeEngine() {

@@ -7,6 +7,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/utils/SkPictureUtils.h"
 
 namespace cc {
 
@@ -23,7 +24,7 @@ void DrawingDisplayItem::Raster(SkCanvas* canvas,
   canvas->save();
   canvas->translate(location_.x(), location_.y());
   if (callback)
-    picture_->draw(canvas, callback);
+    picture_->playback(canvas, callback);
   else
     canvas->drawPicture(picture_.get());
   canvas->restore();
@@ -34,7 +35,12 @@ bool DrawingDisplayItem::IsSuitableForGpuRasterization() const {
 }
 
 int DrawingDisplayItem::ApproximateOpCount() const {
-  return picture_->approximateOpCount();
+  return picture_->approximateOpCount() + sizeof(gfx::PointF);
+}
+
+size_t DrawingDisplayItem::PictureMemoryUsage() const {
+  DCHECK(picture_);
+  return SkPictureUtils::ApproximateBytesUsed(picture_.get());
 }
 
 }  // namespace cc

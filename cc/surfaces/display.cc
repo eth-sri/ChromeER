@@ -49,12 +49,20 @@ bool Display::Initialize(scoped_ptr<OutputSurface> output_surface) {
   return output_surface_->BindToClient(this);
 }
 
-void Display::Resize(SurfaceId id,
-                     const gfx::Size& size,
-                     float device_scale_factor) {
+void Display::SetSurfaceId(SurfaceId id, float device_scale_factor) {
   current_surface_id_ = id;
-  current_surface_size_ = size;
   device_scale_factor_ = device_scale_factor;
+  client_->DisplayDamaged();
+}
+
+void Display::Resize(const gfx::Size& size) {
+  if (size == current_surface_size_)
+    return;
+  // Need to ensure all pending swaps have executed before the window is
+  // resized, or D3D11 will scale the swap output.
+  if (renderer_ && settings_.finish_rendering_on_resize)
+    renderer_->Finish();
+  current_surface_size_ = size;
   client_->DisplayDamaged();
 }
 
@@ -110,7 +118,17 @@ bool Display::Draw() {
 
   TRACE_EVENT0("cc", "Display::Draw");
   benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
+
+  // Run callbacks early to allow pipelining.
+  for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
+    Surface* surface = manager_->GetSurfaceForId(id_entry.first);
+    if (surface)
+      surface->RunDrawCallbacks();
+  }
   DelegatedFrameData* frame_data = frame->delegated_frame_data.get();
+
+  gfx::Size surface_size =
+      frame_data->render_pass_list.back()->output_rect.size();
 
   gfx::Rect device_viewport_rect = gfx::Rect(current_surface_size_);
   gfx::Rect device_clip_rect = device_viewport_rect;
@@ -122,15 +140,14 @@ bool Display::Draw() {
                        device_viewport_rect,
                        device_clip_rect,
                        disable_picture_quad_image_filtering);
-  renderer_->SwapBuffers(frame->metadata);
-  for (SurfaceAggregator::SurfaceIndexMap::iterator it =
-           aggregator_->previous_contained_surfaces().begin();
-       it != aggregator_->previous_contained_surfaces().end();
-       ++it) {
-    Surface* surface = manager_->GetSurfaceForId(it->first);
-    if (surface)
-      surface->RunDrawCallbacks();
+
+  if (surface_size != current_surface_size_) {
+    DidSwapBuffers();
+    DidSwapBuffersComplete();
+  } else {
+    renderer_->SwapBuffers(frame->metadata);
   }
+
   return true;
 }
 
@@ -152,8 +169,11 @@ void Display::SetMemoryPolicy(const ManagedMemoryPolicy& policy) {
 }
 
 void Display::OnSurfaceDamaged(SurfaceId surface) {
-  if (aggregator_ && aggregator_->previous_contained_surfaces().count(surface))
+  if (aggregator_ &&
+      aggregator_->previous_contained_surfaces().count(surface)) {
+    aggregator_->ReleaseResources(surface);
     client_->DisplayDamaged();
+  }
 }
 
 SurfaceId Display::CurrentSurfaceId() {

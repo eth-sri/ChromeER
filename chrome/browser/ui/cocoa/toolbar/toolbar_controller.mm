@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/mac/bundle_locations.h"
+#include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
 #include "base/memory/singleton.h"
 #include "base/prefs/pref_service.h"
@@ -57,8 +58,8 @@
 #import "ui/base/cocoa/menu_controller.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/rect.h"
 
 using content::OpenURLParams;
 using content::Referrer;
@@ -572,10 +573,6 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
   [wrenchButton_ setAttachedMenu:[wrenchMenuController_ menu]];
 }
 
-- (WrenchMenuController*)wrenchMenuController {
-  return wrenchMenuController_;
-}
-
 - (void)updateWrenchButtonSeverity:(WrenchIconPainter::Severity)severity
                            animate:(BOOL)animate {
   WrenchToolbarButtonCell* cell =
@@ -593,7 +590,8 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
   if (!browserActionsController_.get()) {
     browserActionsController_.reset([[BrowserActionsController alloc]
             initWithBrowser:browser_
-              containerView:browserActionsContainerView_]);
+              containerView:browserActionsContainerView_
+             mainController:nil]);
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(browserActionsContainerWillDrag:)
@@ -672,11 +670,8 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
     CGFloat edgeXPos = [wrenchButton_ frame].origin.x;
     leftDistance = edgeXPos - locationBarXPos - kWrenchMenuLeftPadding;
   } else {
-    NSRect containerFrame = animate ?
-        [browserActionsContainerView_ animationEndFrame] :
-        [browserActionsContainerView_ frame];
-
-    leftDistance = containerFrame.origin.x - locationBarXPos;
+    leftDistance = NSMinX([browserActionsContainerView_ animationEndFrame]) -
+        locationBarXPos;
   }
   if (leftDistance != 0.0)
     [self adjustLocationSizeBy:leftDistance animate:animate];
@@ -696,6 +691,20 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
   // present.
   if (!browserActionsController_.get())
     return;
+
+  if ([browserActionsContainerView_ isAnimating]) {
+    // If the browser actions container is animating, we need to stop it first,
+    // because the frame it's animating for could be incorrect with the new
+    // bounds (if, for instance, the bookmark bar was added).
+    // This will advance to the end of the animation, so we also need to adjust
+    // it afterwards.
+    [browserActionsContainerView_ stopAnimation];
+    NSRect containerFrame = [browserActionsContainerView_ frame];
+    containerFrame.origin.y =
+        NSHeight([[self view] frame]) - NSHeight(containerFrame) - 1;
+    [browserActionsContainerView_ setFrame:containerFrame];
+    [self pinLocationBarToLeftOfBrowserActionsContainerAndAnimate:NO];
+  }
 
   [self maintainMinimumLocationBarWidth];
 
@@ -719,7 +728,8 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
     NSRect containerFrame = [browserActionsContainerView_ frame];
     containerFrame = NSOffsetRect(containerFrame, -dX, 0);
     containerFrame.size.width += dX;
-    CGFloat savedContainerWidth = [browserActionsController_ savedWidth];
+    CGFloat savedContainerWidth =
+        [browserActionsController_ preferredSize].width();
     if (NSWidth(containerFrame) >= savedContainerWidth) {
       containerFrame = NSOffsetRect(containerFrame,
           NSWidth(containerFrame) - savedContainerWidth, 0);
@@ -795,6 +805,10 @@ class NotificationBridge : public WrenchMenuBadgeController::Delegate {
 
 - (NSView*)wrenchButton {
   return wrenchButton_;
+}
+
+- (WrenchMenuController*)wrenchMenuController {
+  return wrenchMenuController_.get();
 }
 
 // (URLDropTargetController protocol)

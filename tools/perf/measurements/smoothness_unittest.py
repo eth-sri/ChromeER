@@ -5,13 +5,12 @@ import sys
 
 from measurements import smoothness
 from metrics import power
+from telemetry import decorators
 from telemetry.core import exceptions
 from telemetry.core import wpr_modes
 from telemetry.page import page
-from telemetry.page import page_test
 from telemetry.unittest_util import options_for_unittests
 from telemetry.unittest_util import page_test_test_case
-from telemetry.unittest_util import test
 
 class FakeTracingController(object):
   def __init__(self):
@@ -23,7 +22,7 @@ class FakeTracingController(object):
 class FakePlatform(object):
   def __init__(self):
     self.tracing_controller = FakeTracingController()
-  def IsRawDisplayFrameRateSupported(self):
+  def IsDisplayTracingSupported(self):
     return False
   def CanMonitorPower(self):
     return False
@@ -40,7 +39,7 @@ class AnimatedPage(page.Page):
       url='file://animated_page.html',
       page_set=page_set, base_dir=page_set.base_dir)
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     action_runner.Wait(.2)
 
 
@@ -129,10 +128,33 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
       self.assertGreater(
           mean_input_event_latency[0].GetRepresentativeNumber(), 0)
 
-  @test.Disabled('mac', 'chromeos')  # http://crbug.com/403903
+  @decorators.Enabled('android')  # SurfaceFlinger is android-only
+  def testSmoothnessSurfaceFlingerMetricsCalculated(self):
+    ps = self.CreatePageSetFromFileInUnittestDataDir('scrollable_page.html')
+    measurement = smoothness.Smoothness()
+    results = self.RunMeasurement(measurement, ps, options=self._options)
+    self.assertEquals(0, len(results.failures))
+
+    avg_surface_fps = results.FindAllPageSpecificValuesNamed('avg_surface_fps')
+    self.assertEquals(1, len(avg_surface_fps))
+    self.assertGreater(avg_surface_fps[0].GetRepresentativeNumber, 0)
+
+    jank_count = results.FindAllPageSpecificValuesNamed('jank_count')
+    self.assertEquals(1, len(jank_count))
+    self.assertGreater(jank_count[0].GetRepresentativeNumber(), -1)
+
+    max_frame_delay = results.FindAllPageSpecificValuesNamed('max_frame_delay')
+    self.assertEquals(1, len(max_frame_delay))
+    self.assertGreater(max_frame_delay[0].GetRepresentativeNumber, 0)
+
+    frame_lengths = results.FindAllPageSpecificValuesNamed('frame_lengths')
+    self.assertEquals(1, len(frame_lengths))
+    self.assertGreater(frame_lengths[0].GetRepresentativeNumber, 0)
+
+  @decorators.Disabled('mac', 'chromeos')  # http://crbug.com/403903
   def testSmoothnessForPageWithNoGesture(self):
     ps = self.CreateEmptyPageSet()
-    ps.AddPage(AnimatedPage(ps))
+    ps.AddUserStory(AnimatedPage(ps))
 
     measurement = smoothness.Smoothness()
     results = self.RunMeasurement(measurement, ps, options=self._options)
@@ -153,7 +175,7 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
         super(FailPage, self).__init__(
             url='file://blank.html',
             page_set=page_set, base_dir=page_set.base_dir)
-      def RunSmoothness(self, _):
+      def RunPageInteractions(self, _):
         raise exceptions.IntentionalException
 
     class FakePowerMetric(power.PowerMetric):
@@ -165,7 +187,7 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
         self.stop_called = True
 
     ps = self.CreateEmptyPageSet()
-    ps.AddPage(FailPage(ps))
+    ps.AddUserStory(FailPage(ps))
 
     class BuggyMeasurement(smoothness.Smoothness):
       fake_power = None
@@ -176,7 +198,7 @@ class SmoothnessUnitTest(page_test_test_case.PageTestTestCase):
     measurement = BuggyMeasurement()
     try:
       self.RunMeasurement(measurement, ps)
-    except page_test.TestNotSupportedOnPlatformFailure:
+    except exceptions.IntentionalException:
       pass
 
     self.assertTrue(measurement.fake_power.start_called)

@@ -42,10 +42,6 @@ class TestPasswordManagerClient
     return store_;
   }
 
-  password_manager::PasswordManagerDriver* GetDriver() override {
-    return &driver_;
-  }
-
   bool PromptUserToSavePassword(
       scoped_ptr<password_manager::PasswordFormManager> manager) override {
     did_prompt_user_to_save_ = true;
@@ -54,14 +50,18 @@ class TestPasswordManagerClient
   }
 
   bool PromptUserToChooseCredentials(
-      const std::vector<autofill::PasswordForm*>& forms,
+      const std::vector<autofill::PasswordForm*>& local_forms,
+      const std::vector<autofill::PasswordForm*>& federated_forms,
       base::Callback<void(const password_manager::CredentialInfo&)>
           callback) override {
-    EXPECT_FALSE(forms.empty());
+    EXPECT_FALSE(local_forms.empty() && federated_forms.empty());
     did_prompt_user_to_choose_ = true;
-    ScopedVector<autofill::PasswordForm> entries;
-    entries.assign(forms.begin(), forms.end());
-    password_manager::CredentialInfo info(*entries[0]);
+    ScopedVector<autofill::PasswordForm> local_entries;
+    local_entries.assign(local_forms.begin(), local_forms.end());
+    ScopedVector<autofill::PasswordForm> federated_entries;
+    federated_entries.assign(federated_forms.begin(), federated_forms.end());
+    // TODO(vasilii): Do something clever with |federated_forms|.
+    password_manager::CredentialInfo info(*local_entries[0]);
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(callback,
                                                                  info));
     return true;
@@ -78,9 +78,35 @@ class TestPasswordManagerClient
   bool did_prompt_user_to_save_;
   bool did_prompt_user_to_choose_;
   password_manager::PasswordStore* store_;
-  password_manager::StubPasswordManagerDriver driver_;
   scoped_ptr<password_manager::PasswordFormManager> manager_;
 };
+
+class TestContentCredentialManagerDispatcher
+    : public password_manager::ContentCredentialManagerDispatcher {
+ public:
+  TestContentCredentialManagerDispatcher(
+      content::WebContents* web_contents,
+      password_manager::PasswordManagerClient* client,
+      password_manager::PasswordManagerDriver* driver);
+
+ private:
+  base::WeakPtr<password_manager::PasswordManagerDriver> GetDriver() override;
+
+  base::WeakPtr<password_manager::PasswordManagerDriver> driver_;
+};
+
+TestContentCredentialManagerDispatcher::TestContentCredentialManagerDispatcher(
+    content::WebContents* web_contents,
+    password_manager::PasswordManagerClient* client,
+    password_manager::PasswordManagerDriver* driver)
+    : ContentCredentialManagerDispatcher(web_contents, client),
+      driver_(driver->AsWeakPtr()) {
+}
+
+base::WeakPtr<password_manager::PasswordManagerDriver>
+TestContentCredentialManagerDispatcher::GetDriver() {
+  return driver_;
+}
 
 void RunAllPendingTasks() {
   base::RunLoop run_loop;
@@ -103,7 +129,9 @@ class ContentCredentialManagerDispatcherTest
     store_ = new TestPasswordStore;
     client_.reset(new TestPasswordManagerClient(store_.get()));
     dispatcher_.reset(
-        new ContentCredentialManagerDispatcher(web_contents(), client_.get()));
+        new TestContentCredentialManagerDispatcher(web_contents(),
+                                                   client_.get(),
+                                                   &stub_driver_));
 
     NavigateAndCommit(GURL("https://example.com/test.html"));
 
@@ -113,6 +141,13 @@ class ContentCredentialManagerDispatcherTest
     form_.origin = web_contents()->GetLastCommittedURL().GetOrigin();
     form_.signon_realm = form_.origin.spec();
     form_.scheme = autofill::PasswordForm::SCHEME_HTML;
+
+    cross_origin_form_.username_value = base::ASCIIToUTF16("Username");
+    cross_origin_form_.display_name = base::ASCIIToUTF16("Display Name");
+    cross_origin_form_.password_value = base::ASCIIToUTF16("Password");
+    cross_origin_form_.origin = GURL("https://example.net/");
+    cross_origin_form_.signon_realm = cross_origin_form_.origin.spec();
+    cross_origin_form_.scheme = autofill::PasswordForm::SCHEME_HTML;
 
     store_->Clear();
     EXPECT_TRUE(store_->IsEmpty());
@@ -127,9 +162,11 @@ class ContentCredentialManagerDispatcherTest
 
  protected:
   autofill::PasswordForm form_;
+  autofill::PasswordForm cross_origin_form_;
   scoped_refptr<TestPasswordStore> store_;
   scoped_ptr<ContentCredentialManagerDispatcher> dispatcher_;
   scoped_ptr<TestPasswordManagerClient> client_;
+  StubPasswordManagerDriver stub_driver_;
 };
 
 TEST_F(ContentCredentialManagerDispatcherTest,
@@ -197,7 +234,27 @@ TEST_F(ContentCredentialManagerDispatcherTest,
   EXPECT_TRUE(message);
   CredentialManagerMsg_SendCredential::Param param;
   CredentialManagerMsg_SendCredential::Read(message, &param);
-  EXPECT_EQ(CREDENTIAL_TYPE_EMPTY, param.b.type);
+  EXPECT_EQ(CREDENTIAL_TYPE_EMPTY, get<1>(param).type);
+  process()->sink().ClearMessages();
+  EXPECT_FALSE(client_->did_prompt_user_to_choose());
+}
+
+TEST_F(ContentCredentialManagerDispatcherTest,
+       CredentialManagerOnRequestCredentialWithCrossOriginPasswordStore) {
+  store_->AddLogin(cross_origin_form_);
+
+  std::vector<GURL> federations;
+  dispatcher()->OnRequestCredential(kRequestId, false, federations);
+
+  RunAllPendingTasks();
+
+  const uint32 kMsgID = CredentialManagerMsg_SendCredential::ID;
+  const IPC::Message* message =
+      process()->sink().GetFirstMessageMatching(kMsgID);
+  EXPECT_TRUE(message);
+  CredentialManagerMsg_SendCredential::Param param;
+  CredentialManagerMsg_SendCredential::Read(message, &param);
+  EXPECT_EQ(CREDENTIAL_TYPE_EMPTY, get<1>(param).type);
   process()->sink().ClearMessages();
   EXPECT_FALSE(client_->did_prompt_user_to_choose());
 }
@@ -234,7 +291,7 @@ TEST_F(ContentCredentialManagerDispatcherTest,
   CredentialManagerMsg_RejectCredentialRequest::Param reject_param;
   CredentialManagerMsg_RejectCredentialRequest::Read(message, &reject_param);
   EXPECT_EQ(blink::WebCredentialManagerError::ErrorTypePendingRequest,
-            reject_param.b);
+            get<1>(reject_param));
   EXPECT_FALSE(client_->did_prompt_user_to_choose());
 
   process()->sink().ClearMessages();
@@ -248,8 +305,7 @@ TEST_F(ContentCredentialManagerDispatcherTest,
   EXPECT_TRUE(message);
   CredentialManagerMsg_SendCredential::Param send_param;
   CredentialManagerMsg_SendCredential::Read(message, &send_param);
-  CredentialManagerMsg_SendCredential::Read(message, &send_param);
-  EXPECT_NE(CREDENTIAL_TYPE_EMPTY, send_param.b.type);
+  EXPECT_NE(CREDENTIAL_TYPE_EMPTY, get<1>(send_param).type);
   process()->sink().ClearMessages();
   EXPECT_TRUE(client_->did_prompt_user_to_choose());
 }

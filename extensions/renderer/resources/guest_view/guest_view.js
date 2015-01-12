@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,18 +10,15 @@ var GuestViewInternal =
 var GuestViewInternalNatives = requireNative('guest_view_internal');
 
 // Possible states.
-var GUEST_STATE_ATTACHED = 'attached';
-var GUEST_STATE_CREATED = 'created';
-var GUEST_STATE_DESTROYED = 'destroyed';
-var GUEST_STATE_START = 'start';
+var GUEST_STATE_ATTACHED = 2;
+var GUEST_STATE_CREATED = 1;
+var GUEST_STATE_START = 0;
 
 // Error messages.
-var ERROR_MSG_ATTACH = 'Error calling attach: ';
-var ERROR_MSG_CREATE = 'Error calling create: ';
-var ERROR_MSG_DESTROY = 'Error calling destroy: ';
+var ERROR_MSG_ALREADY_ATTACHED = 'The guest has already been attached.';
 var ERROR_MSG_ALREADY_CREATED = 'The guest has already been created.';
-var ERROR_MSG_DESTROYED = 'The guest is destroyed.';
 var ERROR_MSG_INVALID_STATE = 'The guest is in an invalid state.';
+var ERROR_MSG_NOT_ATTACHED = 'The guest is not attached.';
 var ERROR_MSG_NOT_CREATED = 'The guest has not been created.';
 
 // Contains and hides the internal implementation details of |GuestView|,
@@ -40,6 +37,7 @@ function GuestViewImpl(viewType, guestInstanceId) {
   this.contentWindow = null;
   this.pendingAction = null;
   this.viewType = viewType;
+  this.internalInstanceId = 0;
 }
 
 // Callback wrapper that is used to call the callback of the pending action (if
@@ -50,7 +48,7 @@ GuestViewImpl.prototype.handleCallback = function(callback) {
   }
   this.pendingAction = null;
   this.performNextAction();
-}
+};
 
 // Perform the next action in the queue, if one exists.
 GuestViewImpl.prototype.performNextAction = function() {
@@ -62,68 +60,114 @@ GuestViewImpl.prototype.performNextAction = function() {
   }
 };
 
+// Check the current state to see if the proposed action is valid. Returns false
+// if invalid.
+GuestViewImpl.prototype.checkState = function(action) {
+  // Create an error prefix based on the proposed action.
+  var errorPrefix = 'Error calling ' + action + ': ';
+
+  // Check that the current state is valid.
+  if (!(this.state >= 0 && this.state <= 2)) {
+    window.console.error(errorPrefix + ERROR_MSG_INVALID_STATE);
+    return false;
+  }
+
+  // Map of possible errors for each action. For each action, the errors are
+  // listed for states in the order: GUEST_STATE_START, GUEST_STATE_CREATED,
+  // GUEST_STATE_ATTACHED.
+  var errors = {
+    'attach': [ERROR_MSG_NOT_CREATED, null, ERROR_MSG_ALREADY_ATTACHED],
+    'create': [null, ERROR_MSG_ALREADY_CREATED, ERROR_MSG_ALREADY_CREATED],
+    'destroy': [null, null, null],
+    'detach': [ERROR_MSG_NOT_ATTACHED, ERROR_MSG_NOT_ATTACHED, null],
+    'setAutoSize': [ERROR_MSG_NOT_CREATED, null, null]
+  };
+
+  // Check that the proposed action is a real action.
+  if (errors[action] == undefined) {
+    window.console.error(errorPrefix + ERROR_MSG_INVALID_ACTION);
+    return false;
+  }
+
+  // Report the error if the proposed action is found to be invalid for the
+  // current state.
+  var error;
+  if (error = errors[action][this.state]) {
+    window.console.error(errorPrefix + error);
+    return false;
+  }
+
+  return true;
+};
+
 // Internal implementation of attach().
 GuestViewImpl.prototype.attachImpl = function(
-    internalInstanceId, attachParams, callback) {
+    internalInstanceId, viewInstanceId, attachParams, callback) {
   // Check the current state.
-  switch (this.state) {
-    case GUEST_STATE_START:
-      window.console.error(ERROR_MSG_ATTACH + ERROR_MSG_NOT_CREATED);
-      return;
-    case GUEST_STATE_DESTROYED:
-      window.console.error(ERROR_MSG_ATTACH + ERROR_MSG_DESTROYED);
-      return;
-    case GUEST_STATE_ATTACHED:
-    case GUEST_STATE_CREATED:
-      break;
-    default:
-      window.console.error(ERROR_MSG_ATTACH + ERROR_MSG_INVALID_STATE);
-      return;
+  if (!this.checkState('attach')) {
+    this.handleCallback(callback);
+    return;
   }
 
   // Callback wrapper function to store the contentWindow from the attachGuest()
-  // callback, and advance the queue.
-  var storeContentWindow = function(callback, contentWindow) {
+  // callback, handle potential attaching failure, register an automatic detach,
+  // and advance the queue.
+  var callbackWrapper = function(callback, contentWindow) {
     this.contentWindow = contentWindow;
-    this.handleCallback(callback);
-  }
 
+    // Check if attaching failed.
+    if (this.contentWindow === null) {
+      this.state = GUEST_STATE_CREATED;
+    } else {
+      // Detach automatically when the container is destroyed.
+      GuestViewInternalNatives.RegisterDestructionCallback(internalInstanceId,
+                                                           function() {
+        if (this.state == GUEST_STATE_ATTACHED) {
+          this.contentWindow = null;
+          this.internalInstanceId = 0;
+          this.state = GUEST_STATE_CREATED;
+        }
+      }.bind(this));
+    }
+
+    this.handleCallback(callback);
+  };
+
+  attachParams['instanceId'] = viewInstanceId;
   GuestViewInternalNatives.AttachGuest(internalInstanceId,
                                        this.id,
                                        attachParams,
-                                       storeContentWindow.bind(this, callback));
+                                       callbackWrapper.bind(this, callback));
 
+  this.internalInstanceId = internalInstanceId;
   this.state = GUEST_STATE_ATTACHED;
 };
 
 // Internal implementation of create().
 GuestViewImpl.prototype.createImpl = function(createParams, callback) {
   // Check the current state.
-  switch (this.state) {
-    case GUEST_STATE_DESTROYED:
-      window.console.error(ERROR_MSG_CREATE + ERROR_MSG_DESTROYED);
-      return;
-    case GUEST_STATE_ATTACHED:
-    case GUEST_STATE_CREATED:
-      window.console.error(ERROR_MSG_CREATE + ERROR_MSG_ALREADY_CREATED);
-      return;
-    case GUEST_STATE_START:
-      break;
-    default:
-      window.console.error(ERROR_MSG_CREATE + ERROR_MSG_INVALID_STATE);
-      return;
+  if (!this.checkState('create')) {
+    this.handleCallback(callback);
+    return;
   }
 
   // Callback wrapper function to store the guestInstanceId from the
-  // createGuest() callback, and advance the queue.
-  var storeId = function(callback, guestInstanceId) {
+  // createGuest() callback, handle potential creation failure, and advance the
+  // queue.
+  var callbackWrapper = function(callback, guestInstanceId) {
     this.id = guestInstanceId;
+
+    // Check if creation failed.
+    if (this.id === 0) {
+      this.state = GUEST_STATE_START;
+    }
+
     this.handleCallback(callback);
-  }
+  };
 
   GuestViewInternal.createGuest(this.viewType,
                                 createParams,
-                                storeId.bind(this, callback));
+                                callbackWrapper.bind(this, callback));
 
   this.state = GUEST_STATE_CREATED;
 };
@@ -131,43 +175,68 @@ GuestViewImpl.prototype.createImpl = function(createParams, callback) {
 // Internal implementation of destroy().
 GuestViewImpl.prototype.destroyImpl = function(callback) {
   // Check the current state.
-  switch (this.state) {
-    case GUEST_STATE_DESTROYED:
-      window.console.error(ERROR_MSG_DESTROY + ERROR_MSG_DESTROYED);
-      return;
-    case GUEST_STATE_START:
-      window.console.error(ERROR_MSG_DESTROY + ERROR_MSG_NOT_CREATED);
-      return;
-    case GUEST_STATE_ATTACHED:
-    case GUEST_STATE_CREATED:
-      break;
-    default:
-      window.console.error(ERROR_MSG_DESTROY + ERROR_MSG_INVALID_STATE);
-      return;
+  if (!this.checkState('destroy')) {
+    this.handleCallback(callback);
+    return;
+  }
+
+  if (this.state == GUEST_STATE_START) {
+    // destroy() does nothing in this case.
+    this.handleCallback(callback);
+    return;
   }
 
   GuestViewInternal.destroyGuest(this.id,
                                  this.handleCallback.bind(this, callback));
+
   this.contentWindow = null;
   this.id = 0;
+  this.internalInstanceId = 0;
+  this.state = GUEST_STATE_START;
+};
 
-  this.state = GUEST_STATE_DESTROYED;
+// Internal implementation of detach().
+GuestViewImpl.prototype.detachImpl = function(callback) {
+  // Check the current state.
+  if (!this.checkState('detach')) {
+    this.handleCallback(callback);
+    return;
+  }
+
+  GuestViewInternalNatives.DetachGuest(
+      this.internalInstanceId,
+      this.handleCallback.bind(this, callback));
+
+  this.contentWindow = null;
+  this.internalInstanceId = 0;
+  this.state = GUEST_STATE_CREATED;
+};
+
+// Internal implementation of setAutoSize().
+GuestViewImpl.prototype.setAutoSizeImpl = function(autoSizeParams, callback) {
+  // Check the current state.
+  if (!this.checkState('setAutoSize')) {
+    this.handleCallback(callback);
+    return;
+  }
+
+  GuestViewInternal.setAutoSize(this.id, autoSizeParams,
+                                this.handleCallback.bind(this, callback));
 };
 
 // The exposed interface to a guestview. Exposes in its API the functions
 // attach(), create(), destroy(), and getId(). All other implementation details
 // are hidden.
-
 function GuestView(viewType, guestInstanceId) {
   privates(this).internal = new GuestViewImpl(viewType, guestInstanceId);
 }
 
 // Attaches the guestview to the container with ID |internalInstanceId|.
 GuestView.prototype.attach = function(
-    internalInstanceId, attachParams, callback) {
+    internalInstanceId, viewInstanceId, attachParams, callback) {
   var internal = privates(this).internal;
   internal.actionQueue.push(internal.attachImpl.bind(
-      internal, internalInstanceId, attachParams, callback));
+      internal, internalInstanceId, viewInstanceId, attachParams, callback));
   internal.performNextAction();
 };
 
@@ -184,6 +253,22 @@ GuestView.prototype.create = function(createParams, callback) {
 GuestView.prototype.destroy = function(callback) {
   var internal = privates(this).internal;
   internal.actionQueue.push(internal.destroyImpl.bind(internal, callback));
+  internal.performNextAction();
+};
+
+// Detaches the guestview from its container.
+// Note: This is not currently used.
+GuestView.prototype.detach = function(callback) {
+  var internal = privates(this).internal;
+  internal.actionQueue.push(internal.detachImpl.bind(internal, callback));
+  internal.performNextAction();
+};
+
+// Adjusts the guestview's sizing parameters.
+GuestView.prototype.setAutoSize = function(autoSizeParams, callback) {
+  var internal = privates(this).internal;
+  internal.actionQueue.push(internal.setAutoSizeImpl.bind(
+      internal, autoSizeParams, callback));
   internal.performNextAction();
 };
 

@@ -35,7 +35,7 @@ class InstallUtilTest : public TestWithTempDirAndDeleteTempOverrideKeys {
 };
 
 TEST_F(InstallUtilTest, MakeUninstallCommand) {
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
 
   std::pair<std::wstring, std::wstring> params[] = {
     std::make_pair(std::wstring(L""), std::wstring(L"")),
@@ -474,7 +474,7 @@ TEST_F(InstallUtilTest, IsPerUserInstall) {
   some_exe = some_exe.AppendASCII("Company")
       .AppendASCII("Product")
       .AppendASCII("product.exe");
-  EXPECT_FALSE(InstallUtil::IsPerUserInstall(some_exe.value().c_str()));
+  EXPECT_FALSE(InstallUtil::IsPerUserInstall(some_exe));
 
 #if defined(_WIN64)
   const int kOtherProgramFilesKey = base::DIR_PROGRAM_FILES;
@@ -483,6 +483,6 @@ TEST_F(InstallUtilTest, IsPerUserInstall) {
   some_exe = some_exe.AppendASCII("Company")
       .AppendASCII("Product")
       .AppendASCII("product.exe");
-  EXPECT_TRUE(InstallUtil::IsPerUserInstall(some_exe.value().c_str()));
+  EXPECT_TRUE(InstallUtil::IsPerUserInstall(some_exe));
 #endif  // defined(_WIN64)
 }

@@ -10,12 +10,13 @@ import sys
 import time
 
 from telemetry import decorators
+from telemetry import page as page_module
 from telemetry.core import exceptions
 from telemetry.core import util
 from telemetry.core import wpr_modes
-from telemetry.page import shared_page_state
 from telemetry.page import page_set as page_set_module
 from telemetry.page import page_test
+from telemetry.page import shared_page_state
 from telemetry.page.actions import page_action
 from telemetry.results import results_options
 from telemetry.user_story import user_story_filter
@@ -76,9 +77,8 @@ def ProcessCommandLineArgs(parser, args):
     parser.error('--pageset-repeat must be a positive integer.')
 
 
-def _RunUserStoryAndProcessErrorIfNeeded(
-    test, expectations, user_story, results, state):
-  expectation = None
+def _RunUserStoryAndProcessErrorIfNeeded(expectations, user_story, results,
+                                         state):
   def ProcessError():
     if expectation == 'fail':
       msg = 'Expected exception while running %s' % user_story.display_name
@@ -86,8 +86,8 @@ def _RunUserStoryAndProcessErrorIfNeeded(
     else:
       msg = 'Exception while running %s' % user_story.display_name
       results.AddValue(failure.FailureValue(user_story, sys.exc_info()))
-
   try:
+    expectation = None
     state.WillRunUserStory(user_story)
     expectation, skip_value = state.GetTestExpectationAndSkipValue(expectations)
     if expectation == 'skip':
@@ -95,19 +95,12 @@ def _RunUserStoryAndProcessErrorIfNeeded(
       results.AddValue(skip_value)
       return
     state.RunUserStory(results)
-  except page_test.TestNotSupportedOnPlatformFailure:
-    raise
   except (page_test.Failure, util.TimeoutException, exceptions.LoginException,
           exceptions.ProfilingException):
     ProcessError()
   except exceptions.AppCrashException:
     ProcessError()
-    state.TearDownState(results)
-    if test.is_multi_tab_test:
-      logging.error('Aborting multi-tab test after browser or tab crashed at '
-                    'user story %s' % user_story.display_name)
-      test.RequestExit()
-      return
+    raise
   except page_action.PageActionNotSupported as e:
     results.AddValue(
         skip.SkipValue(user_story, 'Unsupported page action: %s' % e))
@@ -116,18 +109,25 @@ def _RunUserStoryAndProcessErrorIfNeeded(
       logging.warning(
           '%s was expected to fail, but passed.\n', user_story.display_name)
   finally:
-    state.DidRunUserStory(results)
-
+    has_existing_exception = sys.exc_info() is not None
+    try:
+      state.DidRunUserStory(results)
+    except Exception:
+      if not has_existing_exception:
+        raise
+      # Print current exception and propagate existing exception.
+      exception_formatter.PrintFormattedException(
+          msg='Exception from DidRunUserStory: ')
 
 @decorators.Cache
-def _UpdateUserStoryArchivesIfChanged(page_set):
+def _UpdateUserStoryArchivesIfChanged(user_story_set):
   # Scan every serving directory for .sha1 files
   # and download them from Cloud Storage. Assume all data is public.
-  all_serving_dirs = page_set.serving_dirs.copy()
+  all_serving_dirs = user_story_set.serving_dirs.copy()
   # Add individual page dirs to all serving dirs.
-  for page in page_set:
-    if page.is_file:
-      all_serving_dirs.add(page.serving_dir)
+  for user_story in user_story_set:
+    if isinstance(user_story, page_module.Page) and user_story.is_file:
+      all_serving_dirs.add(user_story.serving_dir)
   # Scan all serving dirs.
   for serving_dir in all_serving_dirs:
     if os.path.splitdrive(serving_dir)[1] == '/':
@@ -138,7 +138,7 @@ def _UpdateUserStoryArchivesIfChanged(page_set):
             os.path.join(dirpath, filename))
         if extension != '.sha1':
           continue
-        cloud_storage.GetIfChanged(path, page_set.bucket)
+        cloud_storage.GetIfChanged(path, user_story_set.bucket)
 
 
 class UserStoryGroup(object):
@@ -188,20 +188,26 @@ def GetUserStoryGroupsWithSameSharedUserStoryClass(user_story_set):
   return user_story_groups
 
 
-def Run(test, user_story_set, expectations, finder_options, results):
-  """Runs a given test against a given page_set with the given options."""
+def Run(test, user_story_set, expectations, finder_options, results,
+        max_failures=None):
+  """Runs a given test against a given page_set with the given options.
+
+  Stop execution for unexpected exceptions such as KeyboardInterrupt.
+  We "white list" certain exceptions for which the user story runner
+  can continue running the remaining user stories.
+  """
   test.ValidatePageSet(user_story_set)
 
   # Reorder page set based on options.
   user_stories = _ShuffleAndFilterUserStorySet(user_story_set, finder_options)
 
   if (not finder_options.use_live_sites and
-      finder_options.browser_options.wpr_mode != wpr_modes.WPR_RECORD and
-      # TODO(nednguyen): also handle these logic for user_story_set in next
-      # patch.
-      isinstance(user_story_set, page_set_module.PageSet)):
+      finder_options.browser_options.wpr_mode != wpr_modes.WPR_RECORD):
     _UpdateUserStoryArchivesIfChanged(user_story_set)
-    user_stories = _CheckArchives(user_story_set, user_stories, results)
+    if not _CheckArchives(
+        user_story_set.archive_data_file, user_story_set.wpr_archive_info,
+        user_stories):
+      return
 
   for user_story in list(user_stories):
     if not test.CanRunForPage(user_story):
@@ -215,53 +221,73 @@ def Run(test, user_story_set, expectations, finder_options, results):
   if not user_stories:
     return
 
-  user_story_with_discarded_first_results = set()
-  max_failures = finder_options.max_failures  # command-line gets priority
-  if max_failures is None:
-    max_failures = test.max_failures  # may be None
+  # Effective max failures gives priority to command-line flag value.
+  effective_max_failures = finder_options.max_failures
+  if effective_max_failures is None:
+    effective_max_failures = max_failures
+
   user_story_groups = GetUserStoryGroupsWithSameSharedUserStoryClass(
       user_stories)
+  user_story_with_discarded_first_results = set()
 
-  test.WillRunTest(finder_options)
   for group in user_story_groups:
     state = None
     try:
-      state = group.shared_user_story_state_class(
-        test, finder_options, user_story_set)
       for _ in xrange(finder_options.pageset_repeat):
         for user_story in group.user_stories:
-          if test.IsExiting():
-            break
           for _ in xrange(finder_options.page_repeat):
+            if not state:
+              state = group.shared_user_story_state_class(
+                  test, finder_options, user_story_set)
             results.WillRunPage(user_story)
             try:
               _WaitForThermalThrottlingIfNeeded(state.platform)
               _RunUserStoryAndProcessErrorIfNeeded(
-                  test, expectations, user_story, results, state)
-            except Exception:
-              # Tear down & restart the state for unhandled exceptions thrown by
-              # _RunUserStoryAndProcessErrorIfNeeded.
-              exception_formatter.PrintFormattedException(
-                  msg='Unhandled exception while running %s' %
-                  user_story.display_name)
-              results.AddValue(failure.FailureValue(user_story, sys.exc_info()))
-              state.TearDownState(results)
-              state = group.shared_user_story_state_class(
-                  test, finder_options, user_story_set)
+                  expectations, user_story, results, state)
+            except exceptions.AppCrashException:
+              # Catch AppCrashException to give the story a chance to retry.
+              # The retry is enabled by tearing down the state and creating
+              # a new state instance in the next iteration.
+              try:
+                # If TearDownState raises, do not catch the exception.
+                # (The AppCrashException was saved as a failure value.)
+                state.TearDownState(results)
+              finally:
+                # Later finally-blocks use state, so ensure it is cleared.
+                state = None
             finally:
-              _CheckThermalThrottling(state.platform)
-              discard_run = (test.discard_first_result and
-                            user_story not in
-                            user_story_with_discarded_first_results)
-              if discard_run:
-                user_story_with_discarded_first_results.add(user_story)
-              results.DidRunPage(user_story, discard_run=discard_run)
-          if max_failures is not None and len(results.failures) > max_failures:
+              has_existing_exception = sys.exc_info() is not None
+              try:
+                if state:
+                  _CheckThermalThrottling(state.platform)
+                discard_run = (test.discard_first_result and
+                               user_story not in
+                               user_story_with_discarded_first_results)
+                if discard_run:
+                  user_story_with_discarded_first_results.add(user_story)
+                results.DidRunPage(user_story, discard_run=discard_run)
+              except Exception:
+                if not has_existing_exception:
+                  raise
+                # Print current exception and propagate existing exception.
+                exception_formatter.PrintFormattedException(
+                    msg='Exception from result processing:')
+          if (effective_max_failures is not None and
+              len(results.failures) > effective_max_failures):
             logging.error('Too many failures. Aborting.')
-            test.RequestExit()
+            return
     finally:
       if state:
-        state.TearDownState(results)
+        has_existing_exception = sys.exc_info() is not None
+        try:
+          state.TearDownState(results)
+        except Exception:
+          if not has_existing_exception:
+            raise
+          # Print current exception and propagate existing exception.
+          exception_formatter.PrintFormattedException(
+              msg='Exception from TearDownState:')
+
 
 def _ShuffleAndFilterUserStorySet(user_story_set, finder_options):
   if finder_options.pageset_shuffle_order_file:
@@ -278,51 +304,64 @@ def _ShuffleAndFilterUserStorySet(user_story_set, finder_options):
   return user_stories
 
 
-def _CheckArchives(page_set, pages, results):
-  """Returns a subset of pages that are local or have WPR archives.
+def _CheckArchives(archive_data_file, wpr_archive_info, filtered_user_stories):
+  """Verifies that all user stories are local or have WPR archives.
 
-  Logs warnings if any are missing.
+  Logs warnings and returns False if any are missing.
   """
-  # Warn of any problems with the entire page set.
-  if any(not p.is_local for p in pages):
-    if not page_set.archive_data_file:
-      logging.warning('The page set is missing an "archive_data_file" '
-                      'property. Skipping any live sites. To include them, '
-                      'pass the flag --use-live-sites.')
-    if not page_set.wpr_archive_info:
-      logging.warning('The archive info file is missing. '
-                      'To fix this, either add svn-internal to your '
-                      '.gclient using http://goto/read-src-internal, '
-                      'or create a new archive using record_wpr.')
+  # Report any problems with the entire user story set.
+  if any(not user_story.is_local for user_story in filtered_user_stories):
+    if not archive_data_file:
+      logging.error('The user story set is missing an "archive_data_file" '
+                    'property.\nTo run from live sites pass the flag '
+                    '--use-live-sites.\nTo create an archive file add an '
+                    'archive_data_file property to the user story set and then '
+                    'run record_wpr.')
+      return False
+    if not wpr_archive_info:
+      logging.error('The archive info file is missing.\n'
+                    'To fix this, either add svn-internal to your '
+                    '.gclient using http://goto/read-src-internal, '
+                    'or create a new archive using record_wpr.')
+      return False
 
-  # Warn of any problems with individual pages and return valid pages.
-  pages_missing_archive_path = []
-  pages_missing_archive_data = []
-  valid_pages = []
-  for page in pages:
-    if not page.is_local and not page.archive_path:
-      pages_missing_archive_path.append(page)
-    elif not page.is_local and not os.path.isfile(page.archive_path):
-      pages_missing_archive_data.append(page)
-    else:
-      valid_pages.append(page)
-  if pages_missing_archive_path:
-    logging.warning('The page set archives for some pages do not exist. '
-                    'Skipping those pages. To fix this, record those pages '
-                    'using record_wpr. To ignore this warning and run '
-                    'against live sites, pass the flag --use-live-sites.')
-  if pages_missing_archive_data:
-    logging.warning('The page set archives for some pages are missing. '
-                    'Someone forgot to check them in, or they were deleted. '
-                    'Skipping those pages. To fix this, record those pages '
-                    'using record_wpr. To ignore this warning and run '
-                    'against live sites, pass the flag --use-live-sites.')
-  for page in pages_missing_archive_path + pages_missing_archive_data:
-    results.WillRunPage(page)
-    results.AddValue(failure.FailureValue.FromMessage(
-        page, 'Page set archive doesn\'t exist.'))
-    results.DidRunPage(page)
-  return valid_pages
+  # Report any problems with individual user story.
+  user_stories_missing_archive_path = []
+  user_stories_missing_archive_data = []
+  for user_story in filtered_user_stories:
+    if not user_story.is_local:
+      archive_path = wpr_archive_info.WprFilePathForUserStory(user_story)
+      if not archive_path:
+        user_stories_missing_archive_path.append(user_story)
+      elif not os.path.isfile(archive_path):
+        user_stories_missing_archive_data.append(user_story)
+  if user_stories_missing_archive_path:
+    logging.error(
+        'The user story set archives for some user stories do not exist.\n'
+        'To fix this, record those user stories using record_wpr.\n'
+        'To ignore this warning and run against live sites, '
+        'pass the flag --use-live-sites.')
+    logging.error(
+        'User stories without archives: %s',
+        ', '.join(user_story.display_name
+                  for user_story in user_stories_missing_archive_path))
+  if user_stories_missing_archive_data:
+    logging.error(
+        'The user story set archives for some user stories are missing.\n'
+        'Someone forgot to check them in, uploaded them to the '
+        'wrong cloud storage bucket, or they were deleted.\n'
+        'To fix this, record those user stories using record_wpr.\n'
+        'To ignore this warning and run against live sites, '
+        'pass the flag --use-live-sites.')
+    logging.error(
+        'User stories missing archives: %s',
+        ', '.join(user_story.display_name
+                  for user_story in user_stories_missing_archive_data))
+  if user_stories_missing_archive_path or user_stories_missing_archive_data:
+    return False
+  # Only run valid user stories if no problems with the user story set or
+  # individual user stories.
+  return True
 
 
 def _WaitForThermalThrottlingIfNeeded(platform):

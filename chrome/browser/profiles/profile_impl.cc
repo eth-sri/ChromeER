@@ -69,12 +69,12 @@
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/services/gcm/push_messaging_service_impl.h"
 #include "chrome/browser/sessions/session_service_factory.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate.h"
 #include "chrome/browser/ssl/chrome_ssl_host_state_delegate_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
-#include "chrome/browser/ui/zoom/zoom_event_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -93,7 +93,9 @@
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/metrics/metrics_service.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
+#include "components/ui/zoom/zoom_event_manager.h"
 #include "components/url_fixer/url_fixer.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
@@ -148,7 +150,8 @@
 #include "extensions/browser/guest_view/guest_view_manager.h"
 #endif
 
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "chrome/browser/supervised_user/supervised_user_settings_service.h"
 #include "chrome/browser/supervised_user/supervised_user_settings_service_factory.h"
 #endif
@@ -327,6 +330,14 @@ void ProfileImpl::RegisterProfilePrefs(
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
+      prefs::kForceGoogleSafeSearch,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kForceYouTubeSafetyMode,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
       prefs::kRecordHistory,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
@@ -420,7 +431,8 @@ ProfileImpl::ProfileImpl(
 
   // Determine if prefetch is enabled for this profile.
   // If not profile_manager is present, it means we are in a unittest.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   predictor_ = chrome_browser_net::Predictor::CreatePredictor(
       !command_line->HasSwitch(switches::kDisablePreconnect),
       !command_line->HasSwitch(switches::kDnsPrefetchDisable),
@@ -468,7 +480,7 @@ ProfileImpl::ProfileImpl(
       RegisterProfilePrefsForServices(this, pref_registry_.get());
 
   SupervisedUserSettingsService* supervised_user_settings = NULL;
-#if defined(ENABLE_MANAGED_USERS)
+#if defined(ENABLE_SUPERVISED_USERS)
   supervised_user_settings =
       SupervisedUserSettingsServiceFactory::GetForProfile(this);
   supervised_user_settings->Init(
@@ -520,10 +532,6 @@ void ProfileImpl::DoFinalInit() {
   PrefService* prefs = GetPrefs();
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(
-      prefs::kGoogleServicesUsername,
-      base::Bind(&ProfileImpl::UpdateProfileUserNameCache,
-                 base::Unretained(this)));
-  pref_change_registrar_.Add(
       prefs::kSupervisedUserId,
       base::Bind(&ProfileImpl::UpdateProfileSupervisedUserIdCache,
                  base::Unretained(this)));
@@ -567,10 +575,7 @@ void ProfileImpl::DoFinalInit() {
                                           BrowserThread::GetBlockingPool());
   CreateProfileDirectory(sequenced_task_runner.get(), base_cache_path_);
 
-  // Now that the profile is hooked up to receive pref change notifications to
-  // kGoogleServicesUsername, initialize components that depend on it to reflect
-  // the current value.
-  UpdateProfileUserNameCache();
+  // Initialize components that depend on the current value.
   UpdateProfileSupervisedUserIdCache();
   UpdateProfileIsEphemeralCache();
   GAIAInfoUpdateServiceFactory::GetForProfile(this);
@@ -587,7 +592,8 @@ void ProfileImpl::DoFinalInit() {
   // or launch-on-startup support unless kKeepAliveForTest is set.
   bool init_background_mode_manager = true;
 #if defined(OS_CHROMEOS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kKeepAliveForTest))
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kKeepAliveForTest))
     init_background_mode_manager = false;
 #endif
   if (init_background_mode_manager) {
@@ -624,7 +630,7 @@ void ProfileImpl::DoFinalInit() {
 #else
   SessionStartupPref::Type startup_pref_type =
       StartupBrowserCreator::GetSessionStartupPref(
-          *CommandLine::ForCurrentProcess(), this).type;
+          *base::CommandLine::ForCurrentProcess(), this).type;
 #endif
   content::CookieStoreConfig::SessionCookieMode session_cookie_mode =
       content::CookieStoreConfig::PERSISTANT_SESSION_COOKIES;
@@ -656,7 +662,7 @@ void ProfileImpl::DoFinalInit() {
   // BrowserContextKeyedServices, including DataReductionProxyChromeSettings
   event_store.reset(
       new data_reduction_proxy::DataReductionProxyEventStore(
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI)));
   // The configurator is used by DataReductionProxyChromeSettings and
   // ProfileIOData. Ownership is passed to the latter via ProfileIOData::Handle,
   // which is only destroyed after BrowserContextKeyedServices,
@@ -833,7 +839,12 @@ ProfileImpl::~ProfileImpl() {
 }
 
 std::string ProfileImpl::GetProfileName() {
-  return GetPrefs()->GetString(prefs::kGoogleServicesUsername);
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(this);
+  if (signin_manager)
+    return signin_manager->GetAuthenticatedUsername();
+
+  return std::string();
 }
 
 Profile::ProfileType ProfileImpl::GetProfileType() const {
@@ -844,7 +855,7 @@ scoped_ptr<content::ZoomLevelDelegate>
 ProfileImpl::CreateZoomLevelDelegate(const base::FilePath& partition_path) {
   return make_scoped_ptr(new chrome::ChromeZoomLevelPrefs(
       GetPrefs(), GetPath(), partition_path,
-      ZoomEventManager::GetForBrowserContext(this)->GetWeakPtr()));
+      ui_zoom::ZoomEventManager::GetForBrowserContext(this)->GetWeakPtr()));
 }
 
 base::FilePath ProfileImpl::GetPath() const {
@@ -891,6 +902,19 @@ Profile* ProfileImpl::GetOriginalProfile() {
 
 bool ProfileImpl::IsSupervised() {
   return !GetPrefs()->GetString(prefs::kSupervisedUserId).empty();
+}
+
+bool ProfileImpl::IsChild() {
+#if defined(ENABLE_SUPERVISED_USERS)
+  return GetPrefs()->GetString(prefs::kSupervisedUserId) ==
+      supervised_users::kChildAccountSUID;
+#else
+  return false;
+#endif
+}
+
+bool ProfileImpl::IsLegacySupervised() {
+  return IsSupervised() && !IsChild();
 }
 
 ExtensionSpecialStoragePolicy*
@@ -1284,7 +1308,8 @@ void ProfileImpl::ClearNetworkingHistorySince(
 
 GURL ProfileImpl::GetHomePage() {
   // --homepage overrides any preferences.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kHomePage)) {
     // TODO(evanm): clean up usage of DIR_CURRENT.
     //   http://code.google.com/p/chromium/issues/detail?id=60630
@@ -1307,18 +1332,6 @@ GURL ProfileImpl::GetHomePage() {
   if (!home_page.is_valid())
     return GURL(chrome::kChromeUINewTabURL);
   return home_page;
-}
-
-void ProfileImpl::UpdateProfileUserNameCache() {
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
-  size_t index = cache.GetIndexOfProfileWithPath(GetPath());
-  if (index != std::string::npos) {
-    std::string user_name =
-        GetPrefs()->GetString(prefs::kGoogleServicesUsername);
-    cache.SetUserNameOfProfileAtIndex(index, base::UTF8ToUTF16(user_name));
-    ProfileMetrics::UpdateReportedProfilesStatistics(profile_manager);
-  }
 }
 
 void ProfileImpl::UpdateProfileSupervisedUserIdCache() {

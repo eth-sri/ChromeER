@@ -257,8 +257,8 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_PICTURE_CLONE
-#   define SK_SUPPORT_LEGACY_PICTURE_CLONE
+#ifndef    SK_SUPPORT_LEGACY_GRADIENT_PRECISION
+#   define SK_SUPPORT_LEGACY_GRADIENT_PRECISION
 #endif
 
 #ifndef    SK_IGNORE_ETC1_SUPPORT
@@ -269,24 +269,10 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_IGNORE_GPU_DITHER
 #endif
 
-#ifndef    SK_LEGACY_PICTURE_SIZE_API
-#   define SK_LEGACY_PICTURE_SIZE_API
+// If this goes well, we can have Skia respect DYNAMIC_ANNOTATIONS_ENABLED directly.
+#if DYNAMIC_ANNOTATIONS_ENABLED
+#    define SK_DYNAMIC_ANNOTATIONS_ENABLED 1
 #endif
-
-#ifndef    SK_LEGACY_PICTURE_DRAW_API
-#   define SK_LEGACY_PICTURE_DRAW_API
-#endif
-
-
-// Turns SkPicture::clone() into a simple "return SkRef(this);" as a way to
-// test the threadsafety of SkPicture playback.
-#define SK_PICTURE_CLONE_NOOP 1
-
-// Turns on new (nicer, hopefully faster) SkPicture backend.
-#define SK_PICTURE_USE_SK_RECORD 1
-
-// Run a few optimization passes over the SkRecord after recording.
-#define SK_PICTURE_OPTIMIZE_SK_RECORD 1
 
 // ===== End Chrome-specific definitions =====
 

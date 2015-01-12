@@ -18,6 +18,7 @@
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/ui/app_list/recommended_apps.h"
+#include "chrome/browser/ui/app_list/speech_auth_helper.h"
 #include "chrome/browser/ui/app_list/speech_recognizer.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
 #include "chrome/browser/ui/app_list/start_page_service_factory.h"
@@ -29,12 +30,17 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "content/public/browser/speech_recognition_session_preamble.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
 #include "ui/app_list/app_list_switches.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/audio/cras_audio_handler.h"
+#endif
 
 using base::RecordAction;
 using base::UserMetricsAction;
@@ -48,7 +54,7 @@ bool InSpeechRecognition(SpeechRecognitionState state) {
       state == SPEECH_RECOGNITION_IN_SPEECH;
 }
 
-}
+}  // namespace
 
 class StartPageService::ProfileDestroyObserver
     : public content::NotificationObserver {
@@ -102,6 +108,48 @@ class StartPageService::StartPageWebContentsDelegate
   DISALLOW_COPY_AND_ASSIGN(StartPageWebContentsDelegate);
 };
 
+#if defined(OS_CHROMEOS)
+
+class StartPageService::AudioStatus
+    : public chromeos::CrasAudioHandler::AudioObserver {
+ public:
+  explicit AudioStatus(StartPageService* start_page_service)
+      : start_page_service_(start_page_service) {
+    chromeos::CrasAudioHandler::Get()->AddAudioObserver(this);
+    CheckAndUpdate();
+  }
+
+  ~AudioStatus() override {
+    chromeos::CrasAudioHandler::Get()->RemoveAudioObserver(this);
+  }
+
+  bool CanListen() {
+    chromeos::CrasAudioHandler* audio_handler =
+        chromeos::CrasAudioHandler::Get();
+    return (audio_handler->GetPrimaryActiveInputNode() != 0) &&
+           !audio_handler->IsInputMuted();
+  }
+
+ private:
+  void CheckAndUpdate() {
+    // TODO(mukai): If the system can listen, this should also restart the
+    // hotword recognition.
+    start_page_service_->OnSpeechRecognitionStateChanged(
+        CanListen() ? SPEECH_RECOGNITION_READY : SPEECH_RECOGNITION_OFF);
+  }
+
+  // chromeos::CrasAudioHandler::AudioObserver:
+  void OnInputMuteChanged() override { CheckAndUpdate(); }
+
+  void OnActiveInputNodeChanged() override { CheckAndUpdate(); }
+
+  StartPageService* start_page_service_;
+
+  DISALLOW_COPY_AND_ASSIGN(AudioStatus);
+};
+
+#endif  // OS_CHROMEOS
+
 // static
 StartPageService* StartPageService::Get(Profile* profile) {
   return StartPageServiceFactory::GetForProfile(profile);
@@ -115,12 +163,14 @@ StartPageService::StartPageService(Profile* profile)
       speech_button_toggled_manually_(false),
       speech_result_obtained_(false),
       webui_finished_loading_(false),
+      speech_auth_helper_(new SpeechAuthHelper(profile, &clock_)),
       weak_factory_(this) {
   // If experimental hotwording is enabled, then we're always "ready".
   // Transitioning into the "hotword recognizing" state is handled by the
   // hotword extension.
-  if (HotwordService::IsExperimentalHotwordingEnabled())
+  if (HotwordService::IsExperimentalHotwordingEnabled()) {
     state_ = app_list::SPEECH_RECOGNITION_READY;
+  }
 
   if (app_list::switches::IsExperimentalAppListEnabled())
     LoadContents();
@@ -148,6 +198,10 @@ void StartPageService::AppListShown() {
         "appList.startPage.onAppListShown",
         base::FundamentalValue(HotwordEnabled()));
   }
+
+#if defined(OS_CHROMEOS)
+  audio_status_.reset(new AudioStatus(this));
+#endif
 }
 
 void StartPageService::AppListHidden() {
@@ -162,21 +216,21 @@ void StartPageService::AppListHidden() {
       speech_recognizer_) {
     speech_recognizer_->Stop();
   }
+
+#if defined(OS_CHROMEOS)
+  audio_status_.reset();
+#endif
 }
 
-void StartPageService::ToggleSpeechRecognition() {
+void StartPageService::ToggleSpeechRecognition(
+    const scoped_refptr<content::SpeechRecognitionSessionPreamble>& preamble) {
   DCHECK(contents_);
   speech_button_toggled_manually_ = true;
-  if (!contents_->GetWebUI())
-    return;
 
-  if (!webui_finished_loading_) {
-    pending_webui_callbacks_.push_back(
-        base::Bind(&StartPageService::ToggleSpeechRecognition,
-                   base::Unretained(this)));
-    return;
-  }
-
+  // Speech recognition under V2 hotwording does not depend in any way on the
+  // start page web contents. Do this code path first to make this explicit and
+  // easier to identify what code needs to be deleted when V2 hotwording is
+  // stable.
   if (HotwordService::IsExperimentalHotwordingEnabled()) {
     if (!speech_recognizer_) {
       std::string profile_locale;
@@ -193,7 +247,18 @@ void StartPageService::ToggleSpeechRecognition() {
                                profile_locale));
     }
 
-    speech_recognizer_->Start();
+    speech_recognizer_->Start(preamble);
+    return;
+  }
+
+  if (!contents_->GetWebUI())
+    return;
+
+  if (!webui_finished_loading_) {
+    pending_webui_callbacks_.push_back(
+        base::Bind(&StartPageService::ToggleSpeechRecognition,
+                   base::Unretained(this),
+                   preamble));
     return;
   }
 
@@ -251,6 +316,14 @@ void StartPageService::OnSpeechSoundLevelChanged(int16_t level) {
 
 void StartPageService::OnSpeechRecognitionStateChanged(
     SpeechRecognitionState new_state) {
+#if defined(OS_CHROMEOS)
+  // Sometimes this can be called even though there are no audio input devices.
+  if (audio_status_ && !audio_status_->CanListen())
+    new_state = SPEECH_RECOGNITION_OFF;
+#endif
+
+  if (state_ == new_state)
+    return;
 
   if (HotwordService::IsExperimentalHotwordingEnabled() &&
       new_state == SPEECH_RECOGNITION_READY &&
@@ -277,12 +350,27 @@ void StartPageService::OnSpeechRecognitionStateChanged(
                     OnSpeechRecognitionStateChanged(new_state));
 }
 
-content::WebContents* StartPageService::GetSpeechContents() {
-  return GetSpeechRecognitionContents();
+void StartPageService::GetSpeechAuthParameters(std::string* auth_scope,
+                                               std::string* auth_token) {
+  if (HotwordService::IsExperimentalHotwordingEnabled()) {
+    HotwordService* service = HotwordServiceFactory::GetForProfile(profile_);
+    if (service &&
+        service->IsOptedIntoAudioLogging() &&
+        service->IsAlwaysOnEnabled() &&
+        !speech_auth_helper_->GetToken().empty()) {
+      *auth_scope = speech_auth_helper_->GetScope();
+      *auth_token = speech_auth_helper_->GetToken();
+    }
+  }
 }
 
 void StartPageService::Shutdown() {
   UnloadContents();
+#if defined(OS_CHROMEOS)
+  audio_status_.reset();
+#endif
+
+  speech_auth_helper_.reset();
 }
 
 void StartPageService::WebUILoaded() {

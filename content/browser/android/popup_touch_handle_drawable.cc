@@ -30,23 +30,23 @@ void PopupTouchHandleDrawable::SetEnabled(bool enabled) {
 }
 
 void PopupTouchHandleDrawable::SetOrientation(
-    TouchHandleOrientation orientation) {
+    ui::TouchHandleOrientation orientation) {
   JNIEnv* env = base::android::AttachCurrentThread();
   jobject obj = drawable_.obj();
   switch (orientation) {
-    case TOUCH_HANDLE_LEFT:
+    case ui::TOUCH_HANDLE_LEFT:
       Java_PopupTouchHandleDrawable_setLeftOrientation(env, obj);
       break;
 
-    case TOUCH_HANDLE_RIGHT:
+    case ui::TOUCH_HANDLE_RIGHT:
       Java_PopupTouchHandleDrawable_setRightOrientation(env, obj);
       break;
 
-    case TOUCH_HANDLE_CENTER:
+    case ui::TOUCH_HANDLE_CENTER:
       Java_PopupTouchHandleDrawable_setCenterOrientation(env, obj);
       break;
 
-    case TOUCH_HANDLE_ORIENTATION_UNDEFINED:
+    case ui::TOUCH_HANDLE_ORIENTATION_UNDEFINED:
       NOTREACHED() << "Invalid touch handle orientation.";
   };
 }
@@ -64,15 +64,14 @@ void PopupTouchHandleDrawable::SetFocus(const gfx::PointF& position) {
       env, drawable_.obj(), position_pix.x(), position_pix.y());
 }
 
-bool PopupTouchHandleDrawable::IntersectsWith(const gfx::RectF& rect) const {
-  const gfx::RectF rect_pix = gfx::ScaleRect(rect, dpi_scale_);
+gfx::RectF PopupTouchHandleDrawable::GetVisibleBounds() const {
   JNIEnv* env = base::android::AttachCurrentThread();
-  return Java_PopupTouchHandleDrawable_intersectsWith(env,
-                                                      drawable_.obj(),
-                                                      rect_pix.x(),
-                                                      rect_pix.y(),
-                                                      rect_pix.width(),
-                                                      rect_pix.height());
+  gfx::RectF unscaled_rect(
+      Java_PopupTouchHandleDrawable_getPositionX(env, drawable_.obj()),
+      Java_PopupTouchHandleDrawable_getPositionY(env, drawable_.obj()),
+      Java_PopupTouchHandleDrawable_getVisibleWidth(env, drawable_.obj()),
+      Java_PopupTouchHandleDrawable_getVisibleHeight(env, drawable_.obj()));
+  return gfx::ScaleRect(unscaled_rect, 1.f / dpi_scale_);
 }
 
 // static

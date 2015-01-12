@@ -14,6 +14,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
+#include "base/memory/memory_pressure_listener.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
@@ -72,6 +73,19 @@ TabLoader* shared_tab_loader = NULL;
 // Pointers to SessionRestoreImpls which are currently restoring the session.
 std::set<SessionRestoreImpl*>* active_session_restorers = NULL;
 
+// Sends a session restore notification to |callbacks|.
+void NotifySessionRestored(SessionRestore::CallbackList* callbacks) {
+  // TODO(sque): This is the old notification that's being phased out.
+  // Remove this once all listeners of NOTIFICATION_SESSION_RESTORE_DONE are
+  // using callbacks instead of notification service.
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_SESSION_RESTORE_DONE,
+      content::NotificationService::AllSources(),
+      content::NotificationService::NoDetails());
+
+  callbacks->Notify();
+}
+
 // TabLoader ------------------------------------------------------------------
 
 // TabLoader is responsible for loading tabs after session restore has finished
@@ -109,6 +123,11 @@ class TabLoader : public content::NotificationObserver,
 
   // TabLoaderCallback:
   void SetTabLoadingEnabled(bool enable_tab_loading) override;
+
+  void set_on_session_restored_callbacks(
+      SessionRestore::CallbackList* callbacks) {
+    on_session_restored_callbacks_ = callbacks;
+  }
 
  private:
   friend class base::RefCounted<TabLoader>;
@@ -156,7 +175,15 @@ class TabLoader : public content::NotificationObserver,
   // TODO(sky): remove. For debugging 368236.
   void CheckNotObserving(NavigationController* controller);
 
+  // React to memory pressure by stopping to load any more tabs.
+  void OnMemoryPressure(
+      base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
+
   scoped_ptr<TabLoaderDelegate> delegate_;
+
+  // Listens for system under memory pressure notifications and stops loading
+  // of tabs when we start running out of memory.
+  base::MemoryPressureListener memory_pressure_listener_;
 
   content::NotificationRegistrar registrar_;
 
@@ -195,6 +222,9 @@ class TabLoader : public content::NotificationObserver,
 
   // Max number of tabs that were loaded in parallel (for metrics).
   size_t max_parallel_tab_loads_;
+
+  // Callback list for sending a session restore notification.
+  SessionRestore::CallbackList* on_session_restored_callbacks_;
 
   // For keeping TabLoader alive while it's loading even if no
   // SessionRestoreImpls reference it.
@@ -265,13 +295,16 @@ void TabLoader::SetTabLoadingEnabled(bool enable_tab_loading) {
 }
 
 TabLoader::TabLoader(base::TimeTicks restore_started)
-    : force_load_delay_multiplier_(1),
+    : memory_pressure_listener_(
+        base::Bind(&TabLoader::OnMemoryPressure, base::Unretained(this))),
+      force_load_delay_multiplier_(1),
       loading_enabled_(true),
       got_first_foreground_load_(false),
       got_first_paint_(false),
       tab_count_(0),
       restore_started_(restore_started),
-      max_parallel_tab_loads_(0) {
+      max_parallel_tab_loads_(0),
+      on_session_restored_callbacks_(nullptr) {
 }
 
 TabLoader::~TabLoader() {
@@ -315,10 +348,7 @@ void TabLoader::LoadNextTab() {
   // When the session restore is done synchronously, notification is sent from
   // SessionRestoreImpl::Restore .
   if (tabs_to_load_.empty() && !SessionRestore::IsRestoringSynchronously()) {
-    content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_SESSION_RESTORE_DONE,
-        content::NotificationService::AllSources(),
-        content::NotificationService::NoDetails());
+    NotifySessionRestored(on_session_restored_callbacks_);
   }
 }
 
@@ -535,6 +565,25 @@ void TabLoader::CheckNotObserving(NavigationController* controller) {
   CHECK(!in_tabs_to_load && !in_tabs_loading && !observing);
 }
 
+void TabLoader::OnMemoryPressure(
+base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+  // When receiving a resource pressure level warning, we stop pre-loading more
+  // tabs since we are running in danger of loading more tabs by throwing out
+  // old ones.
+  if (tabs_to_load_.empty())
+    return;
+  // Stop the timer and suppress any tab loads while we clean the list.
+  SetTabLoadingEnabled(false);
+  while (!tabs_to_load_.empty()) {
+    NavigationController* controller = tabs_to_load_.front();
+    tabs_to_load_.pop_front();
+    RemoveTab(controller);
+  }
+  // By calling |LoadNextTab| explicitly, we make sure that the
+  // |NOTIFICATION_SESSION_RESTORE_DONE| event gets sent.
+  LoadNextTab();
+}
+
 // SessionRestoreImpl ---------------------------------------------------------
 
 // SessionRestoreImpl is responsible for fetching the set of tabs to create
@@ -548,7 +597,8 @@ class SessionRestoreImpl : public content::NotificationObserver {
                      bool synchronous,
                      bool clobber_existing_tab,
                      bool always_create_tabbed_browser,
-                     const std::vector<GURL>& urls_to_open)
+                     const std::vector<GURL>& urls_to_open,
+                     SessionRestore::CallbackList* callbacks)
       : profile_(profile),
         browser_(browser),
         host_desktop_type_(host_desktop_type),
@@ -558,7 +608,8 @@ class SessionRestoreImpl : public content::NotificationObserver {
         urls_to_open_(urls_to_open),
         active_window_id_(0),
         restore_started_(base::TimeTicks::Now()),
-        browser_shown_(false) {
+        browser_shown_(false),
+        on_session_restored_callbacks_(callbacks) {
     // For sanity's sake, if |browser| is non-null: force |host_desktop_type| to
     // be the same as |browser|'s desktop type.
     DCHECK(!browser || browser->host_desktop_type() == host_desktop_type);
@@ -604,11 +655,8 @@ class SessionRestoreImpl : public content::NotificationObserver {
         quit_closure_for_sync_restore_ = base::Closure();
       }
       Browser* browser = ProcessSessionWindows(&windows_, active_window_id_);
+      NotifySessionRestored(on_session_restored_callbacks_);
       delete this;
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_SESSION_RESTORE_DONE,
-          content::NotificationService::AllSources(),
-          content::NotificationService::NoDetails());
       return browser;
     }
 
@@ -746,6 +794,8 @@ class SessionRestoreImpl : public content::NotificationObserver {
   // Invoked when beginning to create new tabs. Resets the |tab_loader_|.
   void StartTabCreation() {
     tab_loader_ = TabLoader::GetTabLoader(restore_started_);
+    tab_loader_->set_on_session_restored_callbacks(
+        on_session_restored_callbacks_);
   }
 
   // Invoked when done with creating all the tabs/browsers.
@@ -1073,19 +1123,6 @@ class SessionRestoreImpl : public content::NotificationObserver {
     // focused tab will be loaded by Browser, and TabLoader will load the rest.
     DCHECK(web_contents->GetController().NeedsReload());
 
-    // Set up the file access rights for the selected navigation entry.
-    const int id = web_contents->GetRenderProcessHost()->GetID();
-    const content::PageState& page_state =
-        content::PageState::CreateFromEncodedData(
-            tab.navigations.at(selected_index).encoded_page_state());
-    const std::vector<base::FilePath>& file_paths =
-        page_state.GetReferencedFiles();
-    for (std::vector<base::FilePath>::const_iterator file = file_paths.begin();
-         file != file_paths.end(); ++file) {
-      content::ChildProcessSecurityPolicy::GetInstance()->GrantReadFile(id,
-                                                                        *file);
-    }
-
     if (!is_selected_tab)
       tab_loader_->ScheduleLoad(&web_contents->GetController());
     return web_contents;
@@ -1216,6 +1253,9 @@ class SessionRestoreImpl : public content::NotificationObserver {
   // Set to true after the first browser is shown.
   bool browser_shown_;
 
+  // List of callbacks for session restore notification.
+  SessionRestore::CallbackList* on_session_restored_callbacks_;
+
   DISALLOW_COPY_AND_ASSIGN(SessionRestoreImpl);
 };
 
@@ -1248,7 +1288,8 @@ Browser* SessionRestore::RestoreSession(
       profile, browser, host_desktop_type, (behavior & SYNCHRONOUS) != 0,
       (behavior & CLOBBER_CURRENT_TAB) != 0,
       (behavior & ALWAYS_CREATE_TABBED_BROWSER) != 0,
-      urls_to_open);
+      urls_to_open,
+      SessionRestore::on_session_restored_callbacks());
   return restorer->Restore();
 }
 
@@ -1278,7 +1319,8 @@ std::vector<Browser*> SessionRestore::RestoreForeignSessionWindows(
     std::vector<const sessions::SessionWindow*>::const_iterator end) {
   std::vector<GURL> gurls;
   SessionRestoreImpl restorer(profile,
-      static_cast<Browser*>(NULL), host_desktop_type, true, false, true, gurls);
+      static_cast<Browser*>(NULL), host_desktop_type, true, false, true, gurls,
+      on_session_restored_callbacks());
   return restorer.RestoreForeignSession(begin, end);
 }
 
@@ -1291,7 +1333,8 @@ WebContents* SessionRestore::RestoreForeignSessionTab(
   Profile* profile = browser->profile();
   std::vector<GURL> gurls;
   SessionRestoreImpl restorer(profile, browser, browser->host_desktop_type(),
-                              true, false, false, gurls);
+                              true, false, false, gurls,
+                              on_session_restored_callbacks());
   return restorer.RestoreForeignTab(tab, disposition);
 }
 
@@ -1320,3 +1363,14 @@ bool SessionRestore::IsRestoringSynchronously() {
   }
   return false;
 }
+
+// static
+SessionRestore::CallbackSubscription
+    SessionRestore::RegisterOnSessionRestoredCallback(
+        const base::Closure& callback) {
+  return on_session_restored_callbacks()->Add(callback);
+}
+
+// static
+base::CallbackList<void(void)>*
+    SessionRestore::on_session_restored_callbacks_ = nullptr;

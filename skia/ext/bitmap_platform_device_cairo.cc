@@ -127,8 +127,8 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(int width, int height,
   BitmapPlatformDevice* device = Create(width, height, is_opaque, surface);
 
 #ifndef NDEBUG
-  if (device && is_opaque)  // Fill with bright bluish green
-    device->eraseColor(SkColorSetARGB(255, 0, 255, 128));
+    if (device && is_opaque)  // Fill with bright bluish green
+        SkCanvas(device).drawColor(0xFF00FF80);
 #endif
 
   return device;
@@ -183,12 +183,6 @@ cairo_t* BitmapPlatformDevice::BeginPlatformPaint() {
   // buffer directly.
   cairo_surface_mark_dirty(surface);
   return cairo_;
-}
-
-void BitmapPlatformDevice::DrawToNativeContext(
-    PlatformSurface surface, int x, int y, const PlatformRect* src_rect) {
-  // Should never be called on Linux.
-  SkASSERT(false);
 }
 
 void BitmapPlatformDevice::setMatrixClip(const SkMatrix& transform,

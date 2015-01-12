@@ -30,22 +30,19 @@
 #include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 #import "content/browser/cocoa/system_hotkey_helper_mac.h"
 #import "content/browser/cocoa/system_hotkey_map.h"
-#include "content/browser/compositor/io_surface_layer_mac.h"
 #include "content/browser/compositor/resize_lock.h"
-#include "content/browser/compositor/software_layer_mac.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/gpu/compositor_util.h"
-#include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_helper.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
 #import "content/browser/renderer_host/render_widget_host_view_mac_editcommand_helper.h"
 #import "content/browser/renderer_host/text_input_client_mac.h"
 #include "content/common/accessibility_messages.h"
 #include "content/common/edit_command.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/gpu/surface_handle_types_mac.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/common/webplugin_geometry.h"
@@ -63,18 +60,20 @@
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/mac/WebInputEventFactory.h"
 #import "third_party/mozilla/ComplexTextInputPanel.h"
+#include "ui/accelerated_widget_mac/io_surface_layer.h"
+#include "ui/accelerated_widget_mac/surface_handle_types.h"
 #include "ui/base/cocoa/animation_utils.h"
 #import "ui/base/cocoa/fullscreen_window_manager.h"
 #import "ui/base/cocoa/underlay_opengl_hosting_window.h"
-#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/base/layout.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/dip_util.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -527,8 +526,8 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget,
       is_loading_(false),
       allow_pause_for_resize_or_repaint_(true),
       is_guest_view_hack_(is_guest_view_hack),
-      weak_factory_(this),
-      fullscreen_parent_host_view_(NULL) {
+      fullscreen_parent_host_view_(NULL),
+      weak_factory_(this) {
   // |cocoa_view_| owns us and we will be deleted when |cocoa_view_|
   // goes away.  Since we autorelease it, our caller must put
   // |GetNativeView()| into the view hierarchy right after calling us.
@@ -601,7 +600,6 @@ void RenderWidgetHostViewMac::EnsureBrowserCompositorView() {
     browser_compositor_->compositor()->SetRootLayer(
         root_layer_.get());
     browser_compositor_->accelerated_widget_mac()->SetNSView(this);
-    browser_compositor_->compositor()->SetVisible(true);
     browser_compositor_state_ = BrowserCompositorSuspended;
   }
 
@@ -637,7 +635,6 @@ void RenderWidgetHostViewMac::DestroyBrowserCompositorView() {
   // Destroy the BrowserCompositorView to transition Suspended -> Destroyed.
   if (browser_compositor_state_ == BrowserCompositorSuspended) {
     browser_compositor_->accelerated_widget_mac()->ResetNSView();
-    browser_compositor_->compositor()->SetVisible(false);
     browser_compositor_->compositor()->SetScaleAndSize(1.0, gfx::Size(0, 0));
     browser_compositor_->compositor()->SetRootLayer(NULL);
     BrowserCompositorMac::Recycle(browser_compositor_.Pass());
@@ -2016,8 +2013,11 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
   // Do not forward key up events unless preceded by a matching key down,
   // otherwise we might get an event from releasing the return key in the
   // omnibox (http://crbug.com/338736).
-  if ([theEvent type] == NSKeyUp && [theEvent keyCode] != lastKeyCode_)
-    return;
+  if ([theEvent type] == NSKeyUp) {
+    auto numErased = keyDownCodes_.erase([theEvent keyCode]);
+    if (numErased < 1)
+      return;
+  }
 
   // We only handle key down events and just simply forward other events.
   if ([theEvent type] != NSKeyDown) {
@@ -2030,7 +2030,7 @@ void RenderWidgetHostViewMac::OnDisplayMetricsChanged(
     return;
   }
 
-  lastKeyCode_ = [theEvent keyCode];
+  keyDownCodes_.insert([theEvent keyCode]);
 
   base::scoped_nsobject<RenderWidgetHostViewCocoa> keepSelfAlive([self retain]);
 

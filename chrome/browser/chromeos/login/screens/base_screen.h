@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "chrome/browser/chromeos/login/screens/base_screen_delegate.h"
+#include "components/login/base_screen_handler_utils.h"
 #include "components/login/screens/screen_context.h"
 
 namespace base {
@@ -17,6 +18,8 @@ class DictionaryValue;
 }
 
 namespace chromeos {
+
+class ModelViewChannel;
 
 // Base class for the all OOBE/login/before-session screens.
 // Screens are identified by ID, screen and it's JS counterpart must have same
@@ -73,7 +76,40 @@ class BaseScreen {
   // Returns the identifier of the screen.
   virtual std::string GetID() const;
 
+  void set_model_view_channel(ModelViewChannel* channel) { channel_ = channel; }
+
  protected:
+  // Scoped context editor, which automatically commits all pending
+  // context changes on destruction.
+  class ContextEditor {
+   public:
+    using KeyType = ::login::ScreenContext::KeyType;
+    using String16List = ::login::String16List;
+    using StringList = ::login::StringList;
+
+    explicit ContextEditor(BaseScreen& screen);
+    ~ContextEditor();
+
+    const ContextEditor& SetBoolean(const KeyType& key, bool value) const;
+    const ContextEditor& SetInteger(const KeyType& key, int value) const;
+    const ContextEditor& SetDouble(const KeyType& key, double value) const;
+    const ContextEditor& SetString(const KeyType& key,
+                                   const std::string& value) const;
+    const ContextEditor& SetString(const KeyType& key,
+                                   const base::string16& value) const;
+    const ContextEditor& SetStringList(const KeyType& key,
+                                       const StringList& value) const;
+    const ContextEditor& SetString16List(const KeyType& key,
+                                         const String16List& value) const;
+
+   private:
+    BaseScreen& screen_;
+    ::login::ScreenContext& context_;
+  };
+
+  // Sends all pending context changes to the JS side.
+  void CommitContextChanges();
+
   // Screen can call this method to notify framework that it have finished
   // it's work with |outcome|.
   void Finish(BaseScreenDelegate::ExitCodes exit_code);
@@ -81,13 +117,17 @@ class BaseScreen {
   // Called when user action event with |event_id|
   // happened. Notification about this event comes from the JS
   // counterpart.
-  virtual void OnUserAction(const std::string& event_id);
+  virtual void OnUserAction(const std::string& action_id);
 
   // The method is called each time some key in screen context is
   // updated by JS side. Default implementation does nothing, so
   // subclasses should override it in order to observe updates in
   // screen context.
   virtual void OnContextKeyUpdated(const ::login::ScreenContext::KeyType& key);
+
+  // Returns scoped context editor. The editor or it's copies should not outlive
+  // current BaseScreen instance.
+  ContextEditor GetContextEditor();
 
   BaseScreenDelegate* get_base_screen_delegate() const {
     return base_screen_delegate_;
@@ -102,6 +142,7 @@ class BaseScreen {
 
   friend class BaseScreenHandler;
   friend class NetworkScreenTest;
+  friend class ScreenEditor;
   friend class ScreenManager;
   friend class UpdateScreenTest;
 
@@ -111,6 +152,8 @@ class BaseScreen {
   // changed. Notification about this event comes from the JS
   // counterpart.
   void OnContextChanged(const base::DictionaryValue& diff);
+
+  ModelViewChannel* channel_;
 
   BaseScreenDelegate* base_screen_delegate_;
 

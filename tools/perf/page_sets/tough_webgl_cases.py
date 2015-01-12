@@ -25,7 +25,7 @@ class ToughWebglCasesPage(page_module.Page):
         'document.readyState == "complete"')
     action_runner.Wait(2)
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     action_runner.Wait(5)
 
 
@@ -56,4 +56,4 @@ class ToughWebglCasesPageSet(page_set_module.PageSet):
       'http://webglsamples.googlecode.com/hg/dynamic-cubemap/dynamic-cubemap.html'
     ]
     for url in urls_list:
-      self.AddPage(ToughWebglCasesPage(url, self))
+      self.AddUserStory(ToughWebglCasesPage(url, self))

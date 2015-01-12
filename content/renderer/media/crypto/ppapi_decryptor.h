@@ -39,7 +39,6 @@ class PpapiDecryptor : public media::MediaKeys,
       const GURL& security_origin,
       const CreatePepperCdmCB& create_pepper_cdm_cb,
       const media::SessionMessageCB& session_message_cb,
-      const media::SessionReadyCB& session_ready_cb,
       const media::SessionClosedCB& session_closed_cb,
       const media::SessionErrorCB& session_error_cb,
       const media::SessionKeysChangeCB& session_keys_change_cb,
@@ -67,8 +66,6 @@ class PpapiDecryptor : public media::MediaKeys,
                     scoped_ptr<media::SimpleCdmPromise> promise) override;
   void RemoveSession(const std::string& web_session_id,
                      scoped_ptr<media::SimpleCdmPromise> promise) override;
-  void GetUsableKeyIds(const std::string& web_session_id,
-                       scoped_ptr<media::KeyIdsPromise> promise) override;
   CdmContext* GetCdmContext() override;
 
   // media::CdmContext implementation.
@@ -99,7 +96,6 @@ class PpapiDecryptor : public media::MediaKeys,
       const std::string& key_system,
       scoped_ptr<PepperCdmWrapper> pepper_cdm_wrapper,
       const media::SessionMessageCB& session_message_cb,
-      const media::SessionReadyCB& session_ready_cb,
       const media::SessionClosedCB& session_closed_cb,
       const media::SessionErrorCB& session_error_cb,
       const media::SessionKeysChangeCB& session_keys_change_cb,
@@ -115,7 +111,6 @@ class PpapiDecryptor : public media::MediaKeys,
                            bool has_additional_usable_key);
   void OnSessionExpirationUpdate(const std::string& web_session_id,
                                  const base::Time& new_expiry_time);
-  void OnSessionReady(const std::string& web_session_id);
   void OnSessionClosed(const std::string& web_session_id);
   void OnSessionError(const std::string& web_session_id,
                       MediaKeys::Exception exception_code,
@@ -137,7 +132,6 @@ class PpapiDecryptor : public media::MediaKeys,
 
   // Callbacks for firing session events.
   media::SessionMessageCB session_message_cb_;
-  media::SessionReadyCB session_ready_cb_;
   media::SessionClosedCB session_closed_cb_;
   media::SessionErrorCB session_error_cb_;
   media::SessionKeysChangeCB session_keys_change_cb_;

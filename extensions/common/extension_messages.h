@@ -158,6 +158,16 @@ IPC_STRUCT_BEGIN(ExtensionMsg_TabConnectionInfo)
   IPC_STRUCT_MEMBER(int, frame_id)
 IPC_STRUCT_END()
 
+// Struct containing information about the destination of tab.connect().
+IPC_STRUCT_BEGIN(ExtensionMsg_TabTargetConnectionInfo)
+  // The destination tab's ID.
+  IPC_STRUCT_MEMBER(int, tab_id)
+
+  // Frame ID of the destination. -1 for all frames, 0 for main frame and
+  // positive if the destination is a specific child frame.
+  IPC_STRUCT_MEMBER(int, frame_id)
+IPC_STRUCT_END()
+
 // Struct containing the data for external connections to extensions. Used to
 // handle the IPCs initiated by both connect() and onConnect().
 IPC_STRUCT_BEGIN(ExtensionMsg_ExternalConnectionInfo)
@@ -170,6 +180,9 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExternalConnectionInfo)
 
   // The URL of the frame that initiated the request.
   IPC_STRUCT_MEMBER(GURL, source_url)
+
+  // The ID of the frame that is the target of the request.
+  IPC_STRUCT_MEMBER(int, target_frame_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_TRAITS_BEGIN(extensions::DraggableRegion)
@@ -541,11 +554,23 @@ IPC_MESSAGE_CONTROL1(ExtensionMsg_TransferBlobs,
 IPC_MESSAGE_CONTROL1(ExtensionMsg_CreateMimeHandlerViewGuestACK,
                      int /* element_instance_id */)
 
+// Once a MimeHandlerView guest's JavaScript onload function has been called,
+// this IPC is sent to the container to notify it.
+IPC_MESSAGE_CONTROL1(ExtensionMsg_MimeHandlerViewGuestOnLoadCompleted,
+                     int /* element_instance_id */)
+
 // Once a RenderView proxy has been created for the guest in the embedder render
 // process, this IPC informs the embedder of the proxy's routing ID.
-IPC_MESSAGE_ROUTED2(ExtensionMsg_GuestAttached,
-                    int /* element_instance_id */,
-                    int /* source_routing_id */)
+IPC_MESSAGE_CONTROL2(ExtensionMsg_GuestAttached,
+                     int /* element_instance_id */,
+                     int /* source_routing_id */)
+
+// This IPC tells the browser process to detach the provided
+// |element_instance_id| from a GuestViewBase if it is attached to one.
+// In other words, routing of input and graphics will no longer flow through
+// the container associated with the provided ID.
+IPC_MESSAGE_CONTROL1(ExtensionMsg_GuestDetached,
+                     int /* element_instance_id*/)
 
 // Messages sent from the renderer to the browser.
 
@@ -625,7 +650,7 @@ IPC_SYNC_MESSAGE_CONTROL3_1(ExtensionHostMsg_OpenChannelToNativeApp,
 // messages to the extension.
 IPC_SYNC_MESSAGE_CONTROL4_1(ExtensionHostMsg_OpenChannelToTab,
                             int /* routing_id */,
-                            int /* tab_id */,
+                            ExtensionMsg_TabTargetConnectionInfo,
                             std::string /* extension_id */,
                             std::string /* channel_name */,
                             int /* port_id */)

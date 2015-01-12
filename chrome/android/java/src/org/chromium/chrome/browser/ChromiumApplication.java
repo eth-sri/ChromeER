@@ -12,6 +12,12 @@ import org.chromium.content.app.ContentApplication;
  * chrome layer.
  */
 public abstract class ChromiumApplication extends ContentApplication {
+
+    /**
+     * Returns the class name of the Settings activity.
+     */
+    public abstract String getSettingsActivityName();
+
     /**
      * Opens a protected content settings page, if available.
      */

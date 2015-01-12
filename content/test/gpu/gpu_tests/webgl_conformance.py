@@ -66,7 +66,7 @@ def _WebGLTestMessages(tab):
 
 class WebglConformanceValidator(page_test.PageTest):
   def __init__(self):
-    super(WebglConformanceValidator, self).__init__(max_failures=10)
+    super(WebglConformanceValidator, self).__init__()
 
   def ValidateAndMeasurePage(self, page, tab, results):
     if not _DidWebGLTestSucceed(tab):
@@ -99,6 +99,9 @@ class WebglConformance(benchmark_module.Benchmark):
   """Conformance with Khronos WebGL Conformance Tests"""
   test = WebglConformanceValidator
 
+  def __init__(self):
+    super(WebglConformance, self).__init__(max_failures=10)
+
   @classmethod
   def AddBenchmarkCommandLineArgs(cls, group):
     group.add_option('--webgl-conformance-version',
@@ -115,7 +118,7 @@ class WebglConformance(benchmark_module.Benchmark):
       file_path=conformance_path)
 
     for test in tests:
-      ps.AddPage(WebglConformancePage(ps, test))
+      ps.AddUserStory(WebglConformancePage(ps, test))
 
     return ps
 

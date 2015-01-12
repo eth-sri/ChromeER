@@ -37,15 +37,13 @@
 #include "remoting/base/constants.h"
 #include "remoting/base/util.h"
 #include "remoting/client/chromoting_client.h"
-#include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/plugin/delegating_signal_strategy.h"
-#include "remoting/client/plugin/media_source_video_renderer.h"
 #include "remoting/client/plugin/normalizing_input_filter_cros.h"
 #include "remoting/client/plugin/normalizing_input_filter_mac.h"
 #include "remoting/client/plugin/pepper_audio_player.h"
 #include "remoting/client/plugin/pepper_mouse_locker.h"
 #include "remoting/client/plugin/pepper_port_allocator.h"
-#include "remoting/client/plugin/pepper_view.h"
+#include "remoting/client/plugin/pepper_video_renderer_2d.h"
 #include "remoting/client/software_video_renderer.h"
 #include "remoting/client/token_fetcher_proxy.h"
 #include "remoting/protocol/connection_to_host.h"
@@ -177,8 +175,7 @@ logging::LogMessageHandlerFunction g_logging_old_handler = NULL;
 const char ChromotingInstance::kApiFeatures[] =
     "highQualityScaling injectKeyEvent sendClipboardItem remapKey trapKey "
     "notifyClientResolution pauseVideo pauseAudio asyncPin thirdPartyAuth "
-    "pinlessAuth extensionMessage allowMouseLock mediaSourceRendering "
-    "videoControl";
+    "pinlessAuth extensionMessage allowMouseLock videoControl";
 
 const char ChromotingInstance::kRequestedCapabilities[] = "";
 const char ChromotingInstance::kSupportedCapabilities[] = "desktopShape";
@@ -194,7 +191,6 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
       empty_cursor_filter_(&cursor_setter_),
       text_input_controller_(this),
       use_async_pin_dialog_(false),
-      use_media_source_rendering_(false),
       weak_factory_(this) {
 #if defined(OS_NACL)
   // In NaCl global resources need to be initialized differently because they
@@ -257,11 +253,8 @@ ChromotingInstance::~ChromotingInstance() {
   // to it. This will stop all logging in all Chromoting instances.
   UnregisterLoggingInstance();
 
-  // PepperView must be destroyed before the client.
-  view_weak_factory_.reset();
-  view_.reset();
-
   client_.reset();
+  video_renderer_.reset();
 
   plugin_task_runner_->Quit();
 
@@ -352,8 +345,6 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
     HandleExtensionMessage(*data);
   } else if (method == "allowMouseLock") {
     HandleAllowMouseLockMessage();
-  } else if (method == "enableMediaSourceRendering") {
-    HandleEnableMediaSourceRendering();
   } else if (method == "sendMouseInputWhenUnfocused") {
     HandleSendMouseInputWhenUnfocused();
   } else if (method == "delegateLargeCursors") {
@@ -379,8 +370,8 @@ void ChromotingInstance::DidChangeView(const pp::View& view) {
   mouse_input_filter_.set_input_size(
       webrtc::DesktopSize(view.GetRect().width(), view.GetRect().height()));
 
-  if (view_)
-    view_->SetView(view);
+  if (video_renderer_)
+    video_renderer_->OnViewChanged(view);
 }
 
 bool ChromotingInstance::HandleInputEvent(const pp::InputEvent& event) {
@@ -392,7 +383,12 @@ bool ChromotingInstance::HandleInputEvent(const pp::InputEvent& event) {
   return input_handler_.HandleInputEvent(event);
 }
 
-void ChromotingInstance::SetDesktopSize(const webrtc::DesktopSize& size,
+void ChromotingInstance::OnVideoFirstFrameReceived() {
+  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
+  PostLegacyJsonMessage("onFirstFrameReceived", data.Pass());
+}
+
+void ChromotingInstance::OnVideoSize(const webrtc::DesktopSize& size,
                                         const webrtc::DesktopVector& dpi) {
   mouse_input_filter_.set_output_size(size);
 
@@ -406,7 +402,7 @@ void ChromotingInstance::SetDesktopSize(const webrtc::DesktopSize& size,
   PostLegacyJsonMessage("onDesktopSize", data.Pass());
 }
 
-void ChromotingInstance::SetDesktopShape(const webrtc::DesktopRegion& shape) {
+void ChromotingInstance::OnVideoShape(const webrtc::DesktopRegion& shape) {
   if (desktop_shape_ && shape.Equals(*desktop_shape_))
     return;
 
@@ -556,11 +552,6 @@ void ChromotingInstance::SetCursorShape(
   PostChromotingMessage("setCursorShape", dictionary);
 }
 
-void ChromotingInstance::OnFirstFrameReceived() {
-  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
-  PostLegacyJsonMessage("onFirstFrameReceived", data.Pass());
-}
-
 void ChromotingInstance::HandleConnect(const base::DictionaryValue& data) {
   std::string local_jid;
   std::string host_jid;
@@ -633,28 +624,13 @@ void ChromotingInstance::HandleConnect(const base::DictionaryValue& data) {
 #endif
   input_handler_.set_input_stub(normalizing_input_filter_.get());
 
-  if (use_media_source_rendering_) {
-    video_renderer_.reset(new MediaSourceVideoRenderer(this));
-  } else {
-    view_.reset(new PepperView(this, &context_));
-    view_weak_factory_.reset(
-        new base::WeakPtrFactory<FrameConsumer>(view_.get()));
+  video_renderer_.reset(new PepperVideoRenderer2D());
+  bool initialized =
+      video_renderer_->Initialize(this, context_, this);
+  CHECK(initialized);
 
-    // SoftwareVideoRenderer runs on a separate thread so for now we wrap
-    // PepperView with a ref-counted proxy object.
-    scoped_refptr<FrameConsumerProxy> consumer_proxy =
-        new FrameConsumerProxy(plugin_task_runner_,
-                               view_weak_factory_->GetWeakPtr());
-
-    SoftwareVideoRenderer* renderer =
-        new SoftwareVideoRenderer(context_.main_task_runner(),
-                                  context_.decode_task_runner(),
-                                  consumer_proxy);
-    view_->Initialize(renderer);
-    if (!plugin_view_.is_null())
-      view_->SetView(plugin_view_);
-    video_renderer_.reset(renderer);
-  }
+  if (!plugin_view_.is_null())
+    video_renderer_->OnViewChanged(plugin_view_);
 
   scoped_ptr<AudioPlayer> audio_player(new PepperAudioPlayer(this));
   client_.reset(new ChromotingClient(&context_, this, video_renderer_.get(),
@@ -705,15 +681,12 @@ void ChromotingInstance::HandleConnect(const base::DictionaryValue& data) {
 void ChromotingInstance::HandleDisconnect(const base::DictionaryValue& data) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
 
-  // PepperView must be destroyed before the client.
-  view_weak_factory_.reset();
-  view_.reset();
-
   VLOG(0) << "Disconnecting from host.";
 
   // Disconnect the input pipeline and teardown the connection.
   mouse_input_filter_.set_input_stub(NULL);
   client_.reset();
+  video_renderer_.reset();
 }
 
 void ChromotingInstance::HandleOnIncomingIq(const base::DictionaryValue& data) {
@@ -943,22 +916,12 @@ void ChromotingInstance::HandleAllowMouseLockMessage() {
   empty_cursor_filter_.set_cursor_stub(mouse_locker_.get());
 }
 
-void ChromotingInstance::HandleEnableMediaSourceRendering() {
-  use_media_source_rendering_ = true;
-}
-
 void ChromotingInstance::HandleSendMouseInputWhenUnfocused() {
   input_handler_.set_send_mouse_input_when_unfocused(true);
 }
 
 void ChromotingInstance::HandleDelegateLargeCursors() {
   cursor_setter_.set_delegate_stub(this);
-}
-
-ChromotingStats* ChromotingInstance::GetStats() {
-  if (!video_renderer_.get())
-    return NULL;
-  return video_renderer_->GetStats();
 }
 
 void ChromotingInstance::PostChromotingMessage(const std::string& method,
@@ -1137,34 +1100,6 @@ bool ChromotingInstance::IsCallerAppOrExtension() {
 bool ChromotingInstance::IsConnected() {
   return client_ &&
          (client_->connection_state() == protocol::ConnectionToHost::CONNECTED);
-}
-
-void ChromotingInstance::OnMediaSourceSize(const webrtc::DesktopSize& size,
-                                           const webrtc::DesktopVector& dpi) {
-  SetDesktopSize(size, dpi);
-}
-
-void ChromotingInstance::OnMediaSourceShape(
-    const webrtc::DesktopRegion& shape) {
-  SetDesktopShape(shape);
-}
-
-void ChromotingInstance::OnMediaSourceReset(const std::string& format) {
-  scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
-  data->SetString("format", format);
-  PostLegacyJsonMessage("mediaSourceReset", data.Pass());
-}
-
-void ChromotingInstance::OnMediaSourceData(uint8_t* buffer, size_t buffer_size,
-                                           bool keyframe) {
-  pp::VarArrayBuffer array_buffer(buffer_size);
-  void* data_ptr = array_buffer.Map();
-  memcpy(data_ptr, buffer, buffer_size);
-  array_buffer.Unmap();
-  pp::VarDictionary data_dictionary;
-  data_dictionary.Set(pp::Var("buffer"), array_buffer);
-  data_dictionary.Set(pp::Var("keyframe"), keyframe);
-  PostChromotingMessage("mediaSourceData", data_dictionary);
 }
 
 }  // namespace remoting

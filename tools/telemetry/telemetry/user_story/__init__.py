@@ -18,14 +18,26 @@ class UserStory(object):
 
   Args:
     shared_user_story_state_class: subclass of
-      telemetry.user_story.shared_user_story_state.SharedUserStoryState.
+        telemetry.user_story.shared_user_story_state.SharedUserStoryState.
     name: string name of this user story that can be used for identifying user
-      story in results output.
+        story in results output.
     labels: A list or set of string labels that are used for filtering. See
-      user_story.user_story_filter for more information.
+        user_story.user_story_filter for more information.
+    is_local: If true, the user story does not require network.
   """
 
-  def __init__(self, shared_user_story_state_class, name='', labels=None):
+  def __init__(self, shared_user_story_state_class, name='', labels=None,
+               is_local=False, make_javascript_deterministic=True):
+    """
+    Args:
+      make_javascript_deterministic: Whether JavaScript performed on
+          the page is made deterministic across multiple runs. This
+          requires that the web content is served via Web Page Replay
+          to take effect. Does not affect user story containing no web
+          contents or where there is the HTTP response mime type is
+          not text/html. See also: _InjectScripts method in
+          third_party/webpagereplay/httpclient.py.
+    """
     assert issubclass(shared_user_story_state_class,
                       shared_user_story_state.SharedUserStoryState)
     self._shared_user_story_state_class = shared_user_story_state_class
@@ -40,6 +52,8 @@ class UserStory(object):
     else:
       assert isinstance(labels, set)
     self._labels = labels
+    self._is_local = is_local
+    self._make_javascript_deterministic = make_javascript_deterministic
 
   @property
   def labels(self):
@@ -78,3 +92,12 @@ class UserStory(object):
       return self.name
     else:
       return self.__class__.__name__
+
+  @property
+  def is_local(self):
+    """Returns True iff this user story does not require network."""
+    return self._is_local
+
+  @property
+  def make_javascript_deterministic(self):
+    return self._make_javascript_deterministic

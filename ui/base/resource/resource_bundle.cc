@@ -29,9 +29,9 @@
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_source.h"
-#include "ui/gfx/safe_integer_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/strings/grit/app_locale_settings.h"
@@ -41,7 +41,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "ui/base/l10n/l10n_util.h"
+#include "ui/base/font_helper_chromeos.h"
 #include "ui/gfx/platform_font_pango.h"
 #endif
 
@@ -79,6 +79,7 @@ void InitDefaultFontList() {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   std::string font_family = base::UTF16ToUTF8(
       rb.GetLocalizedString(IDS_UI_FONT_FAMILY_CROS));
+  ui::ReplaceNotoSansWithRobotoIfEnabled(&font_family);
   gfx::FontList::SetDefaultFontDescription(font_family);
 
   // TODO(yukishiino): Remove SetDefaultFontDescription() once the migration to
@@ -752,8 +753,8 @@ scoped_ptr<gfx::FontList> ResourceBundle::GetFontListFromDelegate(
   DCHECK(delegate_);
   scoped_ptr<gfx::Font> font = delegate_->GetFont(style);
   if (font.get())
-    return scoped_ptr<gfx::FontList>(new gfx::FontList(*font));
-  return scoped_ptr<gfx::FontList>();
+    return make_scoped_ptr(new gfx::FontList(*font));
+  return nullptr;
 }
 
 bool ResourceBundle::LoadBitmap(const ResourceHandle& data_handle,

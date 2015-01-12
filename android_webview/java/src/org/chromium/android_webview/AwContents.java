@@ -42,6 +42,7 @@ import org.chromium.android_webview.permission.AwPermissionRequest;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.TraceEvent;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
 import org.chromium.components.navigation_interception.NavigationParams;
@@ -1050,7 +1051,12 @@ public class AwContents implements SmartClipProvider {
     //--------------------------------------------------------------------------------------------
 
     public void onDraw(Canvas canvas) {
-        mAwViewMethods.onDraw(canvas);
+        try {
+            TraceEvent.begin("AwContents.onDraw");
+            mAwViewMethods.onDraw(canvas);
+        } finally {
+            TraceEvent.end("AwContents.onDraw");
+        }
     }
 
     public void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -1594,9 +1600,6 @@ public class AwContents implements SmartClipProvider {
     public void clearSslPreferences() {
         if (!isDestroyed()) mNavigationController.clearSslPreferences();
     }
-
-    // TODO(sgurun) remove after this rolls in. To keep internal tree happy.
-    public void clearClientCertPreferences() { }
 
     /**
      * Method to return all hit test values relevant to public WebView API.
@@ -2335,6 +2338,7 @@ public class AwContents implements SmartClipProvider {
         @Override
         public void onDraw(Canvas canvas) {
             if (isDestroyed()) {
+                TraceEvent.instant("EarlyOut_destroyed");
                 canvas.drawColor(getEffectiveBackgroundColor());
                 return;
             }
@@ -2342,6 +2346,7 @@ public class AwContents implements SmartClipProvider {
             // For hardware draws, the clip at onDraw time could be different
             // from the clip during DrawGL.
             if (!canvas.isHardwareAccelerated() && !canvas.getClipBounds(mClipBoundsTemporary)) {
+                TraceEvent.instant("EarlyOut_software_empty_clip");
                 return;
             }
 
@@ -2356,6 +2361,7 @@ public class AwContents implements SmartClipProvider {
                 did_draw = mNativeGLDelegate.requestDrawGL(canvas, false, mContainerView);
             }
             if (!did_draw) {
+                TraceEvent.instant("NativeDrawFailed");
                 canvas.drawColor(getEffectiveBackgroundColor());
             }
 

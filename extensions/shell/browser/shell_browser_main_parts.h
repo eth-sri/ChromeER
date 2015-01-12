@@ -13,6 +13,8 @@
 #include "content/public/common/main_function_params.h"
 #include "ui/aura/window_tree_host_observer.h"
 
+class PrefService;
+
 namespace content {
 class BrowserContext;
 class DevToolsHttpHandler;
@@ -21,10 +23,6 @@ struct MainFunctionParams;
 
 namespace views {
 class Widget;
-}
-
-namespace net {
-class NetLog;
 }
 
 namespace extensions {
@@ -71,7 +69,8 @@ class ShellBrowserMainParts : public content::BrowserMainParts {
   // This class takes ownership of the returned objects.
   virtual ExtensionsClient* CreateExtensionsClient();
   virtual ExtensionsBrowserClient* CreateExtensionsBrowserClient(
-      content::BrowserContext* context);
+      content::BrowserContext* context,
+      PrefService* service);
 
  private:
   // Creates and initializes the ExtensionSystem.
@@ -83,11 +82,12 @@ class ShellBrowserMainParts : public content::BrowserMainParts {
 #endif
   scoped_ptr<DesktopController> desktop_controller_;
   scoped_ptr<ShellBrowserContext> browser_context_;
+  scoped_ptr<PrefService> local_state_;
+  scoped_ptr<PrefService> user_pref_service_;
   scoped_ptr<ShellDeviceClient> device_client_;
   scoped_ptr<AppWindowClient> app_window_client_;
   scoped_ptr<ExtensionsClient> extensions_client_;
   scoped_ptr<ExtensionsBrowserClient> extensions_browser_client_;
-  scoped_ptr<net::NetLog> net_log_;
   scoped_ptr<content::DevToolsHttpHandler> devtools_http_handler_;
   scoped_ptr<ShellOmahaQueryParamsDelegate> omaha_query_params_delegate_;
   scoped_ptr<ShellOAuth2TokenService> oauth2_token_service_;

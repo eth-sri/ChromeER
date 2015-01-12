@@ -90,8 +90,7 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
   virtual bool CanCurrentUserLock() const override;
   virtual bool IsUserLoggedIn() const override;
   virtual bool IsLoggedInAsUserWithGaiaAccount() const override;
-  virtual bool IsLoggedInAsRegularSupervisedUser() const override;
-  virtual bool IsLoggedInAsDemoUser() const override;
+  virtual bool IsLoggedInAsChildUser() const override;
   virtual bool IsLoggedInAsPublicAccount() const override;
   virtual bool IsLoggedInAsGuest() const override;
   virtual bool IsLoggedInAsSupervisedUser() const override;
@@ -107,8 +106,7 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
   virtual void RemoveSessionStateObserver(
       UserManager::UserSessionStateObserver* obs) override;
   virtual void NotifyLocalStateChanged() override;
-  virtual void ChangeUserSupervisedStatus(User* user, bool is_supervised)
-      override;
+  virtual void ChangeUserChildStatus(User* user, bool is_child) override;
 
   // Helper function that copies users from |users_list| to |users_vector| and
   // |users_set|. Duplicates and users already present in |existing_users| are
@@ -233,9 +231,6 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
 
   // Indicates that a regular user just logged in as ephemeral.
   virtual void RegularUserLoggedInAsEphemeral(const std::string& user_id);
-
-  // Indicates that a user just logged into a retail mode session.
-  virtual void RetailModeUserLoggedIn() = 0;
 
   // Indicates that a supervised user just logged in.
   virtual void SupervisedUserLoggedIn(const std::string& user_id) = 0;

@@ -86,6 +86,10 @@
       'public/common/page_zoom.h',
       'public/common/pepper_plugin_info.cc',
       'public/common/pepper_plugin_info.h',
+      'public/common/persistent_notification_status.h',
+      'public/common/platform_notification_data.cc',
+      'public/common/platform_notification_data.h',
+      'public/common/platform_notification_service.h',
       'public/common/process_type.h',
       'public/common/push_messaging_status.cc',
       'public/common/push_messaging_status.h',
@@ -113,8 +117,6 @@
       'public/common/security_style.h',
       'public/common/send_zygote_child_ping_linux.h',
       'public/common/service_registry.h',
-      'public/common/show_desktop_notification_params.cc',
-      'public/common/show_desktop_notification_params.h',
       'public/common/signed_certificate_timestamp_id_and_status.cc',
       'public/common/signed_certificate_timestamp_id_and_status.h',
       'public/common/speech_recognition_error.h',
@@ -212,6 +214,8 @@
       'common/device_sensors/device_orientation_hardware_buffer.h',
       'common/device_sensors/device_orientation_messages.h',
       'common/devtools_messages.h',
+      'common/discardable_shared_memory_heap.cc',
+      'common/discardable_shared_memory_heap.h',
       'common/dom_storage/dom_storage_map.cc',
       'common/dom_storage/dom_storage_map.h',
       'common/dom_storage/dom_storage_messages.h',
@@ -239,6 +243,8 @@
       'common/frame_param.cc',
       'common/frame_param.h',
       'common/frame_param_macros.h',
+      'common/frame_replication_state.cc',
+      'common/frame_replication_state.h',
       'common/gamepad_hardware_buffer.h',
       'common/gamepad_messages.h',
       'common/gamepad_param_traits.cc',
@@ -246,8 +252,8 @@
       'common/gamepad_user_gesture.cc',
       'common/gamepad_user_gesture.h',
       'common/geofencing_messages.h',
-      'common/geofencing_status.cc',
-      'common/geofencing_status.h',
+      'common/geofencing_types.cc',
+      'common/geofencing_types.h',
       'common/gin_java_bridge_messages.h',
       'common/gpu/client/command_buffer_proxy_impl.cc',
       'common/gpu/client/command_buffer_proxy_impl.h',
@@ -324,8 +330,6 @@
       'common/gpu/null_transport_surface.h',
       'common/gpu/stream_texture_android.cc',
       'common/gpu/stream_texture_android.h',
-      'common/gpu/surface_handle_types_mac.cc',
-      'common/gpu/surface_handle_types_mac.h',
       'common/handle_enumerator_win.cc',
       'common/handle_enumerator_win.h',
       'common/host_discardable_shared_memory_manager.cc',
@@ -410,6 +414,9 @@
       'common/navigation_gesture.h',
       'common/navigation_params.cc',
       'common/navigation_params.h',
+      'common/navigator_connect_messages.h',
+      'common/navigator_connect_types.cc',
+      'common/navigator_connect_types.h',
       'common/net/url_fetcher.cc',
       'common/net/url_request_user_data.cc',
       'common/net/url_request_user_data.h',
@@ -553,6 +560,7 @@
     }, {  # OS!="ios"
       'dependencies': [
         '../cc/cc.gyp:cc',
+        '../gpu/blink/gpu_blink.gyp:gpu_blink',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_c_lib',
         '../gpu/gpu.gyp:gles2_implementation',
@@ -565,9 +573,10 @@
         '../ipc/mojo/ipc_mojo.gyp:ipc_mojo',
         '../media/media.gyp:media',
         '../media/media.gyp:shared_memory_support',
-        '../mojo/edk/mojo_edk.gyp:mojo_system_impl',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
+        '../mojo/mojo_edk.gyp:mojo_system_impl',
+        '../mojo/mojo_public.gyp:mojo_application_bindings',
+        '../mojo/mojo_public.gyp:mojo_cpp_bindings',
         '../storage/storage_browser.gyp:storage',
         '../storage/storage_common.gyp:storage_common',
         '../third_party/WebKit/public/blink.gyp:blink',
@@ -575,7 +584,8 @@
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
       ],
       'export_dependent_settings' : [
-        '../mojo/public/mojo_public.gyp:mojo_cpp_bindings',
+        '../mojo/mojo_public.gyp:mojo_application_bindings',
+        '../mojo/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'actions': [
         {
@@ -606,6 +616,7 @@
       'dependencies': [
         '../media/media.gyp:media',
         'app/resources/content_resources.gyp:content_resources',
+        '../ui/accelerated_widget_mac/accelerated_widget_mac.gyp:accelerated_widget_mac'
       ],
       'sources': [
         'common/gpu/client/gpu_memory_buffer_impl_io_surface.cc',
@@ -770,7 +781,7 @@
         '<(DEPTH)/third_party/khronos',
       ],
     }],
-    ['target_arch != "arm" and chromeos == 1 and use_x11 == 1', {
+    ['target_arch != "arm" and chromeos == 1', {
       'dependencies': [
         '../media/media.gyp:media',
         '../third_party/libyuv/libyuv.gyp:libyuv',
@@ -781,6 +792,8 @@
         'common/gpu/media/va_surface.h',
         'common/gpu/media/vaapi_h264_decoder.cc',
         'common/gpu/media/vaapi_h264_decoder.h',
+        'common/gpu/media/vaapi_picture.cc',
+        'common/gpu/media/vaapi_picture.h',
         'common/gpu/media/vaapi_video_decode_accelerator.cc',
         'common/gpu/media/vaapi_video_decode_accelerator.h',
         'common/gpu/media/vaapi_video_encode_accelerator.cc',
@@ -788,10 +801,29 @@
         'common/gpu/media/vaapi_wrapper.cc',
         'common/gpu/media/vaapi_wrapper.h',
       ],
+      'conditions': [
+        ['use_x11 == 1', {
+          'variables': {
+            'sig_files': [
+              'common/gpu/media/va.sigs',
+              'common/gpu/media/va_x11.sigs',
+            ],
+          },
+          'sources': [
+            'common/gpu/media/vaapi_tfp_picture.cc',
+            'common/gpu/media/vaapi_tfp_picture.h',
+          ],
+        }, {
+          'variables': {
+            'sig_files': [
+              'common/gpu/media/va.sigs',
+            ],
+          },
+        }],
+      ],
       'variables': {
         'generate_stubs_script': '../tools/generate_stubs/generate_stubs.py',
         'extra_header': 'common/gpu/media/va_stub_header.fragment',
-        'sig_files': ['common/gpu/media/va.sigs'],
         'outfile_type': 'posix_stubs',
         'stubs_filename_root': 'va_stubs',
         'project_path': 'content/common/gpu/media',

@@ -4,6 +4,8 @@
 
 package org.chromium.content_public.browser;
 
+import org.chromium.base.VisibleForTesting;
+
 /**
  * The WebContents Java wrapper to allow communicating with the native WebContents object.
  */
@@ -75,6 +77,7 @@ public interface WebContents {
      * @param url The URL being blocked by the interstitial.
      * @param delegate The delegate handling the interstitial.
      */
+    @VisibleForTesting
     public void showInterstitialPage(
             String url, long interstitialPageDelegateAndroid);
 
@@ -161,6 +164,11 @@ public interface WebContents {
      * exiting-transition stylesheets.
      */
     public void beginExitTransition(String cssSelector, boolean exitToNativeApp);
+
+    /**
+     * Revert the effect of exit transition after it transitions to activity.
+     */
+    public void revertExitTransition();
 
     /**
      * Hide transition elements.

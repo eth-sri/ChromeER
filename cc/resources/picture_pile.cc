@@ -10,7 +10,7 @@
 
 #include "cc/base/region.h"
 #include "cc/resources/picture_pile_impl.h"
-#include "cc/resources/raster_worker_pool.h"
+#include "cc/resources/tile_task_worker_pool.h"
 #include "skia/ext/analysis_canvas.h"
 
 namespace {
@@ -545,7 +545,7 @@ void PicturePile::CreatePictures(ContentLayerClient* painter,
     // raster thread doesn't provide any benefit. This might change
     // in the future but we avoid it for now to reduce the cost of
     // Picture::Create.
-    bool gather_pixel_refs = RasterWorkerPool::GetNumRasterThreads() > 1;
+    bool gather_pixel_refs = TileTaskWorkerPool::GetNumWorkerThreads() > 1;
 
     for (int i = 0; i < repeat_count; i++) {
       picture = Picture::Create(padded_record_rect, painter, tile_grid_info_,
@@ -556,8 +556,16 @@ void PicturePile::CreatePictures(ContentLayerClient* painter,
       // even if that content is replaced by gpu-friendly content.
       // This is an optimization to avoid iterating though all pictures in
       // the pile after each invalidation.
-      is_suitable_for_gpu_rasterization_ &=
-          picture->IsSuitableForGpuRasterization();
+      if (is_suitable_for_gpu_rasterization_) {
+        const char* reason = nullptr;
+        is_suitable_for_gpu_rasterization_ &=
+            picture->IsSuitableForGpuRasterization(&reason);
+
+        if (!is_suitable_for_gpu_rasterization_) {
+          TRACE_EVENT_INSTANT1("cc", "GPU Rasterization Veto",
+                               TRACE_EVENT_SCOPE_THREAD, "reason", reason);
+        }
+      }
     }
 
     bool found_tile_for_recorded_picture = false;
@@ -685,9 +693,10 @@ void PicturePile::DetermineIfSolidColor() {
     if (it->second.GetPicture() != picture)
       return;
   }
-  skia::AnalysisCanvas canvas(recorded_viewport_.width(),
-                              recorded_viewport_.height());
-  canvas.translate(-recorded_viewport_.x(), -recorded_viewport_.y());
+
+  gfx::Size layer_size = GetSize();
+  skia::AnalysisCanvas canvas(layer_size.width(), layer_size.height());
+
   picture->Raster(&canvas, nullptr, Region(), 1.0f);
   is_solid_color_ = canvas.GetColorIfSolid(&solid_color_);
 }

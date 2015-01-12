@@ -4,21 +4,21 @@
 
 import json
 import os
+import unittest
 
-from telemetry import benchmark
-from telemetry.core import exceptions
+from telemetry import decorators
 from telemetry.core import wpr_modes
 from telemetry.page import page as page_module
 from telemetry.page import page_set
-from telemetry.page import page_set_archive_info
 from telemetry.page import page_test
 from telemetry.unittest_util import options_for_unittests
 from telemetry.unittest_util import page_test_test_case
+from telemetry.wpr import archive_info
 
 
 class PageTestThatFails(page_test.PageTest):
   def ValidateAndMeasurePage(self, page, tab, results):
-    raise exceptions.IntentionalException
+    raise page_test.Failure
 
 
 class PageTestForBlank(page_test.PageTest):
@@ -89,7 +89,7 @@ class PageTestUnitTest(page_test_test_case.PageTestTestCase):
 
   # This test is disabled because it runs against live sites, and needs to be
   # fixed. crbug.com/179038
-  @benchmark.Disabled
+  @decorators.Disabled
   def testRecordAndReplay(self):
     test_archive = '/tmp/google.wpr'
     google_url = 'http://www.google.com/'
@@ -108,7 +108,8 @@ class PageTestUnitTest(page_test_test_case.PageTestTestCase):
       # First record an archive with only www.google.com.
       self._options.browser_options.wpr_mode = wpr_modes.WPR_RECORD
 
-      ps.wpr_archive_info = page_set_archive_info.PageSetArchiveInfo(
+      # pylint: disable=protected-access
+      ps._wpr_archive_info = archive_info.WprArchiveInfo(
           '', '', ps.bucket, json.loads(archive_info_template %
                                         (test_archive, google_url)))
       ps.pages = [page_module.Page(google_url, ps)]
@@ -118,14 +119,16 @@ class PageTestUnitTest(page_test_test_case.PageTestTestCase):
       # Now replay it and verify that google.com is found but foo.com is not.
       self._options.browser_options.wpr_mode = wpr_modes.WPR_REPLAY
 
-      ps.wpr_archive_info = page_set_archive_info.PageSetArchiveInfo(
+      # pylint: disable=protected-access
+      ps._wpr_archive_info = archive_info.WprArchiveInfo(
           '', '', ps.bucket, json.loads(archive_info_template %
                                         (test_archive, foo_url)))
       ps.pages = [page_module.Page(foo_url, ps)]
       all_results = self.RunMeasurement(measurement, ps, options=self._options)
       self.assertEquals(1, len(all_results.failures))
 
-      ps.wpr_archive_info = page_set_archive_info.PageSetArchiveInfo(
+      # pylint: disable=protected-access
+      ps._wpr_archive_info = archive_info.WprArchiveInfo(
           '', '', ps.bucket, json.loads(archive_info_template %
                                         (test_archive, google_url)))
       ps.pages = [page_module.Page(google_url, ps)]
@@ -141,7 +144,36 @@ class PageTestUnitTest(page_test_test_case.PageTestTestCase):
   def testRunActions(self):
     ps = self.CreateEmptyPageSet()
     page = PageWithAction('file://blank.html', ps)
-    ps.AddPage(page)
+    ps.AddUserStory(page)
     measurement = PageTestWithAction()
     self.RunMeasurement(measurement, ps, options=self._options)
     self.assertTrue(page.run_test_action_called)
+
+
+class MultiTabPageTestUnitTest(unittest.TestCase):
+  def testNoTabForPageReturnsFalse(self):
+    class PageTestWithoutTabForPage(page_test.PageTest):
+      def ValidateAndMeasurePage(self, *_):
+        pass
+    test = PageTestWithoutTabForPage()
+    self.assertFalse(test.is_multi_tab_test)
+
+  def testHasTabForPageReturnsTrue(self):
+    class PageTestWithTabForPage(page_test.PageTest):
+      def ValidateAndMeasurePage(self, *_):
+        pass
+      def TabForPage(self, *_):
+        pass
+    test = PageTestWithTabForPage()
+    self.assertTrue(test.is_multi_tab_test)
+
+  def testHasTabForPageInAncestor(self):
+    class PageTestWithTabForPage(page_test.PageTest):
+      def ValidateAndMeasurePage(self, *_):
+        pass
+      def TabForPage(self, *_):
+        pass
+    class PageTestWithTabForPageInParent(PageTestWithTabForPage):
+      pass
+    test = PageTestWithTabForPageInParent()
+    self.assertTrue(test.is_multi_tab_test)

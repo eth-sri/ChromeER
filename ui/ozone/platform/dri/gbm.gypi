@@ -24,6 +24,8 @@
         '../base/ui_base.gyp:ui_base',
         '../events/events.gyp:events',
         '../events/ozone/events_ozone.gyp:events_ozone',
+        '../events/ozone/events_ozone.gyp:events_ozone_evdev',
+        '../events/ozone/events_ozone.gyp:events_ozone_layout',
         '../gfx/gfx.gyp:gfx',
       ],
       'defines': [

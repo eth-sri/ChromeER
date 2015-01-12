@@ -6,6 +6,7 @@
 #define COMPONENTS_COPRESENCE_MEDIUMS_AUDIO_AUDIO_MANAGER_IMPL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/cancelable_callback.h"
@@ -15,6 +16,10 @@
 #include "components/copresence/mediums/audio/audio_manager.h"
 #include "components/copresence/public/copresence_constants.h"
 #include "components/copresence/timed_map.h"
+
+namespace base {
+class Time;
+}
 
 namespace copresence {
 
@@ -40,8 +45,6 @@ class AudioManagerImpl final : public AudioManager {
   void StopRecording(AudioType type) override;
   void SetToken(AudioType type, const std::string& url_unsafe_token) override;
   const std::string GetToken(AudioType type) override;
-  bool IsRecording(AudioType type) override;
-  bool IsPlaying(AudioType type) override;
   bool IsPlayingTokenHeard(AudioType type) override;
 
   void set_player_for_testing(AudioType type, AudioPlayer* player) {
@@ -52,8 +55,8 @@ class AudioManagerImpl final : public AudioManager {
   }
 
  private:
-  typedef TimedMap<std::string, scoped_refptr<media::AudioBusRefCounted>>
-      SamplesMap;
+  using SamplesMap = TimedMap<std::string,
+                              scoped_refptr<media::AudioBusRefCounted>>;
 
   // Receives the audio samples from encoding a token.
   void OnTokenEncoded(AudioType type,
@@ -67,6 +70,8 @@ class AudioManagerImpl final : public AudioManager {
   // samples if needed. Prerequisite: Samples corresponding to this token
   // should already be in the samples cache.
   void UpdateToken(AudioType type, const std::string& token);
+
+  void RestartPlaying(AudioType type);
 
   WhispernetClient* whispernet_client_;
 
@@ -83,8 +88,8 @@ class AudioManagerImpl final : public AudioManager {
   static_assert(INAUDIBLE == 1, "AudioType::INAUDIBLE should be 1.");
 
   // Indexed using enum AudioType.
-  bool playing_[2];
-  bool recording_[2];
+  bool should_be_playing_[2];
+  bool should_be_recording_[2];
 
   // AudioPlayer and AudioRecorder objects are self-deleting. When we call
   // Finalize on them, they clean themselves up on the Audio thread.
@@ -94,7 +99,8 @@ class AudioManagerImpl final : public AudioManager {
 
   // Indexed using enum AudioType.
   std::string playing_token_[2];
-  bool heard_own_token_[2];
+  base::Time started_playing_[2];
+  base::Time heard_own_token_[2];
 
   // Cache that holds the encoded samples. After reaching its limit, the cache
   // expires the oldest samples first.

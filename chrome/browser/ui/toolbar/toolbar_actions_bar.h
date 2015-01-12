@@ -61,7 +61,7 @@ class ToolbarActionsBar : public extensions::ExtensionToolbarModel::Observer {
 
   ToolbarActionsBar(ToolbarActionsBarDelegate* delegate,
                     Browser* browser,
-                    bool in_overflow_mode);
+                    ToolbarActionsBar* main_bar);
   ~ToolbarActionsBar() override;
 
   // Returns the width of a browser action icon, optionally including the
@@ -108,22 +108,39 @@ class ToolbarActionsBar : public extensions::ExtensionToolbarModel::Observer {
   // and dragged the view from |dragged_index| to |dropped_index|.
   // |drag_type| indicates whether or not the icon was dragged between the
   // overflow and main containers.
+  // The main container should handle all drag/drop notifications.
   void OnDragDrop(int dragged_index,
                   int dropped_index,
                   DragType drag_type);
 
-  const std::vector<ToolbarActionViewController*>& toolbar_actions() {
+  const std::vector<ToolbarActionViewController*>& toolbar_actions() const {
     return toolbar_actions_.get();
   }
   bool enabled() const { return model_ != nullptr; }
   bool suppress_layout() const { return suppress_layout_; }
-  bool suppress_animation() const { return suppress_animation_; }
+  bool suppress_animation() const {
+    return suppress_animation_ || disable_animations_for_testing_;
+  }
   bool is_highlighting() const { return model_ && model_->is_highlighting(); }
   const PlatformSettings& platform_settings() const {
     return platform_settings_;
   }
 
+  ToolbarActionsBarDelegate* delegate_for_test() { return delegate_; }
+
+  static void set_pop_out_actions_to_run_for_testing(
+      bool pop_out_actions_to_run) {
+    pop_out_actions_to_run_ = pop_out_actions_to_run;
+  }
+
+  // During testing we can disable animations by setting this flag to true,
+  // so that the bar resizes instantly, instead of having to poll it while it
+  // animates to open/closed status.
+  static bool disable_animations_for_testing_;
+
  private:
+  class TabOrderHelper;
+
   using ToolbarActions = ScopedVector<ToolbarActionViewController>;
 
   // ExtensionToolbarModel::Observer:
@@ -138,7 +155,6 @@ class ToolbarActionsBar : public extensions::ExtensionToolbarModel::Observer {
   void ToolbarVisibleCountChanged() override;
   void ToolbarHighlightModeChanged(bool is_highlighting) override;
   void OnToolbarModelInitialized() override;
-  void OnToolbarReorderNecessary(content::WebContents* web_contents) override;
   Browser* GetBrowser() override;
 
   // Resizes the delegate (if necessary) to the preferred size using the given
@@ -151,8 +167,12 @@ class ToolbarActionsBar : public extensions::ExtensionToolbarModel::Observer {
   // Returns the current web contents.
   content::WebContents* GetCurrentWebContents();
 
-  // Reorders the toolbar actions to reflect any that need to pop out.
+  // Reorders the toolbar actions to reflect the model and, optionally, to
+  // "pop out" any overflowed actions that want to run (depending on the
+  // value of |pop_out_actions_to_run|.
   void ReorderActions();
+
+  bool in_overflow_mode() const { return main_bar_ != nullptr; }
 
   // The delegate for this object (in a real build, this is the view).
   ToolbarActionsBarDelegate* delegate_;
@@ -163,14 +183,19 @@ class ToolbarActionsBar : public extensions::ExtensionToolbarModel::Observer {
   // The observed toolbar model.
   extensions::ExtensionToolbarModel* model_;
 
-  // True if this bar is for the overflow menu.
-  bool in_overflow_mode_;
+  // The controller for the main toolbar actions bar. This will be null if this
+  // is the main bar.
+  ToolbarActionsBar* main_bar_;
 
   // Platform-specific settings for dimensions and the overflow chevron.
   PlatformSettings platform_settings_;
 
   // The toolbar actions.
   ToolbarActions toolbar_actions_;
+
+  // The TabOrderHelper that manages popping out actions that want to act.
+  // This is only non-null if |pop_out_actions_to_run| is true.
+  scoped_ptr<TabOrderHelper> tab_order_helper_;
 
   ScopedObserver<extensions::ExtensionToolbarModel,
                  extensions::ExtensionToolbarModel::Observer> model_observer_;
@@ -182,6 +207,11 @@ class ToolbarActionsBar : public extensions::ExtensionToolbarModel::Observer {
   // True if we should suppress animation; we do this when first creating the
   // toolbar, and also when switching tabs changes the state of the icons.
   bool suppress_animation_;
+
+  // If this is true, actions that want to run (e.g., an extension's page
+  // action) will pop out of overflow to draw more attention.
+  // See also TabOrderHelper in the .cc file.
+  static bool pop_out_actions_to_run_;
 
   DISALLOW_COPY_AND_ASSIGN(ToolbarActionsBar);
 };

@@ -107,6 +107,8 @@ class ProfileImpl : public Profile {
   bool HasOffTheRecordProfile() override;
   Profile* GetOriginalProfile() override;
   bool IsSupervised() override;
+  bool IsChild() override;
+  bool IsLegacySupervised() override;
   history::TopSites* GetTopSites() override;
   history::TopSites* GetTopSitesWithoutCreating() override;
   ExtensionSpecialStoragePolicy* GetExtensionSpecialStoragePolicy() override;
@@ -185,7 +187,6 @@ class ProfileImpl : public Profile {
   }
 
   // Updates the ProfileInfoCache with data from this profile.
-  void UpdateProfileUserNameCache();
   void UpdateProfileSupervisedUserIdCache();
   void UpdateProfileNameCache();
   void UpdateProfileAvatarCache();

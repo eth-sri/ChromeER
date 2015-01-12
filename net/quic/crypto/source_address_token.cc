@@ -20,10 +20,10 @@ SourceAddressToken::~SourceAddressToken() {
 
 string SourceAddressToken::SerializeAsString() const {
   string out;
-  out.push_back(ip_.size());
+  out.push_back(static_cast<char>(ip_.size()));
   out.append(ip_);
   string time_str = base::Int64ToString(timestamp_);
-  out.push_back(time_str.size());
+  out.push_back(static_cast<char>(time_str.size()));
   out.append(time_str);
   // TODO(rtenneti): Implement serialization of optional CachedNetworkParameters
   // when they are used.
@@ -55,6 +55,30 @@ bool SourceAddressToken::ParseFromArray(const char* plaintext,
 
   // TODO(rtenneti): Implement parsing of optional CachedNetworkParameters when
   // they are used.
+  return true;
+}
+
+SourceAddressTokens::SourceAddressTokens() {
+}
+
+SourceAddressTokens::~SourceAddressTokens() {
+  STLDeleteElements(&tokens_);
+}
+
+string SourceAddressTokens::SerializeAsString() const {
+  string out;
+
+  for (size_t i = 0; i < tokens_size(); i++) {
+    const SourceAddressToken& source_address_token = tokens(i);
+    out.append(source_address_token.SerializeAsString());
+  }
+  return out;
+}
+
+bool SourceAddressTokens::ParseFromArray(const char* plaintext,
+                                         size_t plaintext_length) {
+  // TODO(rtenneti): Implement parsing of SourceAddressTokens when they are
+  // used.
   return true;
 }
 

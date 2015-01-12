@@ -185,8 +185,6 @@ void UserManagerBase::UserLoggedIn(const std::string& user_id,
 
   if (user_id == chromeos::login::kGuestUserName) {
     GuestUserLoggedIn();
-  } else if (user_id == chromeos::login::kRetailModeUserName) {
-    RetailModeUserLoggedIn();
   } else if (IsKioskApp(user_id)) {
     KioskAppLoggedIn(user_id);
   } else if (IsDemoApp(user_id)) {
@@ -581,15 +579,9 @@ bool UserManagerBase::IsLoggedInAsUserWithGaiaAccount() const {
   return IsUserLoggedIn() && active_user_->HasGaiaAccount();
 }
 
-bool UserManagerBase::IsLoggedInAsRegularSupervisedUser() const {
+bool UserManagerBase::IsLoggedInAsChildUser() const {
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
-  return IsUserLoggedIn() && active_user_->GetType() ==
-      USER_TYPE_REGULAR_SUPERVISED;
-}
-
-bool UserManagerBase::IsLoggedInAsDemoUser() const {
-  DCHECK(task_runner_->RunsTasksOnCurrentThread());
-  return IsUserLoggedIn() && active_user_->GetType() == USER_TYPE_RETAIL_MODE;
+  return IsUserLoggedIn() && active_user_->GetType() == USER_TYPE_CHILD;
 }
 
 bool UserManagerBase::IsLoggedInAsPublicAccount() const {
@@ -626,10 +618,8 @@ bool UserManagerBase::IsSessionStarted() const {
 
 bool UserManagerBase::IsUserNonCryptohomeDataEphemeral(
     const std::string& user_id) const {
-  // Data belonging to the guest, retail mode and stub users is always
-  // ephemeral.
+  // Data belonging to the guest and stub users is always ephemeral.
   if (user_id == chromeos::login::kGuestUserName ||
-      user_id == chromeos::login::kRetailModeUserName ||
       user_id == chromeos::login::kStubUser) {
     return true;
   }
@@ -784,8 +774,8 @@ void UserManagerBase::EnsureUsersLoaded() {
       user = User::CreateRegularUser(*it);
       int user_type;
       if (prefs_user_types->GetIntegerWithoutPathExpansion(*it, &user_type) &&
-          user_type == USER_TYPE_REGULAR_SUPERVISED) {
-        ChangeUserSupervisedStatus(user, true /* is supervised */);
+          user_type == USER_TYPE_CHILD) {
+        ChangeUserChildStatus(user, true /* is child */);
       }
     }
     user->set_oauth_token_status(LoadUserOAuthStatus(*it));
@@ -990,16 +980,15 @@ void UserManagerBase::NotifyActiveUserHashChanged(const std::string& hash) {
                     ActiveUserHashChanged(hash));
 }
 
-void UserManagerBase::ChangeUserSupervisedStatus(User* user,
-                                                 bool is_supervised) {
+void UserManagerBase::ChangeUserChildStatus(User* user, bool is_child) {
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
-  user->SetIsSupervised(is_supervised);
-  SaveUserType(user->email(), is_supervised
-                                  ? user_manager::USER_TYPE_REGULAR_SUPERVISED
+  user->SetIsChild(is_child);
+  SaveUserType(user->email(), is_child
+                                  ? user_manager::USER_TYPE_CHILD
                                   : user_manager::USER_TYPE_REGULAR);
   FOR_EACH_OBSERVER(UserManager::UserSessionStateObserver,
                     session_state_observer_list_,
-                    UserChangedSupervisedStatus(user));
+                    UserChangedChildStatus(user));
 }
 
 void UserManagerBase::UpdateLoginState() {
@@ -1017,8 +1006,6 @@ void UserManagerBase::UpdateLoginState() {
     login_user_type = chromeos::LoginState::LOGGED_IN_USER_OWNER;
   else if (active_user_->GetType() == USER_TYPE_GUEST)
     login_user_type = chromeos::LoginState::LOGGED_IN_USER_GUEST;
-  else if (active_user_->GetType() == USER_TYPE_RETAIL_MODE)
-    login_user_type = chromeos::LoginState::LOGGED_IN_USER_RETAIL_MODE;
   else if (active_user_->GetType() == USER_TYPE_PUBLIC_ACCOUNT)
     login_user_type = chromeos::LoginState::LOGGED_IN_USER_PUBLIC_ACCOUNT;
   else if (active_user_->GetType() == USER_TYPE_SUPERVISED)
@@ -1051,7 +1038,7 @@ void UserManagerBase::SetLRUUser(User* user) {
 void UserManagerBase::SendGaiaUserLoginMetrics(const std::string& user_id) {
   // If this isn't the first time Chrome was run after the system booted,
   // assume that Chrome was restarted because a previous session ended.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           chromeos::switches::kFirstExecAfterBoot)) {
     const std::string last_email =
         GetLocalState()->GetString(kLastLoggedInGaiaUser);

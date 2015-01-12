@@ -8,7 +8,8 @@
 #include "cc/layers/ui_resource_layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/browser/android/animation_utils.h"
-#include "ui/base/android/system_ui_resource_manager.h"
+#include "ui/android/resources/resource_manager.h"
+#include "ui/android/resources/system_ui_resource_type.h"
 #include "ui/gfx/geometry/size_conversions.h"
 
 using std::abs;
@@ -18,8 +19,8 @@ using std::min;
 namespace content {
 namespace {
 
-const ui::SystemUIResourceType kIdleResourceType = ui::OVERSCROLL_REFRESH_IDLE;
-const ui::SystemUIResourceType kActiveResourceType =
+const ui::SystemUIResourceType kIdleResourceId = ui::OVERSCROLL_REFRESH_IDLE;
+const ui::SystemUIResourceType kActiveResourceId =
     ui::OVERSCROLL_REFRESH_ACTIVE;
 
 // Drag movement multiplier between user input and effect translation.
@@ -32,10 +33,10 @@ const int kRecedeTimeMs = 300;
 const int kActivationStartTimeMs = 150;
 
 // Animation duration after the effect is released and triggers a refresh.
-const int kActivationTimeMs = 1000;
+const int kActivationTimeMs = 850;
 
 // Max animation duration after the effect is released and triggers a refresh.
-const int kMaxActivationTimeMs = kActivationTimeMs * 3;
+const int kMaxActivationTimeMs = kActivationTimeMs * 4;
 
 // Animation duration after the refresh activated phase has completed.
 const int kActivationRecedeTimeMs = 250;
@@ -105,7 +106,7 @@ void UpdateLayer(cc::UIResourceLayer* layer,
 
 class OverscrollRefresh::Effect {
  public:
-  Effect(ui::SystemUIResourceManager* resource_manager, float target_drag)
+  Effect(ui::ResourceManager* resource_manager, float target_drag)
       : resource_manager_(resource_manager),
         idle_layer_(cc::UIResourceLayer::Create()),
         active_layer_(cc::UIResourceLayer::Create()),
@@ -325,10 +326,10 @@ class OverscrollRefresh::Effect {
       return;
     }
 
-    cc::UIResourceId idle_resource =
-        resource_manager_->GetUIResourceId(kIdleResourceType);
-    cc::UIResourceId active_resource =
-        resource_manager_->GetUIResourceId(kActiveResourceType);
+    cc::UIResourceId idle_resource = resource_manager_->GetUIResourceId(
+        ui::ANDROID_RESOURCE_TYPE_SYSTEM, kIdleResourceId);
+    cc::UIResourceId active_resource = resource_manager_->GetUIResourceId(
+        ui::ANDROID_RESOURCE_TYPE_SYSTEM, kActiveResourceId);
 
     gfx::Size idle_size =
         parent->layer_tree_host()->GetUIResourceSize(idle_resource);
@@ -367,7 +368,7 @@ class OverscrollRefresh::Effect {
     active_layer_->RemoveFromParent();
   }
 
-  ui::SystemUIResourceManager* const resource_manager_;
+  ui::ResourceManager* const resource_manager_;
 
   scoped_refptr<cc::UIResourceLayer> idle_layer_;
   scoped_refptr<cc::UIResourceLayer> active_layer_;
@@ -403,10 +404,9 @@ class OverscrollRefresh::Effect {
   DISALLOW_COPY_AND_ASSIGN(Effect);
 };
 
-OverscrollRefresh::OverscrollRefresh(
-    ui::SystemUIResourceManager* resource_manager,
-    OverscrollRefreshClient* client,
-    float target_drag_offset_pixels)
+OverscrollRefresh::OverscrollRefresh(ui::ResourceManager* resource_manager,
+                                     OverscrollRefreshClient* client,
+                                     float target_drag_offset_pixels)
     : client_(client),
       scrolled_to_top_(true),
       scroll_consumption_state_(DISABLED),

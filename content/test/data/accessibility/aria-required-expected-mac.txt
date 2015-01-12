@@ -1,3 +1,0 @@
-AXWebArea AXRequired='0'
-    AXRadioButton AXValue='0' AXRequired='1'
-    AXRadioButton AXValue='0' AXRequired='0'

@@ -8,7 +8,9 @@ This is a thin wrapper around the adb interface. Any additional complexity
 should be delegated to a higher level (ex. DeviceUtils).
 """
 
+import collections
 import errno
+import logging
 import os
 
 from pylib import cmd_helper
@@ -35,6 +37,10 @@ def _VerifyLocalFileExists(path):
     raise IOError(errno.ENOENT, os.strerror(errno.ENOENT), path)
 
 
+DeviceStat = collections.namedtuple('DeviceStat',
+                                    ['st_mode', 'st_size', 'st_time'])
+
+
 class AdbWrapper(object):
   """A wrapper around a local Android Debug Bridge executable."""
 
@@ -44,19 +50,28 @@ class AdbWrapper(object):
     Args:
       device_serial: The device serial number as a string.
     """
+    if not device_serial:
+      raise ValueError('A device serial must be specified')
     self._device_serial = str(device_serial)
+
+  # pylint: disable=unused-argument
+  @classmethod
+  def _BuildAdbCmd(cls, args, device_serial):
+    cmd = [constants.GetAdbPath()]
+    if device_serial is not None:
+      cmd.extend(['-s', device_serial])
+    cmd.extend(args)
+    return cmd
+  # pylint: enable=unused-argument
 
   # pylint: disable=unused-argument
   @classmethod
   @decorators.WithTimeoutAndRetries
   def _RunAdbCmd(cls, args, timeout=None, retries=None, device_serial=None,
                  check_error=True):
-    cmd = [constants.GetAdbPath()]
-    if device_serial is not None:
-      cmd.extend(['-s', device_serial])
-    cmd.extend(args)
     status, output = cmd_helper.GetCmdStatusAndOutputWithTimeout(
-        cmd, timeout_retry.CurrentTimeoutThread().GetRemainingTime())
+        cls._BuildAdbCmd(args, device_serial),
+        timeout_retry.CurrentTimeoutThread().GetRemainingTime())
     if status != 0:
       raise device_errors.AdbCommandFailedError(
           args, output, status, device_serial)
@@ -84,6 +99,19 @@ class AdbWrapper(object):
     return self._RunAdbCmd(args, timeout=timeout, retries=retries,
                            device_serial=self._device_serial,
                            check_error=check_error)
+
+  def _IterRunDeviceAdbCmd(self, args, timeout):
+    """Runs an adb command and returns an iterator over its output lines.
+
+    Args:
+      args: A list of arguments to adb.
+      timeout: Timeout in seconds.
+
+    Yields:
+      The output of the command line by line.
+    """
+    return cmd_helper.IterCmdOutputLines(
+      self._BuildAdbCmd(args, self._device_serial), timeout=timeout)
 
   def __eq__(self, other):
     """Consider instances equal if they refer to the same device.
@@ -153,8 +181,13 @@ class AdbWrapper(object):
       timeout: (optional) Timeout per try in seconds.
       retries: (optional) Number of retries to attempt.
     """
-    self._RunDeviceAdbCmd(['pull', remote, local], timeout, retries)
-    _VerifyLocalFileExists(local)
+    cmd = ['pull', remote, local]
+    self._RunDeviceAdbCmd(cmd, timeout, retries)
+    try:
+      _VerifyLocalFileExists(local)
+    except IOError:
+      raise device_errors.AdbCommandFailedError(
+          cmd, 'File not found on host: %s' % local, device_serial=str(self))
 
   def Shell(self, command, expect_status=0, timeout=_DEFAULT_TIMEOUT,
             retries=_DEFAULT_RETRIES):
@@ -188,8 +221,7 @@ class AdbWrapper(object):
       try:
         status = int(output[output_end+1:])
       except ValueError:
-        output = '\n'.join([output.rstrip(),
-                            'adb shell error: exit status missing!'])
+        logging.warning('exit status of shell command %r missing.', command)
         raise device_errors.AdbCommandFailedError(
             args, output, device_serial=self._device_serial)
       output = output[:output_end]
@@ -198,22 +230,52 @@ class AdbWrapper(object):
             args, output, status, self._device_serial)
     return output
 
-  def Logcat(self, filter_spec=None, timeout=_DEFAULT_TIMEOUT,
-             retries=_DEFAULT_RETRIES):
-    """Get the logcat output.
+  def Ls(self, path, timeout=_DEFAULT_TIMEOUT, retries=_DEFAULT_RETRIES):
+    """List the contents of a directory on the device.
 
     Args:
-      filter_spec: (optional) Spec to filter the logcat.
+      path: Path on the device filesystem.
       timeout: (optional) Timeout per try in seconds.
       retries: (optional) Number of retries to attempt.
 
     Returns:
-      logcat output as a string.
+      A list of pairs (filename, stat) for each file found in the directory,
+      where the stat object has the properties: st_mode, st_size, and st_time.
+
+    Raises:
+      AdbCommandFailedError if |path| does not specify a valid and accessible
+          directory in the device.
+    """
+    def ParseLine(line):
+      cols = line.split(None, 3)
+      filename = cols.pop()
+      stat = DeviceStat(*[int(num, base=16) for num in cols])
+      return (filename, stat)
+
+    cmd = ['ls', path]
+    lines = self._RunDeviceAdbCmd(
+        cmd, timeout=timeout, retries=retries).splitlines()
+    if lines:
+      return [ParseLine(line) for line in lines]
+    else:
+      raise device_errors.AdbCommandFailedError(
+          cmd, 'path does not specify an accessible directory in the device',
+          device_serial=self._device_serial)
+
+  def Logcat(self, filter_spec=None, timeout=None):
+    """Get an iterator over the logcat output.
+
+    Args:
+      filter_spec: (optional) Spec to filter the logcat.
+      timeout: (optional) Timeout per try in seconds.
+
+    Yields:
+      logcat output line by line.
     """
     cmd = ['logcat']
     if filter_spec is not None:
       cmd.append(filter_spec)
-    return self._RunDeviceAdbCmd(cmd, timeout, retries, check_error=False)
+    return self._IterRunDeviceAdbCmd(cmd, timeout)
 
   def Forward(self, local, remote, timeout=_DEFAULT_TIMEOUT,
               retries=_DEFAULT_RETRIES):

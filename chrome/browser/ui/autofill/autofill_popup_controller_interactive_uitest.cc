@@ -10,12 +10,13 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
+#include "components/autofill/content/browser/content_autofill_driver_factory.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/test_autofill_external_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/test_utils.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/vector2d.h"
 
 namespace autofill {
@@ -78,7 +79,8 @@ class AutofillPopupControllerBrowserTest
     Observe(web_contents);
 
     ContentAutofillDriver* driver =
-        ContentAutofillDriver::FromWebContents(web_contents);
+        ContentAutofillDriverFactory::FromWebContents(web_contents)
+            ->DriverForFrame(web_contents->GetMainFrame());
     autofill_external_delegate_.reset(
        new TestAutofillExternalDelegate(
            web_contents,

@@ -19,7 +19,7 @@ namespace cc {
 
 class CC_EXPORT DrawingDisplayItem : public DisplayItem {
  public:
-  virtual ~DrawingDisplayItem();
+  ~DrawingDisplayItem() override;
 
   static scoped_ptr<DrawingDisplayItem> Create(skia::RefPtr<SkPicture> picture,
                                                gfx::PointF location) {
@@ -30,6 +30,7 @@ class CC_EXPORT DrawingDisplayItem : public DisplayItem {
 
   bool IsSuitableForGpuRasterization() const override;
   int ApproximateOpCount() const override;
+  size_t PictureMemoryUsage() const override;
 
  protected:
   DrawingDisplayItem(skia::RefPtr<SkPicture> picture, gfx::PointF location);

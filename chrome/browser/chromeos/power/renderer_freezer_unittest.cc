@@ -84,7 +84,6 @@ class TestDelegate : public RendererFreezer::Delegate, public ActionRecorder {
  public:
   TestDelegate()
       : can_freeze_renderers_(true),
-        freeze_renderers_result_(true),
         thaw_renderers_result_(true) {}
 
   ~TestDelegate() override {}
@@ -95,20 +94,16 @@ class TestDelegate : public RendererFreezer::Delegate, public ActionRecorder {
     AppendAction(frozen ? kSetShouldFreezeRenderer
                         : kSetShouldNotFreezeRenderer);
   }
-  bool FreezeRenderers() override {
+  void FreezeRenderers() override {
     AppendAction(kFreezeRenderers);
-
-    return freeze_renderers_result_;
   }
-  bool ThawRenderers() override {
+  void ThawRenderers(ResultCallback callback) override {
     AppendAction(kThawRenderers);
 
-    return thaw_renderers_result_;
+    callback.Run(thaw_renderers_result_);
   }
-  bool CanFreezeRenderers() override { return can_freeze_renderers_; }
-
-  void set_freeze_renderers_result(bool result) {
-    freeze_renderers_result_ = result;
+  void CheckCanFreezeRenderers(ResultCallback callback) override {
+    callback.Run(can_freeze_renderers_);
   }
 
   void set_thaw_renderers_result(bool result) {
@@ -120,15 +115,11 @@ class TestDelegate : public RendererFreezer::Delegate, public ActionRecorder {
   void set_can_freeze_renderers(bool can_freeze) {
     can_freeze_renderers_ = can_freeze;
 
-    // If the delegate cannot freeze renderers, then the result of trying to do
-    // so will be false.
-    freeze_renderers_result_ = can_freeze;
     thaw_renderers_result_ = can_freeze;
   }
 
  private:
   bool can_freeze_renderers_;
-  bool freeze_renderers_result_;
   bool thaw_renderers_result_;
 
   DISALLOW_COPY_AND_ASSIGN(TestDelegate);
@@ -194,22 +185,6 @@ TEST_F(RendererFreezerTest, DelegateCannotFreezeRenderers) {
   EXPECT_EQ(kNoActions, test_delegate_->GetActions());
 
   // Nothing happens on resume.
-  power_manager_client_->SendSuspendDone();
-  EXPECT_EQ(kNoActions, test_delegate_->GetActions());
-}
-
-// Tests that the RendererFreezer does nothing on resume if the freezing
-// operation was unsuccessful.
-TEST_F(RendererFreezerTest, ErrorFreezingRenderers) {
-  Init();
-  test_delegate_->set_freeze_renderers_result(false);
-
-  // The freezing operation will fail.
-  power_manager_client_->SendSuspendImminent();
-  EXPECT_EQ(kFreezeRenderers, test_delegate_->GetActions());
-
-  // Since the delegate reported that the freezing was unsuccessful, don't do
-  // anything on resume.
   power_manager_client_->SendSuspendDone();
   EXPECT_EQ(kNoActions, test_delegate_->GetActions());
 }

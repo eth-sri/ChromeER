@@ -129,14 +129,6 @@ class PlatformBackend(object):
 
     self._running_browser_backends.discard(browser_backend)
 
-  def GetBackendForBrowser(self, browser):
-    matches = [x for x in self._running_browser_backends
-               if x.browser == browser]
-    if len(matches) == 0:
-      raise Exception('No browser found')
-    assert len(matches) == 1
-    return matches[0]
-
   @property
   def wpr_http_device_port(self):
     return self._network_controller_backend.wpr_http_device_port
@@ -145,16 +137,13 @@ class PlatformBackend(object):
   def wpr_https_device_port(self):
     return self._network_controller_backend.wpr_https_device_port
 
-  def IsRawDisplayFrameRateSupported(self):
+  def IsDisplayTracingSupported(self):
     return False
 
-  def StartRawDisplayFrameRateMeasurement(self):
+  def StartDisplayTracing(self):
     raise NotImplementedError()
 
-  def StopRawDisplayFrameRateMeasurement(self):
-    raise NotImplementedError()
-
-  def GetRawDisplayFrameRateMeasurements(self):
+  def StopDisplayTracing(self):
     raise NotImplementedError()
 
   def SetFullPerformanceModeEnabled(self, enabled):
@@ -187,9 +176,6 @@ class PlatformBackend(object):
   def GetMemoryStats(self, pid):
     return {}
 
-  def GetIOStats(self, pid):
-    return {}
-
   def GetChildPids(self, pid):
     raise NotImplementedError()
 
@@ -211,7 +197,7 @@ class PlatformBackend(object):
   def FlushEntireSystemCache(self):
     raise NotImplementedError()
 
-  def FlushSystemCacheForDirectory(self, directory, ignoring=None):
+  def FlushSystemCacheForDirectory(self, directory):
     raise NotImplementedError()
 
   def FlushDnsCache(self):

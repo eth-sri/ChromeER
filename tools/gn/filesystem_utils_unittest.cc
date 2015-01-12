@@ -97,25 +97,25 @@ TEST(FilesystemUtils, EnsureStringIsInOutputDir) {
 
   // Some outside.
   Err err;
-  EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "//foo", NULL, &err));
+  EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "//foo", nullptr, &err));
   EXPECT_TRUE(err.has_error());
   err = Err();
-  EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "//out/Debugit", NULL,
-                                         &err));
+  EXPECT_FALSE(
+      EnsureStringIsInOutputDir(output_dir, "//out/Debugit", nullptr, &err));
   EXPECT_TRUE(err.has_error());
 
   // Some inside.
   err = Err();
-  EXPECT_TRUE(EnsureStringIsInOutputDir(output_dir, "//out/Debug/", NULL,
-                                        &err));
+  EXPECT_TRUE(
+      EnsureStringIsInOutputDir(output_dir, "//out/Debug/", nullptr, &err));
   EXPECT_FALSE(err.has_error());
-  EXPECT_TRUE(EnsureStringIsInOutputDir(output_dir, "//out/Debug/foo", NULL,
-                                        &err));
+  EXPECT_TRUE(
+      EnsureStringIsInOutputDir(output_dir, "//out/Debug/foo", nullptr, &err));
   EXPECT_FALSE(err.has_error());
 
   // Pattern but no template expansions are allowed.
   EXPECT_FALSE(EnsureStringIsInOutputDir(output_dir, "{{source_gen_dir}}",
-                                         NULL, &err));
+                                         nullptr, &err));
   EXPECT_TRUE(err.has_error());
 }
 
@@ -392,6 +392,11 @@ TEST(FilesystemUtils, SourceDirForPath) {
   EXPECT_EQ("//bar/", SourceDirForPath(root,
             base::FilePath(L"/C:/source/foo/bar")).value());
 
+  // Empty source dir.
+  base::FilePath empty;
+  EXPECT_EQ(
+      "/C:/source/foo/",
+      SourceDirForPath(empty, base::FilePath(L"C:\\source\\foo")).value());
 #else
   base::FilePath root("/source/foo/");
   EXPECT_EQ("/foo/bar/", SourceDirForPath(root,
@@ -408,6 +413,11 @@ TEST(FilesystemUtils, SourceDirForPath) {
   // Should be case-sensitive.
   EXPECT_EQ("/SOURCE/foo/bar/", SourceDirForPath(root,
             base::FilePath("/SOURCE/foo/bar/")).value());
+
+  // Empty source dir.
+  base::FilePath empty;
+  EXPECT_EQ("/source/foo/",
+            SourceDirForPath(empty, base::FilePath("/source/foo")).value());
 #endif
 }
 

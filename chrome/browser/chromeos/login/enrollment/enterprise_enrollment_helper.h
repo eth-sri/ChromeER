@@ -10,12 +10,15 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/login/enrollment/enrollment_mode.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
-#include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
 
-class Profile;
 class GoogleServiceAuthError;
+class Profile;
+
+namespace policy {
+struct EnrollmentConfig;
+class EnrollmentStatus;
+}
 
 namespace chromeos {
 
@@ -33,8 +36,6 @@ class EnterpriseEnrollmentHelper {
   enum OtherError {
     // Existing enrollment domain doesn't match authentication user.
     OTHER_ERROR_DOMAIN_MISMATCH,
-    // Requested device mode not supported with auto enrollment.
-    OTHER_ERROR_AUTO_ENROLLMENT_BAD_MODE,
     // Unexpected error condition, indicates a bug in the code.
     OTHER_ERROR_FATAL
   };
@@ -60,8 +61,8 @@ class EnterpriseEnrollmentHelper {
   // Factory method. Caller takes ownership of the returned object.
   static scoped_ptr<EnterpriseEnrollmentHelper> Create(
       EnrollmentStatusConsumer* status_consumer,
-      EnrollmentMode enrollment_mode,
-      std::string& user);
+      const policy::EnrollmentConfig& enrollment_config,
+      const std::string& enrolling_user_domain);
 
   virtual ~EnterpriseEnrollmentHelper();
 
@@ -85,8 +86,6 @@ class EnterpriseEnrollmentHelper {
   // Clears authentication data from the profile (if EnrollUsingProfile was
   // used) and revokes fetched tokens.
   // Does not revoke the additional token if enrollment finished successfully.
-  // Does not clear authentication data if enrollment mode is auto enrollment
-  // and enrollment finished successfully.
   // Calls |callback| on completion.
   virtual void ClearAuth(const base::Closure& callback) = 0;
 

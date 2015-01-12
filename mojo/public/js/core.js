@@ -55,6 +55,7 @@ var DEADLINE_INDEFINITE;
 var HANDLE_SIGNAL_NONE;
 var HANDLE_SIGNAL_READABLE;
 var HANDLE_SIGNAL_WRITABLE;
+var HANDLE_SIGNAL_PEER_CLOSED;
 
 /**
  * MojoCreateDataMessageOptions: Used to specify creation parameters for a data
@@ -228,3 +229,11 @@ function writeData(handle, buffer, flags) { [native code] }
  *   }
  */
 function readData(handle, flags) { [native code] }
+
+/**
+ * True if the argument is a message or data pipe handle.
+ *
+ * @param {value} an arbitrary JS value.
+ * @return true or false
+ */
+function isHandle(value) { [native code] }

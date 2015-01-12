@@ -100,7 +100,7 @@ class ScrollingPage(page_module.Page):
   def __init__(self, url, page_set, base_dir):
     super(ScrollingPage, self).__init__(url, page_set, base_dir)
 
-  def RunSmoothness(self, action_runner):
+  def RunPageInteractions(self, action_runner):
     interaction = action_runner.BeginGestureInteraction(
         'ScrollAction', is_smooth=True)
     # Add 0.5s gap between when Gesture records are issued to when we actually
@@ -114,7 +114,7 @@ class ScrollingPage(page_module.Page):
 class SmoothGestureTest(page_test_test_case.PageTestTestCase):
   def testSmoothGestureAdjusted(self):
     ps = self.CreateEmptyPageSet()
-    ps.AddPage(ScrollingPage(
+    ps.AddUserStory(ScrollingPage(
       'file://scrollable_page.html', ps, base_dir=ps.base_dir))
     models = []
     tab_ids = []
@@ -122,7 +122,7 @@ class SmoothGestureTest(page_test_test_case.PageTestTestCase):
       def __init__(self):
         # pylint: disable=bad-super-call
         super(ScrollingGestureTestMeasurement, self).__init__(
-          'RunSmoothness', False)
+          'RunPageInteractions', False)
 
       def WillRunActions(self, _page, tab):
         options = tracing_options.TracingOptions()
@@ -134,6 +134,9 @@ class SmoothGestureTest(page_test_test_case.PageTestTestCase):
         models.append(model_module.TimelineModel(
           tab.browser.platform.tracing_controller.Stop()))
         tab_ids.append(tab.id)
+
+      def ValidateAndMeasurePage(self, _page, _tab, _results):
+         pass
 
     self.RunMeasurement(ScrollingGestureTestMeasurement(), ps)
     timeline_model = models[0]

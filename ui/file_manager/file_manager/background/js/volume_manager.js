@@ -6,6 +6,9 @@
  * Represents each volume, such as "drive", "download directory", each "USB
  * flush storage", or "mounted zip archive" etc.
  *
+ * @constructor
+ * @struct
+ *
  * @param {VolumeManagerCommon.VolumeType} volumeType The type of the volume.
  * @param {string} volumeId ID of the volume.
  * @param {FileSystem} fileSystem The file system object for this volume.
@@ -21,7 +24,8 @@
  * @param {string} label Label of the volume.
  * @param {(string|undefined)} extensionId Id of the extension providing this
  *     volume. Empty for native volumes.
- * @constructor
+ * @param {boolean} hasMedia When true the volume has been identified
+ *     as containing media such as photos or videos.
  */
 function VolumeInfo(
     volumeType,
@@ -33,7 +37,8 @@ function VolumeInfo(
     isReadOnly,
     profile,
     label,
-    extensionId) {
+    extensionId,
+    hasMedia) {
   this.volumeType_ = volumeType;
   this.volumeId_ = volumeId;
   this.fileSystem_ = fileSystem;
@@ -71,11 +76,10 @@ function VolumeInfo(
   this.isReadOnly_ = isReadOnly;
   this.profile_ = Object.freeze(profile);
   this.extensionId_ = extensionId;
-
-  Object.seal(this);
+  this.hasMedia_ = hasMedia;
 }
 
-VolumeInfo.prototype = {
+VolumeInfo.prototype = /** @struct */ {
   /**
    * @return {VolumeManagerCommon.VolumeType} Volume type.
    */
@@ -148,6 +152,12 @@ VolumeInfo.prototype = {
    */
   get extensionId() {
     return this.extensionId_;
+  },
+  /**
+   * @return {boolean} True if the volume contains media.
+   */
+  get hasMedia() {
+    return this.hasMedia_;
   }
 };
 
@@ -247,7 +257,8 @@ volumeManagerUtil.createVolumeInfo = function(volumeMetadata, callback) {
               volumeMetadata.isReadOnly,
               volumeMetadata.profile,
               localizedLabel,
-              volumeMetadata.extensionId));
+              volumeMetadata.extensionId,
+              volumeMetadata.hasMedia));
           return;
         }
 
@@ -277,7 +288,8 @@ volumeManagerUtil.createVolumeInfo = function(volumeMetadata, callback) {
             volumeMetadata.isReadOnly,
             volumeMetadata.profile,
             localizedLabel,
-            volumeMetadata.extensionId));
+            volumeMetadata.extensionId,
+            volumeMetadata.hasMedia));
       });
 };
 

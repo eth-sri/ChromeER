@@ -180,7 +180,8 @@ void DelegatedFrameHost::CopyFromCompositingSurface(
           output_size,
           color_type,
           callback));
-  request->set_area(src_subrect);
+  if (!src_subrect.IsEmpty())
+    request->set_area(src_subrect);
   client_->RequestCopyOfOutput(request.Pass());
 }
 
@@ -385,6 +386,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     last_output_surface_id_ = output_surface_id;
   }
   ui::Compositor* compositor = client_->GetCompositor();
+  bool immediate_ack = !compositor;
   if (frame_size.IsEmpty()) {
     DCHECK(frame_data->resource_list.empty());
     EvictDelegatedFrame();
@@ -423,11 +425,14 @@ void DelegatedFrameHost::SwapDelegatedFrame(
           latency_info.begin(),
           latency_info.end());
 
-      base::Closure ack_callback;
-      if (compositor) {
-        ack_callback = base::Bind(&DelegatedFrameHost::SendDelegatedFrameAck,
-                                  AsWeakPtr(),
-                                  output_surface_id);
+      gfx::Size desired_size = client_->DesiredFrameSize();
+      if (desired_size != frame_size_in_dip && !desired_size.IsEmpty())
+        immediate_ack = true;
+
+      cc::SurfaceFactory::DrawCallback ack_callback;
+      if (compositor && !immediate_ack) {
+        ack_callback = base::Bind(&DelegatedFrameHost::SurfaceDrawn,
+                                  AsWeakPtr(), output_surface_id);
       }
       surface_factory_->SubmitFrame(
           surface_id_, compositor_frame.Pass(), ack_callback);
@@ -462,7 +467,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
 
   pending_delegated_ack_count_++;
 
-  if (!compositor) {
+  if (immediate_ack) {
     SendDelegatedFrameAck(output_surface_id);
   } else if (!use_surfaces_) {
     std::vector<ui::LatencyInfo>::const_iterator it;
@@ -500,6 +505,10 @@ void DelegatedFrameHost::SendDelegatedFrameAck(uint32 output_surface_id) {
                                                    ack);
   DCHECK_GT(pending_delegated_ack_count_, 0);
   pending_delegated_ack_count_--;
+}
+
+void DelegatedFrameHost::SurfaceDrawn(uint32 output_surface_id, bool drawn) {
+  SendDelegatedFrameAck(output_surface_id);
 }
 
 void DelegatedFrameHost::UnusedResourcesAreAvailable() {
@@ -561,9 +570,15 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResult(
     return;
   }
 
+  gfx::Size output_size_in_pixel;
+  if (dst_size_in_pixel.IsEmpty())
+    output_size_in_pixel = result->size();
+  else
+    output_size_in_pixel = dst_size_in_pixel;
+
   if (result->HasTexture()) {
     // GPU-accelerated path
-    PrepareTextureCopyOutputResult(dst_size_in_pixel, color_type,
+    PrepareTextureCopyOutputResult(output_size_in_pixel, color_type,
                                    callback,
                                    result.Pass());
     return;
@@ -571,7 +586,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResult(
 
   DCHECK(result->HasBitmap());
   // Software path
-  PrepareBitmapCopyOutputResult(dst_size_in_pixel, color_type, callback,
+  PrepareBitmapCopyOutputResult(output_size_in_pixel, color_type, callback,
                                 result.Pass());
 }
 

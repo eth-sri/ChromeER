@@ -6,6 +6,7 @@
 #define UI_APP_LIST_SEARCH_MIXER_H_
 
 #include <map>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
@@ -37,6 +38,7 @@ class APP_LIST_EXPORT Mixer {
     OMNIBOX_GROUP = 1,
     WEBSTORE_GROUP = 2,
     PEOPLE_GROUP = 3,
+    SUGGESTIONS_GROUP = 4,
   };
 
   explicit Mixer(AppListModel::SearchResults* ui_results);
@@ -49,7 +51,7 @@ class APP_LIST_EXPORT Mixer {
   void AddProviderToGroup(GroupId group, SearchProvider* provider);
 
   // Collects the results, sorts and publishes them.
-  void MixAndPublish(const KnownResults& known_results);
+  void MixAndPublish(bool is_voice_query, const KnownResults& known_results);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(test::MixerTest, Publish);
@@ -78,7 +80,7 @@ class APP_LIST_EXPORT Mixer {
   // Removes duplicates from |results|.
   static void RemoveDuplicates(SortedResults* results);
 
-  void FetchResults(const KnownResults& known_results);
+  void FetchResults(bool is_voice_query, const KnownResults& known_results);
 
   AppListModel::SearchResults* ui_results_;  // Not owned.
   Groups groups_;

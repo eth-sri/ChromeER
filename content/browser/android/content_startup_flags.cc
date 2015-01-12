@@ -59,12 +59,11 @@ void SetContentCommandLineFlags(bool single_process,
   parsed_command_line->AppendSwitch(switches::kEnableOverlayScrollbar);
   parsed_command_line->AppendSwitch(switches::kValidateInputEventStream);
 
-  // Run the GPU service as a thread in the browser instead of as a
-  // standalone process.
-  parsed_command_line->AppendSwitch(switches::kInProcessGPU);
+  // There is no software fallback on Android, so don't limit GPU crashes.
+  parsed_command_line->AppendSwitch(switches::kDisableGpuProcessCrashLimit);
+
   parsed_command_line->AppendSwitch(switches::kDisableGpuShaderDiskCache);
 
-  parsed_command_line->AppendSwitch(switches::kEnableViewport);
   parsed_command_line->AppendSwitch(switches::kEnableViewportMeta);
   parsed_command_line->AppendSwitch(
       switches::kMainFrameResizesAreOrientationChanges);

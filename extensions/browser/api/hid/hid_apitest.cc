@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/thread_task_runner_handle.h"
-#include "content/public/browser/browser_thread.h"
 #include "device/hid/hid_collection_info.h"
 #include "device/hid/hid_connection.h"
 #include "device/hid/hid_device_info.h"
 #include "device/hid/hid_service.h"
 #include "device/hid/hid_usage_and_page.h"
 #include "extensions/shell/test/shell_apitest.h"
+#include "extensions/test/extension_test_message_listener.h"
 #include "net/base/io_buffer.h"
 
 namespace extensions {
@@ -18,7 +19,6 @@ namespace extensions {
 namespace {
 
 using base::ThreadTaskRunnerHandle;
-using content::BrowserThread;
 using device::HidCollectionInfo;
 using device::HidConnection;
 using device::HidDeviceId;
@@ -94,60 +94,17 @@ class MockHidConnection : public HidConnection {
   }
 
  private:
-  ~MockHidConnection() {}
+  ~MockHidConnection() override {}
 };
 
 class MockHidService : public HidService {
  public:
   MockHidService() : HidService() {
-    {
-      HidDeviceInfo device_info;
-      device_info.device_id = "Device A";
-      device_info.vendor_id = 0x18D1;
-      device_info.product_id = 0x58F0;
-      device_info.max_input_report_size = 128;
-      device_info.max_output_report_size = 128;
-      device_info.max_feature_report_size = 128;
-      {
-        HidCollectionInfo collection_info;
-        device_info.collections.push_back(collection_info);
-      }
-      AddDevice(device_info);
-    }
-
-    {
-      HidDeviceInfo device_info;
-      device_info.device_id = "Device B";
-      device_info.vendor_id = 0x18D1;
-      device_info.product_id = 0x58F0;
-      device_info.max_input_report_size = 128;
-      device_info.max_output_report_size = 128;
-      device_info.max_feature_report_size = 128;
-      {
-        HidCollectionInfo collection_info;
-        collection_info.usage =
-            HidUsageAndPage(0, HidUsageAndPage::kPageVendor);
-        collection_info.report_ids.insert(1);
-        device_info.has_report_id = true;
-        device_info.collections.push_back(collection_info);
-      }
-      AddDevice(device_info);
-    }
-
-    {
-      HidDeviceInfo device_info;
-      device_info.device_id = "Device C";
-      device_info.vendor_id = 0x18D1;
-      device_info.product_id = 0x58F1;
-      device_info.max_input_report_size = 128;
-      device_info.max_output_report_size = 128;
-      device_info.max_feature_report_size = 128;
-      {
-        HidCollectionInfo collection_info;
-        device_info.collections.push_back(collection_info);
-      }
-      AddDevice(device_info);
-    }
+    // Verify that devices are enumerated properly even when the first
+    // enumeration happens asynchronously.
+    ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&MockHidService::LazyFirstEnumeration,
+                              base::Unretained(this)));
   }
 
   void Connect(const HidDeviceId& device_id,
@@ -161,6 +118,41 @@ class MockHidService : public HidService {
     ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
                                             base::Bind(callback, connection));
   }
+
+  void LazyFirstEnumeration() {
+    AddDevice("A", 0x18D1, 0x58F0, false);
+    AddDevice("B", 0x18D1, 0x58F0, true);
+    AddDevice("C", 0x18D1, 0x58F1, false);
+    FirstEnumerationComplete();
+  }
+
+  void AddDevice(const std::string& device_id,
+                 int vendor_id,
+                 int product_id,
+                 bool report_id) {
+    HidDeviceInfo device_info;
+    device_info.device_id = device_id;
+    device_info.vendor_id = vendor_id;
+    device_info.product_id = product_id;
+    device_info.max_input_report_size = 128;
+    device_info.max_output_report_size = 128;
+    device_info.max_feature_report_size = 128;
+    {
+      HidCollectionInfo collection_info;
+      if (report_id) {
+        collection_info.usage =
+            HidUsageAndPage(0, HidUsageAndPage::kPageVendor);
+        collection_info.report_ids.insert(1);
+        device_info.has_report_id = true;
+      }
+      device_info.collections.push_back(collection_info);
+    }
+    HidService::AddDevice(device_info);
+  }
+
+  void RemoveDevice(const std::string& device_id) {
+    HidService::RemoveDevice(device_id);
+  }
 };
 
 }  // namespace
@@ -169,19 +161,49 @@ class HidApiTest : public ShellApiTest {
  public:
   void SetUpOnMainThread() override {
     ShellApiTest::SetUpOnMainThread();
-    base::RunLoop run_loop;
-    BrowserThread::PostTaskAndReply(BrowserThread::FILE,
-                                    FROM_HERE,
-                                    base::Bind(&HidApiTest::SetUpService, this),
-                                    run_loop.QuitClosure());
-    run_loop.Run();
+    hid_service_ = new MockHidService();
+    HidService::SetInstanceForTest(hid_service_);
   }
 
-  void SetUpService() { HidService::SetInstanceForTest(new MockHidService()); }
+ protected:
+  MockHidService* hid_service_;
 };
 
 IN_PROC_BROWSER_TEST_F(HidApiTest, HidApp) {
   ASSERT_TRUE(RunAppTest("api_test/hid/api")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(HidApiTest, OnDeviceAdded) {
+  ExtensionTestMessageListener load_listener("loaded", false);
+  ExtensionTestMessageListener result_listener("success", false);
+  result_listener.set_failure_message("failure");
+
+  ASSERT_TRUE(LoadApp("api_test/hid/add_event"));
+  ASSERT_TRUE(load_listener.WaitUntilSatisfied());
+
+  // Add a blocked device first so that the test will fail if a notification is
+  // received.
+  hid_service_->AddDevice("D", 0x18D1, 0x58F1, false);
+  hid_service_->AddDevice("E", 0x18D1, 0x58F0, false);
+  ASSERT_TRUE(result_listener.WaitUntilSatisfied());
+  EXPECT_EQ("success", result_listener.message());
+}
+
+IN_PROC_BROWSER_TEST_F(HidApiTest, OnDeviceRemoved) {
+  ExtensionTestMessageListener load_listener("loaded", false);
+  ExtensionTestMessageListener result_listener("success", false);
+  result_listener.set_failure_message("failure");
+
+  ASSERT_TRUE(LoadApp("api_test/hid/remove_event"));
+  ASSERT_TRUE(load_listener.WaitUntilSatisfied());
+
+  // Device C was not returned by chrome.usb.getDevices, the app will not get
+  // a notification.
+  hid_service_->RemoveDevice("C");
+  // Device A was returned, the app will get a notification.
+  hid_service_->RemoveDevice("A");
+  ASSERT_TRUE(result_listener.WaitUntilSatisfied());
+  EXPECT_EQ("success", result_listener.message());
 }
 
 }  // namespace extensions

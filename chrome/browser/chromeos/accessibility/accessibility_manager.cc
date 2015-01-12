@@ -484,8 +484,7 @@ void AccessibilityManager::UpdateLargeCursorFromPref() {
 bool AccessibilityManager::IsIncognitoAllowed() {
   // Supervised users can't create incognito-mode windows.
   return !user_manager::UserManager::Get()->IsLoggedInAsSupervisedUser() &&
-         !user_manager::UserManager::Get()->
-               IsLoggedInAsRegularSupervisedUser();
+         !user_manager::UserManager::Get()->IsLoggedInAsChildUser();
 }
 
 bool AccessibilityManager::IsLargeCursorEnabled() {
@@ -742,6 +741,9 @@ bool AccessibilityManager::IsAutoclickEnabled() {
 }
 
 void AccessibilityManager::UpdateAutoclickFromPref() {
+  if (!profile_)
+    return;
+
   bool enabled =
       profile_->GetPrefs()->GetBoolean(prefs::kAccessibilityAutoclickEnabled);
 
@@ -768,6 +770,9 @@ int AccessibilityManager::GetAutoclickDelay() const {
 }
 
 void AccessibilityManager::UpdateAutoclickDelayFromPref() {
+  if (!profile_)
+    return;
+
   int autoclick_delay_ms =
       profile_->GetPrefs()->GetInteger(prefs::kAccessibilityAutoclickDelayMs);
 

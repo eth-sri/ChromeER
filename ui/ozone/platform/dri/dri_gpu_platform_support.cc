@@ -63,6 +63,8 @@ bool DriGpuPlatformSupport::OnMessageReceived(const IPC::Message& message) {
   IPC_MESSAGE_HANDLER(OzoneGpuMsg_TakeDisplayControl, OnTakeDisplayControl)
   IPC_MESSAGE_HANDLER(OzoneGpuMsg_RelinquishDisplayControl,
                       OnRelinquishDisplayControl)
+  IPC_MESSAGE_HANDLER(OzoneGpuMsg_AddGraphicsDevice, OnAddGraphicsDevice)
+  IPC_MESSAGE_HANDLER(OzoneGpuMsg_RemoveGraphicsDevice, OnRemoveGraphicsDevice)
   IPC_MESSAGE_UNHANDLED(handled = false);
   IPC_END_MESSAGE_MAP()
 
@@ -117,26 +119,9 @@ void DriGpuPlatformSupport::OnForceDPMSOn() {
   ndd_->ForceDPMSOn();
 }
 
-void DriGpuPlatformSupport::OnRefreshNativeDisplays(
-    const std::vector<DisplaySnapshot_Params>& cached_displays) {
+void DriGpuPlatformSupport::OnRefreshNativeDisplays() {
   std::vector<DisplaySnapshot_Params> displays;
   std::vector<DisplaySnapshot*> native_displays = ndd_->GetDisplays();
-
-  // If any of the cached displays are in the list of new displays then apply
-  // their configuration immediately.
-  for (size_t i = 0; i < native_displays.size(); ++i) {
-    std::vector<DisplaySnapshot_Params>::const_iterator it =
-        std::find_if(cached_displays.begin(), cached_displays.end(),
-                     FindDisplayById(native_displays[i]->display_id()));
-
-    if (it == cached_displays.end())
-      continue;
-
-    if (it->has_current_mode)
-      OnConfigureNativeDisplay(it->display_id, it->current_mode, it->origin);
-    else
-      OnDisableNativeDisplay(it->display_id);
-  }
 
   for (size_t i = 0; i < native_displays.size(); ++i)
     displays.push_back(GetDisplaySnapshotParams(*native_displays[i]));
@@ -151,6 +136,7 @@ void DriGpuPlatformSupport::OnConfigureNativeDisplay(
   DisplaySnapshot* display = ndd_->FindDisplaySnapshot(id);
   if (!display) {
     LOG(ERROR) << "There is no display with ID " << id;
+    sender_->Send(new OzoneHostMsg_DisplayConfigured(id, false));
     return;
   }
 
@@ -176,18 +162,23 @@ void DriGpuPlatformSupport::OnConfigureNativeDisplay(
     LOG(ERROR) << "Failed to find mode: size=" << mode_param.size.ToString()
                << " is_interlaced=" << mode_param.is_interlaced
                << " refresh_rate=" << mode_param.refresh_rate;
+    sender_->Send(new OzoneHostMsg_DisplayConfigured(id, false));
     return;
   }
 
-  ndd_->Configure(*display, mode, origin);
+  sender_->Send(new OzoneHostMsg_DisplayConfigured(
+      id, ndd_->Configure(*display, mode, origin)));
 }
 
 void DriGpuPlatformSupport::OnDisableNativeDisplay(int64_t id) {
   DisplaySnapshot* display = ndd_->FindDisplaySnapshot(id);
+  bool success = false;
   if (display)
-    ndd_->Configure(*display, NULL, gfx::Point());
+    success = ndd_->Configure(*display, NULL, gfx::Point());
   else
     LOG(ERROR) << "There is no display with ID " << id;
+
+  sender_->Send(new OzoneHostMsg_DisplayConfigured(id, success));
 }
 
 void DriGpuPlatformSupport::OnTakeDisplayControl() {
@@ -196,6 +187,14 @@ void DriGpuPlatformSupport::OnTakeDisplayControl() {
 
 void DriGpuPlatformSupport::OnRelinquishDisplayControl() {
   ndd_->RelinquishDisplayControl();
+}
+
+void DriGpuPlatformSupport::OnAddGraphicsDevice(const base::FilePath& path) {
+  NOTIMPLEMENTED();
+}
+
+void DriGpuPlatformSupport::OnRemoveGraphicsDevice(const base::FilePath& path) {
+  NOTIMPLEMENTED();
 }
 
 void DriGpuPlatformSupport::RelinquishGpuResources(

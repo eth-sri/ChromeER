@@ -151,9 +151,9 @@ bool FakeAudioInputStream::Open() {
   memset(buffer_.get(), 0, buffer_size_);
   audio_bus_->Zero();
 
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseFileForFakeAudioCapture)) {
-    OpenInFileMode(CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUseFileForFakeAudioCapture)) {
+    OpenInFileMode(base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
         switches::kUseFileForFakeAudioCapture));
   }
 
@@ -185,7 +185,7 @@ void FakeAudioInputStream::DoCallback() {
     next_callback_time = base::TimeDelta();
 
   if (PlayingFromFile()) {
-    PlayFileLooping();
+    PlayFile();
   } else {
     PlayBeep();
   }
@@ -214,14 +214,16 @@ bool FakeAudioInputStream::PlayingFromFile() {
   return wav_audio_handler_.get() != nullptr;
 }
 
-void FakeAudioInputStream::PlayFileLooping() {
+void FakeAudioInputStream::PlayFile() {
+  // Stop playing if we've played out the whole file.
+  if (wav_audio_handler_->AtEnd(wav_file_read_pos_))
+    return;
+
   // Unfilled frames will be zeroed by CopyTo.
   size_t bytes_written;
   wav_audio_handler_->CopyTo(audio_bus_.get(), wav_file_read_pos_,
                              &bytes_written);
   wav_file_read_pos_ += bytes_written;
-  if (wav_audio_handler_->AtEnd(wav_file_read_pos_))
-    wav_file_read_pos_ = 0;
   callback_->OnData(this, audio_bus_.get(), buffer_size_, 1.0);
 }
 
@@ -305,10 +307,12 @@ bool FakeAudioInputStream::IsMuted() {
   return false;
 }
 
-void FakeAudioInputStream::SetAutomaticGainControl(bool enabled) {}
+bool FakeAudioInputStream::SetAutomaticGainControl(bool enabled) {
+  return false;
+}
 
 bool FakeAudioInputStream::GetAutomaticGainControl() {
-  return true;
+  return false;
 }
 
 // static

@@ -31,8 +31,15 @@ void TestAutofillClient::HideRequestAutocompleteDialog() {
 void TestAutofillClient::ShowAutofillSettings() {
 }
 
+void TestAutofillClient::ShowUnmaskPrompt(
+    const CreditCard& card,
+    base::WeakPtr<CardUnmaskDelegate> delegate) {
+}
+
+void TestAutofillClient::OnUnmaskVerificationResult(bool success) {
+}
+
 void TestAutofillClient::ConfirmSaveCreditCard(
-    const AutofillMetrics& metric_logger,
     const base::Closure& save_card_callback) {
 }
 
@@ -53,10 +60,7 @@ void TestAutofillClient::ShowRequestAutocompleteDialog(
 void TestAutofillClient::ShowAutofillPopup(
     const gfx::RectF& element_bounds,
     base::i18n::TextDirection text_direction,
-    const std::vector<base::string16>& values,
-    const std::vector<base::string16>& labels,
-    const std::vector<base::string16>& icons,
-    const std::vector<int>& identifiers,
+    const std::vector<Suggestion>& suggestions,
     base::WeakPtr<AutofillPopupDelegate> delegate) {
 }
 
@@ -73,12 +77,16 @@ bool TestAutofillClient::IsAutocompleteEnabled() {
 }
 
 void TestAutofillClient::DetectAccountCreationForms(
+    content::RenderFrameHost* rfh,
     const std::vector<autofill::FormStructure*>& forms) {
 }
 
 void TestAutofillClient::DidFillOrPreviewField(
     const base::string16& autofilled_value,
     const base::string16& profile_full_name) {
+}
+
+void TestAutofillClient::OnFirstUserGestureObserved() {
 }
 
 }  // namespace autofill

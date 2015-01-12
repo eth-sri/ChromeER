@@ -68,12 +68,14 @@
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -97,7 +99,7 @@
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_service.h"
 #include "components/policy/core/common/policy_switches.h"
-#include "components/signin/core/common/signin_pref_names.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
@@ -116,6 +118,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/notification_types.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "net/base/url_util.h"
 #include "net/http/http_status_code.h"
@@ -176,6 +179,9 @@ const char kGoodExtensionID[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
 const char kGoodExtensionCRXPath[] = "extensions/good.crx";
 const char kGoodExtensionVersion[] = "1.0";
 const char kPackagedAppCRXPath[] = "extensions/platform_apps/app_window_2.crx";
+const char kShowManagedStorageID[] = "ongnjlefhnoajpbodoldndkbkdgfomlp";
+const char kShowManagedStorageCRXPath[] = "extensions/show_managed_storage.crx";
+const char kShowManagedStorageVersion[] = "1.0";
 
 const char kExternalData[] = "External data";
 const char kExternalDataURL[] = "http://localhost/external_data";
@@ -382,6 +388,12 @@ bool IsSessionStarted() {
   return user_manager::UserManager::Get()->IsSessionStarted();
 }
 
+void PolicyChangedCallback(const base::Closure& callback,
+                           const base::Value* old_value,
+                           const base::Value* new_value) {
+  callback.Run();
+}
+
 }  // namespace
 
 class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
@@ -419,7 +431,7 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     DevicePolicyCrosBrowserTest::SetUp();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) override {
+  virtual void SetUpCommandLine(base::CommandLine* command_line) override {
     DevicePolicyCrosBrowserTest::SetUpCommandLine(command_line);
     command_line->AppendSwitch(chromeos::switches::kLoginManager);
     command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
@@ -433,8 +445,8 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
 
     // Clear command-line arguments (but keep command-line switches) so the
     // startup pages policy takes effect.
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    CommandLine::StringVector argv(command_line->argv());
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+    base::CommandLine::StringVector argv(command_line->argv());
     argv.erase(argv.begin() + argv.size() - command_line->GetArgs().size(),
                argv.end());
     command_line->InitFromArgv(argv);
@@ -553,9 +565,9 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
 
   void UploadDeviceLocalAccountPolicy() {
     BuildDeviceLocalAccountPolicy();
-    test_server_.UpdatePolicy(
+    ASSERT_TRUE(test_server_.UpdatePolicy(
         dm_protocol::kChromePublicAccountPolicyType, kAccountId1,
-        device_local_account_policy_.payload().SerializeAsString());
+        device_local_account_policy_.payload().SerializeAsString()));
   }
 
   void UploadAndInstallDeviceLocalAccountPolicy() {
@@ -585,8 +597,9 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     account->set_type(
         em::DeviceLocalAccountInfoProto::ACCOUNT_TYPE_PUBLIC_SESSION);
     RefreshDevicePolicy();
-    test_server_.UpdatePolicy(dm_protocol::kChromeDevicePolicyType,
-                              std::string(), proto.SerializeAsString());
+    ASSERT_TRUE(test_server_.UpdatePolicy(dm_protocol::kChromeDevicePolicyType,
+                                          std::string(),
+                                          proto.SerializeAsString()));
   }
 
   void EnableAutoLogin() {
@@ -596,8 +609,9 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     device_local_accounts->set_auto_login_id(kAccountId1);
     device_local_accounts->set_auto_login_delay(0);
     RefreshDevicePolicy();
-    test_server_.UpdatePolicy(dm_protocol::kChromeDevicePolicyType,
-                              std::string(), proto.SerializeAsString());
+    ASSERT_TRUE(test_server_.UpdatePolicy(dm_protocol::kChromeDevicePolicyType,
+                                          std::string(),
+                                          proto.SerializeAsString()));
   }
 
   void CheckPublicSessionPresent(const std::string& id) {
@@ -924,8 +938,8 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, StartSession) {
   // account.
   Profile* profile = GetProfileForTest();
   ASSERT_TRUE(profile);
-  EXPECT_FALSE(profile->GetPrefs()->HasPrefPath(
-      prefs::kGoogleServicesUsername));
+  EXPECT_FALSE(
+      SigninManagerFactory::GetForProfile(profile)->IsAuthenticated());
 }
 
 IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, FullscreenDisallowed) {
@@ -1325,8 +1339,9 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, LastWindowClosedLogoutReminder) {
 
   // Start the platform app, causing it to open a window.
   run_loop_.reset(new base::RunLoop);
-  OpenApplication(AppLaunchParams(
-      profile, app, extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+  OpenApplication(AppLaunchParams(profile, app,
+                                  extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW,
+                                  extensions::SOURCE_TEST));
   run_loop_->Run();
   EXPECT_EQ(1U, app_window_registry->app_windows().size());
 
@@ -1958,6 +1973,109 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, TermsOfServiceWithLocaleSwitch) {
                 ->GetActiveIMEState()
                 ->GetCurrentInputMethod()
                 .id());
+}
+
+IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, PolicyForExtensions) {
+  // Set up a test update server for the Show Managed Storage app.
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  TestingUpdateManifestProvider testing_update_manifest_provider(
+      kRelativeUpdateURL);
+  testing_update_manifest_provider.AddUpdate(
+      kShowManagedStorageID,
+      kShowManagedStorageVersion,
+      embedded_test_server()->GetURL(std::string("/") +
+                                     kShowManagedStorageCRXPath));
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&TestingUpdateManifestProvider::HandleRequest,
+                 base::Unretained(&testing_update_manifest_provider)));
+
+  // Force-install the Show Managed Storage app. This app can be installed in
+  // public sessions because it's whitelisted for testing purposes.
+  em::StringList* forcelist = device_local_account_policy_.payload()
+      .mutable_extensioninstallforcelist()->mutable_value();
+  forcelist->add_entries(base::StringPrintf(
+      "%s;%s",
+      kShowManagedStorageID,
+      embedded_test_server()->GetURL(kRelativeUpdateURL).spec().c_str()));
+
+  // Set a policy for the app at the policy testserver.
+  // Note that the policy for the device-local account will be fetched before
+  // the session is started, so the policy for the app must be installed before
+  // the first device policy fetch.
+  ASSERT_TRUE(test_server_.UpdatePolicyData(
+      dm_protocol::kChromeExtensionPolicyType, kShowManagedStorageID,
+      "{"
+      "  \"string\": {"
+      "    \"Value\": \"policy test value one\""
+      "  }"
+      "}"));
+
+  // Install and refresh the device policy now. This will also fetch the initial
+  // user policy for the device-local account now.
+  UploadAndInstallDeviceLocalAccountPolicy();
+  AddPublicSessionToDevicePolicy(kAccountId1);
+  WaitForPolicy();
+
+  // Observe the app installation after login.
+  content::WindowedNotificationObserver extension_observer(
+      extensions::NOTIFICATION_EXTENSION_WILL_BE_INSTALLED_DEPRECATED,
+      base::Bind(DoesInstallSuccessReferToId, kShowManagedStorageID));
+  ASSERT_NO_FATAL_FAILURE(StartLogin(std::string(), std::string()));
+  WaitForSessionStart();
+  extension_observer.Wait();
+
+  // Verify that the app was installed.
+  Profile* profile = GetProfileForTest();
+  ASSERT_TRUE(profile);
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  EXPECT_TRUE(extension_service->GetExtensionById(kShowManagedStorageID, true));
+
+  // Wait for the app policy if it hasn't been fetched yet.
+  ProfilePolicyConnector* connector =
+      ProfilePolicyConnectorFactory::GetForProfile(profile);
+  ASSERT_TRUE(connector);
+  PolicyService* policy_service = connector->policy_service();
+  ASSERT_TRUE(policy_service);
+  const PolicyNamespace ns(POLICY_DOMAIN_EXTENSIONS, kShowManagedStorageID);
+  if (policy_service->GetPolicies(ns).empty()) {
+    PolicyChangeRegistrar policy_registrar(policy_service, ns);
+    base::RunLoop run_loop;
+    policy_registrar.Observe(
+        "string", base::Bind(&PolicyChangedCallback, run_loop.QuitClosure()));
+    run_loop.Run();
+  }
+
+  // Verify that the app policy was set.
+  base::StringValue expected_value("policy test value one");
+  EXPECT_TRUE(base::Value::Equals(
+      &expected_value,
+      policy_service->GetPolicies(ns).GetValue("string")));
+
+  // Now update the policy at the server.
+  ASSERT_TRUE(test_server_.UpdatePolicyData(
+      dm_protocol::kChromeExtensionPolicyType, kShowManagedStorageID,
+      "{"
+      "  \"string\": {"
+      "    \"Value\": \"policy test value two\""
+      "  }"
+      "}"));
+
+  // And issue a policy refresh.
+  {
+    PolicyChangeRegistrar policy_registrar(policy_service, ns);
+    base::RunLoop run_loop;
+    policy_registrar.Observe(
+        "string", base::Bind(&PolicyChangedCallback, run_loop.QuitClosure()));
+    policy_service->RefreshPolicies(base::Closure());
+    run_loop.Run();
+  }
+
+  // Verify that the app policy was updated.
+  base::StringValue expected_new_value("policy test value two");
+  EXPECT_TRUE(base::Value::Equals(
+      &expected_new_value,
+      policy_service->GetPolicies(ns).GetValue("string")));
 }
 
 class TermsOfServiceDownloadTest : public DeviceLocalAccountTest,

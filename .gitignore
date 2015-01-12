@@ -333,6 +333,7 @@ v8.log
 /third_party/mesa/src
 /third_party/mingw-w64
 /third_party/mkl
+/third_party/mockito/src
 /third_party/nacl_sdk_binaries/
 /third_party/nss
 /third_party/omaha/src/omaha
@@ -359,12 +360,14 @@ v8.log
 /third_party/python_26
 /third_party/pywebsocket/src
 /third_party/pywebsocket/src
+/third_party/requests/src
 /third_party/safe_browsing/testing
 /third_party/scons-2.0.1
 /third_party/sfntly/cpp
 /third_party/skia
 /third_party/smhasher/src
 /third_party/snappy/src
+/third_party/stp/src
 /third_party/swiftshader/include/
 /third_party/swig
 /third_party/syzygy

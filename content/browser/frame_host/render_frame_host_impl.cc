@@ -175,6 +175,10 @@ RenderFrameHostImpl::~RenderFrameHostImpl() {
   // Notify the FrameTree that this RFH is going away, allowing it to shut down
   // the corresponding RenderViewHost if it is no longer needed.
   frame_tree_->UnregisterRenderFrameHost(this);
+
+  // NULL out the swapout timer; in crash dumps this member will be null only if
+  // the dtor has run.
+  swapout_event_monitor_timeout_.reset();
 }
 
 int RenderFrameHostImpl::GetRoutingID() {
@@ -303,6 +307,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnDidFailLoadWithError)
     IPC_MESSAGE_HANDLER_GENERIC(FrameHostMsg_DidCommitProvisionalLoad,
                                 OnDidCommitProvisionalLoad(msg))
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidDropNavigation, OnDidDropNavigation)
     IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DocumentOnLoadCompleted,
                         OnDocumentOnLoadCompleted)
@@ -582,19 +587,17 @@ void RenderFrameHostImpl::OnFrameFocused() {
   frame_tree_->SetFocusedFrame(frame_tree_node_);
 }
 
-void RenderFrameHostImpl::OnOpenURL(
-    const FrameHostMsg_OpenURL_Params& params) {
-  GURL validated_url(params.url);
-  GetProcess()->FilterURL(false, &validated_url);
-
-  TRACE_EVENT1("navigation", "RenderFrameHostImpl::OnOpenURL",
-               "url", validated_url.possibly_invalid_spec());
-  frame_tree_node_->navigator()->RequestOpenURL(
-      this, validated_url, params.referrer, params.disposition,
-      params.should_replace_current_entry, params.user_gesture);
+void RenderFrameHostImpl::OnOpenURL(const FrameHostMsg_OpenURL_Params& params) {
+  OpenURL(params, GetSiteInstance());
 }
 
-void RenderFrameHostImpl::OnDocumentOnLoadCompleted() {
+void RenderFrameHostImpl::OnDocumentOnLoadCompleted(
+    FrameMsg_UILoadMetricsReportType::Value report_type,
+    base::TimeTicks ui_timestamp) {
+  if (report_type == FrameMsg_UILoadMetricsReportType::REPORT_LINK) {
+    UMA_HISTOGRAM_TIMES("Navigation.UI_OnLoadComplete.Link",
+                        base::TimeTicks::Now() - ui_timestamp);
+  }
   // This message is only sent for top-level frames. TODO(avi): when frame tree
   // mirroring works correctly, add a check here to enforce it.
   delegate_->DocumentOnLoadCompleted(this);
@@ -664,6 +667,12 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
   if (IsWaitingForUnloadACK())
     return;
 
+  if (validated_params.report_type ==
+      FrameMsg_UILoadMetricsReportType::REPORT_LINK) {
+    UMA_HISTOGRAM_TIMES("Navigation.UI_OnCommitProvisionalLoad.Link",
+                        base::TimeTicks::Now() - validated_params.ui_timestamp);
+  }
+
   RenderProcessHost* process = GetProcess();
 
   // Attempts to commit certain off-limits URL should be caught more strictly
@@ -704,6 +713,14 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
   frame_tree_node()->navigator()->DidNavigate(this, validated_params);
 }
 
+void RenderFrameHostImpl::OnDidDropNavigation() {
+  // At the end of Navigate(), the delegate's DidStartLoading is called to force
+  // the spinner to start, even if the renderer didn't yet begin the load. If it
+  // turns out that the renderer dropped the navigation, we need to turn off the
+  // spinner.
+  delegate_->DidStopLoading(this);
+}
+
 RenderWidgetHostImpl* RenderFrameHostImpl::GetRenderWidgetHost() {
   return static_cast<RenderWidgetHostImpl*>(render_view_host_);
 }
@@ -737,7 +754,9 @@ void RenderFrameHostImpl::OnDeferredAfterResponseStarted(
     delegate_->DidDeferAfterResponseStarted(transition_data);
 }
 
-void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
+void RenderFrameHostImpl::SwapOut(
+    RenderFrameProxyHost* proxy,
+    bool is_loading) {
   // The end of this event is in OnSwapOutACK when the RenderFrame has completed
   // the operation and sends back an IPC message.
   // The trace event may not end properly if the ACK times out.  We expect this
@@ -757,13 +776,17 @@ void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
 
   // There may be no proxy if there are no active views in the process.
   int proxy_routing_id = MSG_ROUTING_NONE;
+  FrameReplicationState replication_state;
   if (proxy) {
     set_render_frame_proxy_host(proxy);
     proxy_routing_id = proxy->GetRoutingID();
+    replication_state = proxy->frame_tree_node()->current_replication_state();
   }
 
-  if (IsRenderFrameLive())
-    Send(new FrameMsg_SwapOut(routing_id_, proxy_routing_id));
+  if (IsRenderFrameLive()) {
+    Send(new FrameMsg_SwapOut(routing_id_, proxy_routing_id, is_loading,
+                              replication_state));
+  }
 
   if (!GetParent())
     delegate_->SwappedOut(this);
@@ -776,8 +799,6 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
   TRACE_EVENT_ASYNC_END0(
       "navigation", "RenderFrameHostImpl::BeforeUnload", this);
   DCHECK(!GetParent());
-  render_view_host_->decrement_in_flight_event_count();
-  render_view_host_->StopHangMonitorTimeout();
   // If this renderer navigated while the beforeunload request was in flight, we
   // may have cleared this state in OnDidCommitProvisionalLoad, in which case we
   // can ignore this message.
@@ -839,6 +860,8 @@ void RenderFrameHostImpl::OnBeforeUnloadACK(
   }
   // Resets beforeunload waiting state.
   is_waiting_for_beforeunload_ack_ = false;
+  render_view_host_->decrement_in_flight_event_count();
+  render_view_host_->StopHangMonitorTimeout();
   send_before_unload_start_time_ = base::TimeTicks();
 
   frame_tree_node_->render_manager()->OnBeforeUnloadACK(
@@ -989,7 +1012,7 @@ void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
 void RenderFrameHostImpl::OnBeginNavigation(
     const FrameHostMsg_BeginNavigation_Params& params,
     const CommonNavigationParams& common_params) {
-  CHECK(CommandLine::ForCurrentProcess()->HasSwitch(
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
   frame_tree_node()->navigator()->OnBeginNavigation(
       frame_tree_node(), params, common_params);
@@ -1187,7 +1210,11 @@ void RenderFrameHostImpl::SetState(RenderFrameHostImplState rfh_state) {
       rfh_state == STATE_SWAPPED_OUT ||
       rfh_state_ == STATE_DEFAULT ||
       rfh_state_ == STATE_SWAPPED_OUT) {
-    is_waiting_for_beforeunload_ack_ = false;
+    if (is_waiting_for_beforeunload_ack_) {
+      is_waiting_for_beforeunload_ack_ = false;
+      render_view_host_->decrement_in_flight_event_count();
+      render_view_host_->StopHangMonitorTimeout();
+    }
     send_before_unload_start_time_ = base::TimeTicks();
     render_view_host_->is_waiting_for_close_ack_ = false;
   }
@@ -1219,6 +1246,15 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
     }
   }
 
+  // We may be returning to an existing NavigationEntry that had been granted
+  // file access.  If this is a different process, we will need to grant the
+  // access again.  The files listed in the page state are validated when they
+  // are received from the renderer to prevent abuse.
+  if (params.commit_params.page_state.IsValid()) {
+    render_view_host_->GrantFileAccessFromPageState(
+        params.commit_params.page_state);
+  }
+
   // Only send the message if we aren't suspended at the start of a cross-site
   // request.
   if (navigations_suspended_) {
@@ -1240,7 +1276,7 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   // loading" message will be received asynchronously from the UI of the
   // browser. But we want to keep the throbber in sync with what's happening
   // in the UI. For example, we want to start throbbing immediately when the
-  // user naivgates even if the renderer is delayed. There is also an issue
+  // user navigates even if the renderer is delayed. There is also an issue
   // with the throbber starting because the WebUI (which controls whether the
   // favicon is displayed) happens synchronously. If the start loading
   // messages was asynchronous, then the default favicon would flash in.
@@ -1264,8 +1300,17 @@ void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
   Navigate(params);
 }
 
-void RenderFrameHostImpl::OpenURL(const FrameHostMsg_OpenURL_Params& params) {
-  OnOpenURL(params);
+void RenderFrameHostImpl::OpenURL(const FrameHostMsg_OpenURL_Params& params,
+                                  SiteInstance* source_site_instance) {
+  GURL validated_url(params.url);
+  GetProcess()->FilterURL(false, &validated_url);
+
+  TRACE_EVENT1("navigation", "RenderFrameHostImpl::OpenURL", "url",
+               validated_url.possibly_invalid_spec());
+  frame_tree_node_->navigator()->RequestOpenURL(
+      this, validated_url, source_site_instance, params.referrer,
+      params.disposition, params.should_replace_current_entry,
+      params.user_gesture);
 }
 
 void RenderFrameHostImpl::Stop() {
