@@ -186,8 +186,8 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size_conversions.h"
 #include "v8/include/v8.h"
 
 #if defined(OS_ANDROID)
@@ -1017,6 +1017,9 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.allow_displaying_insecure_content);
   settings->setAllowRunningOfInsecureContent(
       prefs.allow_running_insecure_content);
+  settings->setStrictMixedContentChecking(prefs.strict_mixed_content_checking);
+  settings->setStrictPowerfulFeatureRestrictions(
+      prefs.strict_powerful_feature_restrictions);
   settings->setPasswordEchoEnabled(prefs.password_echo_enabled);
   settings->setShouldPrintBackgrounds(prefs.should_print_backgrounds);
   settings->setShouldClearDocumentBackground(

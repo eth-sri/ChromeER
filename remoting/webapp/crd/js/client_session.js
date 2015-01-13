@@ -340,7 +340,8 @@ remoting.ClientSession.ConnectionError.fromString = function(error) {
 /** @enum {number} */
 remoting.ClientSession.Mode = {
   IT2ME: 0,
-  ME2ME: 1
+  ME2ME: 1,
+  APP_REMOTING: 2
 };
 
 /**
@@ -552,7 +553,8 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
           remoting.ClientPlugin.Feature.INJECT_KEY_EVENT)) {
     var sendKeysElement = document.getElementById('send-keys-menu');
     sendKeysElement.hidden = true;
-  } else if (this.mode_ != remoting.ClientSession.Mode.ME2ME) {
+  } else if (this.mode_ != remoting.ClientSession.Mode.ME2ME &&
+      this.mode_ != remoting.ClientSession.Mode.APP_REMOTING) {
     var sendCadElement = document.getElementById('send-ctrl-alt-del');
     sendCadElement.hidden = true;
   }
@@ -1721,13 +1723,13 @@ remoting.ClientSession.prototype.startStopRecording = function() {
 /**
  * Handles protocol extension messages.
  * @param {string} type Type of extension message.
- * @param {string} data Contents of the extension message.
+ * @param {Object} message The parsed extension message data.
  * @return {boolean} True if the message was recognized, false otherwise.
  */
 remoting.ClientSession.prototype.handleExtensionMessage =
-    function(type, data) {
+    function(type, message) {
   if (this.videoFrameRecorder_) {
-    return this.videoFrameRecorder_.handleMessage(type, data);
+    return this.videoFrameRecorder_.handleMessage(type, message);
   }
   return false;
 }

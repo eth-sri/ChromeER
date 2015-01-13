@@ -58,11 +58,11 @@ void ProxyMediaKeys::SetServerCertificate(
   promise->reject(NOT_SUPPORTED_ERROR, 0, "Not yet implemented.");
 }
 
-void ProxyMediaKeys::CreateSession(
+void ProxyMediaKeys::CreateSessionAndGenerateRequest(
+    SessionType session_type,
     const std::string& init_data_type,
     const uint8* init_data,
     int init_data_length,
-    SessionType session_type,
     scoped_ptr<media::NewSessionCdmPromise> promise) {
   // TODO(xhwang): Move these checks up to blink and DCHECK here.
   // See http://crbug.com/342510
@@ -91,6 +91,7 @@ void ProxyMediaKeys::CreateSession(
 }
 
 void ProxyMediaKeys::LoadSession(
+    SessionType session_type,
     const std::string& web_session_id,
     scoped_ptr<media::NewSessionCdmPromise> promise) {
   // TODO(xhwang): Check key system and platform support for LoadSession in
@@ -161,8 +162,13 @@ void ProxyMediaKeys::OnSessionCreated(uint32 session_id,
 void ProxyMediaKeys::OnSessionMessage(uint32 session_id,
                                       const std::vector<uint8>& message,
                                       const GURL& destination_url) {
-  session_message_cb_.Run(
-      LookupWebSessionId(session_id), message, destination_url);
+  // TODO(jrummell): Once |message_type| is passed, use it rather than
+  // guessing from the URL.
+  media::MediaKeys::MessageType message_type =
+      destination_url.is_empty() ? media::MediaKeys::LICENSE_REQUEST
+                                 : media::MediaKeys::LICENSE_RENEWAL;
+  session_message_cb_.Run(LookupWebSessionId(session_id), message_type,
+                          message);
 }
 
 void ProxyMediaKeys::OnSessionReady(uint32 session_id) {

@@ -32,6 +32,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
+#include "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -974,12 +975,25 @@ void WebAppShortcutCreator::RevealAppShimInFinder() const {
   if (app_path.empty())
     return;
 
+  // Check if the app shim exists.
+  if (base::PathExists(app_path)) {
+    // Use selectFile to show the contents of parent directory with the app
+    // shim selected.
+    [[NSWorkspace sharedWorkspace]
+                      selectFile:base::mac::FilePathToNSString(app_path)
+        inFileViewerRootedAtPath:nil];
+    return;
+  }
+
+  // Otherwise, go up a directory.
+  app_path = app_path.DirName();
+  // Check if the Chrome apps folder exists, otherwise go up to ~/Applications.
   if (!base::PathExists(app_path))
     app_path = app_path.DirName();
-
+  // Since |app_path| is a directory, use openFile to show the contents of
+  // that directory in Finder.
   [[NSWorkspace sharedWorkspace]
-                    selectFile:base::mac::FilePathToNSString(app_path)
-      inFileViewerRootedAtPath:nil];
+      openFile:base::mac::FilePathToNSString(app_path)];
 }
 
 base::FilePath GetAppInstallPath(const ShortcutInfo& shortcut_info) {
@@ -1024,11 +1038,11 @@ void CreateAppShortcutInfoLoaded(
 
   NSButton* continue_button = [alert
       addButtonWithTitle:l10n_util::GetNSString(IDS_CREATE_SHORTCUTS_COMMIT)];
-  [continue_button setKeyEquivalent:@""];
+  [continue_button setKeyEquivalent:kKeyEquivalentReturn];
 
   NSButton* cancel_button =
       [alert addButtonWithTitle:l10n_util::GetNSString(IDS_CANCEL)];
-  [cancel_button setKeyEquivalent:@"\r"];
+  [cancel_button setKeyEquivalent:kKeyEquivalentEscape];
 
   [alert setMessageText:l10n_util::GetNSString(IDS_CREATE_SHORTCUTS_LABEL)];
   [alert setAlertStyle:NSInformationalAlertStyle];

@@ -53,7 +53,6 @@ class BrowserWindowCocoa :
   bool IsAlwaysOnTop() const override;
   void SetAlwaysOnTop(bool always_on_top) override;
   gfx::NativeWindow GetNativeWindow() const override;
-  BrowserWindowTesting* GetBrowserWindowTesting() override;
   StatusBubble* GetStatusBubble() override;
   void UpdateTitleBar() override;
   void BookmarkBarStateChanged(
@@ -113,6 +112,10 @@ class BrowserWindowCocoa :
                            translate::TranslateStep step,
                            translate::TranslateErrors::Type error_type,
                            bool is_user_gesture) override;
+  bool ShowSessionCrashedBubble() override;
+  bool IsProfileResetBubbleSupported() const override;
+  GlobalErrorBubbleViewBase* ShowProfileResetBubble(
+      const base::WeakPtr<ProfileResetGlobalError>& global_error) override;
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   void ShowOneClickSigninBubble(
       OneClickSigninBubbleType type,

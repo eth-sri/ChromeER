@@ -23,6 +23,7 @@ from pylib import constants
 from pylib.device import adb_wrapper
 from pylib.device import decorators
 from pylib.device import device_errors
+from pylib.device import intent
 from pylib.device.commands import install_commands
 from pylib.utils import apk_helper
 from pylib.utils import device_temp_file
@@ -30,6 +31,7 @@ from pylib.utils import host_utils
 from pylib.utils import md5sum
 from pylib.utils import parallelizer
 from pylib.utils import timeout_retry
+from pylib.utils import zip_utils
 
 _DEFAULT_TIMEOUT = 30
 _DEFAULT_RETRIES = 3
@@ -69,7 +71,19 @@ def RestartServer():
   Raises:
     CommandFailedError if we fail to kill or restart the server.
   """
-  pylib.android_commands.AndroidCommands().RestartAdbServer()
+  def adb_killed():
+    return not adb_wrapper.AdbWrapper.IsServerOnline()
+
+  def adb_started():
+    return adb_wrapper.AdbWrapper.IsServerOnline()
+
+  adb_wrapper.AdbWrapper.KillServer()
+  if not timeout_retry.WaitFor(adb_killed, wait_period=1, max_tries=5):
+    # TODO(perezju): raise an exception after fixng http://crbug.com/442319
+    logging.warning('Failed to kill adb server')
+  adb_wrapper.AdbWrapper.StartServer()
+  if not timeout_retry.WaitFor(adb_started, wait_period=1, max_tries=5):
+    raise device_errors.CommandFailedError('Failed to start adb server')
 
 
 def _GetTimeStamp():
@@ -587,7 +601,10 @@ class DeviceUtils(object):
       CommandTimeoutError on timeout.
       DeviceUnreachableError on missing device.
     """
-    self.old_interface.GoHome()
+    self.StartActivity(
+        intent.Intent(action='android.intent.action.MAIN',
+                      category='android.intent.category.HOME'),
+        blocking=True)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def ForceStop(self, package, timeout=None, retries=None):
@@ -815,15 +832,7 @@ class DeviceUtils(object):
   def _CreateDeviceZip(zip_path, host_device_tuples):
     with zipfile.ZipFile(zip_path, 'w') as zip_file:
       for host_path, device_path in host_device_tuples:
-        if os.path.isfile(host_path):
-          zip_file.write(host_path, device_path, zipfile.ZIP_DEFLATED)
-        else:
-          for hd, _, files in os.walk(host_path):
-            dd = '%s/%s' % (device_path, os.path.relpath(host_path, hd))
-            zip_file.write(hd, dd, zipfile.ZIP_STORED)
-            for f in files:
-              zip_file.write(os.path.join(hd, f), '%s/%s' % (dd, f),
-                             zipfile.ZIP_DEFLATED)
+        zip_utils.WriteToZipFile(zip_file, host_path, device_path)
 
   @decorators.WithTimeoutAndRetriesFromInstance()
   def FileExists(self, device_path, timeout=None, retries=None):

@@ -40,12 +40,34 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
-#include "ui/gfx/vector2d.h"
 
 DECLARE_WINDOW_PROPERTY_TYPE(const char*)
-DECLARE_WINDOW_PROPERTY_TYPE(int)
+
+namespace {
+
+class TestProperty {
+ public:
+  TestProperty() {}
+  ~TestProperty() {
+    last_deleted_ = this;
+  }
+  static TestProperty* last_deleted() { return last_deleted_; }
+
+ private:
+  static TestProperty* last_deleted_;
+  DISALLOW_COPY_AND_ASSIGN(TestProperty);
+};
+
+TestProperty* TestProperty::last_deleted_ = nullptr;
+
+DEFINE_OWNED_WINDOW_PROPERTY_KEY(TestProperty, kOwnedKey, NULL);
+
+}  // namespace
+
+DECLARE_WINDOW_PROPERTY_TYPE(TestProperty*);
 
 namespace aura {
 namespace test {
@@ -1655,27 +1677,6 @@ TEST_F(WindowTest, Property) {
   w->ClearProperty(kStringKey);
   EXPECT_EQ(std::string("squeamish"), w->GetProperty(kStringKey));
 }
-
-namespace {
-
-class TestProperty {
- public:
-  TestProperty() {}
-  virtual ~TestProperty() {
-    last_deleted_ = this;
-  }
-  static TestProperty* last_deleted() { return last_deleted_; }
-
- private:
-  static TestProperty* last_deleted_;
-  DISALLOW_COPY_AND_ASSIGN(TestProperty);
-};
-
-TestProperty* TestProperty::last_deleted_ = NULL;
-
-DEFINE_OWNED_WINDOW_PROPERTY_KEY(TestProperty, kOwnedKey, NULL);
-
-}  // namespace
 
 TEST_F(WindowTest, OwnedProperty) {
   scoped_ptr<Window> w(CreateTestWindowWithId(0, root_window()));

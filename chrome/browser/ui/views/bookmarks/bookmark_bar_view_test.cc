@@ -206,7 +206,7 @@ class TestingPageNavigator : public PageNavigator {
 };
 
 // TODO(erg): Fix bookmark DND tests on linux_aura. crbug.com/163931
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #define MAYBE(x) DISABLED_##x
 #else
 #define MAYBE(x) x
@@ -724,7 +724,7 @@ class BookmarkBarViewTest5 : public BookmarkBarViewEventTestBase {
 };
 
 #if !defined(OS_WIN)  // flaky http://crbug.com/400578
-VIEW_TEST(BookmarkBarViewTest5, MAYBE(DND))
+VIEW_TEST(BookmarkBarViewTest5, DND)
 #endif
 
 // Tests holding mouse down on overflow button, dragging such that menu pops up
@@ -2055,10 +2055,7 @@ class BookmarkBarViewTest22 : public BookmarkBarViewEventTestBase {
   }
 };
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-// TODO(pkotwicz): Enable on Desktop Linux once crbug.com/438365 is fixed.
-#define MAYBE_CloseSourceBrowserDuringDrag DISABLED_CloseSourceBrowserDuringDrag
-#elif defined(OS_WIN)
+#if defined(OS_WIN)
 // This test times out on Windows. TODO(pkotwicz): Find out why.
 #define MAYBE_CloseSourceBrowserDuringDrag DISABLED_CloseSourceBrowserDuringDrag
 #else

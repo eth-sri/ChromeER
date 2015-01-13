@@ -262,6 +262,15 @@ AutofillProfile::AutofillProfile(const std::string& guid,
       phone_number_(1, PhoneNumber(this)) {
 }
 
+AutofillProfile::AutofillProfile(RecordType type, const std::string& server_id)
+    : AutofillDataModel(base::GenerateGUID(), std::string()),
+      record_type_(type),
+      name_(1),
+      email_(1),
+      phone_number_(1, PhoneNumber(this)) {
+  DCHECK(type == SERVER_PROFILE);
+}
+
 AutofillProfile::AutofillProfile()
     : AutofillDataModel(base::GenerateGUID(), std::string()),
       record_type_(LOCAL_PROFILE),
@@ -580,6 +589,25 @@ bool AutofillProfile::IsSubsetOf(const AutofillProfile& profile,
   }
 
   return true;
+}
+
+void AutofillProfile::CopyAndUpdateNameList(
+    const std::vector<base::string16> names,
+    const AutofillProfile* from,
+    const std::string& locale) {
+  SetMultiInfo(AutofillType(NAME_FULL), names, locale);
+  if (!from)
+    return;
+
+  for (const auto& old_name : from->name_) {
+    for (size_t i = 0; i < name_.size(); ++i) {
+      if (old_name.GetInfo(AutofillType(NAME_FULL), locale) ==
+          name_[i].GetInfo(AutofillType(NAME_FULL), locale)) {
+        name_[i] = old_name;
+        break;
+      }
+    }
+  }
 }
 
 void AutofillProfile::OverwriteOrAppendNames(

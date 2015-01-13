@@ -18,6 +18,7 @@
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -160,8 +161,7 @@ void InlineSigninHelper::OnClientOAuthSuccess(const ClientOAuthResult& result) {
     ProfileSyncService* sync_service =
         ProfileSyncServiceFactory::GetForProfile(profile_);
     SigninErrorController* error_controller =
-        ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
-            signin_error_controller();
+        SigninErrorControllerFactory::GetForProfile(profile_);
 
     bool is_new_avatar_menu = switches::IsNewAvatarMenu();
 
@@ -240,6 +240,7 @@ InlineLoginHandlerImpl::InlineLoginHandlerImpl()
 
 InlineLoginHandlerImpl::~InlineLoginHandlerImpl() {}
 
+// This method is not called with webview sign in enabled.
 void InlineLoginHandlerImpl::DidCommitProvisionalLoadForFrame(
     content::RenderFrameHost* render_frame_host,
     const GURL& url,
@@ -293,6 +294,11 @@ void InlineLoginHandlerImpl::CompleteLogin(const base::ListValue* args) {
     SyncStarterCallback(OneClickSigninSyncStarter::SYNC_SETUP_FAILURE);
     return;
   }
+
+  // This value exists only for webview sign in.
+  bool trusted = false;
+  if (dict->GetBoolean("trusted", &trusted))
+    confirm_untrusted_signin_ = !trusted;
 
   base::string16 email_string16;
   dict->GetString("email", &email_string16);

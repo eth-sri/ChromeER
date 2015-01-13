@@ -138,19 +138,21 @@ CreditCard::CreditCard(const std::string& guid, const std::string& origin)
 CreditCard::CreditCard(const base::string16& card_number,
                        int expiration_month,
                        int expiration_year)
-    : AutofillDataModel(std::string(), std::string()) {
+    : AutofillDataModel(std::string(), std::string()),
+      record_type_(LOCAL_CARD) {
   SetNumber(card_number);
   SetExpirationMonth(expiration_month);
   SetExpirationYear(expiration_year);
 }
 
-CreditCard::CreditCard(const std::string& wallet_id, RecordType type)
-    : AutofillDataModel(std::string(), std::string()),
+CreditCard::CreditCard(RecordType type, const std::string& server_id)
+    : AutofillDataModel(base::GenerateGUID(), std::string()),
       record_type_(type),
       type_(kGenericCard),
       expiration_month_(0),
       expiration_year_(0),
-      wallet_id_(wallet_id) {
+      server_id_(server_id) {
+  DCHECK(type == MASKED_SERVER_CARD || type == FULL_SERVER_CARD);
 }
 
 CreditCard::CreditCard()
@@ -301,7 +303,7 @@ const char* CreditCard::GetCreditCardType(const base::string16& number) {
 }
 
 void CreditCard::SetTypeForMaskedCard(const char* type) {
-  DCHECK_EQ(MASKED_WALLET_CARD, record_type());
+  DCHECK_EQ(MASKED_SERVER_CARD, record_type());
   type_ = type;
 }
 
@@ -404,8 +406,14 @@ void CreditCard::SetRawInfo(ServerFieldType type,
 base::string16 CreditCard::GetInfo(const AutofillType& type,
                                    const std::string& app_locale) const {
   ServerFieldType storable_type = type.GetStorableType();
-  if (storable_type == CREDIT_CARD_NUMBER)
+  if (storable_type == CREDIT_CARD_NUMBER) {
+    // Web pages should never actually be filled by a masked server card,
+    // but this function is used at the preview stage.
+    if (record_type() == MASKED_SERVER_CARD)
+      return TypeAndLastFourDigits();
+
     return StripSeparators(number_);
+  }
 
   return GetRawInfo(storable_type);
 }
@@ -516,6 +524,7 @@ void CreditCard::operator=(const CreditCard& credit_card) {
   type_ = credit_card.type_;
   expiration_month_ = credit_card.expiration_month_;
   expiration_year_ = credit_card.expiration_year_;
+  server_id_ = credit_card.server_id_;
 
   set_guid(credit_card.guid());
   set_origin(credit_card.origin());
@@ -566,7 +575,40 @@ int CreditCard::Compare(const CreditCard& credit_card) const {
       return comparison;
   }
 
+  int comparison = server_id_.compare(credit_card.server_id_);
+  if (comparison != 0)
+    return comparison;
+
+  if (static_cast<int>(record_type_) <
+      static_cast<int>(credit_card.record_type_))
+    return -1;
+  if (static_cast<int>(record_type_) >
+      static_cast<int>(credit_card.record_type_))
+    return 1;
   return 0;
+}
+
+bool CreditCard::IsLocalDuplicateOfServerCard(const CreditCard& other) const {
+  if (record_type() != LOCAL_CARD || other.record_type() == LOCAL_CARD)
+    return false;
+
+  // If |this| is only a partial card, i.e. some fields are missing, assume
+  // those fields match.
+  if ((!name_on_card_.empty() && name_on_card_ != other.name_on_card_) ||
+      (expiration_month_ != 0 &&
+       expiration_month_ != other.expiration_month_) ||
+      (expiration_year_ != 0 && expiration_year_ != other.expiration_year_)) {
+    return false;
+  }
+
+  if (number_.empty())
+    return true;
+
+  if (other.record_type() == FULL_SERVER_CARD)
+    return StripSeparators(number_) == StripSeparators(other.number_);
+
+  // For masked cards, this is the best we can do to compare card numbers.
+  return TypeAndLastFourDigits() == other.TypeAndLastFourDigits();
 }
 
 bool CreditCard::operator==(const CreditCard& credit_card) const {
@@ -659,7 +701,11 @@ void CreditCard::SetExpirationYearFromString(const base::string16& text) {
 
 void CreditCard::SetNumber(const base::string16& number) {
   number_ = number;
-  type_ = GetCreditCardType(StripSeparators(number_));
+
+  // Set the type based on the card number, but only for full numbers, not
+  // when we have masked cards from the server (last 4 digits).
+  if (record_type_ != MASKED_SERVER_CARD)
+    type_ = GetCreditCardType(StripSeparators(number_));
 }
 
 void CreditCard::SetExpirationMonth(int expiration_month) {

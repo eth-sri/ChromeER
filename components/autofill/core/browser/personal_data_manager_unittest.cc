@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/guid.h"
 #include "base/memory/scoped_ptr.h"
@@ -22,6 +23,7 @@
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
+#include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/webdata/common/web_data_service_base.h"
 #include "components/webdata/common/web_database_service.h"
@@ -81,7 +83,7 @@ void ExpectSameElements(const std::vector<T*>& expectations,
 
 class PersonalDataManagerTest : public testing::Test {
  protected:
-  PersonalDataManagerTest() {}
+  PersonalDataManagerTest() : autofill_table_(nullptr) {}
 
   void SetUp() override {
     prefs_ = test::PrefServiceForTesting();
@@ -90,8 +92,9 @@ class PersonalDataManagerTest : public testing::Test {
     web_database_ = new WebDatabaseService(path,
                                            base::MessageLoopProxy::current(),
                                            base::MessageLoopProxy::current());
-    web_database_->AddTable(
-        scoped_ptr<WebDatabaseTable>(new AutofillTable("en-US")));
+    // Hacky: hold onto a pointer but pass ownership.
+    autofill_table_ = new AutofillTable("en-US");
+    web_database_->AddTable(scoped_ptr<WebDatabaseTable>(autofill_table_));
     web_database_->LoadDatabase();
     autofill_database_service_ =
         new AutofillWebDataService(web_database_,
@@ -106,7 +109,7 @@ class PersonalDataManagerTest : public testing::Test {
 
   void ResetPersonalDataManager(UserMode user_mode) {
     bool is_incognito = (user_mode == USER_MODE_INCOGNITO);
-    personal_data_.reset(new PersonalDataManager("en-US"));
+    personal_data_.reset(new PersonalDataManager("en"));
     personal_data_->Init(
         scoped_refptr<AutofillWebDataService>(autofill_database_service_),
         prefs_.get(),
@@ -119,6 +122,14 @@ class PersonalDataManagerTest : public testing::Test {
     base::MessageLoop::current()->Run();
   }
 
+  void EnableWalletCardImport() {
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        switches::kEnableWalletCardImport);
+    ScopedVector<CreditCard> unused;
+    autofill_table_->GetServerCreditCards(&unused.get());
+    autofill_table_->SetServerCreditCards(std::vector<CreditCard>());
+  }
+
   // The temporary directory should be deleted at the end to ensure that
   // files are not used anymore and deletion succeeds.
   base::ScopedTempDir temp_dir_;
@@ -126,6 +137,7 @@ class PersonalDataManagerTest : public testing::Test {
   scoped_ptr<PrefService> prefs_;
   scoped_refptr<AutofillWebDataService> autofill_database_service_;
   scoped_refptr<WebDatabaseService> web_database_;
+  AutofillTable* autofill_table_;  // weak ref
   PersonalDataLoadedObserverMock personal_data_observer_;
   scoped_ptr<PersonalDataManager> personal_data_;
 };
@@ -366,6 +378,89 @@ TEST_F(PersonalDataManagerTest, UpdateUnverifiedProfilesAndCreditCards) {
   EXPECT_EQ(0, credit_card.Compare(*cards3[0]));
   EXPECT_EQ(profile.origin(), profiles3[0]->origin());
   EXPECT_EQ(credit_card.origin(), cards3[0]->origin());
+}
+
+// Tests that server cards are ignored without the flag.
+TEST_F(PersonalDataManagerTest, ReturnsServerCreditCards) {
+  std::vector<CreditCard> server_cards;
+  server_cards.push_back(CreditCard(CreditCard::MASKED_SERVER_CARD, "a123"));
+  test::SetCreditCardInfo(&server_cards.back(), "John Dillinger",
+                          "9012" /* Visa */, "01", "2010");
+  server_cards.back().SetTypeForMaskedCard(kVisaCard);
+
+  server_cards.push_back(CreditCard(CreditCard::MASKED_SERVER_CARD, "b456"));
+  test::SetCreditCardInfo(&server_cards.back(), "Bonnie Parker",
+                          "2109" /* Mastercard */, "12", "2012");
+  server_cards.back().SetTypeForMaskedCard(kMasterCard);
+
+  autofill_table_->SetServerCreditCards(server_cards);
+  personal_data_->Refresh();
+
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+      .WillOnce(QuitMainMessageLoop());
+  base::MessageLoop::current()->Run();
+
+  EXPECT_EQ(0U, personal_data_->GetCreditCards().size());
+}
+
+// Tests that UpdateCreditCard can be used to mask or unmask server cards.
+TEST_F(PersonalDataManagerTest, UpdateServerCreditCards) {
+  EnableWalletCardImport();
+
+  std::vector<CreditCard> server_cards;
+  server_cards.push_back(CreditCard(CreditCard::MASKED_SERVER_CARD, "a123"));
+  test::SetCreditCardInfo(&server_cards.back(), "John Dillinger",
+                          "9012" /* Visa */, "01", "2010");
+  server_cards.back().SetTypeForMaskedCard(kVisaCard);
+
+  server_cards.push_back(CreditCard(CreditCard::MASKED_SERVER_CARD, "b456"));
+  test::SetCreditCardInfo(&server_cards.back(), "Bonnie Parker",
+                          "2109" /* Mastercard */, "12", "2012");
+  server_cards.back().SetTypeForMaskedCard(kMasterCard);
+
+  server_cards.push_back(CreditCard(CreditCard::FULL_SERVER_CARD, "c789"));
+  test::SetCreditCardInfo(&server_cards.back(), "Clyde Barrow",
+                          "347666888555" /* American Express */, "04", "2015");
+
+  autofill_table_->SetServerCreditCards(server_cards);
+  personal_data_->Refresh();
+
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+      .WillOnce(QuitMainMessageLoop());
+  base::MessageLoop::current()->Run();
+
+  ASSERT_EQ(3U, personal_data_->GetCreditCards().size());
+  // The GUIDs will be different, so just compare the data.
+  for (size_t i = 0; i < 3; ++i)
+    EXPECT_EQ(0, server_cards[i].Compare(*personal_data_->GetCreditCards()[i]));
+
+  CreditCard* unmasked_card = &server_cards.front();
+  unmasked_card->set_record_type(CreditCard::FULL_SERVER_CARD);
+  unmasked_card->SetNumber(ASCIIToUTF16("423456789012"));
+  EXPECT_NE(0, server_cards.front().Compare(
+                   *personal_data_->GetCreditCards().front()));
+  personal_data_->UpdateServerCreditCard(*unmasked_card);
+
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+      .WillOnce(QuitMainMessageLoop());
+  base::MessageLoop::current()->Run();
+
+  for (size_t i = 0; i < 3; ++i)
+    EXPECT_EQ(0, server_cards[i].Compare(*personal_data_->GetCreditCards()[i]));
+
+  CreditCard* remasked_card = &server_cards.back();
+  remasked_card->set_record_type(CreditCard::MASKED_SERVER_CARD);
+  remasked_card->SetNumber(ASCIIToUTF16("8555"));
+  EXPECT_NE(
+      0, server_cards.back().Compare(*personal_data_->GetCreditCards().back()));
+  personal_data_->UpdateServerCreditCard(*remasked_card);
+
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+      .WillOnce(QuitMainMessageLoop());
+  base::MessageLoop::current()->Run();
+
+  for (size_t i = 0; i < 3; ++i)
+    EXPECT_EQ(0, server_cards[i].Compare(*personal_data_->GetCreditCards()[i]));
 }
 
 TEST_F(PersonalDataManagerTest, AddProfilesAndCreditCards) {
@@ -2616,6 +2711,8 @@ TEST_F(PersonalDataManagerTest, GetProfileSuggestions) {
 }
 
 TEST_F(PersonalDataManagerTest, GetCreditCardSuggestions) {
+  EnableWalletCardImport();
+
   // These GUIDs are reverse alphabetical to make validating expectations
   // easier.
   CreditCard credit_card0("287151C8-6AB1-487C-9095-28E80BE5DA15",
@@ -2659,6 +2756,72 @@ TEST_F(PersonalDataManagerTest, GetCreditCardSuggestions) {
   EXPECT_EQ(ASCIIToUTF16("04/15"), suggestions[1].label);
   EXPECT_EQ(ASCIIToUTF16("MasterCard - 2109"), suggestions[0].value);
   EXPECT_EQ(base::string16(), suggestions[0].label);
+
+  // Add some server cards. If there are local dupes, the locals should be
+  // hidden.
+  std::vector<CreditCard> server_cards;
+  // This server card matches a local card, except the local card is missing the
+  // number. This should count as a dupe.
+  server_cards.push_back(CreditCard(CreditCard::MASKED_SERVER_CARD, "a123"));
+  test::SetCreditCardInfo(&server_cards.back(), "John Dillinger",
+                          "9012" /* Visa */, "01", "2010");
+  server_cards.back().SetTypeForMaskedCard(kVisaCard);
+
+  // This server card is identical to a local card, but has a different
+  // card type. Not a dupe.
+  server_cards.push_back(CreditCard(CreditCard::MASKED_SERVER_CARD, "b456"));
+  test::SetCreditCardInfo(&server_cards.back(), "Bonnie Parker",
+                          "2109", "12", "2012");
+  server_cards.back().SetTypeForMaskedCard(kVisaCard);
+
+  // This unmasked server card is a dupe.
+  server_cards.push_back(CreditCard(CreditCard::FULL_SERVER_CARD, "c789"));
+  test::SetCreditCardInfo(&server_cards.back(), "Clyde Barrow",
+                          "347666888555" /* American Express */, "04", "2015");
+
+  autofill_table_->SetServerCreditCards(server_cards);
+  personal_data_->Refresh();
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+      .WillOnce(QuitMainMessageLoop());
+  base::MessageLoop::current()->Run();
+
+  suggestions = personal_data_->GetCreditCardSuggestions(
+          AutofillType(CREDIT_CARD_NAME), base::string16());
+  ASSERT_EQ(4U, suggestions.size());
+  EXPECT_EQ(ASCIIToUTF16("Bonnie Parker"), suggestions[0].value);
+  EXPECT_EQ(suggestions[0].backend_id.guid, credit_card2.guid());
+  EXPECT_EQ(ASCIIToUTF16("John Dillinger"), suggestions[1].value);
+  EXPECT_NE(suggestions[1].backend_id.guid, credit_card1.guid());
+  EXPECT_EQ(ASCIIToUTF16("Bonnie Parker"), suggestions[2].value);
+  EXPECT_NE(suggestions[2].backend_id.guid, credit_card2.guid());
+  EXPECT_EQ(ASCIIToUTF16("Clyde Barrow"), suggestions[3].value);
+  EXPECT_NE(suggestions[0].backend_id.guid, credit_card0.guid());
+
+  suggestions = personal_data_->GetCreditCardSuggestions(
+      AutofillType(CREDIT_CARD_NUMBER), base::string16());
+  ASSERT_EQ(4U, suggestions.size());
+  EXPECT_EQ(ASCIIToUTF16("MasterCard - 2109"), suggestions[0].value);
+  EXPECT_EQ(ASCIIToUTF16("Visa - 9012"), suggestions[1].value);
+  EXPECT_EQ(ASCIIToUTF16("Visa - 2109"), suggestions[2].value);
+  EXPECT_EQ(ASCIIToUTF16("American Express - 8555"), suggestions[3].value);
+
+  // Make sure a server card can be a dupe of more than one local card.
+  CreditCard credit_card3("4141084B-72D7-4B73-90CF-3D6AC154673B",
+                          "https://www.example.com");
+  test::SetCreditCardInfo(&credit_card3, "John Dillinger", "", "01", "");
+  personal_data_->AddCreditCard(credit_card3);
+
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+      .WillOnce(QuitMainMessageLoop());
+  base::MessageLoop::current()->Run();
+
+  suggestions = personal_data_->GetCreditCardSuggestions(
+          AutofillType(CREDIT_CARD_NAME), base::string16());
+  ASSERT_EQ(4U, suggestions.size());
+  EXPECT_EQ(ASCIIToUTF16("Bonnie Parker"), suggestions[0].value);
+  EXPECT_EQ(ASCIIToUTF16("John Dillinger"), suggestions[1].value);
+  EXPECT_EQ(ASCIIToUTF16("Bonnie Parker"), suggestions[2].value);
+  EXPECT_EQ(ASCIIToUTF16("Clyde Barrow"), suggestions[3].value);
 }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)

@@ -261,8 +261,12 @@
         'base/cdm_context.h',
         'base/cdm_factory.cc',
         'base/cdm_factory.h',
+        'base/cdm_key_information.cc',
+        'base/cdm_key_information.h',
         'base/cdm_promise.cc',
         'base/cdm_promise.h',
+        'base/cdm_promise_adapter.cc',
+        'base/cdm_promise_adapter.h',
         'base/channel_mixer.cc',
         'base/channel_mixer.h',
         'base/channel_mixing_matrix.cc',
@@ -417,6 +421,7 @@
         'filters/blocking_url_protocol.h',
         'filters/chunk_demuxer.cc',
         'filters/chunk_demuxer.h',
+        'filters/context_3d.h',
         'filters/decoder_selector.cc',
         'filters/decoder_selector.h',
         'filters/decoder_stream.cc',
@@ -473,6 +478,10 @@
         'filters/video_frame_scheduler_proxy.h',
         'filters/video_renderer_impl.cc',
         'filters/video_renderer_impl.h',
+        'filters/vp8_bool_decoder.cc',
+        'filters/vp8_bool_decoder.h',
+        'filters/vp8_parser.cc',
+        'filters/vp8_parser.h',
         'filters/vpx_video_decoder.cc',
         'filters/vpx_video_decoder.h',
         'filters/webvtt_util.h',
@@ -645,12 +654,23 @@
             'filters/in_memory_url_protocol.cc',
             'filters/in_memory_url_protocol.h',
           ],
+          'defines': [
+            'MEDIA_DISABLE_FFMPEG',
+          ],
+          'direct_dependent_settings': {
+            'defines': [
+              'MEDIA_DISABLE_FFMPEG',
+            ],
+          },
         }],
         ['media_use_libvpx==1', {
           'dependencies': [
             '<(DEPTH)/third_party/libvpx/libvpx.gyp:libvpx',
           ],
         }, {  # media_use_libvpx==0
+          'defines': [
+            'MEDIA_DISABLE_LIBVPX',
+          ],
           'direct_dependent_settings': {
             'defines': [
               'MEDIA_DISABLE_LIBVPX',
@@ -1211,6 +1231,8 @@
         'filters/video_frame_scheduler_unittest.cc',
         'filters/video_frame_stream_unittest.cc',
         'filters/video_renderer_impl_unittest.cc',
+        'filters/vp8_bool_decoder_unittest.cc',
+        'filters/vp8_parser_unittest.cc',
         'midi/midi_manager_unittest.cc',
         'midi/midi_manager_usb_unittest.cc',
         'midi/midi_message_queue_unittest.cc',
@@ -1415,7 +1437,8 @@
       ],
     },
     {
-      # GN version: //media:test_support
+      # GN versions (it is split apart): //media:test_support,
+      # //media/base:test_support, and //media/audio:test_support
       'target_name': 'media_test_support',
       'type': 'static_library',
       'dependencies': [

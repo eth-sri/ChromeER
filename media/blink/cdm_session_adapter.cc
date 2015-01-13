@@ -9,6 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/stl_util.h"
 #include "media/base/cdm_factory.h"
+#include "media/base/cdm_key_information.h"
 #include "media/base/cdm_promise.h"
 #include "media/base/key_systems.h"
 #include "media/base/media_keys.h"
@@ -76,17 +77,15 @@ void CdmSessionAdapter::InitializeNewSession(
     int init_data_length,
     MediaKeys::SessionType session_type,
     scoped_ptr<NewSessionCdmPromise> promise) {
-  media_keys_->CreateSession(init_data_type,
-                             init_data,
-                             init_data_length,
-                             session_type,
-                             promise.Pass());
+  media_keys_->CreateSessionAndGenerateRequest(session_type, init_data_type,
+                                               init_data, init_data_length,
+                                               promise.Pass());
 }
 
-void CdmSessionAdapter::LoadSession(
-    const std::string& web_session_id,
-    scoped_ptr<NewSessionCdmPromise> promise) {
-  media_keys_->LoadSession(web_session_id, promise.Pass());
+void CdmSessionAdapter::LoadSession(MediaKeys::SessionType session_type,
+                                    const std::string& web_session_id,
+                                    scoped_ptr<NewSessionCdmPromise> promise) {
+  media_keys_->LoadSession(session_type, web_session_id, promise.Pass());
 }
 
 void CdmSessionAdapter::UpdateSession(
@@ -119,17 +118,19 @@ const std::string& CdmSessionAdapter::GetKeySystemUMAPrefix() const {
 }
 
 void CdmSessionAdapter::OnSessionMessage(const std::string& web_session_id,
-                                         const std::vector<uint8>& message,
-                                         const GURL& destination_url) {
+                                         MediaKeys::MessageType message_type,
+                                         const std::vector<uint8>& message) {
   WebContentDecryptionModuleSessionImpl* session = GetSession(web_session_id);
   DLOG_IF(WARNING, !session) << __FUNCTION__ << " for unknown session "
                              << web_session_id;
   if (session)
-    session->OnSessionMessage(message, destination_url);
+    session->OnSessionMessage(message_type, message);
 }
 
 void CdmSessionAdapter::OnSessionKeysChange(const std::string& web_session_id,
-                                            bool has_additional_usable_key) {
+                                            bool has_additional_usable_key,
+                                            CdmKeysInfo keys_info) {
+  // TODO(jrummell): Pass |keys_info| on.
   WebContentDecryptionModuleSessionImpl* session = GetSession(web_session_id);
   DLOG_IF(WARNING, !session) << __FUNCTION__ << " for unknown session "
                              << web_session_id;

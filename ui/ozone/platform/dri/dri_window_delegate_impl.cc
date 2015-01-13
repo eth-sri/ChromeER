@@ -108,7 +108,17 @@ void DriWindowDelegateImpl::SetCursor(const std::vector<SkBitmap>& bitmaps,
         FROM_HERE, base::TimeDelta::FromMilliseconds(cursor_frame_delay_ms_),
         this, &DriWindowDelegateImpl::OnCursorAnimationTimeout);
 
-  ResetCursor();
+  ResetCursor(false);
+}
+
+void DriWindowDelegateImpl::SetCursorWithoutAnimations(
+    const std::vector<SkBitmap>& bitmaps,
+    const gfx::Point& location) {
+  cursor_bitmaps_ = bitmaps;
+  cursor_location_ = location;
+  cursor_frame_ = 0;
+  cursor_frame_delay_ms_ = 0;
+  ResetCursor(false);
 }
 
 void DriWindowDelegateImpl::MoveCursor(const gfx::Point& location) {
@@ -118,7 +128,7 @@ void DriWindowDelegateImpl::MoveCursor(const gfx::Point& location) {
     controller_->MoveCursor(location);
 }
 
-void DriWindowDelegateImpl::ResetCursor() {
+void DriWindowDelegateImpl::ResetCursor(bool bitmap_only) {
   if (cursor_bitmaps_.size()) {
     // Draw new cursor into backbuffer.
     UpdateCursorImage(cursor_buffers_[cursor_frontbuffer_ ^ 1].get(),
@@ -126,7 +136,8 @@ void DriWindowDelegateImpl::ResetCursor() {
 
     // Reset location & buffer.
     if (controller_) {
-      controller_->MoveCursor(cursor_location_);
+      if (!bitmap_only)
+        controller_->MoveCursor(cursor_location_);
       controller_->SetCursor(cursor_buffers_[cursor_frontbuffer_ ^ 1]);
       cursor_frontbuffer_ ^= 1;
     }
@@ -141,7 +152,7 @@ void DriWindowDelegateImpl::OnCursorAnimationTimeout() {
   cursor_frame_++;
   cursor_frame_ %= cursor_bitmaps_.size();
 
-  ResetCursor();
+  ResetCursor(true);
 }
 
 }  // namespace ui

@@ -10,12 +10,9 @@
 #include "cc/resources/display_item_list.h"
 #include "third_party/WebKit/public/platform/WebBlendMode.h"
 #include "third_party/WebKit/public/platform/WebContentLayerClient.h"
+#include "third_party/WebKit/public/platform/WebDisplayItemList.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-
-#if WEB_DISPLAY_ITEM_LIST_IS_DEFINED
-#include "third_party/WebKit/public/platform/WebDisplayItemList.h"
-#endif
 
 class SkImageFilter;
 class SkMatrix44;
@@ -24,12 +21,7 @@ class SkRRect;
 
 namespace cc_blink {
 
-#if WEB_DISPLAY_ITEM_LIST_IS_DEFINED
 class WebDisplayItemListImpl : public blink::WebDisplayItemList {
-#else
-class WebDisplayItemListImpl {
-#endif
-
  public:
   CC_BLINK_EXPORT WebDisplayItemListImpl();
   virtual ~WebDisplayItemListImpl();
@@ -43,6 +35,8 @@ class WebDisplayItemListImpl {
       const blink::WebRect& clip_rect,
       const blink::WebVector<SkRRect>& rounded_clip_rects);
   virtual void appendEndClipItem();
+  virtual void appendFloatClipItem(const blink::WebFloatRect& clip_rect);
+  virtual void appendEndFloatClipItem();
   virtual void appendTransformItem(const SkMatrix44& matrix);
   virtual void appendEndTransformItem();
   virtual void appendTransparencyItem(float opacity,

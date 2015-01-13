@@ -39,12 +39,14 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys,
   void SetServerCertificate(const uint8* certificate_data,
                             int certificate_data_length,
                             scoped_ptr<SimpleCdmPromise> promise) override;
-  void CreateSession(const std::string& init_data_type,
-                     const uint8* init_data,
-                     int init_data_length,
-                     SessionType session_type,
-                     scoped_ptr<NewSessionCdmPromise> promise) override;
-  void LoadSession(const std::string& web_session_id,
+  void CreateSessionAndGenerateRequest(
+      SessionType session_type,
+      const std::string& init_data_type,
+      const uint8* init_data,
+      int init_data_length,
+      scoped_ptr<NewSessionCdmPromise> promise) override;
+  void LoadSession(SessionType session_type,
+                   const std::string& web_session_id,
                    scoped_ptr<NewSessionCdmPromise> promise) override;
   void UpdateSession(const std::string& web_session_id,
                      const uint8* response,
@@ -59,7 +61,7 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys,
   // CdmContext implementation.
   Decryptor* GetDecryptor() override;
 #if defined(ENABLE_BROWSER_CDMS)
-  virtual int GetCdmId() const override;
+  int GetCdmId() const override;
 #endif  // defined(ENABLE_BROWSER_CDMS)
 
   // Decryptor implementation.

@@ -6,12 +6,16 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/browser/component_updater/supervised_user_whitelist_installer.h"
 #include "chrome/browser/supervised_user/supervised_user_site_list.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "sync/api/sync_change.h"
@@ -56,6 +60,26 @@ void SupervisedUserWhitelistService::Init() {
     DCHECK(result);
     bool new_installation = false;
     RegisterWhitelist(it.key(), name, new_installation);
+  }
+
+  // Register whitelists specified on the command line.
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  std::string command_line_whitelists = command_line->GetSwitchValueASCII(
+      switches::kInstallSupervisedUserWhitelists);
+  std::vector<std::string> split_whitelists;
+  base::SplitString(command_line_whitelists, ',', &split_whitelists);
+  for (const std::string& whitelist : split_whitelists) {
+    std::string id;
+    std::string name;
+    size_t separator = whitelist.find(':');
+    if (separator != std::string::npos) {
+      id = whitelist.substr(0, separator);
+      name = whitelist.substr(separator + 1);
+    } else {
+      id = whitelist;
+    }
+    bool new_installation = true;
+    RegisterWhitelist(id, name, new_installation);
   }
 }
 
@@ -145,7 +169,7 @@ SupervisedUserWhitelistService::MergeDataAndStartSyncing(
 
   // Notify if whitelists have been uninstalled. We will notify about newly
   // added whitelists later, when they are actually available
-  // (in OnWhitelistReady).
+  // (in OnWhitelistLoaded).
   if (!ids_to_remove.empty())
     NotifyWhitelistsChanged();
 
@@ -264,15 +288,12 @@ void SupervisedUserWhitelistService::RegisterWhitelist(const std::string& id,
 }
 
 void SupervisedUserWhitelistService::NotifyWhitelistsChanged() {
-  for (const SiteListsChangedCallback& callback :
-       site_lists_changed_callbacks_) {
-    ScopedVector<SupervisedUserSiteList> whitelists;
-    // TODO(bauerb): Load whitelists here and pass around immutable objects.
-    for (const auto& whitelist : loaded_whitelists_) {
-      whitelists.push_back(new SupervisedUserSiteList(whitelist.second));
-    }
-    callback.Run(whitelists.Pass());
-  }
+  std::vector<scoped_refptr<SupervisedUserSiteList> > whitelists;
+  for (const auto& whitelist : loaded_whitelists_)
+    whitelists.push_back(whitelist.second);
+
+  for (const auto& callback : site_lists_changed_callbacks_)
+    callback.Run(whitelists);
 }
 
 void SupervisedUserWhitelistService::OnWhitelistReady(
@@ -282,6 +303,28 @@ void SupervisedUserWhitelistService::OnWhitelistReady(
   if (registered_whitelists_.count(id) == 0u)
     return;
 
-  loaded_whitelists_[id] = whitelist_path;
+  SupervisedUserSiteList::Load(
+      whitelist_path,
+      base::Bind(&SupervisedUserWhitelistService::OnWhitelistLoaded,
+                 weak_ptr_factory_.GetWeakPtr(), id, base::TimeTicks::Now()));
+}
+
+void SupervisedUserWhitelistService::OnWhitelistLoaded(
+    const std::string& id,
+    base::TimeTicks start_time,
+    const scoped_refptr<SupervisedUserSiteList>& whitelist) {
+  if (!whitelist) {
+    LOG(WARNING) << "Couldn't load whitelist " << id;
+    return;
+  }
+
+  UMA_HISTOGRAM_TIMES("ManagedUsers.Whitelist.TotalLoadDuration",
+                      base::TimeTicks::Now() - start_time);
+
+  // If the whitelist has been unregistered in the mean time, ignore it.
+  if (registered_whitelists_.count(id) == 0u)
+    return;
+
+  loaded_whitelists_[id] = whitelist;
   NotifyWhitelistsChanged();
 }

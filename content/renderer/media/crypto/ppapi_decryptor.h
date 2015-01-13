@@ -51,12 +51,14 @@ class PpapiDecryptor : public media::MediaKeys,
       const uint8* certificate_data,
       int certificate_data_length,
       scoped_ptr<media::SimpleCdmPromise> promise) override;
-  void CreateSession(const std::string& init_data_type,
-                     const uint8* init_data,
-                     int init_data_length,
-                     SessionType session_type,
-                     scoped_ptr<media::NewSessionCdmPromise> promise) override;
-  void LoadSession(const std::string& web_session_id,
+  void CreateSessionAndGenerateRequest(
+      SessionType session_type,
+      const std::string& init_data_type,
+      const uint8* init_data,
+      int init_data_length,
+      scoped_ptr<media::NewSessionCdmPromise> promise) override;
+  void LoadSession(SessionType session_type,
+                   const std::string& web_session_id,
                    scoped_ptr<media::NewSessionCdmPromise> promise) override;
   void UpdateSession(const std::string& web_session_id,
                      const uint8* response,
@@ -105,10 +107,11 @@ class PpapiDecryptor : public media::MediaKeys,
 
   // Callbacks for |plugin_cdm_delegate_| to fire session events.
   void OnSessionMessage(const std::string& web_session_id,
-                        const std::vector<uint8>& message,
-                        const GURL& destination_url);
+                        MediaKeys::MessageType message_type,
+                        const std::vector<uint8>& message);
   void OnSessionKeysChange(const std::string& web_session_id,
-                           bool has_additional_usable_key);
+                           bool has_additional_usable_key,
+                           media::CdmKeysInfo keys_info);
   void OnSessionExpirationUpdate(const std::string& web_session_id,
                                  const base::Time& new_expiry_time);
   void OnSessionClosed(const std::string& web_session_id);

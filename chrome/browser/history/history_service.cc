@@ -189,6 +189,14 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
                    changed_urls));
   }
 
+  void NotifyKeywordSearchTermUpdated(const history::URLRow& row,
+                                      KeywordID keyword_id,
+                                      const base::string16& term) override {
+    service_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&HistoryService::NotifyKeywordSearchTermUpdated,
+                              history_service_, row, keyword_id, term));
+  }
+
   void BroadcastNotifications(
       int type,
       scoped_ptr<history::HistoryDetails> details) override {
@@ -392,7 +400,7 @@ void HistoryService::SetOnBackendDestroyTask(const base::Closure& task) {
 void HistoryService::AddPage(const GURL& url,
                              Time time,
                              history::ContextID context_id,
-                             int32 page_id,
+                             int nav_entry_id,
                              const GURL& referrer,
                              const history::RedirectList& redirects,
                              ui::PageTransition transition,
@@ -400,7 +408,7 @@ void HistoryService::AddPage(const GURL& url,
                              bool did_replace_entry) {
   DCHECK(thread_checker_.CalledOnValidThread());
   AddPage(
-      history::HistoryAddPageArgs(url, time, context_id, page_id, referrer,
+      history::HistoryAddPageArgs(url, time, context_id, nav_entry_id, referrer,
                                   redirects, transition, visit_source,
                                   did_replace_entry));
 }
@@ -465,13 +473,13 @@ void HistoryService::SetPageTitle(const GURL& url,
 }
 
 void HistoryService::UpdateWithPageEndTime(history::ContextID context_id,
-                                           int32 page_id,
+                                           int nav_entry_id,
                                            const GURL& url,
                                            Time end_ts) {
   DCHECK(thread_) << "History service being called after cleanup";
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_NORMAL, &HistoryBackend::UpdateWithPageEndTime,
-                    context_id, page_id, url, end_ts);
+                    context_id, nav_entry_id, url, end_ts);
 }
 
 void HistoryService::AddPageWithDetails(const GURL& url,
@@ -1278,6 +1286,15 @@ void HistoryService::NotifyHistoryServiceBeingDeleted() {
   DCHECK(thread_checker_.CalledOnValidThread());
   FOR_EACH_OBSERVER(history::HistoryServiceObserver, observers_,
                     HistoryServiceBeingDeleted(this));
+}
+
+void HistoryService::NotifyKeywordSearchTermUpdated(
+    const history::URLRow& row,
+    history::KeywordID keyword_id,
+    const base::string16& term) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  FOR_EACH_OBSERVER(history::HistoryServiceObserver, observers_,
+                    OnKeywordSearchTermUpdated(this, row, keyword_id, term));
 }
 
 scoped_ptr<base::CallbackList<void(const std::set<GURL>&)>::Subscription>

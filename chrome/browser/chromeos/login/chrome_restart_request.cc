@@ -19,7 +19,7 @@
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/boot_times_loader.h"
+#include "chrome/browser/chromeos/boot_times_recorder.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -159,7 +159,6 @@ std::string DeriveCommandLine(const GURL& start_url,
 #if defined(ENABLE_WEBRTC)
     ::switches::kDisableWebRtcHWDecoding,
     ::switches::kDisableWebRtcHWEncoding,
-    ::switches::kEnableWebRtcHWVp8Encoding,
     ::switches::kEnableWebRtcHWH264Encoding,
 #endif
     ::switches::kDisableVaapiAcceleratedVideoEncode,
@@ -258,7 +257,7 @@ void ReLaunch(const std::string& command_line) {
   // This is not a proper way to get |argv| but it's good enough for debugging.
   base::SplitString(command_line, ' ', &argv);
 
-  base::LaunchProcess(argv, base::LaunchOptions(), NULL);
+  base::LaunchProcess(argv, base::LaunchOptions());
   chrome::AttemptUserExit();
 }
 
@@ -369,7 +368,7 @@ std::string GetOffTheRecordCommandLine(
 
 void RestartChrome(const std::string& command_line) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  BootTimesLoader::Get()->set_restart_requested();
+  BootTimesRecorder::Get()->set_restart_requested();
 
   static bool restart_requested = false;
   if (restart_requested) {

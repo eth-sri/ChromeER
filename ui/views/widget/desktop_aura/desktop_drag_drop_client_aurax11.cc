@@ -431,11 +431,12 @@ DesktopDragDropClientAuraX11::DesktopDragDropClientAuraX11(
 }
 
 DesktopDragDropClientAuraX11::~DesktopDragDropClientAuraX11() {
-  g_live_client_map.Get().erase(xwindow_);
-  // Make sure that all observers are unregistered from source and target
-  // windows. This may be necessary when the parent native widget gets destroyed
-  // while a drag operation is in progress.
+  // This is necessary when the parent native widget gets destroyed while a drag
+  // operation is in progress.
+  move_loop_->EndMoveLoop();
   NotifyDragLeave();
+
+  g_live_client_map.Get().erase(xwindow_);
 }
 
 // static
@@ -810,7 +811,7 @@ void DesktopDragDropClientAuraX11::OnMoveLoopEnded() {
 
 scoped_ptr<X11MoveLoop> DesktopDragDropClientAuraX11::CreateMoveLoop(
     X11MoveLoopDelegate* delegate) {
-  return scoped_ptr<X11MoveLoop>(new X11WholeScreenMoveLoop(this));
+  return make_scoped_ptr(new X11WholeScreenMoveLoop(this));
 }
 
 XID DesktopDragDropClientAuraX11::FindWindowFor(

@@ -43,6 +43,8 @@
     '../third_party/skia/src/fonts/SkRemotableFontMgr.cpp',
     '../third_party/skia/src/ports/SkRemotableFontMgr_win_dw.cpp',
 
+    '../third_party/skia/src/ports/SkImageGenerator_none.cpp',
+
     '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
     '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
     '../third_party/skia/src/ports/SkFontHost_FreeType_common.h',
@@ -167,6 +169,7 @@
     '../third_party/skia/src/core',
     '../third_party/skia/src/opts',
     '../third_party/skia/src/image',
+    '../third_party/skia/src/pdf',
     '../third_party/skia/src/ports',
     '../third_party/skia/src/sfnt',
     '../third_party/skia/src/utils',

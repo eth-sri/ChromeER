@@ -12,6 +12,7 @@
 #include "base/strings/string_util.h"
 #include "media/base/cdm_callback_promise.h"
 #include "media/base/cdm_factory.h"
+#include "media/base/cdm_key_information.h"
 #include "media/base/key_systems.h"
 #include "media/cdm/json_web_key.h"
 #include "media/cdm/key_system_names.h"
@@ -104,6 +105,7 @@ bool ProxyDecryptor::GenerateKeyRequest(const std::string& init_data_type,
 
   if (session_creation_type == LoadSession) {
     media_keys_->LoadSession(
+        MediaKeys::PERSISTENT_LICENSE_SESSION,
         std::string(reinterpret_cast<const char*>(init_data_vector_data),
                     init_data_vector.size()),
         promise.Pass());
@@ -112,14 +114,12 @@ bool ProxyDecryptor::GenerateKeyRequest(const std::string& init_data_type,
 
   MediaKeys::SessionType session_type =
       session_creation_type == PersistentSession
-          ? MediaKeys::PERSISTENT_SESSION
+          ? MediaKeys::PERSISTENT_LICENSE_SESSION
           : MediaKeys::TEMPORARY_SESSION;
 
-  media_keys_->CreateSession(init_data_type,
-                             init_data_vector_data,
-                             init_data_vector.size(),
-                             session_type,
-                             promise.Pass());
+  media_keys_->CreateSessionAndGenerateRequest(
+      session_type, init_data_type, init_data_vector_data,
+      init_data_vector.size(), promise.Pass());
   return true;
 }
 
@@ -210,25 +210,30 @@ scoped_ptr<MediaKeys> ProxyDecryptor::CreateMediaKeys(
 }
 
 void ProxyDecryptor::OnSessionMessage(const std::string& web_session_id,
-                                      const std::vector<uint8>& message,
-                                      const GURL& destination_url) {
+                                      MediaKeys::MessageType message_type,
+                                      const std::vector<uint8>& message) {
   // Assumes that OnSessionCreated() has been called before this.
+
+  // EME v0.1b gets passed |destination_url| rather than |message_type|.
+  // Since we have no idea what the URL should be, return an empty one in all
+  // cases.
 
   // For ClearKey, convert the message from JSON into just passing the key
   // as the message. If unable to extract the key, return the message unchanged.
   if (is_clear_key_) {
     std::vector<uint8> key;
     if (ExtractFirstKeyIdFromLicenseRequest(message, &key)) {
-      key_message_cb_.Run(web_session_id, key, destination_url);
+      key_message_cb_.Run(web_session_id, key, GURL());
       return;
     }
   }
 
-  key_message_cb_.Run(web_session_id, message, destination_url);
+  key_message_cb_.Run(web_session_id, message, GURL());
 }
 
 void ProxyDecryptor::OnSessionKeysChange(const std::string& web_session_id,
-                                         bool has_additional_usable_key) {
+                                         bool has_additional_usable_key,
+                                         CdmKeysInfo keys_info) {
   // EME v0.1b doesn't support this event.
 }
 

@@ -136,6 +136,9 @@ per-file onc.gypi=gspencer@chromium.org
 per-file onc.gypi=pneubeck@chromium.org
 per-file onc.gypi=stevenjb@chromium.org
 
+per-file packed_ct_ev_whitelist.gypi=eranm@chromium.org
+per-file packed_ct_ev_whitelist.gypi=rsleevi@chromium.org
+
 per-file pairing.gypi=achuith@chromium.org
 per-file pairing.gypi=dzhioev@chromium.org
 per-file pairing.gypi=zork@chromium.org
@@ -162,7 +165,6 @@ per-file policy*=mnissler@chromium.org
 per-file policy*=bartfab@chromium.org
 per-file policy*=atwilson@chromium.org
 per-file policy*=pneubeck@chromium.org
-per-file policy*=dconnelly@chromium.org
 
 per-file proximity_auth*=isherman@chromium.org
 per-file proximity_auth*=tbarzic@chromium.org

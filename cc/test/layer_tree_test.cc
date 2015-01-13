@@ -46,6 +46,11 @@ DrawResult TestHooks::PrepareToDrawOnThread(
   return draw_result;
 }
 
+scoped_ptr<Rasterizer> TestHooks::CreateRasterizer(
+    LayerTreeHostImpl* host_impl) {
+  return host_impl->LayerTreeHostImpl::CreateRasterizer();
+}
+
 void TestHooks::CreateResourceAndTileTaskWorkerPool(
     LayerTreeHostImpl* host_impl,
     scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
@@ -165,6 +170,10 @@ class LayerTreeHostImplForTesting : public LayerTreeHostImpl {
         test_hooks_(test_hooks),
         block_notify_ready_to_activate_for_testing_(false),
         notify_ready_to_activate_was_blocked_(false) {}
+
+  scoped_ptr<Rasterizer> CreateRasterizer() override {
+    return test_hooks_->CreateRasterizer(this);
+  }
 
   void CreateResourceAndTileTaskWorkerPool(
       scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
@@ -571,8 +580,7 @@ void LayerTreeTest::DoBeginTest() {
   client_ = LayerTreeHostClientForTesting::Create(this);
 
   scoped_ptr<FakeExternalBeginFrameSource> external_begin_frame_source;
-  if (settings_.use_external_begin_frame_source &&
-      settings_.throttle_frame_production) {
+  if (settings_.use_external_begin_frame_source) {
     external_begin_frame_source.reset(new FakeExternalBeginFrameSource(
         settings_.renderer_settings.refresh_rate));
     external_begin_frame_source_ = external_begin_frame_source.get();
@@ -753,8 +761,7 @@ scoped_ptr<OutputSurface> LayerTreeTest::CreateOutputSurface() {
             output_surface->capabilities().delegated_rendering);
   output_surface_ = output_surface.get();
 
-  if (settings_.use_external_begin_frame_source &&
-      settings_.throttle_frame_production) {
+  if (settings_.use_external_begin_frame_source) {
     DCHECK(external_begin_frame_source_);
     DCHECK(external_begin_frame_source_->is_ready());
   }

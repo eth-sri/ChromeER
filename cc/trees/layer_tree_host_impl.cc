@@ -49,6 +49,7 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/bitmap_tile_task_worker_pool.h"
 #include "cc/resources/eviction_tile_priority_queue.h"
+#include "cc/resources/gpu_rasterizer.h"
 #include "cc/resources/gpu_tile_task_worker_pool.h"
 #include "cc/resources/memory_history.h"
 #include "cc/resources/one_copy_tile_task_worker_pool.h"
@@ -57,6 +58,7 @@
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/raster_tile_priority_queue.h"
 #include "cc/resources/resource_pool.h"
+#include "cc/resources/software_rasterizer.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/resources/tile_task_worker_pool.h"
 #include "cc/resources/ui_resource_bitmap.h"
@@ -290,6 +292,12 @@ void LayerTreeHostImpl::BeginMainFrameAborted(CommitEarlyOutReason reason) {
 
 void LayerTreeHostImpl::BeginCommit() {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::BeginCommit");
+
+  // Ensure all textures are returned so partial texture updates can happen
+  // during the commit. Impl-side-painting doesn't upload during commits, so
+  // is unaffected.
+  if (!settings_.impl_side_painting)
+    output_surface_->ForceReclaimResources();
 
   if (UsePendingTreeForSync())
     CreatePendingTree();
@@ -873,7 +881,7 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(
       output_surface_->capabilities().draw_and_swap_full_viewport_every_frame)
     draw_result = DRAW_SUCCESS;
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   for (const auto& render_pass : frame->render_passes) {
     for (const auto& quad : render_pass->quad_list)
       DCHECK(quad->shared_quad_state);
@@ -1059,17 +1067,17 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
   if (input_handler_client_)
     input_handler_client_->ReconcileElasticOverscrollAndRootScroll();
 
-  // This will cause NotifyTileStateChanged() to be called for any visible tiles
-  // that completed, which will add damage to the frame for them so they appear
-  // as part of the current frame being drawn.
-  if (settings().impl_side_painting)
-    tile_manager_->UpdateVisibleTiles();
-
   UMA_HISTOGRAM_CUSTOM_COUNTS(
       "Compositing.NumActiveLayers", active_tree_->NumLayers(), 1, 400, 20);
 
   bool ok = active_tree_->UpdateDrawProperties();
   DCHECK(ok) << "UpdateDrawProperties failed during draw";
+
+  // This will cause NotifyTileStateChanged() to be called for any visible tiles
+  // that completed, which will add damage to the frame for them so they appear
+  // as part of the current frame being drawn.
+  if (settings().impl_side_painting)
+    tile_manager_->UpdateVisibleTiles(global_tile_state_);
 
   frame->render_surface_layer_list = &active_tree_->RenderSurfaceLayerList();
   frame->render_passes.clear();
@@ -1963,6 +1971,7 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
   DCHECK(output_surface_);
   DCHECK(resource_provider_);
 
+  rasterizer_ = CreateRasterizer();
   CreateResourceAndTileTaskWorkerPool(&tile_task_worker_pool_, &resource_pool_,
                                       &staging_resource_pool_);
   DCHECK(tile_task_worker_pool_);
@@ -1975,11 +1984,21 @@ void LayerTreeHostImpl::CreateAndSetTileManager() {
   size_t scheduled_raster_task_limit =
       IsSynchronousSingleThreaded() ? std::numeric_limits<size_t>::max()
                                     : settings_.scheduled_raster_task_limit;
-  tile_manager_ = TileManager::Create(
-      this, task_runner, resource_pool_.get(),
-      tile_task_worker_pool_->AsTileTaskRunner(), scheduled_raster_task_limit);
+  tile_manager_ =
+      TileManager::Create(this, task_runner, resource_pool_.get(),
+                          tile_task_worker_pool_->AsTileTaskRunner(),
+                          rasterizer_.get(), scheduled_raster_task_limit);
 
   UpdateTileManagerMemoryPolicy(ActualManagedMemoryPolicy());
+}
+
+scoped_ptr<Rasterizer> LayerTreeHostImpl::CreateRasterizer() {
+  ContextProvider* context_provider = output_surface_->context_provider();
+  if (use_gpu_rasterization_ && context_provider) {
+    return GpuRasterizer::Create(context_provider, resource_provider_.get(),
+                                 settings_.use_distance_field_text, false);
+  }
+  return SoftwareRasterizer::Create();
 }
 
 void LayerTreeHostImpl::CreateResourceAndTileTaskWorkerPool(
@@ -2011,8 +2030,7 @@ void LayerTreeHostImpl::CreateResourceAndTileTaskWorkerPool(
                              resource_provider_->best_texture_format());
 
     *tile_task_worker_pool = GpuTileTaskWorkerPool::Create(
-        task_runner, context_provider, resource_provider_.get(),
-        settings_.use_distance_field_text);
+        task_runner, TileTaskWorkerPool::GetTaskGraphRunner());
     return;
   }
 
@@ -2077,6 +2095,7 @@ void LayerTreeHostImpl::DestroyTileManager() {
   resource_pool_ = nullptr;
   staging_resource_pool_ = nullptr;
   tile_task_worker_pool_ = nullptr;
+  rasterizer_ = nullptr;
   single_thread_synchronous_task_graph_runner_ = nullptr;
 }
 

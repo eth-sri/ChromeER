@@ -1661,6 +1661,27 @@ TEST_F(PasswordAutofillAgentTest,
   ExpectFormSubmittedWithUsernameAndPasswords("temp", "random", "");
 }
 
+// The user starts typing username then it is autofilled.
+// PasswordAutofillAgent should remember the username that was autofilled,
+// not last typed.
+TEST_F(PasswordAutofillAgentTest, RememberAutofilledUsername) {
+  SimulateInputChangeForElement("Te", true, GetMainFrame(), username_element_,
+                                true);
+  // Simulate that the username was changed by autofilling.
+  username_element_.setValue(WebString("temp"));
+  SimulateInputChangeForElement("random", true, GetMainFrame(),
+                                password_element_, true);
+
+  static_cast<content::RenderFrameObserver*>(password_autofill_agent_)
+      ->WillSendSubmitEvent(username_element_.form());
+  static_cast<content::RenderFrameObserver*>(password_autofill_agent_)
+      ->WillSubmitForm(username_element_.form());
+
+  // Observe that the PasswordAutofillAgent still remembered the last typed
+  // username and password and sent that to the browser.
+  ExpectFormSubmittedWithUsernameAndPasswords("temp", "random", "");
+}
+
 TEST_F(PasswordAutofillAgentTest, FormFillDataMustHaveUsername) {
   ClearUsernameAndPasswordFields();
 
@@ -1690,13 +1711,29 @@ TEST_F(PasswordAutofillAgentTest, FillOnAccountSelectOnlyReadonlyUsername) {
 
   ClearUsernameAndPasswordFields();
 
-  username_element_.setValue("alicia");
+  username_element_.setValue("alice");
   SetElementReadOnly(username_element_, true);
 
   // Simulate the browser sending back the login info for an initial page load.
   SimulateOnFillPasswordForm(fill_data_);
 
-  CheckTextFieldsState(std::string("alicia"), false, std::string(), true);
+  CheckTextFieldsState(std::string("alice"), false, std::string(), true);
+}
+
+TEST_F(PasswordAutofillAgentTest,
+       FillOnAccountSelectOnlyReadonlyNotPreferredUsername) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      autofill::switches::kEnableFillOnAccountSelect);
+
+  ClearUsernameAndPasswordFields();
+
+  username_element_.setValue("Carol");
+  SetElementReadOnly(username_element_, true);
+
+  // Simulate the browser sending back the login info for an initial page load.
+  SimulateOnFillPasswordForm(fill_data_);
+
+  CheckTextFieldsState(std::string("Carol"), false, std::string(), true);
 }
 
 TEST_F(PasswordAutofillAgentTest, FillOnAccountSelectOnlyNoUsername) {
@@ -1754,6 +1791,22 @@ TEST_F(PasswordAutofillAgentTest, ShowPopupNoUsername) {
   CheckSuggestions(std::string(), false);
   EXPECT_EQ(ASCIIToUTF16(kAlicePassword), password_element_.value());
   EXPECT_TRUE(password_element_.isAutofilled());
+}
+
+// Tests with fill-on-account-select enabled that if the username element is
+// read-only and filled with an unknown username, then the password field is not
+// highlighted as autofillable (regression test for https://crbug.com/442564).
+TEST_F(PasswordAutofillAgentTest,
+       FillOnAccountSelectOnlyReadonlyUnknownUsername) {
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      autofill::switches::kEnableFillOnAccountSelect);
+
+  ClearUsernameAndPasswordFields();
+
+  username_element_.setValue("foobar");
+  SetElementReadOnly(username_element_, true);
+
+  CheckTextFieldsState(std::string("foobar"), false, std::string(), false);
 }
 
 }  // namespace autofill

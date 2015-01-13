@@ -19,6 +19,7 @@ importer.ImportRunner = function() {};
  * @param {!importer.MediaImportHandler.DestinationFactory=} opt_destination A
  *     function that returns the directory into which media will be imported.
  *     The function will be executed only when the import task actually runs.
+ *
  * @return {!importer.MediaImportHandler.ImportTask} The resulting import task.
  */
 importer.ImportRunner.prototype.importFromScanResult;
@@ -30,11 +31,15 @@ importer.ImportRunner.prototype.importFromScanResult;
  * @implements {importer.ImportRunner}
  * @struct
  *
- * @param {!FileOperationManager} fileOperationManager
+ * @param {!ProgressCenter} progressCenter
+ * @param {!importer.HistoryLoader} historyLoader
  */
-importer.MediaImportHandler = function(fileOperationManager) {
-  /** @private {!FileOperationManager} */
-  this.fileOperationManager_ = fileOperationManager;
+importer.MediaImportHandler = function(progressCenter, historyLoader) {
+  /** @private {!ProgressCenter} */
+  this.progressCenter_ = progressCenter;
+
+  /** @private {!importer.HistoryLoader} */
+  this.historyLoader_ = historyLoader;
 
   /** @private {!importer.TaskQueue} */
   this.queue_ = new importer.TaskQueue();
@@ -57,9 +62,11 @@ importer.MediaImportHandler.prototype.importFromScanResult =
 
   var task = new importer.MediaImportHandler.ImportTask(
       this.generateTaskId_(),
-      this.fileOperationManager_,
+      this.historyLoader_,
       scanResult,
       destination);
+
+  task.addObserver(this.onTaskProgress_.bind(this));
 
   this.queue_.queueTask(task);
 
@@ -72,6 +79,48 @@ importer.MediaImportHandler.prototype.importFromScanResult =
  */
 importer.MediaImportHandler.prototype.generateTaskId_ = function() {
   return 'media-import' + this.nextTaskId_++;
+};
+
+/**
+ * Sends updates to the ProgressCenter when an import is happening.
+ *
+ * @param {!importer.TaskQueue.UpdateType} updateType
+ * @param {!importer.TaskQueue.Task} task
+ * @private
+ */
+importer.MediaImportHandler.prototype.onTaskProgress_ =
+    function(updateType, task) {
+  var UpdateType = importer.TaskQueue.UpdateType;
+
+  var item = this.progressCenter_.getItemById(task.taskId);
+  if (!item) {
+    item = new ProgressCenterItem();
+    item.id = task.taskId;
+    // TODO(kenobi): Might need a different progress item type here.
+    item.type = ProgressItemType.COPY;
+    item.message =
+        strf('CLOUD_IMPORT_ITEMS_REMAINING', task.remainingFilesCount);
+    item.progressMax = task.totalBytes;
+    item.cancelCallback = function() {
+      // TODO(kenobi): Deal with import cancellation.
+    };
+  }
+
+  switch (updateType) {
+    case UpdateType.PROGRESS:
+      item.progressValue = task.processedBytes;
+      item.message =
+          strf('CLOUD_IMPORT_ITEMS_REMAINING', task.remainingFilesCount);
+      break;
+    case UpdateType.SUCCESS:
+      item.state = ProgressItemState.COMPLETED;
+      break;
+    case UpdateType.ERROR:
+      item.state = ProgressItemState.ERROR;
+      break;
+  }
+
+  this.progressCenter_.updateItem(item);
 };
 
 /**
@@ -89,28 +138,53 @@ importer.MediaImportHandler.prototype.generateTaskId_ = function() {
  * @struct
  *
  * @param {string} taskId
- * @param {!FileOperationManager} fileOperationManager
+ * @param {!importer.HistoryLoader} historyLoader
  * @param {!importer.ScanResult} scanResult
- * @param {!importer.MediaImportHandler.DestinationFactory} destination A
+ * @param {!importer.MediaImportHandler.DestinationFactory} destinationFactory A
  *     function that returns the directory into which media will be imported.
  */
-importer.MediaImportHandler.ImportTask =
-    function(taskId, fileOperationManager, scanResult, destination) {
+importer.MediaImportHandler.ImportTask = function(
+    taskId,
+    historyLoader,
+    scanResult,
+    destinationFactory) {
+
   importer.TaskQueue.BaseTask.call(this, taskId);
   /** @private {string} */
   this.taskId_ = taskId;
 
   /** @private {!importer.MediaImportHandler.DestinationFactory} */
-  this.getDestination_ = destination;
+  this.destinationFactory_ = destinationFactory;
 
   /** @private {!importer.ScanResult} */
   this.scanResult_ = scanResult;
 
-  /** @private {!FileOperationManager} */
-  this.fileOperationManager_ = fileOperationManager;
+  /** @private {!importer.HistoryLoader} */
+  this.historyLoader_ = historyLoader;
 
-  /** @private {DirectoryEntry} */
-  this.destination_ = null;
+  /** @private {Promise<!DirectoryEntry>} */
+  this.destinationPromise_ = null;
+
+  /** @private {number} */
+  this.totalBytes_ = 0;
+
+  /** @private {number} */
+  this.processedBytes_ = 0;
+
+  /** @private {number} */
+  this.remainingFilesCount_ = 0;
+};
+
+/** @struct */
+importer.MediaImportHandler.ImportTask.prototype = {
+  /** @return {number} Number of imported bytes */
+  get processedBytes() { return this.processedBytes_; },
+
+  /** @return {number} Total number of bytes to import */
+  get totalBytes() { return this.totalBytes_; },
+
+  /** @return {number} Number of files left to import */
+  get remainingFilesCount() { return this.remainingFilesCount_; }
 };
 
 /**
@@ -121,12 +195,32 @@ importer.MediaImportHandler.ImportTask.prototype.__proto__ =
 
 /** @override */
 importer.MediaImportHandler.ImportTask.prototype.run = function() {
-
   // Wait for the scan to finish, then get the destination entry, then start the
   // import.
   this.scanResult_.whenFinal()
-      .then(this.getDestination_.bind(this))
+      .then(this.initialize_.bind(this))
+      .then(this.getDestination.bind(this))
       .then(this.importTo_.bind(this));
+};
+
+/** @private */
+importer.MediaImportHandler.ImportTask.prototype.initialize_ = function() {
+  this.remainingFilesCount_ = this.scanResult_.getFileEntries().length;
+  this.totalBytes_ = this.scanResult_.getTotalBytes();
+  this.notify(importer.TaskQueue.UpdateType.PROGRESS);
+};
+
+/**
+ * Returns a DirectoryEntry for the destination.  The destination is guaranteed
+ * to have been created when the promise resolves.
+ * @return {!Promise<!DirectoryEntry>}
+ */
+importer.MediaImportHandler.ImportTask.prototype.getDestination =
+    function() {
+  if (!this.destinationPromise_) {
+    this.destinationPromise_ = this.destinationFactory_();
+  }
+  return this.destinationPromise_;
 };
 
 /**
@@ -137,14 +231,14 @@ importer.MediaImportHandler.ImportTask.prototype.run = function() {
  */
 importer.MediaImportHandler.ImportTask.prototype.importTo_ =
     function(destination) {
-  this.destination_ = destination;
   AsyncUtil.forEach(
       this.scanResult_.getFileEntries(),
-      this.importOne_.bind(this),
+      this.importOne_.bind(this, destination),
       this.onSuccess_.bind(this));
 };
 
 /**
+ * @param {!DirectoryEntry} destination
  * @param {function()} completionCallback Called after this operation is
  *     complete.
  * @param {!FileEntry} entry The entry to import.
@@ -152,36 +246,82 @@ importer.MediaImportHandler.ImportTask.prototype.importTo_ =
  * @private
  */
 importer.MediaImportHandler.ImportTask.prototype.importOne_ =
-    function(completionCallback, entry, index) {
+    function(destination, completionCallback, entry, index) {
   // TODO(kenobi): Check for cancellation.
+
+  // A count of the current number of processed bytes for this entry.
+  var currentBytes = 0;
+
+  /**
+   * Updates the task when the copy code reports progress.
+   * @param {string} sourceUrl
+   * @param {number} processedBytes
+   * @this {importer.MediaImportHandler.ImportTask}
+   */
+  var onProgress = function(sourceUrl, processedBytes) {
+    // Update the running total, then send a progress update.
+    this.processedBytes_ -= currentBytes;
+    this.processedBytes_ += processedBytes;
+    currentBytes = processedBytes;
+    this.notify(importer.TaskQueue.UpdateType.PROGRESS);
+  };
+
+  /**
+   * Updates the task when the new file has been created.
+   * @param {string} sourceUrl
+   * @param {Entry} destEntry
+   * @this {importer.MediaImportHandler.ImportTask}
+   */
+  var onEntryChanged = function(sourceUrl, destEntry) {
+    this.processedBytes_ -= currentBytes;
+    this.processedBytes_ += entry.size;
+    this.onEntryChanged_(sourceUrl, destEntry);
+    this.notify(importer.TaskQueue.UpdateType.PROGRESS);
+  };
+
+  /** @this {importer.MediaImportHandler.ImportTask} */
+  var onComplete = function() {
+    completionCallback();
+    this.markAsCopied_(entry, destination);
+    this.notify(importer.TaskQueue.UpdateType.PROGRESS);
+  };
+
   fileOperationUtil.copyTo(
       entry,
-      this.destination_,
-      entry.name,  // TODO(kenobi): account for duplicate filename
-      this.onEntryChanged_.bind(this),
-      this.onProgress_.bind(this),
-      completionCallback,
+      destination,
+      entry.name,  // TODO(kenobi): account for duplicate filenames
+      onEntryChanged.bind(this),
+      onProgress.bind(this),
+      onComplete.bind(this),
       this.onError_.bind(this));
 };
 
 /**
  * A callback to notify listeners when a file has been copied.
- * @param {Entry} source
+ * @param {string} sourceUrl
  * @param {Entry} destination
  */
 importer.MediaImportHandler.ImportTask.prototype.onEntryChanged_ =
-    function(source, destination) {
+    function(sourceUrl, destination) {
   // TODO(kenobi): Add code to notify observers when entries are created.
 };
 
 /**
- * @param {Entry} entry
- * @param {number} processedBytes
- * @private
+ * @param {!FileEntry} entry
+ * @param {!DirectoryEntry} destination
  */
-importer.MediaImportHandler.ImportTask.prototype.onProgress_ =
-    function(entry, processedBytes) {
-  this.notify(importer.TaskQueue.UpdateType.PROGRESS);
+importer.MediaImportHandler.ImportTask.prototype.markAsCopied_ =
+    function(entry, destination) {
+  this.remainingFilesCount_--;
+  var destinationUrl = destination.toURL() + '/' + entry.name;
+  this.historyLoader_.getHistory().then(
+      /** @param {!importer.ImportHistory} history */
+      function(history) {
+        history.markCopied(
+            entry,
+            importer.Destination.GOOGLE_DRIVE,
+            destinationUrl);
+      });
 };
 
 /** @private */
@@ -253,7 +393,8 @@ importer.MediaImportHandler.defaultDestination.getOrCreateImportDestination_ =
     };
     var date = new Date();
     var year = date.getFullYear().toString();
-    var month = padAndConvert(date.getMonth());
+    // Months are 0-based, but days aren't.
+    var month = padAndConvert(date.getMonth()) + 1;
     var day = padAndConvert(date.getDate());
 
     return year + '-' + month + '-' + day;

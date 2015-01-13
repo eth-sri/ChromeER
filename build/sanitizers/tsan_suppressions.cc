@@ -306,6 +306,12 @@ char kTSanDefaultSuppressions[] =
 // Suppressing both AudioContext.{cpp,h}.
 "race:modules/webaudio/AudioContext\n"
 
+// https://code.google.com/p/skia/issues/detail?id=3294
+"race:SkBaseMutex::acquire\n"
+
+// https://crbug.com/447461
+"race:net::SSLConfig::SSLConfig\n"
+
 // End of suppressions.
 ;  // Please keep this semicolon.
 

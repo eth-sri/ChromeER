@@ -178,7 +178,7 @@ class TileTaskWorkerPoolPerfTestBase {
  public:
   typedef std::vector<scoped_refptr<RasterTask>> RasterTaskVector;
 
-  enum NamedTaskSet { ALL, REQUIRED_FOR_ACTIVATION, REQUIRED_FOR_DRAW };
+  enum NamedTaskSet { REQUIRED_FOR_ACTIVATION, REQUIRED_FOR_DRAW, ALL };
 
   TileTaskWorkerPoolPerfTestBase()
       : context_provider_(make_scoped_refptr(new PerfContextProvider)),
@@ -266,8 +266,7 @@ class TileTaskWorkerPoolPerfTest
       case TILE_TASK_WORKER_POOL_TYPE_GPU:
         Create3dOutputSurfaceAndResourceProvider();
         tile_task_worker_pool_ = GpuTileTaskWorkerPool::Create(
-            task_runner_.get(), context_provider_.get(),
-            resource_provider_.get(), false);
+            task_runner_.get(), task_graph_runner_.get());
         break;
       case TILE_TASK_WORKER_POOL_TYPE_BITMAP:
         CreateSoftwareOutputSurfaceAndResourceProvider();

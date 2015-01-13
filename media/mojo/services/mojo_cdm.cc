@@ -6,7 +6,9 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "media/base/cdm_key_information.h"
 #include "media/base/cdm_promise.h"
+#include "media/mojo/services/media_type_converters.h"
 #include "mojo/public/cpp/application/connect.h"
 #include "mojo/public/cpp/bindings/interface_impl.h"
 #include "mojo/public/interfaces/application/service_provider.mojom.h"
@@ -66,21 +68,24 @@ void MojoCdm::SetServerCertificate(const uint8_t* certificate_data,
                  base::Passed(&promise)));
 }
 
-void MojoCdm::CreateSession(const std::string& init_data_type,
-                            const uint8_t* init_data,
-                            int init_data_length,
-                            SessionType session_type,
-                            scoped_ptr<NewSessionCdmPromise> promise) {
-  remote_cdm_->CreateSession(
-      init_data_type, CreateMojoArray(init_data, init_data_length),
+void MojoCdm::CreateSessionAndGenerateRequest(
+    SessionType session_type,
+    const std::string& init_data_type,
+    const uint8_t* init_data,
+    int init_data_length,
+    scoped_ptr<NewSessionCdmPromise> promise) {
+  remote_cdm_->CreateSessionAndGenerateRequest(
       static_cast<mojo::ContentDecryptionModule::SessionType>(session_type),
+      init_data_type, CreateMojoArray(init_data, init_data_length),
       base::Bind(&MojoCdm::OnPromiseResult<std::string>,
                  weak_factory_.GetWeakPtr(), base::Passed(&promise)));
 }
 
-void MojoCdm::LoadSession(const std::string& session_id,
+void MojoCdm::LoadSession(SessionType session_type,
+                          const std::string& session_id,
                           scoped_ptr<NewSessionCdmPromise> promise) {
   remote_cdm_->LoadSession(
+      static_cast<mojo::ContentDecryptionModule::SessionType>(session_type),
       session_id,
       base::Bind(&MojoCdm::OnPromiseResult<std::string>,
                  weak_factory_.GetWeakPtr(), base::Passed(&promise)));
@@ -116,16 +121,11 @@ CdmContext* MojoCdm::GetCdmContext() {
 }
 
 void MojoCdm::OnSessionMessage(const mojo::String& session_id,
-                               mojo::Array<uint8_t> message,
-                               const mojo::String& destination_url) {
-  GURL verified_gurl = GURL(destination_url);
-  if (!verified_gurl.is_valid() && !verified_gurl.is_empty()) {
-    DLOG(WARNING) << "SessionMessage destination_url is invalid : "
-                  << verified_gurl.possibly_invalid_spec();
-    verified_gurl = GURL::EmptyGURL();  // Replace invalid destination_url.
-  }
-
-  session_message_cb_.Run(session_id, message.storage(), verified_gurl);
+                               mojo::CdmMessageType message_type,
+                               mojo::Array<uint8_t> message) {
+  session_message_cb_.Run(session_id,
+                          static_cast<MediaKeys::MessageType>(message_type),
+                          message.storage());
 }
 
 void MojoCdm::OnSessionClosed(const mojo::String& session_id) {
@@ -141,9 +141,18 @@ void MojoCdm::OnSessionError(const mojo::String& session_id,
                         system_code, error_message);
 }
 
-void MojoCdm::OnSessionKeysChange(const mojo::String& session_id,
-                                  bool has_additional_usable_key) {
-  session_keys_change_cb_.Run(session_id, has_additional_usable_key);
+void MojoCdm::OnSessionKeysChange(
+    const mojo::String& session_id,
+    bool has_additional_usable_key,
+    mojo::Array<mojo::CdmKeyInformationPtr> keys_info) {
+  media::CdmKeysInfo key_data;
+  key_data.reserve(keys_info.size());
+  for (size_t i = 0; i < keys_info.size(); ++i) {
+    key_data.push_back(
+        keys_info[i].To<scoped_ptr<media::CdmKeyInformation>>().release());
+  }
+  session_keys_change_cb_.Run(session_id, has_additional_usable_key,
+                              key_data.Pass());
 }
 
 void MojoCdm::OnSessionExpirationUpdate(const mojo::String& session_id,

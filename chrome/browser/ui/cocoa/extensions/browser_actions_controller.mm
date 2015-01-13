@@ -167,6 +167,8 @@ class ToolbarActionsBarBridge : public ToolbarActionsBarDelegate {
   void StopAnimating() override;
   int GetChevronWidth() const override;
   bool IsPopupRunning() const override;
+  void OnOverflowedActionWantsToRunChanged(bool overflowed_action_wants_to_run)
+      override;
 
   // The owning BrowserActionsController; weak.
   BrowserActionsController* controller_;
@@ -230,6 +232,13 @@ int ToolbarActionsBarBridge::GetChevronWidth() const {
 
 bool ToolbarActionsBarBridge::IsPopupRunning() const {
   return [ExtensionPopupController popup] != nil;
+}
+
+void ToolbarActionsBarBridge::OnOverflowedActionWantsToRunChanged(
+    bool overflowed_action_wants_to_run) {
+  [[[BrowserWindowController browserWindowControllerForWindow:
+      [controller_ browser]->window()->GetNativeWindow()] toolbarController]
+          setOverflowedToolbarActionWantsToRun:overflowed_action_wants_to_run];
 }
 
 }  // namespace
@@ -449,6 +458,9 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
          selector:@selector(actionButtonDragging:)
              name:kBrowserActionButtonDraggingNotification
            object:newButton];
+
+  [containerView_ setMaxWidth:
+      toolbarActionsBar_->IconCountToWidth([self buttonCount])];
 }
 
 - (void)redraw {
@@ -502,6 +514,9 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
   [button removeFromSuperview];
   [button onRemoved];
   [buttons_ removeObject:button];
+
+  [containerView_ setMaxWidth:
+      toolbarActionsBar_->IconCountToWidth([self buttonCount])];
 }
 
 - (void)removeAllViews {
@@ -513,10 +528,13 @@ bool ToolbarActionsBarBridge::IsPopupRunning() const {
 }
 
 - (void)resizeContainerToWidth:(CGFloat)width {
-  BOOL animate = !toolbarActionsBar_->suppress_animation();
+  // Cocoa goes a little crazy if we try and change animations while adjusting
+  // child frames (i.e., the buttons). If the toolbar is already animating,
+  // just jump to the new frame. (This typically only happens if someone is
+  // "spamming" a button to add/remove an action.)
+  BOOL animate = !toolbarActionsBar_->suppress_animation() &&
+      ![containerView_ isAnimating];
   [self updateContainerVisibility];
-  [containerView_ setMaxWidth:
-      toolbarActionsBar_->IconCountToWidth([self buttonCount])];
   [containerView_ resizeToWidth:width
                         animate:animate];
   NSRect frame = animate ? [containerView_ animationEndFrame] :

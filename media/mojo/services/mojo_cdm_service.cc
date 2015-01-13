@@ -5,8 +5,10 @@
 #include "media/mojo/services/mojo_cdm_service.h"
 
 #include "base/bind.h"
+#include "media/base/cdm_key_information.h"
 #include "media/base/key_systems.h"
 #include "media/cdm/aes_decryptor.h"
+#include "media/mojo/services/media_type_converters.h"
 #include "media/mojo/services/mojo_cdm_promise.h"
 #include "mojo/common/common_type_converters.h"
 
@@ -14,7 +16,6 @@ namespace media {
 
 typedef MojoCdmPromise<> SimpleMojoCdmPromise;
 typedef MojoCdmPromise<std::string> NewSessionMojoCdmPromise;
-typedef MojoCdmPromise<std::vector<std::vector<uint8_t>>> KeyIdsMojoCdmPromise;
 
 MojoCdmService::MojoCdmService(const mojo::String& key_system)
     : weak_factory_(this) {
@@ -45,26 +46,28 @@ void MojoCdmService::SetServerCertificate(
       scoped_ptr<SimpleCdmPromise>(new SimpleMojoCdmPromise(callback)));
 }
 
-void MojoCdmService::CreateSession(
+void MojoCdmService::CreateSessionAndGenerateRequest(
+    mojo::ContentDecryptionModule::SessionType session_type,
     const mojo::String& init_data_type,
     mojo::Array<uint8_t> init_data,
-    mojo::ContentDecryptionModule::SessionType session_type,
     const mojo::Callback<void(mojo::CdmPromiseResultPtr, mojo::String)>&
         callback) {
   const std::vector<uint8_t>& init_data_vector = init_data.storage();
-  cdm_->CreateSession(
+  cdm_->CreateSessionAndGenerateRequest(
+      static_cast<MediaKeys::SessionType>(session_type),
       init_data_type.To<std::string>(),
       init_data_vector.empty() ? nullptr : &init_data_vector[0],
       init_data_vector.size(),
-      static_cast<MediaKeys::SessionType>(session_type),
       scoped_ptr<NewSessionCdmPromise>(new NewSessionMojoCdmPromise(callback)));
 }
 
 void MojoCdmService::LoadSession(
+    mojo::ContentDecryptionModule::SessionType session_type,
     const mojo::String& session_id,
     const mojo::Callback<void(mojo::CdmPromiseResultPtr, mojo::String)>&
         callback) {
   cdm_->LoadSession(
+      static_cast<MediaKeys::SessionType>(session_type),
       session_id.To<std::string>(),
       scoped_ptr<NewSessionCdmPromise>(new NewSessionMojoCdmPromise(callback)));
 }
@@ -104,15 +107,21 @@ void MojoCdmService::GetCdmContext(
 }
 
 void MojoCdmService::OnSessionMessage(const std::string& session_id,
-                                      const std::vector<uint8_t>& message,
-                                      const GURL& destination_url) {
-  client()->OnSessionMessage(session_id, mojo::Array<uint8_t>::From(message),
-                             mojo::String::From(destination_url));
+                                      MediaKeys::MessageType message_type,
+                                      const std::vector<uint8_t>& message) {
+  client()->OnSessionMessage(session_id,
+                             static_cast<mojo::CdmMessageType>(message_type),
+                             mojo::Array<uint8_t>::From(message));
 }
 
 void MojoCdmService::OnSessionKeysChange(const std::string& session_id,
-                                         bool has_additional_usable_key) {
-  client()->OnSessionKeysChange(session_id, has_additional_usable_key);
+                                         bool has_additional_usable_key,
+                                         CdmKeysInfo keys_info) {
+  mojo::Array<mojo::CdmKeyInformationPtr> keys_data;
+  for (const auto& key : keys_info)
+    keys_data.push_back(mojo::CdmKeyInformation::From(*key));
+  client()->OnSessionKeysChange(session_id, has_additional_usable_key,
+                                keys_data.Pass());
 }
 
 void MojoCdmService::OnSessionExpirationUpdate(

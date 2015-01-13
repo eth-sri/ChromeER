@@ -44,7 +44,16 @@ remoting.Application.prototype.setDelegate = function(appDelegate) {
  * @return {void} Nothing.
  */
 remoting.Application.prototype.start = function() {
-  this.delegate_.init();
+  // Create global objects.
+  remoting.ClientPlugin.factory = new remoting.DefaultClientPluginFactory();
+  remoting.SessionConnector.factory =
+      new remoting.DefaultSessionConnectorFactory();
+
+  // TODO(garykac): This should be owned properly rather than living in the
+  // global 'remoting' namespace.
+  remoting.settings = new remoting.Settings();
+
+  this.delegate_.init(this.getSessionConnector());
 };
 
 /**
@@ -105,13 +114,18 @@ remoting.Application.prototype.onVideoStreamingStarted = function() {
  * @return {boolean} Return true if the extension message was recognized.
  */
 remoting.Application.prototype.onExtensionMessage = function(type, data) {
+  var message = /** @type {Object} */base.jsonParseSafe(data);
+  if (typeof message != 'object') {
+    return false;
+  }
+
   // Give the delegate a chance to handle this extension message first.
-  if (this.delegate_.handleExtensionMessage(type, data)) {
+  if (this.delegate_.handleExtensionMessage(type, message)) {
     return true;
   }
 
   if (remoting.clientSession) {
-    return remoting.clientSession.handleExtensionMessage(type, data);
+    return remoting.clientSession.handleExtensionMessage(type, message);
   }
   return false;
 };
@@ -155,9 +169,10 @@ remoting.Application.Delegate = function() {};
  * Initialize the application and register all event handlers. After this
  * is called, the app is running and waiting for user events.
  *
+ * @param {remoting.SessionConnector} connector
  * @return {void} Nothing.
  */
-remoting.Application.Delegate.prototype.init = function() {};
+remoting.Application.Delegate.prototype.init = function(connector) {};
 
 /**
  * @return {string} The default remap keys for the current platform.
@@ -209,11 +224,11 @@ remoting.Application.Delegate.prototype.handleVideoStreamingStarted = function(
  * Called when an extension message needs to be handled.
  *
  * @param {string} type The type of the extension message.
- * @param {string} data The payload of the extension message.
+ * @param {Object} message The parsed extension message data.
  * @return {boolean} Return true if the extension message was recognized.
  */
 remoting.Application.Delegate.prototype.handleExtensionMessage = function(
-    type, data) {};
+    type, message) {};
 
 /**
  * Called when an error needs to be displayed to the user.

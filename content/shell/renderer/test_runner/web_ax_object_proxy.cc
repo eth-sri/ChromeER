@@ -42,6 +42,8 @@ std::string RoleToString(blink::WebAXRole role)
       return result.append("Button");
     case blink::WebAXRoleCanvas:
       return result.append("Canvas");
+    case blink::WebAXRoleCaption:
+      return result.append("Caption");
     case blink::WebAXRoleCell:
       return result.append("Cell");
     case blink::WebAXRoleCheckBox:
@@ -513,6 +515,12 @@ WebAXObjectProxy::GetObjectTemplateBuilder(v8::Isolate* isolate) {
       .SetMethod("allAttributes", &WebAXObjectProxy::AllAttributes)
       .SetMethod("attributesOfChildren",
                  &WebAXObjectProxy::AttributesOfChildren)
+      .SetMethod("ariaControlsElementAtIndex",
+                 &WebAXObjectProxy::AriaControlsElementAtIndex)
+      .SetMethod("ariaFlowToElementAtIndex",
+                 &WebAXObjectProxy::AriaFlowToElementAtIndex)
+      .SetMethod("ariaOwnsElementAtIndex",
+                 &WebAXObjectProxy::AriaOwnsElementAtIndex)
       .SetMethod("lineForIndex", &WebAXObjectProxy::LineForIndex)
       .SetMethod("boundsForRange", &WebAXObjectProxy::BoundsForRange)
       .SetMethod("childAtIndex", &WebAXObjectProxy::ChildAtIndex)
@@ -814,6 +822,44 @@ bool WebAXObjectProxy::IsClickable() {
 bool WebAXObjectProxy::IsButtonStateMixed() {
   accessibility_object_.updateLayoutAndCheckValidity();
   return accessibility_object_.isButtonStateMixed();
+}
+
+v8::Handle<v8::Object> WebAXObjectProxy::AriaControlsElementAtIndex(
+                                                                unsigned index)
+{
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> elements;
+  accessibility_object_.ariaControls(elements);
+  size_t elementCount = elements.size();
+  if (index >= elementCount)
+    return v8::Handle<v8::Object>();
+
+  return factory_->GetOrCreate(elements[index]);
+}
+
+v8::Handle<v8::Object> WebAXObjectProxy::AriaFlowToElementAtIndex(
+                                                                unsigned index)
+{
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> elements;
+  accessibility_object_.ariaFlowTo(elements);
+  size_t elementCount = elements.size();
+  if (index >= elementCount)
+    return v8::Handle<v8::Object>();
+
+  return factory_->GetOrCreate(elements[index]);
+}
+
+v8::Handle<v8::Object> WebAXObjectProxy::AriaOwnsElementAtIndex(unsigned index)
+{
+  accessibility_object_.updateLayoutAndCheckValidity();
+  blink::WebVector<blink::WebAXObject> elements;
+  accessibility_object_.ariaOwns(elements);
+  size_t elementCount = elements.size();
+  if (index >= elementCount)
+    return v8::Handle<v8::Object>();
+
+  return factory_->GetOrCreate(elements[index]);
 }
 
 std::string WebAXObjectProxy::AllAttributes() {

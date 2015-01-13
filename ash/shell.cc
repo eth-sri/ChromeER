@@ -86,6 +86,7 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/base/user_activity/user_activity_detector.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/events/event_target_iterator.h"
@@ -109,7 +110,6 @@
 #include "ui/wm/core/input_method_event_filter.h"
 #include "ui/wm/core/nested_accelerator_controller.h"
 #include "ui/wm/core/shadow_controller.h"
-#include "ui/wm/core/user_activity_detector.h"
 #include "ui/wm/core/visibility_controller.h"
 #include "ui/wm/core/window_modality_controller.h"
 
@@ -694,6 +694,12 @@ Shell::~Shell() {
   // TooltipController is deleted with the Shell so removing its references.
   RemovePreTargetHandler(tooltip_controller_.get());
 
+// Destroy the virtual keyboard controller before the maximize mode controller
+// since the latters destructor triggers events that the former is listening
+// to but no longer cares about.
+#if defined(OS_CHROMEOS)
+  virtual_keyboard_controller_.reset();
+#endif
   // Destroy maximize mode controller early on since it has some observers which
   // need to be removed.
   maximize_mode_controller_->Shutdown();
@@ -793,9 +799,6 @@ Shell::~Shell() {
   display_manager_->CreateScreenForShutdown();
   display_controller_->Shutdown();
   display_controller_.reset();
-#if defined(OS_CHROMEOS)
-  virtual_keyboard_controller_.reset();
-#endif
   screen_position_controller_.reset();
   accessibility_delegate_.reset();
   new_window_delegate_.reset();
@@ -911,9 +914,9 @@ void Shell::Init(const ShellInitParams& init_params) {
 
   // The order in which event filters are added is significant.
 
-  // wm::UserActivityDetector passes events to observers, so let them get
+  // ui::UserActivityDetector passes events to observers, so let them get
   // rewritten first.
-  user_activity_detector_.reset(new ::wm::UserActivityDetector);
+  user_activity_detector_.reset(new ui::UserActivityDetector);
   AddPreTargetHandler(user_activity_detector_.get());
 
   overlay_filter_.reset(new OverlayEventFilter);

@@ -111,6 +111,7 @@ NSDictionary* attributeToMethodNameMap = nil;
     { @"AXInvalid", @"invalid" },
     { @"AXLoaded", @"loaded" },
     { @"AXLoadingProgress", @"loadingProgress" },
+    { @"AXPlaceholder", @"placeholder" },
     { @"AXRequired", @"required" },
     { @"AXVisited", @"visited" },
   };
@@ -232,7 +233,7 @@ NSDictionary* attributeToMethodNameMap = nil;
 }
 
 - (NSValue*)columnIndexRange {
-  if ([self internalRole] != ui::AX_ROLE_CELL)
+  if (!browserAccessibility_->IsCellOrTableHeaderRole())
     return nil;
 
   int column = -1;
@@ -399,6 +400,11 @@ NSDictionary* attributeToMethodNameMap = nil;
     return @"false";
   }
   return invalid;
+}
+
+- (NSString*)placeholder {
+  return NSStringForStringAttribute(
+      browserAccessibility_, ui::AX_ATTR_PLACEHOLDER);
 }
 
 - (void)addLinkedUIElementsFromAttribute:(ui::AXIntListAttribute)attribute
@@ -626,6 +632,9 @@ NSDictionary* attributeToMethodNameMap = nil;
     // This control is similar to what VoiceOver calls a "stepper".
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_STEPPER));
+  case ui::AX_ROLE_STATUS:
+    return base::SysUTF16ToNSString(content_client->GetLocalizedString(
+        IDS_AX_ROLE_STATUS));
   case ui::AX_ROLE_TOGGLE_BUTTON:
     return base::SysUTF16ToNSString(content_client->GetLocalizedString(
         IDS_AX_ROLE_TOGGLE_BUTTON));
@@ -657,7 +666,7 @@ NSDictionary* attributeToMethodNameMap = nil;
 }
 
 - (NSValue*)rowIndexRange {
-  if ([self internalRole] != ui::AX_ROLE_CELL)
+  if (!browserAccessibility_->IsCellOrTableHeaderRole())
     return nil;
 
   int row = -1;
@@ -1065,7 +1074,7 @@ NSDictionary* attributeToMethodNameMap = nil;
            j < child->PlatformChildCount();
            ++j) {
         BrowserAccessibility* cell = child->PlatformGetChild(j);
-        if (cell->GetRole() != ui::AX_ROLE_CELL)
+        if (!browserAccessibility_->IsCellOrTableHeaderRole())
           continue;
         int colIndex;
         if (!cell->GetIntAttribute(
@@ -1356,6 +1365,11 @@ NSDictionary* attributeToMethodNameMap = nil;
       || GetState(browserAccessibility_, ui::AX_STATE_HORIZONTAL)) {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         NSAccessibilityOrientationAttribute, nil]];
+  }
+
+  if (browserAccessibility_->HasStringAttribute(ui::AX_ATTR_PLACEHOLDER)) {
+    [ret addObjectsFromArray:[NSArray arrayWithObjects:
+        @"AXPlaceholder", nil]];
   }
 
   if (GetState(browserAccessibility_, ui::AX_STATE_REQUIRED)) {

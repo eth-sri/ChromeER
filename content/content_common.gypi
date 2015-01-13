@@ -31,6 +31,8 @@
     '../third_party/WebKit/public/blink_headers.gyp:blink_headers',
   ],
   'variables': {
+    'use_v4lplugin%': 0,
+    'use_v4l2_codec%': 0,
     'public_common_sources': [
       'public/common/appcache_info.h',
       'public/common/bindings_policy.h',
@@ -759,15 +761,62 @@
         '../third_party/libjingle/libjingle.gyp:libjingle',
       ],
     }],
-    ['target_arch=="arm" and chromeos == 1 and use_x11 == 1', {
+    ['use_v4lplugin==1 and chromeos==1', {
+      'defines': [
+        'USE_LIBV4L2',
+      ],
+      'variables': {
+        'generate_stubs_script': '../tools/generate_stubs/generate_stubs.py',
+        'extra_header': 'common/gpu/media/v4l2_stub_header.fragment',
+        'sig_files': ['common/gpu/media/v4l2.sig'],
+        'outfile_type': 'posix_stubs',
+        'stubs_filename_root': 'v4l2_stubs',
+        'project_path': 'content/common/gpu/media',
+        'intermediate_dir': '<(INTERMEDIATE_DIR)',
+        'output_root': '<(SHARED_INTERMEDIATE_DIR)/v4l2',
+      },
+      'include_dirs': [
+        '<(output_root)',
+      ],
+      'actions': [
+        {
+          'action_name': 'generate_stubs',
+          'inputs': [
+            '<(generate_stubs_script)',
+            '<(extra_header)',
+            '<@(sig_files)',
+          ],
+          'outputs': [
+            '<(intermediate_dir)/<(stubs_filename_root).cc',
+            '<(output_root)/<(project_path)/<(stubs_filename_root).h',
+          ],
+          'action': ['python',
+            '<(generate_stubs_script)',
+            '-i', '<(intermediate_dir)',
+            '-o', '<(output_root)/<(project_path)',
+            '-t', '<(outfile_type)',
+            '-e', '<(extra_header)',
+            '-s', '<(stubs_filename_root)',
+            '-p', '<(project_path)',
+            '<@(_inputs)',
+          ],
+          'process_outputs_as_sources': 1,
+          'message': 'Generating libv4l2 stubs for dynamic loading',
+        },
+      ],
+    }],
+    ['chromeos==1 and use_v4l2_codec==1', {
+      'defines': [
+        'USE_V4L2_CODEC',
+      ],
+    }],
+    ['chromeos==1 and (target_arch=="arm" or (use_ozone==1 and use_v4l2_codec==1))', {
       'dependencies': [
         '../media/media.gyp:media',
       ],
       'sources': [
         'common/gpu/media/generic_v4l2_video_device.cc',
         'common/gpu/media/generic_v4l2_video_device.h',
-        'common/gpu/media/tegra_v4l2_video_device.cc',
-        'common/gpu/media/tegra_v4l2_video_device.h',
         'common/gpu/media/v4l2_image_processor.cc',
         'common/gpu/media/v4l2_image_processor.h',
         'common/gpu/media/v4l2_video_decode_accelerator.cc',
@@ -779,6 +828,14 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
+      ],
+      'conditions': [
+        ['target_arch == "arm"', {
+          'sources': [
+            'common/gpu/media/tegra_v4l2_video_device.cc',
+            'common/gpu/media/tegra_v4l2_video_device.h',
+          ],
+        }],
       ],
     }],
     ['target_arch != "arm" and chromeos == 1', {
@@ -817,8 +874,13 @@
           'variables': {
             'sig_files': [
               'common/gpu/media/va.sigs',
+              'common/gpu/media/va_drm.sigs',
             ],
           },
+          'sources': [
+            'common/gpu/media/vaapi_drm_picture.cc',
+            'common/gpu/media/vaapi_drm_picture.h',
+          ],
         }],
       ],
       'variables': {

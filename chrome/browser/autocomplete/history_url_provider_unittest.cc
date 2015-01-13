@@ -175,10 +175,9 @@ class HistoryURLProviderTest : public testing::Test,
     Profile* profile = static_cast<Profile*>(context);
     return new TemplateURLService(
         profile->GetPrefs(), make_scoped_ptr(new SearchTermsData), NULL,
-        scoped_ptr<TemplateURLServiceClient>(
-            new ChromeTemplateURLServiceClient(
-                HistoryServiceFactory::GetForProfile(
-                    profile, Profile::EXPLICIT_ACCESS))),
+        scoped_ptr<TemplateURLServiceClient>(new ChromeTemplateURLServiceClient(
+            HistoryServiceFactory::GetForProfile(
+                profile, ServiceAccessType::EXPLICIT_ACCESS))),
         NULL, NULL, base::Closure());
   }
 
@@ -259,7 +258,7 @@ bool HistoryURLProviderTest::SetUpImpl(bool no_db) {
   }
   profile_->GetPrefs()->SetString(prefs::kAcceptLanguages, "en-US,en,ko");
   history_service_ = HistoryServiceFactory::GetForProfile(
-      profile_.get(), Profile::EXPLICIT_ACCESS);
+      profile_.get(), ServiceAccessType::EXPLICIT_ACCESS);
 
   autocomplete_ = new HistoryURLProvider(this, profile_.get());
   TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
@@ -310,7 +309,7 @@ void HistoryURLProviderTest::RunTest(
                           prevent_inline_autocomplete, false, true, true,
                           ChromeAutocompleteSchemeClassifier(profile_.get()));
   *identified_input_type = input.type();
-  autocomplete_->Start(input, false);
+  autocomplete_->Start(input, false, false);
   if (!autocomplete_->done())
     base::MessageLoop::current()->Run();
 
@@ -610,7 +609,7 @@ TEST_F(HistoryURLProviderTest, EmptyVisits) {
                           metrics::OmniboxEventProto::INVALID_SPEC, false,
                           false, true, true,
                           ChromeAutocompleteSchemeClassifier(profile_.get()));
-  autocomplete_->Start(input, false);
+  autocomplete_->Start(input, false, false);
   // HistoryURLProvider shouldn't be done (waiting on async results).
   EXPECT_FALSE(autocomplete_->done());
 
@@ -653,7 +652,7 @@ TEST_F(HistoryURLProviderTest, DontAutocompleteOnTrailingWhitespace) {
                           metrics::OmniboxEventProto::INVALID_SPEC, false,
                           false, true, true,
                           ChromeAutocompleteSchemeClassifier(profile_.get()));
-  autocomplete_->Start(input, false);
+  autocomplete_->Start(input, false, false);
   if (!autocomplete_->done())
     base::MessageLoop::current()->Run();
 
@@ -791,10 +790,20 @@ TEST_F(HistoryURLProviderTest, CrashDueToFixup) {
                             metrics::OmniboxEventProto::INVALID_SPEC,
                             false, false, true, true,
                             ChromeAutocompleteSchemeClassifier(profile_.get()));
-    autocomplete_->Start(input, false);
+    autocomplete_->Start(input, false, false);
     if (!autocomplete_->done())
       base::MessageLoop::current()->Run();
   }
+}
+
+TEST_F(HistoryURLProviderTest, DoesNotProvideMatchesOnFocus) {
+  AutocompleteInput input(ASCIIToUTF16("foo"), base::string16::npos,
+                          std::string(), GURL(),
+                          metrics::OmniboxEventProto::INVALID_SPEC,
+                          false, false, true, true,
+                          ChromeAutocompleteSchemeClassifier(profile_.get()));
+  autocomplete_->Start(input, false, true);
+  EXPECT_TRUE(autocomplete_->matches().empty());
 }
 
 TEST_F(HistoryURLProviderTest, CullSearchResults) {

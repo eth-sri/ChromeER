@@ -473,7 +473,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
   // If there are no windows, quit immediately.
   if (chrome::BrowserIterator().done() &&
-      !AppWindowRegistryUtil::IsAppWindowRegisteredInAnyProfile(0)) {
+      !AppWindowRegistryUtil::IsAppWindowVisibleInAnyProfile(0)) {
     return NSTerminateNow;
   }
 
@@ -1225,21 +1225,18 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   // notifications so we still need to open a new window.
   if (hasVisibleWindows) {
     std::set<NSWindow*> browserWindows;
-    ExtensionAppShimHandler* appShimHandler =
-        g_browser_process->platform_part()
-            ->app_shim_host_manager()
-            ->extension_app_shim_handler();
     for (chrome::BrowserIterator iter; !iter.done(); iter.Next()) {
       Browser* browser = *iter;
       // When focusing Chrome, don't focus any browser windows associated with
       // a currently running app shim, so ignore them.
       if (browser && browser->is_app()) {
-        AppShimHandler::Host* host = appShimHandler->FindHost(
-            browser->profile(),
-            web_app::GetExtensionIdFromApplicationName(browser->app_name()));
-        if (host) {
+        extensions::ExtensionRegistry* registry =
+            extensions::ExtensionRegistry::Get(browser->profile());
+        const extensions::Extension* extension = registry->GetExtensionById(
+            web_app::GetExtensionIdFromApplicationName(browser->app_name()),
+            extensions::ExtensionRegistry::ENABLED);
+        if (extension && extension->is_hosted_app())
           continue;
-        }
       }
       browserWindows.insert(browser->window()->GetNativeWindow());
     }

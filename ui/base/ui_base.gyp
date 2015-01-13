@@ -369,6 +369,9 @@
         'ui_base_switches_util.h',
         'ui_base_types.cc',
         'ui_base_types.h',
+        'user_activity/user_activity_detector.cc',
+        'user_activity/user_activity_detector.h',
+        'user_activity/user_activity_observer.h',
         'view_prop.cc',
         'view_prop.h',
         'webui/jstemplate_builder.cc',
@@ -475,9 +478,9 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
-            '../ozone/ozone.gyp:ozone_base',
             '../events/devices/events_devices.gyp:events_devices',
             '../events/ozone/events_ozone.gyp:events_ozone_layout',
+            '../ozone/ozone.gyp:ozone_base',
           ],
         }],
         ['use_aura==1 and OS=="win"', {

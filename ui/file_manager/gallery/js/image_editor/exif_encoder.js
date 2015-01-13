@@ -5,17 +5,18 @@
 /**
  * The Exif metadata encoder.
  * Uses the metadata format as defined by ExifParser.
- * @param {!Object} original_metadata Metadata to encode.
+ * @param {!Object} originalMetadata Metadata to encode.
  * @constructor
  * @extends {ImageEncoder.MetadataEncoder}
  * @struct
  */
-function ExifEncoder(original_metadata) {
+function ExifEncoder(originalMetadata) {
   ImageEncoder.MetadataEncoder.apply(this, arguments);
 
-  this.ifd_ = this.metadata_.ifd;
-  if (!this.ifd_)
-    this.ifd_ = this.metadata_.ifd = {};
+  if (this.metadata_.media && this.metadata_.media.ifd)
+    this.ifd_ = this.metadata_.media.ifd;
+  else
+    this.ifd_ = {};
 }
 
 ExifEncoder.prototype = {__proto__: ImageEncoder.MetadataEncoder.prototype};
@@ -23,9 +24,19 @@ ExifEncoder.prototype = {__proto__: ImageEncoder.MetadataEncoder.prototype};
 ImageEncoder.registerMetadataEncoder(ExifEncoder, 'image/jpeg');
 
 /**
+ * Software name of Gallery.app.
+ * @type {string}
+ * @const
+ */
+ExifEncoder.SOFTWARE = 'Chrome OS Gallery App\0';
+
+/**
+ * @param {!HTMLCanvasElement} canvas
+ * @param {Date=} opt_modificationDateTime
  * @override
  */
-ExifEncoder.prototype.setImageData = function(canvas) {
+ExifEncoder.prototype.setImageData =
+    function(canvas, opt_modificationDateTime) {
   var image = this.ifd_.image;
   if (!image)
     image = this.ifd_.image = {};
@@ -49,8 +60,32 @@ ExifEncoder.prototype.setImageData = function(canvas) {
   // Always save in default orientation.
   delete this.metadata_['imageTransform'];
   ExifEncoder.findOrCreateTag(image, Exif.Tag.ORIENTATION).value = 1;
-};
 
+  // Update software name.
+  var softwareTag = ExifEncoder.findOrCreateTag(image, Exif.Tag.SOFTWARE, 2);
+  softwareTag.value = ExifEncoder.SOFTWARE;
+  softwareTag.componentCount = ExifEncoder.SOFTWARE.length;
+
+  // Update modification date time.
+  var padNumWithZero = function(num, length) {
+    var str = num.toString();
+    while (str.length < length) {
+      str = '0' + str;
+    }
+    return str;
+  };
+
+  var modificationDateTime = opt_modificationDateTime || new Date();
+  var dateTimeTag = ExifEncoder.findOrCreateTag(image, Exif.Tag.DATETIME, 2);
+  dateTimeTag.value =
+      padNumWithZero(modificationDateTime.getFullYear(), 4) + ':' +
+      padNumWithZero(modificationDateTime.getMonth() + 1, 2) + ':' +
+      padNumWithZero(modificationDateTime.getDate(), 2) + ' ' +
+      padNumWithZero(modificationDateTime.getHours(), 2) + ':' +
+      padNumWithZero(modificationDateTime.getMinutes(), 2) + ':' +
+      padNumWithZero(modificationDateTime.getSeconds(), 2) + '\0';
+  dateTimeTag.componentCount = 20;
+};
 
 /**
  * @override
@@ -90,6 +125,10 @@ ExifEncoder.prototype.setThumbnailData = function(canvas, quality) {
 
     // Always save in default orientation.
     ExifEncoder.findOrCreateTag(thumbnail, Exif.Tag.ORIENTATION).value = 1;
+
+    // When thumbnail is compressed with JPEG, compression must be set as 6.
+    ExifEncoder.findOrCreateTag(this.ifd_.image, Exif.Tag.COMPRESSION).value =
+        6;
   } else {
     console.warn(
         'Thumbnail URL too long: ' + this.metadata_.thumbnailURL.length);
@@ -331,10 +370,14 @@ ExifEncoder.getComponentWidth = function(tag) {
  */
 ExifEncoder.writeValue = function(bw, tag) {
   if (tag.format === 2) {  // String
-    if (tag.componentCount != tag.value.length) {
+    if (tag.componentCount !== tag.value.length) {
       throw new Error(
           'String size mismatch for 0x' + Number(tag.id).toString(16));
     }
+
+    if (tag.value.charAt(tag.value.length - 1) !== '\0')
+      throw new Error('String must end with null character.');
+
     bw.writeString(/** @type {string} */ (tag.value));
   } else {  // Scalar or rational
     var width = ExifEncoder.getComponentWidth(tag);

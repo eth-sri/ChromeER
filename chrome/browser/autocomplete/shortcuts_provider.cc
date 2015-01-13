@@ -67,17 +67,15 @@ ShortcutsProvider::ShortcutsProvider(Profile* profile)
 }
 
 void ShortcutsProvider::Start(const AutocompleteInput& input,
-                              bool minimal_changes) {
+                              bool minimal_changes,
+                              bool called_due_to_focus) {
   matches_.clear();
 
-  if ((input.type() == metrics::OmniboxInputType::INVALID) ||
-      (input.type() == metrics::OmniboxInputType::FORCED_QUERY))
-    return;
-
-  if (input.text().empty())
-    return;
-
-  if (!initialized_)
+  if (called_due_to_focus ||
+      (input.type() == metrics::OmniboxInputType::INVALID) ||
+      (input.type() == metrics::OmniboxInputType::FORCED_QUERY) ||
+      input.text().empty() ||
+      !initialized_)
     return;
 
   base::TimeTicks start_time = base::TimeTicks::Now();
@@ -111,8 +109,8 @@ void ShortcutsProvider::DeleteMatch(const AutocompleteMatch& match) {
 
   // Delete the match from the history DB. This will eventually result in a
   // second call to DeleteShortcutsWithURL(), which is harmless.
-  HistoryService* const history_service =
-      HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
+  HistoryService* const history_service = HistoryServiceFactory::GetForProfile(
+      profile_, ServiceAccessType::EXPLICIT_ACCESS);
   DCHECK(history_service);
   history_service->DeleteURL(url);
 }

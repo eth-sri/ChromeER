@@ -55,7 +55,7 @@ cr.define('extensions', function() {
     },
     /** @override */
     doDragLeave: function() {
-      ExtensionSettings.showOverlay(null);
+      this.hideDropTargetOverlay_();
       chrome.send('stopDrag');
     },
     /** @override */
@@ -64,7 +64,7 @@ cr.define('extensions', function() {
     },
     /** @override */
     doDrop: function(e) {
-      ExtensionSettings.showOverlay(null);
+      this.hideDropTargetOverlay_();
       if (e.dataTransfer.files.length != 1)
         return;
 
@@ -89,6 +89,16 @@ cr.define('extensions', function() {
         e.preventDefault();
         chrome.send(toSend);
       }
+    },
+
+    /**
+     * Hide the current overlay if it is the drop target overlay.
+     * @private
+     */
+    hideDropTargetOverlay_: function() {
+      var currentOverlay = ExtensionSettings.getCurrentOverlay();
+      if (currentOverlay && currentOverlay.id === 'drop-target-overlay')
+        ExtensionSettings.showOverlay(null);
     }
   };
 
@@ -404,11 +414,16 @@ cr.define('extensions', function() {
     }
 
     var currentlyShowingOverlay = ExtensionSettings.getCurrentOverlay();
-    if (currentlyShowingOverlay)
+    if (currentlyShowingOverlay) {
       currentlyShowingOverlay.classList.remove('showing');
+      cr.dispatchSimpleEvent($('overlay'), 'cancelOverlay');
+    }
 
-    if (node)
+    if (node) {
+      if (document.activeElement != document.body)
+        document.activeElement.blur();
       node.classList.add('showing');
+    }
 
     var pages = document.querySelectorAll('.page');
     for (var i = 0; i < pages.length; i++) {

@@ -146,6 +146,7 @@ GuestViewBase::GuestViewBase(content::BrowserContext* browser_context,
       element_instance_id_(guestview::kInstanceIDNone),
       initialized_(false),
       is_being_destroyed_(false),
+      guest_sizer_(nullptr),
       auto_size_enabled_(false),
       is_full_page_plugin_(false),
       weak_ptr_factory_(this) {
@@ -303,6 +304,10 @@ bool GuestViewBase::IsAutoSizeSupported() const {
   return false;
 }
 
+bool GuestViewBase::IsPreferredSizeModeEnabled() const {
+  return false;
+}
+
 bool GuestViewBase::IsDragAndDropEnabled() const {
   return false;
 }
@@ -313,6 +318,8 @@ bool GuestViewBase::ZoomPropagatesFromEmbedderToGuest() const {
 
 void GuestViewBase::DidAttach(int guest_proxy_routing_id) {
   opener_lifetime_observer_.reset();
+
+  SetUpAutoSize();
 
   // Give the derived class an opportunity to perform some actions.
   DidAttachToEmbedder();
@@ -334,9 +341,12 @@ void GuestViewBase::DidDetach() {
   element_instance_id_ = guestview::kInstanceIDNone;
 }
 
-void GuestViewBase::ElementSizeChanged(const gfx::Size& old_size,
-                                       const gfx::Size& new_size) {
-  element_size_ = new_size;
+void GuestViewBase::ElementSizeChanged(const gfx::Size& size) {
+  element_size_ = size;
+
+  // Only resize if needed.
+  if (!size.IsEmpty())
+    guest_sizer_->SizeContents(size);
 }
 
 WebContents* GuestViewBase::GetOwnerWebContents() const {
@@ -361,11 +371,13 @@ void GuestViewBase::Destroy() {
 
   is_being_destroyed_ = true;
 
+  guest_sizer_ = nullptr;
+
   // It is important to clear owner_web_contents_ after the call to
   // StopTrackingEmbedderZoomLevel(), but before the rest of
   // the statements in this function.
   StopTrackingEmbedderZoomLevel();
-  owner_web_contents_ = NULL;
+  owner_web_contents_ = nullptr;
 
   DCHECK(web_contents());
 
@@ -411,6 +423,10 @@ void GuestViewBase::RegisterDestructionCallback(
   destruction_callback_ = callback;
 }
 
+void GuestViewBase::SetGuestSizer(content::GuestSizer* guest_sizer) {
+  guest_sizer_ = guest_sizer;
+}
+
 void GuestViewBase::WillAttach(content::WebContents* embedder_web_contents,
                                int element_instance_id,
                                bool is_full_page_plugin) {
@@ -432,6 +448,9 @@ void GuestViewBase::WillAttach(content::WebContents* embedder_web_contents,
 }
 
 void GuestViewBase::DidStopLoading(content::RenderViewHost* render_view_host) {
+  if (IsPreferredSizeModeEnabled()) {
+    render_view_host->EnablePreferredSizeMode();
+  }
   if (!IsDragAndDropEnabled()) {
     const char script[] = "window.addEventListener('dragstart', function() { "
                           "  window.event.preventDefault(); "
@@ -494,6 +513,18 @@ bool GuestViewBase::PreHandleGestureEvent(content::WebContents* source,
       event.type == blink::WebGestureEvent::GesturePinchEnd;
 }
 
+void GuestViewBase::UpdatePreferredSize(
+    content::WebContents* target_web_contents,
+    const gfx::Size& pref_size) {
+  // In theory it's not necessary to check IsPreferredSizeModeEnabled() because
+  // there will only be events if it was enabled in the first place. However,
+  // something else may have turned on preferred size mode, so double check.
+  DCHECK_EQ(web_contents(), target_web_contents);
+  if (IsPreferredSizeModeEnabled()) {
+    OnPreferredSizeChanged(pref_size);
+  }
+}
+
 GuestViewBase::~GuestViewBase() {
 }
 
@@ -551,6 +582,28 @@ void GuestViewBase::CompleteInit(const WebContentsCreatedCallback& callback,
   }
   InitWithWebContents(guest_web_contents);
   callback.Run(guest_web_contents);
+}
+
+void GuestViewBase::SetUpAutoSize() {
+  // Read the autosize parameters passed in from the embedder.
+  bool auto_size_enabled = false;
+  attach_params()->GetBoolean(guestview::kAttributeAutoSize,
+                              &auto_size_enabled);
+
+  int max_height = 0;
+  int max_width = 0;
+  attach_params()->GetInteger(guestview::kAttributeMaxHeight, &max_height);
+  attach_params()->GetInteger(guestview::kAttributeMaxWidth, &max_width);
+
+  int min_height = 0;
+  int min_width = 0;
+  attach_params()->GetInteger(guestview::kAttributeMinHeight, &min_height);
+  attach_params()->GetInteger(guestview::kAttributeMinWidth, &min_width);
+
+  // Call SetAutoSize to apply all the appropriate validation and clipping of
+  // values.
+  SetAutoSize(auto_size_enabled, gfx::Size(min_width, min_height),
+              gfx::Size(max_width, max_height));
 }
 
 void GuestViewBase::StartTrackingEmbedderZoomLevel() {

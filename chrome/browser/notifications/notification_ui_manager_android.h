@@ -25,7 +25,9 @@ class NotificationUIManagerAndroid : public NotificationUIManager {
   // Called by the Java implementation when a notification has been clicked on.
   bool OnNotificationClicked(JNIEnv* env,
                              jobject java_object,
-                             jstring notification_id);
+                             jstring notification_id,
+                             jint platform_id,
+                             jbyteArray serialized_notification_data);
 
   // Called by the Java implementation when a notification has been closed.
   bool OnNotificationClosed(JNIEnv* env,
@@ -51,7 +53,7 @@ class NotificationUIManagerAndroid : public NotificationUIManager {
 
  private:
   // Closes the Notification as displayed on the Android system.
-  void PlatformCloseNotification(ProfileNotification* profile_notification);
+  void PlatformCloseNotification(const std::string& notification_id);
 
   // Helpers that add/remove the notification from local map.
   // The local map takes ownership of profile_notification object.

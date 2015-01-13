@@ -12,11 +12,11 @@ import time
 
 from telemetry import decorators
 from telemetry.core import exceptions
-from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core import video
 from telemetry.core.backends import adb_commands
 from telemetry.core.platform import android_device
+from telemetry.core.platform import android_platform
 from telemetry.core.platform import linux_based_platform_backend
 from telemetry.core.platform.power_monitor import android_ds2784_power_monitor
 from telemetry.core.platform.power_monitor import android_dumpsys_power_monitor
@@ -24,7 +24,6 @@ from telemetry.core.platform.power_monitor import android_temperature_monitor
 from telemetry.core.platform.power_monitor import monsoon_power_monitor
 from telemetry.core.platform.power_monitor import power_monitor_controller
 from telemetry.core.platform.profiler import android_prebuilt_profiler_helper
-from telemetry.timeline import trace_data as trace_data_module
 from telemetry.util import exception_formatter
 
 util.AddDirToPythonPath(util.GetChromiumSrcDir(),
@@ -97,6 +96,11 @@ class AndroidPlatformBackend(
   def SupportsDevice(cls, device):
     return isinstance(device, android_device.AndroidDevice)
 
+  @classmethod
+  def CreatePlatformForDevice(cls, device):
+    assert cls.SupportsDevice(device)
+    return android_platform.AndroidPlatform(AndroidPlatformBackend(device))
+
   @property
   def adb(self):
     return self._adb
@@ -133,8 +137,7 @@ class AndroidPlatformBackend(
           'refresh_period': refresh_period,
         }}
       })
-    return trace_data_module.TraceData({
-      trace_data_module.SURFACE_FLINGER_PART.raw_field_name: events})
+    return events
 
   def SetFullPerformanceModeEnabled(self, enabled):
     if not self._enable_performance_mode:

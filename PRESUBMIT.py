@@ -164,7 +164,7 @@ _BANNED_CPP_FUNCTIONS = (
       True,
       (
         r"^base[\\\/]process[\\\/]process_metrics_linux\.cc$",
-        r"^chrome[\\\/]browser[\\\/]chromeos[\\\/]boot_times_loader\.cc$",
+        r"^chrome[\\\/]browser[\\\/]chromeos[\\\/]boot_times_recorder\.cc$",
         r"^chrome[\\\/]browser[\\\/]chromeos[\\\/]"
             "customization_document_browsertest\.cc$",
         r"^components[\\\/]crash[\\\/]app[\\\/]breakpad_mac\.mm$",
@@ -356,53 +356,6 @@ def _CheckNoUNIT_TESTInSourceFiles(input_api, output_api):
     return []
   return [output_api.PresubmitPromptWarning('UNIT_TEST is only for headers.\n' +
       '\n'.join(problems))]
-
-def _CheckUmaHistogramChanges(input_api, output_api):
-  """Check that UMA histogram names in touched lines can still be found in other
-  lines of the patch or in histograms.xml. Note that this check would not catch
-  the reverse: changes in histograms.xml not matched in the code itself."""
-
-  touched_histograms = []
-  histograms_xml_modifications = []
-  pattern = input_api.re.compile('UMA_HISTOGRAM.*\("(.*)"')
-  for f in input_api.AffectedFiles():
-    # If histograms.xml itself is modified, keep the modified lines for later.
-    if (f.LocalPath().endswith(('histograms.xml'))):
-      histograms_xml_modifications = f.ChangedContents()
-      continue
-    if (not f.LocalPath().endswith(('cc', 'mm', 'cpp'))):
-      continue
-    for line_num, line in f.ChangedContents():
-      found = pattern.search(line)
-      if found:
-        touched_histograms.append([found.group(1), f, line_num])
-
-  # Search for the touched histogram names in the local modifications to
-  # histograms.xml, and if not found on the base file.
-  problems = []
-  for histogram_name, f, line_num in touched_histograms:
-    histogram_name_found = False
-    for line_num, line in histograms_xml_modifications:
-      if histogram_name in line:
-        histogram_name_found = True;
-        break;
-    if histogram_name_found:
-      continue
-
-    with open('tools/metrics/histograms/histograms.xml') as histograms_xml:
-      for line in histograms_xml:
-        if histogram_name in line:
-          histogram_name_found = True;
-          break;
-    if histogram_name_found:
-      continue
-    problems.append(' [%s:%d] %s' % (f.LocalPath(), line_num, histogram_name))
-
-  if not problems:
-    return []
-  return [output_api.PresubmitPromptWarning('Some UMA_HISTOGRAM lines have '
-    'been modified and the associated histogram name has no match in either '
-    'metrics/histograms.xml or the modifications of it:',  problems)]
 
 
 def _CheckNoNewWStrings(input_api, output_api):
@@ -1014,7 +967,7 @@ def _CheckSpamLogging(input_api, output_api):
                  r"^sandbox[\\\/]linux[\\\/].*",
                  r"^tools[\\\/]",
                  r"^ui[\\\/]aura[\\\/]bench[\\\/]bench_main\.cc$",
-                 r"^webkit[\\\/]browser[\\\/]fileapi[\\\/]" +
+                 r"^storage[\\\/]browser[\\\/]fileapi[\\\/]" +
                      r"dump_file_system.cc$",))
   source_file_filter = lambda x: input_api.FilterSourceFile(
       x, white_list=(file_inclusion_pattern,), black_list=black_list)
@@ -1403,6 +1356,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckParseErrors(input_api, output_api))
   results.extend(_CheckForIPCRules(input_api, output_api))
   results.extend(_CheckForCopyrightedCode(input_api, output_api))
+  results.extend(_CheckForWindowsLineEndings(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -1588,12 +1542,45 @@ def _CheckForIPCRules(input_api, output_api):
     return []
 
 
+def _CheckForWindowsLineEndings(input_api, output_api):
+  """Check source code and known ascii text files for Windows style line
+  endings.
+  """
+  known_text_files = r'.*\.(txt|html|htm|mhtml|py)$'
+
+  file_inclusion_pattern = (
+    known_text_files,
+    r'.+%s' % _IMPLEMENTATION_EXTENSIONS
+  )
+
+  filter = lambda f: input_api.FilterSourceFile(
+    f, white_list=file_inclusion_pattern, black_list=None)
+  files = [f.LocalPath() for f in
+           input_api.AffectedSourceFiles(filter)]
+
+  problems = []
+
+  for file in files:
+    fp = open(file, 'r')
+    for line in fp:
+      if line.endswith('\r\n'):
+        problems.append(file)
+        break
+    fp.close()
+
+  if problems:
+    return [output_api.PresubmitPromptWarning('Are you sure that you want '
+        'these files to contain Windows style line endings?\n' +
+        '\n'.join(problems))]
+
+  return []
+
+
 def CheckChangeOnUpload(input_api, output_api):
   results = []
   results.extend(_CommonChecks(input_api, output_api))
   results.extend(_CheckValidHostsInDEPS(input_api, output_api))
   results.extend(_CheckJavaStyle(input_api, output_api))
-  results.extend(_CheckUmaHistogramChanges(input_api, output_api))
   results.extend(
       input_api.canned_checks.CheckGNFormatted(input_api, output_api))
   return results
@@ -1685,40 +1672,21 @@ def GetPreferredTryMasters(project, change):
   if all(re.search(r'[\\\/_]ios[\\\/_.]', f) for f in files):
     return GetDefaultTryConfigs(['ios_rel_device', 'ios_dbg_simulator'])
 
-  builders = [
-      'android_aosp',
-      'android_arm64_dbg_recipe',
-      'android_arm64_dbg_recipe',
-      'android_chromium_gn_compile_dbg',
-      'android_chromium_gn_compile_rel',
-      'android_clang_dbg_recipe',
-      'android_clang_dbg_recipe',
-      'android_dbg_tests_recipe',
-      'ios_dbg_simulator',
-      'ios_rel_device',
-      'ios_rel_device_ninja',
-      'linux_chromium_asan_rel',
-      'linux_chromium_chromeos_compile_dbg_ng',
-      'linux_chromium_chromeos_rel_ng',
-      'linux_chromium_compile_dbg_32_ng',
-      'linux_chromium_gn_dbg',
-      'linux_chromium_gn_rel',
-      'linux_chromium_rel_ng',
-      'linux_gpu',
-      'mac_chromium_compile_dbg_ng',
-      'mac_chromium_rel_ng',
-      'win8_chromium_rel',
-      'win_chromium_compile_dbg',
-      'win_chromium_rel_ng',
-      'win_chromium_x64_rel_ng',
-      'win_gpu',
-  ]
+  import os
+  import json
+  with open(os.path.join(
+      change.RepositoryRoot(), 'testing', 'commit_queue', 'config.json')) as f:
+    cq_config = json.load(f)
+    cq_trybots = cq_config.get('trybots', {})
+    builders = cq_trybots.get('launched', {})
+    for master, master_config in cq_trybots.get('triggered', {}).iteritems():
+      for triggered_bot in master_config:
+        builders.get(master, {}).pop(triggered_bot, None)
 
   # Match things like path/aura/file.cc and path/file_aura.cc.
   # Same for chromeos.
   if any(re.search(r'[\\\/_](aura|chromeos)', f) for f in files):
-    builders.extend([
-        'linux_chromium_chromeos_asan_rel_ng',
-    ])
+    tryserver_linux = builders.setdefault('tryserver.chromium.linux', {})
+    tryserver_linux['linux_chromium_chromeos_asan_rel_ng'] = ['defaulttests']
 
-  return GetDefaultTryConfigs(builders)
+  return builders

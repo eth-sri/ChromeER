@@ -81,7 +81,7 @@
 #include "content/renderer/mojo/service_registry_js_wrapper.h"
 #include "content/renderer/notification_permission_dispatcher.h"
 #include "content/renderer/npapi/plugin_channel_host.h"
-#include "content/renderer/push_messaging_dispatcher.h"
+#include "content/renderer/push_messaging/push_messaging_dispatcher.h"
 #include "content/renderer/render_event_racer_log_client.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
@@ -154,6 +154,8 @@
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/android/stream_texture_factory_impl.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
+#else
+#include "webkit/common/gpu/context_provider_web_context.h"
 #endif
 
 #if defined(ENABLE_PEPPER_CDMS)
@@ -474,6 +476,16 @@ CommonNavigationParams MakeCommonNavigationParams(
   params.transition = extra_data->transition_type();
   return params;
 }
+
+#if !defined(OS_ANDROID)
+media::Context3D GetSharedMainThreadContext3D() {
+  cc::ContextProvider* provider =
+      RenderThreadImpl::current()->SharedMainThreadContextProvider().get();
+  if (!provider)
+    return media::Context3D();
+  return media::Context3D(provider->ContextGL(), provider->GrContext());
+}
+#endif
 
 RenderFrameImpl::CreateRenderFrameImplFunction g_create_render_frame_impl =
     nullptr;
@@ -1803,7 +1815,8 @@ blink::WebMediaPlayer* RenderFrameImpl::createMediaPlayer(
       render_thread->GetAudioRendererMixerManager()->CreateInput(
           render_view_->routing_id_, routing_id_),
       media_log, render_thread->GetMediaThreadTaskRunner(),
-      render_thread->compositor_message_loop_proxy(), initial_cdm);
+      render_thread->compositor_message_loop_proxy(),
+      base::Bind(&GetSharedMainThreadContext3D), initial_cdm);
 
 #if defined(ENABLE_PEPPER_CDMS)
   scoped_ptr<media::CdmFactory> cdm_factory(
@@ -1939,9 +1952,10 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
   // Synchronously notify the browser of a child frame creation to get the
   // routing_id for the RenderFrame.
   int child_routing_id = MSG_ROUTING_NONE;
-  Send(new FrameHostMsg_CreateChildFrame(routing_id_,
-                                         base::UTF16ToUTF8(name),
-                                         &child_routing_id));
+  CHECK(Send(new FrameHostMsg_CreateChildFrame(routing_id_,
+                                               base::UTF16ToUTF8(name),
+                                               &child_routing_id)));
+
   // Allocation of routing id failed, so we can't create a child frame. This can
   // happen if this RenderFrameImpl's IPCs are being filtered when in swapped
   // out state.
@@ -1958,6 +1972,7 @@ blink::WebFrame* RenderFrameImpl::createChildFrame(
     base::debug::Alias(&is_swapped_out_);
     base::debug::DumpWithoutCrashing();
 #endif
+    NOTREACHED() << "Failed to allocate routing id for child frame.";
     return NULL;
   }
 
@@ -2004,6 +2019,7 @@ void RenderFrameImpl::frameDetached(blink::WebFrame* frame) {
   // have IPCs fired off.
   is_detaching_ = true;
 
+  FOR_EACH_OBSERVER(RenderFrameObserver, observers_, FrameDetached());
   FOR_EACH_OBSERVER(RenderViewObserver, render_view_->observers(),
                     FrameDetached(frame));
 

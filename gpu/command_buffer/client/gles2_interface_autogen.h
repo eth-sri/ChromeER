@@ -19,6 +19,7 @@ virtual void BindAttribLocation(GLuint program,
                                 GLuint index,
                                 const char* name) = 0;
 virtual void BindBuffer(GLenum target, GLuint buffer) = 0;
+virtual void BindBufferBase(GLenum target, GLuint index, GLuint buffer) = 0;
 virtual void BindFramebuffer(GLenum target, GLuint framebuffer) = 0;
 virtual void BindRenderbuffer(GLenum target, GLuint renderbuffer) = 0;
 virtual void BindSampler(GLuint unit, GLuint sampler) = 0;
@@ -298,6 +299,16 @@ virtual void TexImage2D(GLenum target,
                         GLenum format,
                         GLenum type,
                         const void* pixels) = 0;
+virtual void TexImage3D(GLenum target,
+                        GLint level,
+                        GLint internalformat,
+                        GLsizei width,
+                        GLsizei height,
+                        GLsizei depth,
+                        GLint border,
+                        GLenum format,
+                        GLenum type,
+                        const void* pixels) = 0;
 virtual void TexParameterf(GLenum target, GLenum pname, GLfloat param) = 0;
 virtual void TexParameterfv(GLenum target,
                             GLenum pname,
@@ -318,6 +329,17 @@ virtual void TexSubImage2D(GLenum target,
                            GLint yoffset,
                            GLsizei width,
                            GLsizei height,
+                           GLenum format,
+                           GLenum type,
+                           const void* pixels) = 0;
+virtual void TexSubImage3D(GLenum target,
+                           GLint level,
+                           GLint xoffset,
+                           GLint yoffset,
+                           GLint zoffset,
+                           GLsizei width,
+                           GLsizei height,
+                           GLsizei depth,
                            GLenum format,
                            GLenum type,
                            const void* pixels) = 0;

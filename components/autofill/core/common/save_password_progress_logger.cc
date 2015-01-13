@@ -205,6 +205,10 @@ std::string GetStringFromID(SavePasswordProgressLogger::StringID id) {
       return "IsPasswordManagerEnabledForCurrentPage";
     case SavePasswordProgressLogger::STRING_SHOW_LOGIN_PROMPT_METHOD:
       return "ShowLoginPrompt";
+    case SavePasswordProgressLogger::STRING_NEW_UI_STATE:
+      return "The new state of the UI";
+    case SavePasswordProgressLogger::STRING_FORM_NOT_AUTOFILLED:
+      return "The observed form will not be autofilled";
     case SavePasswordProgressLogger::STRING_INVALID:
       return "INVALID";
       // Intentionally no default: clause here -- all IDs need to get covered.

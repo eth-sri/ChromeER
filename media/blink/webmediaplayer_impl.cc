@@ -22,8 +22,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/layers/video_layer.h"
-#include "gpu/GLES2/gl2extchromium.h"
-#include "gpu/command_buffer/common/mailbox_holder.h"
+#include "gpu/blink/webgraphicscontext3d_impl.h"
 #include "media/audio/null_audio_sink.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/cdm_context.h"
@@ -39,7 +38,6 @@
 #include "media/blink/webcontentdecryptionmodule_impl.h"
 #include "media/blink/webinbandtexttrack_impl.h"
 #include "media/blink/webmediaplayer_delegate.h"
-#include "media/blink/webmediaplayer_params.h"
 #include "media/blink/webmediaplayer_util.h"
 #include "media/blink/webmediasource_impl.h"
 #include "media/filters/chunk_demuxer.h"
@@ -81,37 +79,20 @@ namespace {
 const double kMinRate = 0.0625;
 const double kMaxRate = 16.0;
 
-class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
- public:
-  explicit SyncPointClientImpl(
-      blink::WebGraphicsContext3D* web_graphics_context)
-      : web_graphics_context_(web_graphics_context) {}
-  ~SyncPointClientImpl() override {}
-  uint32 InsertSyncPoint() override {
-    return web_graphics_context_->insertSyncPoint();
-  }
-  void WaitSyncPoint(uint32 sync_point) override {
-    web_graphics_context_->waitSyncPoint(sync_point);
-  }
-
- private:
-  blink::WebGraphicsContext3D* web_graphics_context_;
-};
-
 }  // namespace
 
 namespace media {
 
 class BufferedDataSourceHostImpl;
 
-#define COMPILE_ASSERT_MATCHING_ENUM(name) \
-  COMPILE_ASSERT(static_cast<int>(WebMediaPlayer::CORSMode ## name) == \
-                 static_cast<int>(BufferedResourceLoader::k ## name), \
-                 mismatching_enums)
-COMPILE_ASSERT_MATCHING_ENUM(Unspecified);
-COMPILE_ASSERT_MATCHING_ENUM(Anonymous);
-COMPILE_ASSERT_MATCHING_ENUM(UseCredentials);
-#undef COMPILE_ASSERT_MATCHING_ENUM
+#define STATIC_ASSERT_MATCHING_ENUM(name) \
+  static_assert(static_cast<int>(WebMediaPlayer::CORSMode ## name) == \
+                static_cast<int>(BufferedResourceLoader::k ## name), \
+                "mismatching enum values: " #name)
+STATIC_ASSERT_MATCHING_ENUM(Unspecified);
+STATIC_ASSERT_MATCHING_ENUM(Anonymous);
+STATIC_ASSERT_MATCHING_ENUM(UseCredentials);
+#undef STATIC_ASSERT_MATCHING_ENUM
 
 #define BIND_TO_RENDER_LOOP(function) \
   (DCHECK(main_task_runner_->BelongsToCurrentThread()), \
@@ -153,6 +134,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       client_(client),
       delegate_(delegate),
       defer_load_cb_(params.defer_load_cb()),
+      context_3d_cb_(params.context_3d_cb()),
       supports_save_(true),
       chunk_demuxer_(NULL),
       compositor_task_runner_(params.compositor_task_runner()),
@@ -291,7 +273,7 @@ void WebMediaPlayerImpl::pause() {
   pipeline_.SetPlaybackRate(0.0f);
   if (data_source_)
     data_source_->MediaIsPaused();
-  paused_time_ = pipeline_.GetMediaTime();
+  UpdatePausedTime();
 
   media_log_->AddEvent(media_log_->CreateEvent(MediaLogEvent::PAUSE));
 
@@ -310,6 +292,7 @@ void WebMediaPlayerImpl::seek(double seconds) {
 
   ended_ = false;
 
+  ReadyState old_state = ready_state_;
   if (ready_state_ > WebMediaPlayer::ReadyStateHaveMetadata)
     SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
@@ -326,16 +309,13 @@ void WebMediaPlayerImpl::seek(double seconds) {
   media_log_->AddEvent(media_log_->CreateSeekEvent(seconds));
 
   // Update our paused time.
-  // In paused state ignore the seek operations to current time and generate
-  // OnPipelineSeeked and OnPipelineBufferingStateChanged events
-  // to eventually fire seeking and seeked events
+  // In paused state ignore the seek operations to current time if the loading
+  // is completed and generate OnPipelineBufferingStateChanged event to
+  // eventually fire seeking and seeked events
   if (paused_) {
     if (paused_time_ != seek_time) {
       paused_time_ = seek_time;
-    } else {
-      main_task_runner_->PostTask(
-          FROM_HERE, base::Bind(&WebMediaPlayerImpl::OnPipelineSeeked,
-                                AsWeakPtr(), false, PIPELINE_OK));
+    } else if (old_state == ReadyStateHaveEnoughData) {
       main_task_runner_->PostTask(
           FROM_HERE,
           base::Bind(&WebMediaPlayerImpl::OnPipelineBufferingStateChanged,
@@ -391,14 +371,14 @@ void WebMediaPlayerImpl::setVolume(double volume) {
   pipeline_.SetVolume(volume);
 }
 
-#define COMPILE_ASSERT_MATCHING_ENUM(webkit_name, chromium_name) \
-    COMPILE_ASSERT(static_cast<int>(WebMediaPlayer::webkit_name) == \
-                   static_cast<int>(BufferedDataSource::chromium_name), \
-                   mismatching_enums)
-COMPILE_ASSERT_MATCHING_ENUM(PreloadNone, NONE);
-COMPILE_ASSERT_MATCHING_ENUM(PreloadMetaData, METADATA);
-COMPILE_ASSERT_MATCHING_ENUM(PreloadAuto, AUTO);
-#undef COMPILE_ASSERT_MATCHING_ENUM
+#define STATIC_ASSERT_MATCHING_ENUM(webkit_name, chromium_name) \
+    static_assert(static_cast<int>(WebMediaPlayer::webkit_name) == \
+                  static_cast<int>(BufferedDataSource::chromium_name), \
+                  "mismatching enum values: " #webkit_name)
+STATIC_ASSERT_MATCHING_ENUM(PreloadNone, NONE);
+STATIC_ASSERT_MATCHING_ENUM(PreloadMetaData, METADATA);
+STATIC_ASSERT_MATCHING_ENUM(PreloadAuto, AUTO);
+#undef STATIC_ASSERT_MATCHING_ENUM
 
 void WebMediaPlayerImpl::setPreload(WebMediaPlayer::Preload preload) {
   DVLOG(1) << __FUNCTION__ << "(" << preload << ")";
@@ -540,13 +520,18 @@ void WebMediaPlayerImpl::paint(blink::WebCanvas* canvas,
       GetCurrentFrameFromCompositor();
 
   gfx::Rect gfx_rect(rect);
-
-  skcanvas_video_renderer_.Paint(video_frame,
-                                 canvas,
-                                 gfx_rect,
-                                 alpha,
-                                 mode,
-                                 pipeline_metadata_.video_rotation);
+  Context3D context_3d;
+  if (video_frame.get() &&
+      video_frame->format() == VideoFrame::NATIVE_TEXTURE) {
+    if (!context_3d_cb_.is_null()) {
+      context_3d = context_3d_cb_.Run();
+    }
+    // GPU Process crashed.
+    if (!context_3d.gl)
+      return;
+  }
+  skcanvas_video_renderer_.Paint(video_frame, canvas, gfx_rect, alpha, mode,
+                                 pipeline_metadata_.video_rotation, context_3d);
 }
 
 bool WebMediaPlayerImpl::hasSingleSecurityOrigin() const {
@@ -606,43 +591,19 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
   scoped_refptr<VideoFrame> video_frame =
       GetCurrentFrameFromCompositor();
 
-  if (!video_frame.get())
+  if (!video_frame.get() ||
+      video_frame->format() != VideoFrame::NATIVE_TEXTURE) {
     return false;
-  if (video_frame->format() != VideoFrame::NATIVE_TEXTURE)
-    return false;
+  }
 
-  const gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
-  if (mailbox_holder->texture_target != GL_TEXTURE_2D)
-    return false;
-
-  web_graphics_context->waitSyncPoint(mailbox_holder->sync_point);
-  uint32 source_texture = web_graphics_context->createAndConsumeTextureCHROMIUM(
-      GL_TEXTURE_2D, mailbox_holder->mailbox.name);
-
-  // The video is stored in a unmultiplied format, so premultiply
-  // if necessary.
-  web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
-                                    premultiply_alpha);
-  // Application itself needs to take care of setting the right flip_y
-  // value down to get the expected result.
-  // flip_y==true means to reverse the video orientation while
-  // flip_y==false means to keep the intrinsic orientation.
-  web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, flip_y);
-  web_graphics_context->copyTextureCHROMIUM(GL_TEXTURE_2D,
-                                            source_texture,
-                                            texture,
-                                            level,
-                                            internal_format,
-                                            type);
-  web_graphics_context->pixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, false);
-  web_graphics_context->pixelStorei(GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM,
-                                    false);
-
-  web_graphics_context->deleteTexture(source_texture);
-  web_graphics_context->flush();
-
-  SyncPointClientImpl client(web_graphics_context);
-  video_frame->UpdateReleaseSyncPoint(&client);
+  // TODO(dshwang): need more elegant way to convert WebGraphicsContext3D to
+  // GLES2Interface.
+  gpu::gles2::GLES2Interface* gl =
+      static_cast<gpu_blink::WebGraphicsContext3DImpl*>(web_graphics_context)
+          ->GetGLInterface();
+  SkCanvasVideoRenderer::CopyVideoFrameTextureToGLTexture(
+      gl, video_frame.get(), texture, level, internal_format, type,
+      premultiply_alpha, flip_y);
   return true;
 }
 
@@ -752,7 +713,7 @@ void WebMediaPlayerImpl::OnPipelineSeeked(bool time_changed,
 
   // Update our paused time.
   if (paused_)
-    paused_time_ = pipeline_.GetMediaTime();
+    UpdatePausedTime();
 
   should_notify_time_changed_ = time_changed;
 }
@@ -1030,6 +991,17 @@ WebMediaPlayerImpl::GetCurrentFrameFromCompositor() {
                                                &event));
   event.Wait();
   return video_frame;
+}
+
+void WebMediaPlayerImpl::UpdatePausedTime() {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+
+  // pause() may be called after playback has ended and the HTMLMediaElement
+  // requires that currentTime() == duration() after ending.  We want to ensure
+  // |paused_time_| matches currentTime() in this case or a future seek() may
+  // incorrectly discard what it thinks is a seek to the existing time.
+  paused_time_ =
+      ended_ ? pipeline_.GetMediaDuration() : pipeline_.GetMediaTime();
 }
 
 }  // namespace media

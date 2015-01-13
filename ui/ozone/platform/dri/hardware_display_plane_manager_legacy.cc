@@ -4,6 +4,7 @@
 
 #include "ui/ozone/platform/dri/hardware_display_plane_manager_legacy.h"
 
+#include "base/bind.h"
 #include "ui/ozone/platform/dri/crtc_controller.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 #include "ui/ozone/platform/dri/scanout_buffer.h"
@@ -18,12 +19,16 @@ HardwareDisplayPlaneManagerLegacy::~HardwareDisplayPlaneManagerLegacy() {
 
 bool HardwareDisplayPlaneManagerLegacy::Commit(
     HardwareDisplayPlaneList* plane_list) {
+  if (plane_list->plane_list.empty())  // No assigned planes, nothing to do.
+    return true;
   bool ret = true;
   plane_list->plane_list.swap(plane_list->old_plane_list);
   plane_list->plane_list.clear();
   for (const auto& flip : plane_list->legacy_page_flips) {
     // Permission Denied is a legitimate error
-    if (!drm_->PageFlip(flip.crtc_id, flip.framebuffer, flip.crtc)) {
+    if (!drm_->PageFlip(flip.crtc_id, flip.framebuffer,
+                        base::Bind(&CrtcController::OnPageFlipEvent,
+                                   flip.crtc->AsWeakPtr()))) {
       if (errno != EACCES) {
         LOG(ERROR) << "Cannot page flip: error='" << strerror(errno) << "'"
                    << " crtc=" << flip.crtc_id
@@ -56,7 +61,6 @@ bool HardwareDisplayPlaneManagerLegacy::SetPlaneData(
     uint32_t crtc_id,
     const gfx::Rect& src_rect,
     CrtcController* crtc) {
-  plane_list->plane_list.push_back(hw_plane);
   if (plane_list->legacy_page_flips.empty() ||
       plane_list->legacy_page_flips.back().crtc_id != crtc_id) {
     plane_list->legacy_page_flips.push_back(

@@ -147,7 +147,6 @@ class PasswordAutofillAgent : public content::RenderFrameObserver {
     void DidStartLoading() override;
     void DidStopLoading() override;
     void DidStartProvisionalLoad(blink::WebLocalFrame* frame) override;
-    void FrameDetached(blink::WebFrame* frame) override;
 
    private:
     PasswordAutofillAgent* agent_;
@@ -160,6 +159,7 @@ class PasswordAutofillAgent : public content::RenderFrameObserver {
   bool OnMessageReceived(const IPC::Message& message) override;
   void DidFinishDocumentLoad() override;
   void DidFinishLoad() override;
+  void FrameDetached() override;
   void FrameWillClose() override;
   void DidCommitProvisionalLoad(bool is_new_navigation) override;
   void WillSendSubmitEvent(const blink::WebFormElement& form) override;
@@ -169,7 +169,6 @@ class PasswordAutofillAgent : public content::RenderFrameObserver {
   void DidStartLoading();
   void DidStopLoading();
   void LegacyDidStartProvisionalLoad(blink::WebLocalFrame* frame);
-  void FrameDetached(blink::WebFrame* frame);
 
   // RenderView IPC handlers:
   void OnFillPasswordForm(int key, const PasswordFormFillData& form_data);
@@ -268,6 +267,10 @@ class PasswordAutofillAgent : public content::RenderFrameObserver {
 
   // True indicates that all frames in a page have been rendered.
   bool did_stop_loading_;
+
+  // True indicates that there is a command line flag to enable showing of
+  // save password prompt on in-page navigations.
+  bool save_password_on_in_page_navigation_;
 
   base::WeakPtrFactory<PasswordAutofillAgent> weak_ptr_factory_;
 

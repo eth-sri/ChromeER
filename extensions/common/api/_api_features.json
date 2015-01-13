@@ -162,16 +162,6 @@
     "dependencies": ["permission:hid"],
     "contexts": ["blessed_extension"]
   },
-  "hid.onDeviceAdded": {
-    "channel": "dev",
-    "dependencies": ["permission:hid"],
-    "contexts": ["blessed_extension"]
-  },
-  "hid.onDeviceRemoved": {
-    "channel": "dev",
-    "dependencies": ["permission:hid"],
-    "contexts": ["blessed_extension"]
-  },
   "management": {
     "dependencies": ["permission:management"],
     "contexts": ["blessed_extension"]
@@ -214,6 +204,10 @@
     ],
     "matches": ["<all_urls>"]
   },
+  "runtime.connectNative": {
+    "dependencies": ["permission:nativeMessaging"],
+    "contexts": ["blessed_extension"]
+  },
   "runtime.getURL": {
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
@@ -241,6 +235,10 @@
       "web_page"
     ],
     "matches": ["<all_urls>"]
+  },
+  "runtime.sendNativeMessage": {
+    "dependencies": ["permission:nativeMessaging"],
+    "contexts": ["blessed_extension"]
   },
   "serial": {
     "dependencies": ["permission:serial"],
@@ -329,6 +327,21 @@
     "contexts": ["blessed_extension"]
   },
   "usb": {
+    "dependencies": ["permission:usb"],
+    "contexts": ["blessed_extension"]
+  },
+  "usb.setConfiguration": {
+    "dependencies": ["permission:usb"],
+    "contexts": ["blessed_extension"],
+    "channel": "dev"
+  },
+  "usb.onDeviceAdded": {
+    "channel": "dev",
+    "dependencies": ["permission:usb"],
+    "contexts": ["blessed_extension"]
+  },
+  "usb.onDeviceRemoved": {
+    "channel": "dev",
     "dependencies": ["permission:usb"],
     "contexts": ["blessed_extension"]
   },

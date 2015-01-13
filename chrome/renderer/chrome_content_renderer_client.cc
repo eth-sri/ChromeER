@@ -126,6 +126,10 @@
 #include "extensions/renderer/script_context.h"
 #endif
 
+#if defined(ENABLE_PRINTING)
+#include "chrome/renderer/printing/chrome_print_web_view_helper_delegate.h"
+#endif
+
 #if defined(ENABLE_PRINT_PREVIEW)
 #include "chrome/renderer/pepper/chrome_pdf_print_client.h"
 #endif
@@ -175,11 +179,6 @@ ChromeContentRendererClient* g_current_client;
 
 #if defined(ENABLE_PLUGINS)
 const char* const kPredefinedAllowedCompositorOrigins[] = {
-  "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see crbug.com/383937
-  "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see crbug.com/383937
-};
-
-const char* const kPredefinedAllowedVideoDecodeOrigins[] = {
   "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see crbug.com/383937
   "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see crbug.com/383937
 };
@@ -280,9 +279,6 @@ ChromeContentRendererClient::ChromeContentRendererClient() {
 #if defined(ENABLE_PLUGINS)
   for (size_t i = 0; i < arraysize(kPredefinedAllowedCompositorOrigins); ++i)
     allowed_compositor_origins_.insert(kPredefinedAllowedCompositorOrigins[i]);
-  for (size_t i = 0; i < arraysize(kPredefinedAllowedVideoDecodeOrigins); ++i)
-    allowed_video_decode_origins_.insert(
-        kPredefinedAllowedVideoDecodeOrigins[i]);
 #endif
 }
 
@@ -501,13 +497,20 @@ void ChromeContentRendererClient::RenderFrameCreated(
 
 void ChromeContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+
 #if defined(ENABLE_EXTENSIONS)
   new extensions::ExtensionHelper(render_view, extension_dispatcher_.get());
   extension_dispatcher_->OnRenderViewCreated(render_view);
 #endif
   new PageLoadHistograms(render_view);
 #if defined(ENABLE_PRINTING)
-  new printing::PrintWebViewHelper(render_view);
+  new printing::PrintWebViewHelper(
+      render_view,
+      switches::OutOfProcessPdfEnabled(),
+      command_line->HasSwitch(switches::kDisablePrintPreview),
+      scoped_ptr<printing::PrintWebViewHelper::Delegate>(
+          new ChromePrintWebViewHelperDelegate()));
 #endif
 #if defined(ENABLE_SPELLCHECK)
   new SpellCheckProvider(render_view, spellcheck_.get());
@@ -517,7 +520,6 @@ void ChromeContentRendererClient::RenderViewCreated(
   safe_browsing::MalwareDOMDetails::Create(render_view);
 #endif
 
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kInstantProcess))
     new SearchBox(render_view);
 
@@ -687,8 +689,16 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
 
     if ((status_value ==
              ChromeViewHostMsg_GetPluginInfo_Status::kUnauthorized ||
+         status_value == ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay ||
          status_value == ChromeViewHostMsg_GetPluginInfo_Status::kBlocked) &&
         observer->IsPluginTemporarilyAllowed(identifier)) {
+      status_value = ChromeViewHostMsg_GetPluginInfo_Status::kAllowed;
+    }
+
+    // Allow full-screen plug-ins for left-click-to-play.
+    if (status_value == ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay &&
+        !frame->parent() && !frame->opener() &&
+        frame->document().isPluginDocument()) {
       status_value = ChromeViewHostMsg_GetPluginInfo_Status::kAllowed;
     }
 
@@ -794,6 +804,10 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         bool show_poster = false;
         GURL poster_url;
         bool cross_origin_main_content = false;
+        bool blocked_for_background_tab =
+            render_frame->IsHidden() &&
+            status_value ==
+                ChromeViewHostMsg_GetPluginInfo_Status::kPlayImportantContent;
         if (render_frame->ShouldThrottleContent(params, frame->document().url(),
                                                 &poster_url,
                                                 &cross_origin_main_content)) {
@@ -814,11 +828,13 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         //                reduce the chance of future regressions.
         bool is_prerendering =
             prerender::PrerenderHelper::IsPrerendering(render_frame);
-        if (is_prerendering || show_poster) {
+        if (blocked_for_background_tab || is_prerendering || show_poster) {
           placeholder = create_blocked_plugin(
               show_poster ? IDR_PLUGIN_POSTER_HTML : IDR_BLOCKED_PLUGIN_HTML,
               l10n_util::GetStringFUTF16(IDS_PLUGIN_BLOCKED, group_name),
               poster_url);
+          placeholder->set_blocked_for_background_tab(
+              blocked_for_background_tab);
           placeholder->set_blocked_for_prerendering(is_prerendering);
           placeholder->set_power_saver_mode(power_saver_mode);
           placeholder->set_allow_loading(true);
@@ -885,6 +901,16 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
               group_name,
               identifier));
         }
+        observer->DidBlockContentType(content_type, group_name);
+        break;
+      }
+      case ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay: {
+        placeholder = create_blocked_plugin(
+            IDR_CLICK_TO_PLAY_PLUGIN_HTML,
+            l10n_util::GetStringFUTF16(IDS_PLUGIN_LOAD, group_name), GURL());
+        placeholder->set_allow_loading(true);
+        RenderThread::Get()->RecordAction(
+            UserMetricsAction("Plugin_ClickToPlay"));
         observer->DidBlockContentType(content_type, group_name);
         break;
       }
@@ -1541,23 +1567,6 @@ bool ChromeContentRendererClient::IsPluginAllowedToUseCompositorAPI(
           switches::kEnablePepperTesting))
     return true;
   if (IsExtensionOrSharedModuleWhitelisted(url, allowed_compositor_origins_))
-    return true;
-
-  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
-  return channel <= chrome::VersionInfo::CHANNEL_DEV;
-#else
-  return false;
-#endif
-}
-
-bool ChromeContentRendererClient::IsPluginAllowedToUseVideoDecodeAPI(
-    const GURL& url) {
-#if defined(ENABLE_PLUGINS) && defined(ENABLE_EXTENSIONS)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnablePepperTesting))
-    return true;
-
-  if (IsExtensionOrSharedModuleWhitelisted(url, allowed_video_decode_origins_))
     return true;
 
   chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();

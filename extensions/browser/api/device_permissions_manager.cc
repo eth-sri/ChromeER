@@ -10,6 +10,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "device/core/device_client.h"
+#include "device/usb/usb_device.h"
 #include "device/usb/usb_ids.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
@@ -335,14 +337,17 @@ DevicePermissions::~DevicePermissions() {
 }
 
 scoped_refptr<DevicePermissionEntry> DevicePermissions::FindEntry(
-    scoped_refptr<device::UsbDevice> device) const {
+    scoped_refptr<device::UsbDevice> device,
+    const base::string16& serial_number) const {
   const auto& ephemeral_device_entry = ephemeral_devices_.find(device);
   if (ephemeral_device_entry != ephemeral_devices_.end()) {
     return ephemeral_device_entry->second;
   }
 
-  bool have_serial_number = false;
-  base::string16 serial_number;
+  if (serial_number.empty()) {
+    return nullptr;
+  }
+
   for (const auto& entry : entries_) {
     if (!entry->IsPersistent()) {
       continue;
@@ -352,12 +357,6 @@ scoped_refptr<DevicePermissionEntry> DevicePermissions::FindEntry(
     }
     if (entry->product_id() != device->product_id()) {
       continue;
-    }
-    if (!have_serial_number) {
-      if (!device->GetSerialNumber(&serial_number)) {
-        break;
-      }
-      have_serial_number = true;
     }
     if (entry->serial_number() != serial_number) {
       continue;
@@ -438,7 +437,16 @@ void DevicePermissionsManager::AllowUsbDevice(
     // Register an observer here so that this set doesn't grow undefinitely.
     device_permissions->entries_.insert(device_entry);
     device_permissions->ephemeral_devices_[device] = device_entry;
-    device->AddObserver(this);
+
+    // Only start observing when an ephemeral device has been added so that
+    // UsbService is not automatically initialized on profile creation (which it
+    // would be if this call were in the constructor).
+    device::UsbService* usb_service =
+        device::DeviceClient::Get()->GetUsbService();
+    DCHECK(usb_service);
+    if (!usb_service_observer_.IsObserving(usb_service)) {
+      usb_service_observer_.Add(usb_service);
+    }
   }
 }
 
@@ -464,7 +472,6 @@ void DevicePermissionsManager::RemoveEntry(
     RemoveDevicePermissionEntry(context_, extension_id, entry);
   } else {
     device_permissions->ephemeral_devices_.erase(entry->device_);
-    entry->device_->RemoveObserver(this);
   }
 }
 
@@ -474,9 +481,6 @@ void DevicePermissionsManager::Clear(const std::string& extension_id) {
   ClearDevicePermissionEntries(ExtensionPrefs::Get(context_), extension_id);
   DevicePermissions* device_permissions = Get(extension_id);
   if (device_permissions) {
-    for (const auto& device_entry : device_permissions->ephemeral_devices_) {
-      device_entry.first->RemoveObserver(this);
-    }
     extension_id_to_device_permissions_.erase(extension_id);
     delete device_permissions;
   }
@@ -484,16 +488,15 @@ void DevicePermissionsManager::Clear(const std::string& extension_id) {
 
 DevicePermissionsManager::DevicePermissionsManager(
     content::BrowserContext* context)
-    : context_(context), process_manager_observer_(this) {
+    : context_(context),
+      process_manager_observer_(this),
+      usb_service_observer_(this) {
   process_manager_observer_.Add(ProcessManager::Get(context));
 }
 
 DevicePermissionsManager::~DevicePermissionsManager() {
   for (const auto& map_entry : extension_id_to_device_permissions_) {
     DevicePermissions* device_permissions = map_entry.second;
-    for (const auto& device_entry : device_permissions->ephemeral_devices_) {
-      device_entry.first->RemoveObserver(this);
-    }
     delete device_permissions;
   }
 }
@@ -529,24 +532,24 @@ void DevicePermissionsManager::OnBackgroundHostClose(
     // When all of the app's windows are closed and the background page is
     // suspended all ephemeral device permissions are cleared.
     for (const auto& map_entry : device_permissions->ephemeral_devices_) {
-      map_entry.first->RemoveObserver(this);
       device_permissions->entries_.erase(map_entry.second);
     }
     device_permissions->ephemeral_devices_.clear();
   }
 }
 
-void DevicePermissionsManager::OnDisconnect(scoped_refptr<UsbDevice> device) {
+void DevicePermissionsManager::OnDeviceRemoved(
+    scoped_refptr<UsbDevice> device) {
   for (const auto& map_entry : extension_id_to_device_permissions_) {
     // An ephemeral device cannot be identified if it is reconnected and so
     // permission to access it is cleared on disconnect.
     DevicePermissions* device_permissions = map_entry.second;
     const auto& device_entry =
         device_permissions->ephemeral_devices_.find(device);
-    DCHECK(device_entry != device_permissions->ephemeral_devices_.end());
-    device_permissions->entries_.erase(device_entry->second);
-    device_permissions->ephemeral_devices_.erase(device);
-    device->RemoveObserver(this);
+    if (device_entry != device_permissions->ephemeral_devices_.end()) {
+      device_permissions->entries_.erase(device_entry->second);
+      device_permissions->ephemeral_devices_.erase(device);
+    }
   }
 }
 

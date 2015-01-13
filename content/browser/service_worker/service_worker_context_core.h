@@ -201,6 +201,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   }
 
  private:
+  friend class ServiceWorkerContext;
   typedef std::map<int64, ServiceWorkerRegistration*> RegistrationsMap;
   typedef std::map<int64, ServiceWorkerVersion*> VersionMap;
 
@@ -215,6 +216,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   void UnregistrationComplete(const GURL& pattern,
                               const UnregistrationCallback& callback,
+                              int64 registration_id,
                               ServiceWorkerStatusCode status);
 
   void DidGetAllRegistrationsForUnregisterForOrigin(

@@ -2163,7 +2163,7 @@ static bool CheckRect(
   uint32 unpadded_row_size = 0;
   uint32 padded_row_size = 0;
   if (!GLES2Util::ComputeImageDataSizes(
-      width, height, format, type, alignment, &size, &unpadded_row_size,
+      width, height, 1, format, type, alignment, &size, &unpadded_row_size,
       &padded_row_size)) {
     return false;
   }
@@ -2269,15 +2269,15 @@ TEST_F(GLES2ImplementationTest, TexImage2D2Writes) {
   uint32 unpadded_row_size = 0;
   uint32 padded_row_size = 0;
   ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
-      kWidth, 2, kFormat, kType, kPixelStoreUnpackAlignment,
+      kWidth, 2, 1, kFormat, kType, kPixelStoreUnpackAlignment,
       &size, &unpadded_row_size, &padded_row_size));
   const GLsizei kHeight = (MaxTransferBufferSize() / padded_row_size) * 2;
   ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
-      kWidth, kHeight, kFormat, kType, kPixelStoreUnpackAlignment,
+      kWidth, kHeight, 1, kFormat, kType, kPixelStoreUnpackAlignment,
       &size, NULL, NULL));
   uint32 half_size = 0;
   ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
-      kWidth, kHeight / 2, kFormat, kType, kPixelStoreUnpackAlignment,
+      kWidth, kHeight / 2, 1, kFormat, kType, kPixelStoreUnpackAlignment,
       &half_size, NULL, NULL));
 
   scoped_ptr<uint8[]> pixels(new uint8[size]);
@@ -2378,7 +2378,7 @@ TEST_F(GLES2ImplementationTest, TexSubImage2DFlipY) {
 
   uint32 sub_2_high_size = 0;
   ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
-      kSubImageWidth, 2, kFormat, kType, kPixelStoreUnpackAlignment,
+      kSubImageWidth, 2, 1, kFormat, kType, kPixelStoreUnpackAlignment,
       &sub_2_high_size, NULL, NULL));
 
   ExpectedMemoryInfo mem1 = GetExpectedMemory(sub_2_high_size);
@@ -2460,7 +2460,7 @@ TEST_F(GLES2ImplementationTest, SubImageUnpack) {
 
   uint32 src_size;
   ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
-      kSrcWidth, kSrcSubImageY1, kFormat, kType, 8, &src_size, NULL, NULL));
+      kSrcWidth, kSrcSubImageY1, 1, kFormat, kType, 8, &src_size, NULL, NULL));
   scoped_ptr<uint8[]> src_pixels;
   src_pixels.reset(new uint8[src_size]);
   for (size_t i = 0; i < src_size; ++i) {
@@ -2475,7 +2475,7 @@ TEST_F(GLES2ImplementationTest, SubImageUnpack) {
         uint32 unpadded_row_size;
         uint32 padded_row_size;
         ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
-            kSrcSubImageWidth, kSrcSubImageHeight, kFormat, kType, alignment,
+            kSrcSubImageWidth, kSrcSubImageHeight, 1, kFormat, kType, alignment,
             &size, &unpadded_row_size, &padded_row_size));
         ASSERT_TRUE(size <= MaxTransferBufferSize());
         ExpectedMemoryInfo mem = GetExpectedMemory(size);
@@ -2626,6 +2626,181 @@ TEST_F(GLES2ImplementationTest, TextureInvalidArguments) {
   EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
 
+TEST_F(GLES2ImplementationTest, TexImage3DSingleCommand) {
+  struct Cmds {
+    cmds::TexImage3D tex_image_3d;
+  };
+  const GLenum kTarget = GL_TEXTURE_3D;
+  const GLint kLevel = 0;
+  const GLint kBorder = 0;
+  const GLenum kFormat = GL_RGB;
+  const GLenum kType = GL_UNSIGNED_BYTE;
+  const GLint kPixelStoreUnpackAlignment = 4;
+  const GLsizei kWidth = 3;
+  const GLsizei kDepth = 2;
+
+  uint32 size = 0;
+  uint32 unpadded_row_size = 0;
+  uint32 padded_row_size = 0;
+  ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
+      kWidth, 2, kDepth, kFormat, kType, kPixelStoreUnpackAlignment,
+      &size, &unpadded_row_size, &padded_row_size));
+  // Makes sure we can just send over the data in one command.
+  const GLsizei kHeight = MaxTransferBufferSize() / padded_row_size / kDepth;
+
+  scoped_ptr<uint8[]> pixels(new uint8[size]);
+  for (uint32 ii = 0; ii < size; ++ii) {
+    pixels[ii] = static_cast<uint8>(ii);
+  }
+
+  ExpectedMemoryInfo mem = GetExpectedMemory(size);
+
+  Cmds expected;
+  expected.tex_image_3d.Init(
+      kTarget, kLevel, kFormat, kWidth, kHeight, kDepth,
+      kFormat, kType, mem.id, mem.offset);
+
+  gl_->TexImage3D(
+      kTarget, kLevel, kFormat, kWidth, kHeight, kDepth, kBorder,
+      kFormat, kType, pixels.get());
+
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+  EXPECT_TRUE(CheckRect(
+      kWidth, kHeight * kDepth, kFormat, kType, kPixelStoreUnpackAlignment,
+      false, reinterpret_cast<uint8*>(pixels.get()), mem.ptr));
+}
+
+TEST_F(GLES2ImplementationTest, TexImage3DViaTexSubImage3D) {
+  struct Cmds {
+    cmds::TexImage3D tex_image_3d;
+    cmds::TexSubImage3D tex_sub_image_3d1;
+    cmd::SetToken set_token;
+    cmds::TexSubImage3D tex_sub_image_3d2;
+  };
+  const GLenum kTarget = GL_TEXTURE_3D;
+  const GLint kLevel = 0;
+  const GLint kBorder = 0;
+  const GLenum kFormat = GL_RGB;
+  const GLenum kType = GL_UNSIGNED_BYTE;
+  const GLint kPixelStoreUnpackAlignment = 4;
+  const GLsizei kWidth = 3;
+
+  uint32 size = 0;
+  uint32 unpadded_row_size = 0;
+  uint32 padded_row_size = 0;
+  ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
+      kWidth, 2, 1, kFormat, kType, kPixelStoreUnpackAlignment,
+      &size, &unpadded_row_size, &padded_row_size));
+  // Makes sure the data is more than one command can hold.
+  const GLsizei kHeight = MaxTransferBufferSize() / padded_row_size + 3;
+  ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
+      kWidth, kHeight, 1, kFormat, kType, kPixelStoreUnpackAlignment,
+      &size, NULL, NULL));
+  uint32 first_size = padded_row_size * (kHeight - 3);
+  uint32 second_size =
+      padded_row_size * 3 - (padded_row_size - unpadded_row_size);
+  EXPECT_EQ(size, first_size + second_size);
+  ExpectedMemoryInfo mem1 = GetExpectedMemory(first_size);
+  ExpectedMemoryInfo mem2 = GetExpectedMemory(second_size);
+  scoped_ptr<uint8[]> pixels(new uint8[size]);
+  for (uint32 ii = 0; ii < size; ++ii) {
+    pixels[ii] = static_cast<uint8>(ii);
+  }
+
+  Cmds expected;
+  expected.tex_image_3d.Init(
+      kTarget, kLevel, kFormat, kWidth, kHeight, 1, kFormat, kType, 0, 0);
+  expected.tex_sub_image_3d1.Init(
+      kTarget, kLevel, 0, 0, 0, kWidth, kHeight - 3, 1, kFormat, kType,
+      mem1.id, mem1.offset, GL_TRUE);
+  expected.tex_sub_image_3d2.Init(
+      kTarget, kLevel, 0, kHeight - 3, 0, kWidth, 3, 1, kFormat, kType,
+      mem2.id, mem2.offset, GL_TRUE);
+  expected.set_token.Init(GetNextToken());
+
+  gl_->TexImage3D(
+      kTarget, kLevel, kFormat, kWidth, kHeight, 1, kBorder,
+      kFormat, kType, pixels.get());
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+// Test TexSubImage3D with 4 writes
+TEST_F(GLES2ImplementationTest, TexSubImage3D4Writes) {
+  struct Cmds {
+    cmds::TexSubImage3D tex_sub_image_3d1_1;
+    cmd::SetToken set_token1;
+    cmds::TexSubImage3D tex_sub_image_3d1_2;
+    cmd::SetToken set_token2;
+    cmds::TexSubImage3D tex_sub_image_3d2_1;
+    cmd::SetToken set_token3;
+    cmds::TexSubImage3D tex_sub_image_3d2_2;
+  };
+  const GLenum kTarget = GL_TEXTURE_3D;
+  const GLint kLevel = 0;
+  const GLint kXOffset = 0;
+  const GLint kYOffset = 0;
+  const GLint kZOffset = 0;
+  const GLenum kFormat = GL_RGB;
+  const GLenum kType = GL_UNSIGNED_BYTE;
+  const GLint kPixelStoreUnpackAlignment = 4;
+  const GLsizei kWidth = 3;
+  const GLsizei kDepth = 2;
+
+  uint32 size = 0;
+  uint32 unpadded_row_size = 0;
+  uint32 padded_row_size = 0;
+  ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
+      kWidth, 2, 1, kFormat, kType, kPixelStoreUnpackAlignment,
+      &size, &unpadded_row_size, &padded_row_size));
+  const GLsizei kHeight = MaxTransferBufferSize() / padded_row_size + 2;
+  ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
+      kWidth, kHeight, kDepth, kFormat, kType, kPixelStoreUnpackAlignment,
+      &size, NULL, NULL));
+  uint32 first_size = (kHeight - 2) * padded_row_size;
+  uint32 second_size = 2 * padded_row_size;
+  uint32 third_size = first_size;
+  uint32 fourth_size = second_size - (padded_row_size - unpadded_row_size);
+  EXPECT_EQ(size, first_size + second_size + third_size + fourth_size);
+
+  scoped_ptr<uint8[]> pixels(new uint8[size]);
+  for (uint32 ii = 0; ii < size; ++ii) {
+    pixels[ii] = static_cast<uint8>(ii);
+  }
+
+  ExpectedMemoryInfo mem1_1 = GetExpectedMemory(first_size);
+  ExpectedMemoryInfo mem1_2 = GetExpectedMemory(second_size);
+  ExpectedMemoryInfo mem2_1 = GetExpectedMemory(third_size);
+  ExpectedMemoryInfo mem2_2 = GetExpectedMemory(fourth_size);
+
+  Cmds expected;
+  expected.tex_sub_image_3d1_1.Init(
+      kTarget, kLevel, kXOffset, kYOffset, kZOffset,
+      kWidth, kHeight - 2, 1, kFormat, kType,
+      mem1_1.id, mem1_1.offset, GL_FALSE);
+  expected.tex_sub_image_3d1_2.Init(
+      kTarget, kLevel, kXOffset, kYOffset + kHeight - 2, kZOffset,
+      kWidth, 2, 1, kFormat, kType, mem1_2.id, mem1_2.offset, GL_FALSE);
+  expected.tex_sub_image_3d2_1.Init(
+      kTarget, kLevel, kXOffset, kYOffset, kZOffset + 1,
+      kWidth, kHeight - 2, 1, kFormat, kType,
+      mem2_1.id, mem2_1.offset, GL_FALSE);
+  expected.tex_sub_image_3d2_2.Init(
+      kTarget, kLevel, kXOffset, kYOffset + kHeight - 2, kZOffset + 1,
+      kWidth, 2, 1, kFormat, kType, mem2_2.id, mem2_2.offset, GL_FALSE);
+  expected.set_token1.Init(GetNextToken());
+  expected.set_token2.Init(GetNextToken());
+  expected.set_token3.Init(GetNextToken());
+
+  gl_->TexSubImage3D(
+      kTarget, kLevel, kXOffset, kYOffset, kZOffset, kWidth, kHeight, kDepth,
+      kFormat, kType, pixels.get());
+
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+  uint32 offset_to_last = first_size + second_size + third_size;
+  EXPECT_TRUE(CheckRect(
+      kWidth, 2, kFormat, kType, kPixelStoreUnpackAlignment, false,
+      reinterpret_cast<uint8*>(pixels.get()) + offset_to_last, mem2_2.ptr));
+}
 
 // Binds can not be cached with bind_generates_resource = false because
 // our id might not be valid. More specifically if you bind on contextA then
@@ -3264,6 +3439,76 @@ TEST_F(GLES2ImplementationTest, LimitSizeAndOffsetTo32Bit) {
       reinterpret_cast<void*>(offset));
   EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
   EXPECT_STREQ(kOffsetOverflowMessage, GetLastError().c_str());
+}
+
+TEST_F(GLES2ImplementationTest, TraceBeginCHROMIUM) {
+  const uint32 kCategoryBucketId = GLES2Implementation::kResultBucketId;
+  const uint32 kNameBucketId = GLES2Implementation::kResultBucketId + 1;
+  const std::string category_name = "test category";
+  const std::string trace_name = "test trace";
+  const size_t kPaddedString1Size =
+      transfer_buffer_->RoundToAlignment(category_name.size() + 1);
+  const size_t kPaddedString2Size =
+      transfer_buffer_->RoundToAlignment(trace_name.size() + 1);
+
+  gl_->TraceBeginCHROMIUM(category_name.c_str(), trace_name.c_str());
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  struct Cmds {
+    cmd::SetBucketSize category_size1;
+    cmd::SetBucketData category_data;
+    cmd::SetToken set_token1;
+    cmd::SetBucketSize name_size1;
+    cmd::SetBucketData name_data;
+    cmd::SetToken set_token2;
+    cmds::TraceBeginCHROMIUM trace_call_begin;
+    cmd::SetBucketSize category_size2;
+    cmd::SetBucketSize name_size2;
+  };
+
+  ExpectedMemoryInfo mem1 = GetExpectedMemory(kPaddedString1Size);
+  ExpectedMemoryInfo mem2 = GetExpectedMemory(kPaddedString2Size);
+
+  ASSERT_STREQ(category_name.c_str(), reinterpret_cast<char*>(mem1.ptr));
+  ASSERT_STREQ(trace_name.c_str(), reinterpret_cast<char*>(mem2.ptr));
+
+  Cmds expected;
+  expected.category_size1.Init(kCategoryBucketId, category_name.size() + 1);
+  expected.category_data.Init(
+      kCategoryBucketId, 0, category_name.size() + 1, mem1.id, mem1.offset);
+  expected.set_token1.Init(GetNextToken());
+  expected.name_size1.Init(kNameBucketId, trace_name.size() + 1);
+  expected.name_data.Init(
+      kNameBucketId, 0, trace_name.size() + 1, mem2.id, mem2.offset);
+  expected.set_token2.Init(GetNextToken());
+  expected.trace_call_begin.Init(kCategoryBucketId, kNameBucketId);
+  expected.category_size2.Init(kCategoryBucketId, 0);
+  expected.name_size2.Init(kNameBucketId, 0);
+
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, AllowNestedTracesCHROMIUM) {
+  const std::string category1_name = "test category 1";
+  const std::string trace1_name = "test trace 1";
+  const std::string category2_name = "test category 2";
+  const std::string trace2_name = "test trace 2";
+
+  gl_->TraceBeginCHROMIUM(category1_name.c_str(), trace1_name.c_str());
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  gl_->TraceBeginCHROMIUM(category2_name.c_str(), trace2_name.c_str());
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  gl_->TraceEndCHROMIUM();
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  gl_->TraceEndCHROMIUM();
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // No more corresponding begin tracer marker should error.
+  gl_->TraceEndCHROMIUM();
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
 }
 
 TEST_F(GLES2ImplementationManualInitTest, LoseContextOnOOM) {

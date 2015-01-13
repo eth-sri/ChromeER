@@ -25,7 +25,6 @@
 #include "components/keyed_service/core/keyed_service.h"
 
 #if defined(ENABLE_EXTENSIONS)
-#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/browser/management_policy.h"
 #endif
 
@@ -67,14 +66,12 @@ class PrefRegistrySyncable;
 class SupervisedUserService : public KeyedService,
 #if defined(ENABLE_EXTENSIONS)
                               public extensions::ManagementPolicy::Provider,
-                              public extensions::ExtensionRegistryObserver,
 #endif
                               public SyncTypePreferenceProvider,
                               public ProfileSyncServiceObserver,
                               public chrome::BrowserListObserver,
                               public SupervisedUserURLFilter::Observer {
  public:
-  typedef std::vector<base::string16> CategoryList;
   typedef base::Callback<void(content::WebContents*)> NavigationBlockedCallback;
   typedef base::Callback<void(const GoogleServiceAuthError&)> AuthErrorCallback;
   typedef base::Callback<void(bool)> SuccessCallback;
@@ -116,14 +113,6 @@ class SupervisedUserService : public KeyedService,
 
   // Returns the whitelist service.
   SupervisedUserWhitelistService* GetWhitelistService();
-
-  // Returns the URL's category, obtained from the installed content packs.
-  int GetCategory(const GURL& url);
-
-  // Returns the list of all known human-readable category names, sorted by ID
-  // number. Called in the critical path of drawing the history UI, so needs to
-  // be fast.
-  void GetCategoryNames(CategoryList* list);
 
   // Whether the user can request access to blocked URLs.
   bool AccessRequestsEnabled();
@@ -167,10 +156,6 @@ class SupervisedUserService : public KeyedService,
       const std::string& supervised_user_id,
       const AuthErrorCallback& callback);
 
-  void set_elevated_for_testing(bool skip) {
-    elevated_for_testing_ = skip;
-  }
-
   void AddNavigationBlockedCallback(const NavigationBlockedCallback& callback);
   void DidBlockNavigation(content::WebContents* web_contents);
 
@@ -187,14 +172,6 @@ class SupervisedUserService : public KeyedService,
                    base::string16* error) const override;
   bool UserMayModifySettings(const extensions::Extension* extension,
                              base::string16* error) const override;
-
-  // extensions::ExtensionRegistryObserver implementation.
-  void OnExtensionLoaded(content::BrowserContext* browser_context,
-                         const extensions::Extension* extension) override;
-  void OnExtensionUnloaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension,
-      extensions::UnloadedExtensionInfo::Reason reason) override;
 #endif
 
   // SyncTypePreferenceProvider implementation:
@@ -218,6 +195,7 @@ class SupervisedUserService : public KeyedService,
                            ChangesIncludedSessionOnChangedSettings);
   FRIEND_TEST_ALL_PREFIXES(SupervisedUserServiceTest,
                            ChangesSyncSessionStateOnChangedSettings);
+
   // A bridge from the UI thread to the SupervisedUserURLFilters, one of which
   // lives on the IO thread. This class mediates access to them and makes sure
   // they are kept in sync.
@@ -231,11 +209,12 @@ class SupervisedUserService : public KeyedService,
 
     void SetDefaultFilteringBehavior(
         SupervisedUserURLFilter::FilteringBehavior behavior);
-    void LoadWhitelists(ScopedVector<SupervisedUserSiteList> site_lists);
+    void LoadWhitelists(
+        const std::vector<scoped_refptr<SupervisedUserSiteList>>& site_lists);
     void LoadBlacklist(const base::FilePath& path,
                        const base::Closure& callback);
-    void SetManualHosts(scoped_ptr<std::map<std::string, bool> > host_map);
-    void SetManualURLs(scoped_ptr<std::map<GURL, bool> > url_map);
+    void SetManualHosts(scoped_ptr<std::map<std::string, bool>> host_map);
+    void SetManualURLs(scoped_ptr<std::map<GURL, bool>> url_map);
 
     void InitAsyncURLChecker(net::URLRequestContextGetter* context,
                              const std::string& cx);
@@ -286,10 +265,6 @@ class SupervisedUserService : public KeyedService,
   bool ExtensionManagementPolicyImpl(const extensions::Extension* extension,
                                      base::string16* error) const;
 
-  // Returns a list of all installed and enabled site lists in the current
-  // supervised profile.
-  ScopedVector<SupervisedUserSiteList> GetActiveSiteLists();
-
   // Extensions helper to SetActive().
   void SetExtensionsActive();
 #endif
@@ -309,7 +284,8 @@ class SupervisedUserService : public KeyedService,
 
   void OnDefaultFilteringBehaviorChanged();
 
-  void UpdateSiteLists();
+  void OnSiteListsChanged(
+      const std::vector<scoped_refptr<SupervisedUserSiteList>>& site_lists);
 
   // Asynchronously downloads a static blacklist file from |url|, stores it at
   // |path|, loads it, and applies it to the URL filters. If |url| is not valid
@@ -355,12 +331,6 @@ class SupervisedUserService : public KeyedService,
 
   Delegate* delegate_;
 
-#if defined(ENABLE_EXTENSIONS)
-  ScopedObserver<extensions::ExtensionRegistry,
-                 extensions::ExtensionRegistryObserver>
-      extension_registry_observer_;
-#endif
-
   PrefChangeRegistrar pref_change_registrar_;
 
   // True iff we're waiting for the Sync service to be initialized.
@@ -368,9 +338,6 @@ class SupervisedUserService : public KeyedService,
   bool is_profile_active_;
 
   std::vector<NavigationBlockedCallback> navigation_blocked_callbacks_;
-
-  // Sets a profile in elevated state for testing if set to true.
-  bool elevated_for_testing_;
 
   // True only when |Init()| method has been called.
   bool did_init_;

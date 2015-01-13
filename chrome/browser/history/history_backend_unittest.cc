@@ -126,6 +126,9 @@ class HistoryBackendTestDelegate : public HistoryBackend::Delegate {
                         const RedirectList& redirects,
                         base::Time visit_time) override;
   void NotifyURLsModified(const URLRows& changed_urls) override;
+  void NotifyKeywordSearchTermUpdated(const URLRow& row,
+                                      KeywordID keyword_id,
+                                      const base::string16& term) override;
   void BroadcastNotifications(int type,
                               scoped_ptr<HistoryDetails> details) override;
   void DBLoaded() override;
@@ -214,6 +217,12 @@ class HistoryBackendTestBase : public testing::Test {
     urls_modified_notifications_.push_back(changed_urls);
   }
 
+  void NotifyKeywordSearchTermUpdated(const URLRow& row,
+                                      KeywordID keyword_id,
+                                      const base::string16& term) {
+    mem_backend_->OnKeywordSearchTermUpdated(nullptr, row, keyword_id, term);
+  }
+
   void BroadcastNotifications(int type, scoped_ptr<HistoryDetails> details) {
     // Send the notifications directly to the in-memory database.
     content::Details<HistoryDetails> det(details.get());
@@ -293,6 +302,13 @@ void HistoryBackendTestDelegate::NotifyURLsModified(
   test_->NotifyURLsModified(changed_urls);
 }
 
+void HistoryBackendTestDelegate::NotifyKeywordSearchTermUpdated(
+    const URLRow& row,
+    KeywordID keyword_id,
+    const base::string16& term) {
+  test_->NotifyKeywordSearchTermUpdated(row, keyword_id, term);
+}
+
 void HistoryBackendTestDelegate::BroadcastNotifications(
     int type,
     scoped_ptr<HistoryDetails> details) {
@@ -309,15 +325,15 @@ class HistoryBackendTest : public HistoryBackendTestBase {
   ~HistoryBackendTest() override {}
 
  protected:
-  void AddRedirectChain(const char* sequence[], int page_id) {
-    AddRedirectChainWithTransitionAndTime(sequence, page_id,
+  void AddRedirectChain(const char* sequence[], int nav_entry_id) {
+    AddRedirectChainWithTransitionAndTime(sequence, nav_entry_id,
                                           ui::PAGE_TRANSITION_LINK,
                                           Time::Now());
   }
 
   void AddRedirectChainWithTransitionAndTime(
       const char* sequence[],
-      int page_id,
+      int nav_entry_id,
       ui::PageTransition transition,
       base::Time time) {
     history::RedirectList redirects;
@@ -326,7 +342,7 @@ class HistoryBackendTest : public HistoryBackendTestBase {
 
     ContextID context_id = reinterpret_cast<ContextID>(1);
     history::HistoryAddPageArgs request(
-        redirects.back(), time, context_id, page_id, GURL(),
+        redirects.back(), time, context_id, nav_entry_id, GURL(),
         redirects, transition, history::SOURCE_BROWSED,
         true);
     backend_->AddPage(request);

@@ -65,6 +65,9 @@ namespace {
 // is also stopped without delay)
 const int64 kStopWorkerDelay = 30;  // 30 secs.
 
+// Delay for attempting to stop a doomed worker with in-flight requests.
+const int64 kStopDoomedWorkerDelay = 5;  // 5 secs.
+
 // Default delay for scheduled update.
 const int kUpdateDelaySeconds = 1;
 
@@ -627,6 +630,18 @@ void ServiceWorkerVersion::RemoveControllee(
     ScheduleStopWorker();
 }
 
+void ServiceWorkerVersion::AddStreamingURLRequestJob(
+    const ServiceWorkerURLRequestJob* request_job) {
+  DCHECK(streaming_url_request_jobs_.find(request_job) ==
+         streaming_url_request_jobs_.end());
+  streaming_url_request_jobs_.insert(request_job);
+}
+
+void ServiceWorkerVersion::RemoveStreamingURLRequestJob(
+    const ServiceWorkerURLRequestJob* request_job) {
+  streaming_url_request_jobs_.erase(request_job);
+}
+
 void ServiceWorkerVersion::AddListener(Listener* listener) {
   listeners_.AddObserver(listener);
 }
@@ -705,6 +720,8 @@ void ServiceWorkerVersion::OnStopped(
   RunIDMapCallbacks(&cross_origin_connect_callbacks_,
                     SERVICE_WORKER_ERROR_FAILED,
                     false);
+
+  streaming_url_request_jobs_.clear();
 
   FOR_EACH_OBSERVER(Listener, listeners_, OnWorkerStopped(this));
 
@@ -1098,12 +1115,10 @@ void ServiceWorkerVersion::DidGetClientInfo(
 void ServiceWorkerVersion::ScheduleStopWorker() {
   if (running_status() != RUNNING)
     return;
-  if (stop_worker_timer_.IsRunning()) {
-    stop_worker_timer_.Reset();
-    return;
-  }
+  stop_worker_timer_.Stop();
   stop_worker_timer_.Start(
-      FROM_HERE, base::TimeDelta::FromSeconds(kStopWorkerDelay),
+      FROM_HERE, base::TimeDelta::FromSeconds(
+          is_doomed_ ? kStopDoomedWorkerDelay : kStopWorkerDelay),
       base::Bind(&ServiceWorkerVersion::StopWorkerIfIdle,
                  weak_factory_.GetWeakPtr()));
 }
@@ -1116,8 +1131,10 @@ void ServiceWorkerVersion::StopWorkerIfIdle() {
     ScheduleStopWorker();
     return;
   }
-  if (running_status() == STOPPED || !stop_callbacks_.empty())
+  if (running_status() == STOPPED || running_status() == STOPPING ||
+      !stop_callbacks_.empty()) {
     return;
+  }
   embedded_worker_->StopIfIdle();
 }
 
@@ -1131,13 +1148,15 @@ bool ServiceWorkerVersion::HasInflightRequests() const {
     !push_callbacks_.IsEmpty() ||
     !geofencing_callbacks_.IsEmpty() ||
     !get_client_info_callbacks_.IsEmpty() ||
-    !cross_origin_connect_callbacks_.IsEmpty();
+    !cross_origin_connect_callbacks_.IsEmpty() ||
+    !streaming_url_request_jobs_.empty();
 }
 
 void ServiceWorkerVersion::DoomInternal() {
+  DCHECK(is_doomed_);
   DCHECK(!HasControllee());
   SetStatus(REDUNDANT);
-  StopWorker(base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+  StopWorkerIfIdle();
   if (!context_)
     return;
   std::vector<ServiceWorkerDatabase::ResourceRecord> resources;

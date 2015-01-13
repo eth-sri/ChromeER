@@ -18,7 +18,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/win/message_window.h"
 #include "device/hid/hid_connection_win.h"
 #include "device/hid/hid_device_info.h"
 #include "net/base/io_buffer.h"
@@ -28,17 +27,15 @@
 #pragma comment(lib, "hid.lib")
 
 namespace device {
-namespace {
 
-const char kHIDClass[] = "HIDClass";
-const wchar_t kWindowClassName[] = L"HidServiceMessageWindow";
-
-}  // namespace
-
-HidServiceWin::HidServiceWin() {
+HidServiceWin::HidServiceWin() : device_observer_(this) {
   task_runner_ = base::ThreadTaskRunnerHandle::Get();
   DCHECK(task_runner_.get());
-  RegisterForDeviceNotifications();
+  DeviceMonitorWin* device_monitor =
+      DeviceMonitorWin::GetForDeviceInterface(GUID_DEVINTERFACE_HID);
+  if (device_monitor) {
+    device_observer_.Add(device_monitor);
+  }
   DoInitialEnumeration();
 }
 
@@ -50,9 +47,9 @@ void HidServiceWin::Connect(const HidDeviceId& device_id,
     task_runner_->PostTask(FROM_HERE, base::Bind(callback, nullptr));
     return;
   }
-  const HidDeviceInfo& device_info = map_entry->second;
+  scoped_refptr<HidDeviceInfo> device_info = map_entry->second;
 
-  base::win::ScopedHandle file(OpenDevice(device_info.device_id));
+  base::win::ScopedHandle file(OpenDevice(device_info->device_id()));
   if (!file.IsValid()) {
     PLOG(ERROR) << "Failed to open device";
     task_runner_->PostTask(FROM_HERE, base::Bind(callback, nullptr));
@@ -65,49 +62,6 @@ void HidServiceWin::Connect(const HidDeviceId& device_id,
 }
 
 HidServiceWin::~HidServiceWin() {
-  if (notify_handle_) {
-    UnregisterDeviceNotification(notify_handle_);
-  }
-}
-
-void HidServiceWin::RegisterForDeviceNotifications() {
-  window_.reset(new base::win::MessageWindow());
-  if (!window_->CreateNamed(
-          base::Bind(&HidServiceWin::HandleMessage, base::Unretained(this)),
-          base::string16(kWindowClassName))) {
-    LOG(ERROR) << "Failed to create message window: " << kWindowClassName;
-    window_.reset();
-  }
-  DEV_BROADCAST_DEVICEINTERFACE db = { sizeof(DEV_BROADCAST_DEVICEINTERFACE),
-                                       DBT_DEVTYP_DEVICEINTERFACE,
-                                       0,
-                                       GUID_DEVINTERFACE_HID };
-  notify_handle_ = RegisterDeviceNotification(window_->hwnd(), &db,
-                                              DEVICE_NOTIFY_WINDOW_HANDLE);
-  if (!notify_handle_) {
-    LOG(ERROR) << "Failed to register for device notifications.";
-    window_.reset();
-  }
-}
-
-bool HidServiceWin::HandleMessage(UINT message,
-                                  WPARAM wparam,
-                                  LPARAM lparam,
-                                  LRESULT* result) {
-  if (message == WM_DEVICECHANGE) {
-    DEV_BROADCAST_DEVICEINTERFACE* db =
-        reinterpret_cast<DEV_BROADCAST_DEVICEINTERFACE*>(lparam);
-    std::string device_path(base::SysWideToUTF8(db->dbcc_name));
-    DCHECK(base::IsStringASCII(device_path));
-    if (wparam == DBT_DEVICEARRIVAL) {
-      PlatformAddDevice(base::StringToLowerASCII(device_path));
-    } else if (wparam == DBT_DEVICEREMOVECOMPLETE) {
-      PlatformRemoveDevice(base::StringToLowerASCII(device_path));
-    }
-    *result = NULL;
-    return true;
-  }
-  return false;
 }
 
 void HidServiceWin::DoInitialEnumeration() {
@@ -149,7 +103,7 @@ void HidServiceWin::DoInitialEnumeration() {
       std::string device_path(
           base::SysWideToUTF8(device_interface_detail_data->DevicePath));
       DCHECK(base::IsStringASCII(device_path));
-      PlatformAddDevice(device_path);
+      OnDeviceAdded(base::StringToLowerASCII(device_path));
     }
   }
 
@@ -201,10 +155,7 @@ void HidServiceWin::CollectInfoFromValueCaps(
   }
 }
 
-void HidServiceWin::PlatformAddDevice(const std::string& device_path) {
-  HidDeviceInfo device_info;
-  device_info.device_id = device_path;
-
+void HidServiceWin::OnDeviceAdded(const std::string& device_path) {
   // Try to open the device.
   base::win::ScopedHandle device_handle(OpenDevice(device_path));
   if (!device_handle.IsValid()) {
@@ -218,8 +169,10 @@ void HidServiceWin::PlatformAddDevice(const std::string& device_path) {
     return;
   }
 
-  device_info.vendor_id = attrib.VendorID;
-  device_info.product_id = attrib.ProductID;
+  scoped_refptr<HidDeviceInfo> device_info(new HidDeviceInfo());
+  device_info->device_id_ = device_path;
+  device_info->vendor_id_ = attrib.VendorID;
+  device_info->product_id_ = attrib.ProductID;
 
   // Get usage and usage page (optional).
   PHIDP_PREPARSED_DATA preparsed_data;
@@ -227,9 +180,10 @@ void HidServiceWin::PlatformAddDevice(const std::string& device_path) {
       preparsed_data) {
     HIDP_CAPS capabilities = {0};
     if (HidP_GetCaps(preparsed_data, &capabilities) == HIDP_STATUS_SUCCESS) {
-      device_info.max_input_report_size = capabilities.InputReportByteLength;
-      device_info.max_output_report_size = capabilities.OutputReportByteLength;
-      device_info.max_feature_report_size =
+      device_info->max_input_report_size_ = capabilities.InputReportByteLength;
+      device_info->max_output_report_size_ =
+          capabilities.OutputReportByteLength;
+      device_info->max_feature_report_size_ =
           capabilities.FeatureReportByteLength;
       HidCollectionInfo collection_info;
       collection_info.usage = HidUsageAndPage(
@@ -260,21 +214,21 @@ void HidServiceWin::PlatformAddDevice(const std::string& device_path) {
                                capabilities.NumberFeatureValueCaps,
                                &collection_info);
       if (!collection_info.report_ids.empty()) {
-        device_info.has_report_id = true;
+        device_info->has_report_id_ = true;
       }
-      device_info.collections.push_back(collection_info);
+      device_info->collections_.push_back(collection_info);
     }
     // Whether or not the device includes report IDs in its reports the size
     // of the report ID is included in the value provided by Windows. This
     // appears contrary to the MSDN documentation.
-    if (device_info.max_input_report_size > 0) {
-      device_info.max_input_report_size--;
+    if (device_info->max_input_report_size() > 0) {
+      device_info->max_input_report_size_--;
     }
-    if (device_info.max_output_report_size > 0) {
-      device_info.max_output_report_size--;
+    if (device_info->max_output_report_size() > 0) {
+      device_info->max_output_report_size_--;
     }
-    if (device_info.max_feature_report_size > 0) {
-      device_info.max_feature_report_size--;
+    if (device_info->max_feature_report_size() > 0) {
+      device_info->max_feature_report_size_--;
     }
     HidD_FreePreparsedData(preparsed_data);
   }
@@ -282,7 +236,7 @@ void HidServiceWin::PlatformAddDevice(const std::string& device_path) {
   AddDevice(device_info);
 }
 
-void HidServiceWin::PlatformRemoveDevice(const std::string& device_path) {
+void HidServiceWin::OnDeviceRemoved(const std::string& device_path) {
   RemoveDevice(device_path);
 }
 

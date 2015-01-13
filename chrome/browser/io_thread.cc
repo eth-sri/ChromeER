@@ -45,7 +45,6 @@
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_delegate.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_network_delegate.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_prefs.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_protocol.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_params.h"
 #include "components/policy/core/common/policy_service.h"
@@ -103,6 +102,10 @@
 
 #if defined(USE_NSS) || defined(OS_IOS)
 #include "net/ocsp/nss_ocsp.h"
+#endif
+
+#if defined(OS_ANDROID)
+#include "base/android/build_info.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -1064,6 +1067,10 @@ void IOThread::InitializeNetworkSessionParamsFromGlobals(
       &params->quic_load_server_info_timeout_ms);
   globals.quic_disable_loading_server_info_for_new_servers.CopyToIfSet(
       &params->quic_disable_loading_server_info_for_new_servers);
+  globals.quic_load_server_info_timeout_srtt_multiplier.CopyToIfSet(
+      &params->quic_load_server_info_timeout_srtt_multiplier);
+  globals.quic_enable_truncated_connection_ids.CopyToIfSet(
+      &params->quic_enable_truncated_connection_ids);
   globals.enable_quic_port_selection.CopyToIfSet(
       &params->enable_quic_port_selection);
   globals.quic_max_packet_length.CopyToIfSet(&params->quic_max_packet_length);
@@ -1183,6 +1190,13 @@ void IOThread::SetupDataReductionProxy() {
       IsIncludedInHoldbackFieldTrial()) {
     flags |= data_reduction_proxy::DataReductionProxyParams::kHoldback;
   }
+#if defined(OS_ANDROID)
+  if (data_reduction_proxy::DataReductionProxyParams::
+          IsIncludedInAndroidOnePromoFieldTrial(
+              base::android::BuildInfo::GetInstance()->android_build_fp())) {
+    flags |= data_reduction_proxy::DataReductionProxyParams::kPromoAllowed;
+  }
+#endif
   globals_->data_reduction_proxy_params.reset(
       new data_reduction_proxy::DataReductionProxyParams(flags));
   globals_->data_reduction_proxy_auth_request_handler.reset(
@@ -1217,6 +1231,14 @@ void IOThread::ConfigureQuicGlobals(
     }
     globals->quic_disable_loading_server_info_for_new_servers.set(
         ShouldDisableLoadingServerInfoForNewServers(quic_trial_params));
+    float load_server_info_timeout_srtt_multiplier =
+        GetQuicLoadServerInfoTimeoutSrttMultiplier(quic_trial_params);
+    globals->quic_enable_truncated_connection_ids.set(
+        ShouldQuicEnableTruncatedConnectionIds(quic_trial_params));
+    if (load_server_info_timeout_srtt_multiplier != 0) {
+      globals->quic_load_server_info_timeout_srtt_multiplier.set(
+          load_server_info_timeout_srtt_multiplier);
+    }
     globals->enable_quic_port_selection.set(
         ShouldEnableQuicPortSelection(command_line));
     globals->quic_connection_options =
@@ -1386,6 +1408,26 @@ bool IOThread::ShouldDisableLoadingServerInfoForNewServers(
   return LowerCaseEqualsASCII(
       GetVariationParam(quic_trial_params,
                         "disable_loading_server_info_for_new_servers"),
+      "true");
+}
+
+// static
+float IOThread::GetQuicLoadServerInfoTimeoutSrttMultiplier(
+    const VariationParameters& quic_trial_params) {
+  double value;
+  if (base::StringToDouble(GetVariationParam(quic_trial_params,
+                                             "load_server_info_time_to_srtt"),
+                           &value)) {
+    return (float)value;
+  }
+  return 0.0f;
+}
+
+// static
+bool IOThread::ShouldQuicEnableTruncatedConnectionIds(
+    const VariationParameters& quic_trial_params) {
+  return LowerCaseEqualsASCII(
+      GetVariationParam(quic_trial_params, "enable_truncated_connection_ids"),
       "true");
 }
 

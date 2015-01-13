@@ -11,7 +11,9 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/sys_info.h"
+#include "crypto/sha2.h"
 #include "gin/array_buffer.h"
 #include "gin/debug_impl.h"
 #include "gin/function_template.h"
@@ -19,8 +21,8 @@
 #include "gin/public/v8_platform.h"
 #include "gin/run_microtasks_observer.h"
 
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-#ifdef OS_MACOSX
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+#if defined(OS_MACOSX)
 #include "base/mac/foundation_util.h"
 #endif  // OS_MACOSX
 #include "base/path_service.h"
@@ -40,16 +42,29 @@ bool GenerateEntropy(unsigned char* buffer, size_t amount) {
 base::MemoryMappedFile* g_mapped_natives = NULL;
 base::MemoryMappedFile* g_mapped_snapshot = NULL;
 
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-bool MapV8Files(base::FilePath* natives_path, base::FilePath* snapshot_path,
-                int natives_fd = -1, int snapshot_fd = -1) {
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+bool MapV8Files(base::FilePath* natives_path,
+                base::FilePath* snapshot_path,
+                int natives_fd = -1,
+                int snapshot_fd = -1,
+                base::MemoryMappedFile::Region natives_region =
+                    base::MemoryMappedFile::Region::kWholeFile,
+                base::MemoryMappedFile::Region snapshot_region =
+                    base::MemoryMappedFile::Region::kWholeFile) {
   int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
 
   g_mapped_natives = new base::MemoryMappedFile;
   if (!g_mapped_natives->IsValid()) {
+#if !defined(OS_WIN)
     if (natives_fd == -1
-        ? !g_mapped_natives->Initialize(base::File(*natives_path, flags))
-        : !g_mapped_natives->Initialize(base::File(natives_fd))) {
+            ? !g_mapped_natives->Initialize(base::File(*natives_path, flags),
+                                            natives_region)
+            : !g_mapped_natives->Initialize(base::File(natives_fd),
+                                            natives_region)) {
+#else
+    if (!g_mapped_natives->Initialize(base::File(*natives_path, flags),
+                                      natives_region)) {
+#endif  // !OS_WIN
       delete g_mapped_natives;
       g_mapped_natives = NULL;
       LOG(FATAL) << "Couldn't mmap v8 natives data file";
@@ -59,9 +74,16 @@ bool MapV8Files(base::FilePath* natives_path, base::FilePath* snapshot_path,
 
   g_mapped_snapshot = new base::MemoryMappedFile;
   if (!g_mapped_snapshot->IsValid()) {
+#if !defined(OS_WIN)
     if (snapshot_fd == -1
-        ? !g_mapped_snapshot->Initialize(base::File(*snapshot_path, flags))
-        : !g_mapped_snapshot->Initialize(base::File(snapshot_fd))) {
+            ? !g_mapped_snapshot->Initialize(base::File(*snapshot_path, flags),
+                                             snapshot_region)
+            : !g_mapped_snapshot->Initialize(base::File(snapshot_fd),
+                                             snapshot_region)) {
+#else
+    if (!g_mapped_snapshot->Initialize(base::File(*snapshot_path, flags),
+                                       snapshot_region)) {
+#endif  // !OS_WIN
       delete g_mapped_snapshot;
       g_mapped_snapshot = NULL;
       LOG(ERROR) << "Couldn't mmap v8 snapshot data file";
@@ -72,21 +94,44 @@ bool MapV8Files(base::FilePath* natives_path, base::FilePath* snapshot_path,
   return true;
 }
 
+#if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
+bool VerifyV8SnapshotFile(base::MemoryMappedFile* snapshot_file,
+                          const unsigned char* fingerprint) {
+  unsigned char output[crypto::kSHA256Length];
+  crypto::SHA256HashString(
+      base::StringPiece(reinterpret_cast<const char*>(snapshot_file->data()),
+                        snapshot_file->length()),
+      output, sizeof(output));
+  return !memcmp(fingerprint, output, sizeof(output));
+}
+#endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
+
 #if !defined(OS_MACOSX)
 const int v8_snapshot_dir =
 #if defined(OS_ANDROID)
     base::DIR_ANDROID_APP_DATA;
 #elif defined(OS_POSIX)
     base::DIR_EXE;
-#endif  // defined(OS_ANDROID)
-#endif  // !defined(OS_MACOSX)
+#elif defined(OS_WIN)
+    base::DIR_MODULE;
+#endif  // OS_ANDROID
+#endif  // !OS_MACOSX
 
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
 }  // namespace
 
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+#if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
+// Defined in gen/gin/v8_snapshot_fingerprint.cc
+extern const unsigned char g_natives_fingerprint[];
+extern const unsigned char g_snapshot_fingerprint[];
+#endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
+
+const char IsolateHolder::kNativesFileName[] = "natives_blob.bin";
+const char IsolateHolder::kSnapshotFileName[] = "snapshot_blob.bin";
+
 // static
 bool IsolateHolder::LoadV8Snapshot() {
   if (g_mapped_natives && g_mapped_snapshot)
@@ -97,26 +142,58 @@ bool IsolateHolder::LoadV8Snapshot() {
   PathService::Get(v8_snapshot_dir, &data_path);
   DCHECK(!data_path.empty());
 
-  base::FilePath natives_path = data_path.AppendASCII("natives_blob.bin");
-  base::FilePath snapshot_path = data_path.AppendASCII("snapshot_blob.bin");
+  base::FilePath natives_path = data_path.AppendASCII(kNativesFileName);
+  base::FilePath snapshot_path = data_path.AppendASCII(kSnapshotFileName);
 #else  // !defined(OS_MACOSX)
+  base::ScopedCFTypeRef<CFStringRef> natives_file_name(
+      base::SysUTF8ToCFStringRef(kNativesFileName));
   base::FilePath natives_path = base::mac::PathForFrameworkBundleResource(
-      CFSTR("natives_blob.bin"));
+      natives_file_name);
+  base::ScopedCFTypeRef<CFStringRef> snapshot_file_name(
+      base::SysUTF8ToCFStringRef(kSnapshotFileName));
   base::FilePath snapshot_path = base::mac::PathForFrameworkBundleResource(
-      CFSTR("snapshot_blob.bin"));
+      snapshot_file_name);
   DCHECK(!natives_path.empty());
   DCHECK(!snapshot_path.empty());
 #endif  // !defined(OS_MACOSX)
 
-  return MapV8Files(&natives_path, &snapshot_path);
+  if (!MapV8Files(&natives_path, &snapshot_path))
+    return false;
+
+#if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
+  return VerifyV8SnapshotFile(g_mapped_natives, g_natives_fingerprint) &&
+         VerifyV8SnapshotFile(g_mapped_snapshot, g_snapshot_fingerprint);
+#else
+  return true;
+#endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
 }
 
 //static
-bool IsolateHolder::LoadV8SnapshotFD(int natives_fd, int snapshot_fd) {
+bool IsolateHolder::LoadV8SnapshotFd(int natives_fd,
+                               int64 natives_offset,
+                               int64 natives_size,
+                               int snapshot_fd,
+                               int64 snapshot_offset,
+                               int64 snapshot_size) {
   if (g_mapped_natives && g_mapped_snapshot)
     return true;
 
-  return MapV8Files(NULL, NULL, natives_fd, snapshot_fd);
+  base::MemoryMappedFile::Region natives_region =
+      base::MemoryMappedFile::Region::kWholeFile;
+  if (natives_size != 0 || natives_offset != 0) {
+    natives_region =
+        base::MemoryMappedFile::Region(natives_offset, natives_size);
+  }
+
+  base::MemoryMappedFile::Region snapshot_region =
+      base::MemoryMappedFile::Region::kWholeFile;
+  if (natives_size != 0 || natives_offset != 0) {
+    snapshot_region =
+        base::MemoryMappedFile::Region(snapshot_offset, snapshot_size);
+  }
+
+  return MapV8Files(
+      NULL, NULL, natives_fd, snapshot_fd, natives_region, snapshot_region);
 }
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
@@ -193,7 +270,7 @@ void IsolateHolder::Initialize(ScriptMode mode,
     v8::V8::SetFlagsFromString(v8_flags, sizeof(v8_flags) - 1);
   }
   v8::V8::SetEntropySource(&GenerateEntropy);
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
   v8::StartupData natives;
   natives.data = reinterpret_cast<const char*>(g_mapped_natives->data());
   natives.raw_size = static_cast<int>(g_mapped_natives->length());

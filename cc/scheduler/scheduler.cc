@@ -20,16 +20,7 @@ namespace cc {
 
 BeginFrameSource* SchedulerFrameSourcesConstructor::ConstructPrimaryFrameSource(
     Scheduler* scheduler) {
-  if (!scheduler->settings_.throttle_frame_production) {
-    TRACE_EVENT1("cc",
-                 "Scheduler::Scheduler()",
-                 "PrimaryFrameSource",
-                 "BackToBackBeginFrameSource");
-    DCHECK(!scheduler->primary_frame_source_internal_);
-    scheduler->primary_frame_source_internal_ =
-        BackToBackBeginFrameSource::Create(scheduler->task_runner_.get());
-    return scheduler->primary_frame_source_internal_.get();
-  } else if (scheduler->settings_.use_external_begin_frame_source) {
+  if (scheduler->settings_.use_external_begin_frame_source) {
     TRACE_EVENT1("cc",
                  "Scheduler::Scheduler()",
                  "PrimaryFrameSource",
@@ -71,6 +62,17 @@ SchedulerFrameSourcesConstructor::ConstructBackgroundFrameSource(
   return scheduler->background_frame_source_internal_.get();
 }
 
+BeginFrameSource*
+SchedulerFrameSourcesConstructor::ConstructUnthrottledFrameSource(
+    Scheduler* scheduler) {
+  TRACE_EVENT1("cc", "Scheduler::Scheduler()", "UnthrottledFrameSource",
+               "BackToBackBeginFrameSource");
+  DCHECK(!scheduler->unthrottled_frame_source_internal_);
+  scheduler->unthrottled_frame_source_internal_ =
+      BackToBackBeginFrameSource::Create(scheduler->task_runner_.get());
+  return scheduler->unthrottled_frame_source_internal_.get();
+}
+
 Scheduler::Scheduler(
     SchedulerClient* client,
     const SchedulerSettings& scheduler_settings,
@@ -85,6 +87,7 @@ Scheduler::Scheduler(
       primary_frame_source_internal_(external_begin_frame_source.Pass()),
       background_frame_source_internal_(),
       vsync_observer_(NULL),
+      throttle_frame_production_(scheduler_settings.throttle_frame_production),
       settings_(scheduler_settings),
       client_(client),
       layer_tree_host_id_(layer_tree_host_id),
@@ -123,6 +126,11 @@ Scheduler::Scheduler(
   background_frame_source_ =
       frame_sources_constructor->ConstructBackgroundFrameSource(this);
   frame_source_->AddSource(background_frame_source_);
+
+  // Unthrottled frame source
+  unthrottled_frame_source_ =
+      frame_sources_constructor->ConstructUnthrottledFrameSource(this);
+  frame_source_->AddSource(unthrottled_frame_source_);
 
   SetupPowerMonitoring();
 }
@@ -183,14 +191,22 @@ void Scheduler::SetCanStart() {
   ProcessScheduledActions();
 }
 
-void Scheduler::SetVisible(bool visible) {
-  state_machine_.SetVisible(visible);
-  if (visible) {
-    frame_source_->SetActiveSource(primary_frame_source_);
+void Scheduler::UpdateActiveFrameSource() {
+  if (state_machine_.visible()) {
+    if (throttle_frame_production_) {
+      frame_source_->SetActiveSource(primary_frame_source_);
+    } else {
+      frame_source_->SetActiveSource(unthrottled_frame_source_);
+    }
   } else {
     frame_source_->SetActiveSource(background_frame_source_);
   }
   ProcessScheduledActions();
+}
+
+void Scheduler::SetVisible(bool visible) {
+  state_machine_.SetVisible(visible);
+  UpdateActiveFrameSource();
 }
 
 void Scheduler::SetCanDraw(bool can_draw) {
@@ -206,6 +222,11 @@ void Scheduler::NotifyReadyToActivate() {
 void Scheduler::NotifyReadyToDraw() {
   // Empty for now, until we take action based on the notification as part of
   // crbugs 352894, 383157, 421923.
+}
+
+void Scheduler::SetThrottleFrameProduction(bool throttle) {
+  throttle_frame_production_ = throttle;
+  UpdateActiveFrameSource();
 }
 
 void Scheduler::SetNeedsCommit() {
@@ -275,8 +296,6 @@ void Scheduler::DidLoseOutputSurface() {
   begin_retro_frame_args_.clear();
   begin_retro_frame_task_.Cancel();
   state_machine_.DidLoseOutputSurface();
-  if (frame_source_->NeedsBeginFrames())
-    frame_source_->SetNeedsBeginFrames(false);
   ProcessScheduledActions();
 }
 
@@ -313,41 +332,29 @@ void Scheduler::SetupNextBeginFrameIfNeeded() {
   if (!task_runner_.get())
     return;
 
-  bool needs_begin_frame = state_machine_.BeginFrameNeeded();
-
-  bool at_end_of_deadline =
-      (state_machine_.begin_impl_frame_state() ==
-       SchedulerStateMachine::BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE);
-
-  bool should_call_set_needs_begin_frame =
-      // Always request the BeginFrame immediately if it wasn't needed before.
-      (needs_begin_frame && !frame_source_->NeedsBeginFrames()) ||
-      // Only stop requesting BeginFrames after a deadline.
-      (!needs_begin_frame && frame_source_->NeedsBeginFrames() &&
-       at_end_of_deadline);
-
-  if (should_call_set_needs_begin_frame) {
-    frame_source_->SetNeedsBeginFrames(needs_begin_frame);
+  if (state_machine_.ShouldSetNeedsBeginFrames(
+          frame_source_->NeedsBeginFrames())) {
+    frame_source_->SetNeedsBeginFrames(state_machine_.BeginFrameNeeded());
   }
 
-  if (at_end_of_deadline) {
+  if (state_machine_.begin_impl_frame_state() ==
+      SchedulerStateMachine::BEGIN_IMPL_FRAME_STATE_INSIDE_DEADLINE) {
     frame_source_->DidFinishFrame(begin_retro_frame_args_.size());
   }
 
   PostBeginRetroFrameIfNeeded();
-  SetupPollingMechanisms(needs_begin_frame);
+  SetupPollingMechanisms();
 }
 
 // We may need to poll when we can't rely on BeginFrame to advance certain
 // state or to avoid deadlock.
-void Scheduler::SetupPollingMechanisms(bool needs_begin_frame) {
+void Scheduler::SetupPollingMechanisms() {
   bool needs_advance_commit_state_timer = false;
   // Setup PollForAnticipatedDrawTriggers if we need to monitor state but
   // aren't expecting any more BeginFrames. This should only be needed by
   // the synchronous compositor when BeginFrameNeeded is false.
   if (state_machine_.ShouldPollForAnticipatedDrawTriggers()) {
     DCHECK(!state_machine_.SupportsProactiveBeginFrame());
-    DCHECK(!needs_begin_frame);
     if (poll_for_draw_triggers_task_.IsCancelled()) {
       poll_for_draw_triggers_task_.Reset(poll_for_draw_triggers_closure_);
       base::TimeDelta delay = begin_impl_frame_args_.IsValid()

@@ -259,7 +259,7 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_PREFS_ABOUT_CHROME" desc="Title for the About Chrome page. [CHAR-LIMIT=32]">
         About Chrome
       </message>
-      <message name="IDS_LEGAL_INFORMATION_SUMMARY" desc="Summary for legal information">
+      <message name="IDS_LEGAL_INFORMATION_SUMMARY" desc="Summary for legal information" meaning="Android">
         Copyright <ph name="year">%1$d<ex>2014</ex></ph> Google Inc. All rights reserved.
       </message>
       <message name="IDS_APPLICATION_VERSION_TITLE" desc="Title for application version">
@@ -330,6 +330,46 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message desc="Dialog box title for viewing security certificates. [CHAR-LIMIT=32]" name="IDS_CERTTITLE">
         Certificate Viewer
+      </message>
+
+      <!-- Sign-in strings -->
+      <message name="IDS_ADD_ACCOUNT_TITLE" desc="Title for add Google account dialog [CHAR-LIMIT=40]">
+        Add a Google Account
+      </message>
+      <message name="IDS_ADD_ACCOUNT_MESSAGE" desc="Message to display for add Google account dialog">
+        You have not yet set up a Google Account on this device
+      </message>
+      <message name="IDS_ADD_ACCOUNT_CONTINUE" desc="Continue button for add Google account dialog [CHAR-LIMIT=20]">
+        Continue
+      </message>
+      <message name="IDS_SIGNOUT_TITLE" desc="Title for sign out of Chrome dialog [CHAR-LIMIT=40]">
+        Sign out of Chrome
+      </message>
+      <message name="IDS_SIGNOUT_MESSAGE" desc="Message to display for sign out of Chrome dialog">
+        The data stored on this device as well as the data stored in your Google Account will remain in both places. However, new data or changes you make to your data will not be synchronized between them.
+      </message>
+      <message name="IDS_SIGNOUT_MANAGED_ACCOUNT_MESSAGE" desc="Message to display for sign out of Chrome dialog when the account has enterprise management, and all user data will be erased">
+        You are signing out of an account managed by <ph name="DOMAIN_NAME">%1$s<ex>google.com</ex></ph>. This will delete the Chrome data stored on this device, but the data will remain in your Google Account.
+      </message>
+      <message name="IDS_FIRSTRUN_SIGNED_IN_TITLE" desc="Message informing the user that they are now signed in.">
+        You're now signed in to Chrome.
+      </message>
+      <message name="IDS_FIRSTRUN_SIGNED_IN_DESCRIPTION" desc="Message informing the user what is being synced.">
+        Your open tabs, bookmarks, history, and more are being synced with your Google Account.
+      </message>
+
+      <!-- Sync strings -->
+      <message name="IDS_SIGN_IN_SYNC" desc="Sync preference title in signed-in prefs and prefix for notification related to sync [CHAR-LIMIT=32]">
+        Sync
+      </message>
+      <message name="IDS_SYNC_ANDROID_MASTER_SYNC_DISABLED" desc="Message to show when Android master sync flag is disabled">
+        Android system sync disabled. Please re-enable and try again.
+      </message>
+      <message name="IDS_SYNC_NEED_PASSPHRASE" desc="Error message when a passphrase is needed for decrypting sync data.">
+        Passphrase required
+      </message>
+      <message name="IDS_SYNC_NEED_PASSWORD" desc="Error message when a password is needed for decrypting sync data.">
+        Password required
       </message>
 
       <!-- Sync error strings -->
@@ -673,6 +713,13 @@ You are signing in with a managed account and giving its administrator control o
 Drag from top to exit.
       </message>
 
+      <!-- Download UI -->
+      <message name="IDS_DOWNLOAD_NOTIFICATION_FAILED" desc="Download notification to be displayed when a download fails.">
+        Download failed.
+      </message>
+      <message name="IDS_CANNOT_ADD_DOWNLOADED_ITEM_TO_MANAGER" desc="Toast for a download which has completed but cannot be added to the download manager">
+        Failed to add downloaded item to the download manager.
+      </message>
     </messages>
   </release>
 </grit>

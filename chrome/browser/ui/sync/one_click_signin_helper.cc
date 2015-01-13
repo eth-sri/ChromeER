@@ -37,7 +37,7 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/signin/chrome_signin_client.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_names_io_thread.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -63,7 +63,6 @@
 #include "components/autofill/core/common/password_form.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/password_manager/core/browser/password_manager.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/browser/signin_manager.h"
@@ -460,7 +459,7 @@ void CurrentHistoryCleaner::DidCommitProvisionalLoadForFrame(
   content::NavigationController* nc = &web_contents()->GetController();
   HistoryService* hs = HistoryServiceFactory::GetForProfile(
       Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
-      Profile::IMPLICIT_ACCESS);
+      ServiceAccessType::IMPLICIT_ACCESS);
 
   // Have to wait until something else gets added to history before removal.
   if (history_index_to_remove_ < nc->GetLastCommittedEntryIndex()) {
@@ -1433,8 +1432,7 @@ void OneClickSigninHelper::DidStopLoading(
       ProfileSyncService* sync_service =
           ProfileSyncServiceFactory::GetForProfile(profile);
       SigninErrorController* error_controller =
-          ProfileOAuth2TokenServiceFactory::GetForProfile(profile)->
-              signin_error_controller();
+          SigninErrorControllerFactory::GetForProfile(profile);
 
       OneClickSigninSyncStarter::StartSyncMode start_mode =
           source_ == signin_metrics::SOURCE_SETTINGS ?

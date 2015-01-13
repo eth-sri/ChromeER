@@ -22,27 +22,26 @@ def _InitHostPlatformIfNeeded():
   global _host_platform
   if _host_platform:
     return
-  if util.IsRunningOnCrosDevice():
-    from telemetry.core.platform import cros_platform_backend
-    backend = cros_platform_backend.CrosPlatformBackend()
-  elif sys.platform.startswith('linux'):
-    from telemetry.core.platform import linux_platform_backend
-    backend = linux_platform_backend.LinuxPlatformBackend()
-  elif sys.platform == 'darwin':
-    from telemetry.core.platform import mac_platform_backend
-    backend = mac_platform_backend.MacPlatformBackend()
-  elif sys.platform == 'win32':
-    from telemetry.core.platform import win_platform_backend
-    backend = win_platform_backend.WinPlatformBackend()
-  else:
+  backend = None
+  for platform_backend_class in _IterAllPlatformBackendClasses():
+    if platform_backend_class.IsPlatformBackendForHost():
+      backend = platform_backend_class()
+      break
+  if not backend:
     raise NotImplementedError()
-
   _host_platform = Platform(backend)
 
 
 def GetHostPlatform():
   _InitHostPlatformIfNeeded()
   return _host_platform
+
+
+def _IterAllPlatformBackendClasses():
+  platform_dir = os.path.dirname(os.path.realpath(__file__))
+  return discover.DiscoverClasses(
+      platform_dir, util.GetTelemetryDir(),
+      platform_backend_module.PlatformBackend).itervalues()
 
 
 def GetPlatformForDevice(device, logging=real_logging):
@@ -53,14 +52,10 @@ def GetPlatformForDevice(device, logging=real_logging):
   if device.guid in _remote_platforms:
     return _remote_platforms[device.guid]
   try:
-    platform_backend = None
-    platform_dir = os.path.dirname(os.path.realpath(__file__))
-    for platform_backend_class in discover.DiscoverClasses(
-        platform_dir, util.GetTelemetryDir(),
-        platform_backend_module.PlatformBackend).itervalues():
+    for platform_backend_class in _IterAllPlatformBackendClasses():
       if platform_backend_class.SupportsDevice(device):
-        platform_backend = platform_backend_class(device)
-        _remote_platforms[device.guid] = Platform(platform_backend)
+        _remote_platforms[device.guid] = (
+            platform_backend_class.CreatePlatformForDevice(device))
         return _remote_platforms[device.guid]
     return None
   except Exception:
@@ -101,24 +96,6 @@ class Platform(object):
   @property
   def profiling_controller(self):
     return self._profiling_controller
-
-  def IsDisplayTracingSupported(self):
-    """Platforms may be able to gather a trace with frame timestamps close to
-    pysical display"""
-    return self._platform_backend.IsDisplayTracingSupported()
-
-  def StartDisplayTracing(self):
-    """Start gathering a trace with frame timestamps close to pysical
-    display."""
-    return self._platform_backend.StartDisplayTracing()
-
-  def StopDisplayTracing(self):
-    """Stop gathering a trace with frame timestamps close to pysical display.
-
-    Returns a TracingTimelineData object for import of the timestamps into
-    timeline model.
-    """
-    return self._platform_backend.StopDisplayTracing()
 
   def CanMonitorThermalThrottling(self):
     """Platforms may be able to detect thermal throttling.

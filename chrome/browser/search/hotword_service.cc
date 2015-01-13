@@ -11,6 +11,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
@@ -19,7 +20,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
-#include "chrome/browser/extensions/webstore_startup_installer.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
@@ -34,6 +34,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/language_usage_metrics/language_usage_metrics.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_thread.h"
@@ -305,6 +306,10 @@ class HotwordService::HotwordUserSessionStateObserver {
 };
 #endif
 
+void HotwordService::HotwordWebstoreInstaller::Shutdown() {
+  AbortInstall();
+}
+
 HotwordService::HotwordService(Profile* profile)
     : profile_(profile),
       extension_registry_observer_(this),
@@ -397,6 +402,11 @@ HotwordService::~HotwordService() {
 #endif
 }
 
+void HotwordService::Shutdown() {
+  if (installer_.get())
+    installer_->Shutdown();
+}
+
 void HotwordService::ShowHotwordNotification() {
   // Check for enabled here in case always-on was enabled during the delay.
   if (!IsServiceAvailable() || IsAlwaysOnEnabled())
@@ -474,10 +484,9 @@ void HotwordService::InstalledFromWebstoreCallback(
 }
 
 void HotwordService::InstallHotwordExtensionFromWebstore(int num_tries) {
-  installer_ = new extensions::WebstoreStartupInstaller(
+  installer_ = new HotwordWebstoreInstaller(
       ReinstalledExtensionId(),
       profile_,
-      false,
       base::Bind(&HotwordService::InstalledFromWebstoreCallback,
                  weak_factory_.GetWeakPtr(),
                  num_tries - 1));
@@ -561,6 +570,11 @@ bool HotwordService::MaybeReinstallHotwordExtension() {
                                      false);
   }
 
+  // Record re-installs due to language change.
+  UMA_HISTOGRAM_SPARSE_SLOWLY(
+      "Hotword.SharedModuleReinstallLanguage",
+      language_usage_metrics::LanguageUsageMetrics::ToLanguageCode(
+          GetCurrentLocale(profile_)));
   return UninstallHotwordExtension(extension_service);
 }
 

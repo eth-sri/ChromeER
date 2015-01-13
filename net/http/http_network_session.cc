@@ -44,8 +44,8 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.host_resolver, params.cert_verifier, params.channel_id_service,
       params.transport_security_state, params.cert_transparency_verifier,
       params.cert_policy_enforcer, params.ssl_session_cache_shard,
-      params.proxy_service, params.ssl_config_service,
-      params.enable_ssl_connect_job_waiting, params.proxy_delegate, pool_type);
+      params.ssl_config_service, params.enable_ssl_connect_job_waiting,
+      pool_type);
 }
 
 }  // unnamed namespace
@@ -90,6 +90,8 @@ HttpNetworkSession::Params::Params()
       quic_disable_connection_pooling(false),
       quic_load_server_info_timeout_ms(0),
       quic_disable_loading_server_info_for_new_servers(false),
+      quic_load_server_info_timeout_srtt_multiplier(0.0f),
+      quic_enable_truncated_connection_ids(false),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
@@ -134,6 +136,8 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
           params.quic_disable_connection_pooling,
           params.quic_load_server_info_timeout_ms,
           params.quic_disable_loading_server_info_for_new_servers,
+          params.quic_load_server_info_timeout_srtt_multiplier,
+          params.quic_enable_truncated_connection_ids,
           params.quic_connection_options),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,

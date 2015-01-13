@@ -435,13 +435,7 @@ QuicConfig::QuicConfig()
       max_streams_per_connection_(kMSPC, PRESENCE_REQUIRED),
       bytes_for_connection_id_(kTCID, PRESENCE_OPTIONAL),
       initial_round_trip_time_us_(kIRTT, PRESENCE_OPTIONAL),
-      // TODO(rjshade): Remove this when retiring QUIC_VERSION_19.
-      initial_flow_control_window_bytes_(kIFCW, PRESENCE_OPTIONAL),
-      // TODO(rjshade): Make this PRESENCE_REQUIRED when retiring
-      // QUIC_VERSION_19.
       initial_stream_flow_control_window_bytes_(kSFCW, PRESENCE_OPTIONAL),
-      // TODO(rjshade): Make this PRESENCE_REQUIRED when retiring
-      // QUIC_VERSION_19.
       initial_session_flow_control_window_bytes_(kCFCW, PRESENCE_OPTIONAL),
       socket_receive_buffer_(kSRBF, PRESENCE_OPTIONAL) {
   SetDefaults();
@@ -546,34 +540,12 @@ uint32 QuicConfig::GetInitialRoundTripTimeUsToSend() const {
   return initial_round_trip_time_us_.GetSendValue();
 }
 
-void QuicConfig::SetInitialFlowControlWindowToSend(uint32 window_bytes) {
-  if (window_bytes < kDefaultFlowControlSendWindow) {
-    LOG(DFATAL) << "Initial flow control receive window (" << window_bytes
-                << ") cannot be set lower than default ("
-                << kDefaultFlowControlSendWindow << ").";
-    window_bytes = kDefaultFlowControlSendWindow;
-  }
-  initial_flow_control_window_bytes_.SetSendValue(window_bytes);
-}
-
-uint32 QuicConfig::GetInitialFlowControlWindowToSend() const {
-  return initial_flow_control_window_bytes_.GetSendValue();
-}
-
-bool QuicConfig::HasReceivedInitialFlowControlWindowBytes() const {
-  return initial_flow_control_window_bytes_.HasReceivedValue();
-}
-
-uint32 QuicConfig::ReceivedInitialFlowControlWindowBytes() const {
-  return initial_flow_control_window_bytes_.GetReceivedValue();
-}
-
 void QuicConfig::SetInitialStreamFlowControlWindowToSend(uint32 window_bytes) {
-  if (window_bytes < kDefaultFlowControlSendWindow) {
+  if (window_bytes < kMinimumFlowControlSendWindow) {
     LOG(DFATAL) << "Initial stream flow control receive window ("
                 << window_bytes << ") cannot be set lower than default ("
-                << kDefaultFlowControlSendWindow << ").";
-    window_bytes = kDefaultFlowControlSendWindow;
+                << kMinimumFlowControlSendWindow << ").";
+    window_bytes = kMinimumFlowControlSendWindow;
   }
   initial_stream_flow_control_window_bytes_.SetSendValue(window_bytes);
 }
@@ -591,11 +563,11 @@ uint32 QuicConfig::ReceivedInitialStreamFlowControlWindowBytes() const {
 }
 
 void QuicConfig::SetInitialSessionFlowControlWindowToSend(uint32 window_bytes) {
-  if (window_bytes < kDefaultFlowControlSendWindow) {
+  if (window_bytes < kMinimumFlowControlSendWindow) {
     LOG(DFATAL) << "Initial session flow control receive window ("
                 << window_bytes << ") cannot be set lower than default ("
-                << kDefaultFlowControlSendWindow << ").";
-    window_bytes = kDefaultFlowControlSendWindow;
+                << kMinimumFlowControlSendWindow << ").";
+    window_bytes = kMinimumFlowControlSendWindow;
   }
   initial_session_flow_control_window_bytes_.SetSendValue(window_bytes);
 }
@@ -656,9 +628,8 @@ void QuicConfig::SetDefaults() {
       QuicTime::Delta::FromSeconds(kInitialIdleTimeoutSecs);
   max_undecryptable_packets_ = kDefaultMaxUndecryptablePackets;
 
-  SetInitialFlowControlWindowToSend(kDefaultFlowControlSendWindow);
-  SetInitialStreamFlowControlWindowToSend(kDefaultFlowControlSendWindow);
-  SetInitialSessionFlowControlWindowToSend(kDefaultFlowControlSendWindow);
+  SetInitialStreamFlowControlWindowToSend(kMinimumFlowControlSendWindow);
+  SetInitialSessionFlowControlWindowToSend(kMinimumFlowControlSendWindow);
 }
 
 void QuicConfig::ToHandshakeMessage(CryptoHandshakeMessage* out) const {
@@ -668,7 +639,6 @@ void QuicConfig::ToHandshakeMessage(CryptoHandshakeMessage* out) const {
   max_streams_per_connection_.ToHandshakeMessage(out);
   bytes_for_connection_id_.ToHandshakeMessage(out);
   initial_round_trip_time_us_.ToHandshakeMessage(out);
-  initial_flow_control_window_bytes_.ToHandshakeMessage(out);
   initial_stream_flow_control_window_bytes_.ToHandshakeMessage(out);
   initial_session_flow_control_window_bytes_.ToHandshakeMessage(out);
   socket_receive_buffer_.ToHandshakeMessage(out);
@@ -704,10 +674,6 @@ QuicErrorCode QuicConfig::ProcessPeerHello(
   }
   if (error == QUIC_NO_ERROR) {
     error = initial_round_trip_time_us_.ProcessPeerHello(
-        peer_hello, hello_type, error_details);
-  }
-  if (error == QUIC_NO_ERROR) {
-    error = initial_flow_control_window_bytes_.ProcessPeerHello(
         peer_hello, hello_type, error_details);
   }
   if (error == QUIC_NO_ERROR) {

@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/scoped_file.h"
+#include "base/i18n/icu_util.h"
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
@@ -70,6 +71,8 @@
 #include "chrome/browser/ssl/ssl_add_certificate.h"
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 #include "chrome/browser/ssl/ssl_client_certificate_selector.h"
+#include "chrome/browser/ssl/ssl_error_handler.h"
+#include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/blocked_content/blocked_window_params.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
@@ -120,6 +123,7 @@
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/common/web_preferences.h"
+#include "gin/public/isolate_holder.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_options.h"
@@ -1377,6 +1381,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
       autofill::switches::kEnableFillOnAccountSelect,
       autofill::switches::kEnableFillOnAccountSelectNoHighlighting,
       autofill::switches::kEnablePasswordGeneration,
+      autofill::switches::kEnablePasswordSaveOnInPageNavigation,
       autofill::switches::kEnableSingleClickAutofill,
       autofill::switches::kIgnoreAutocompleteOffForAutofill,
       autofill::switches::kLocalHeuristicsOnlyForPasswordGeneration,
@@ -1771,13 +1776,6 @@ void ChromeContentBrowserClient::AllowCertificateError(
     return;
   }
 
-#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
-  CaptivePortalTabHelper* captive_portal_tab_helper =
-      CaptivePortalTabHelper::FromWebContents(tab);
-  if (captive_portal_tab_helper)
-    captive_portal_tab_helper->OnSSLCertError(ssl_info);
-#endif
-
   // Otherwise, display an SSL blocking page. The interstitial page takes
   // ownership of ssl_blocking_page.
   int options_mask = 0;
@@ -1787,9 +1785,9 @@ void ChromeContentBrowserClient::AllowCertificateError(
     options_mask |= SSLBlockingPage::STRICT_ENFORCEMENT;
   if (expired_previous_decision)
     options_mask |= SSLBlockingPage::EXPIRED_BUT_PREVIOUSLY_ALLOWED;
-  SSLBlockingPage* ssl_blocking_page = new SSLBlockingPage(
+
+  SSLErrorHandler::HandleSSLError(
       tab, cert_error, ssl_info, request_url, options_mask, callback);
-  ssl_blocking_page->Show();
 }
 
 void ChromeContentBrowserClient::SelectClientCertificate(
@@ -2291,6 +2289,12 @@ void ChromeContentBrowserClient::OverrideWebkitPrefs(
   }
   DCHECK(!web_prefs->default_encoding.empty());
 
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnablePotentiallyAnnoyingSecurityFeatures)) {
+    web_prefs->strict_mixed_content_checking = true;
+    web_prefs->strict_powerful_feature_restrictions = true;
+  }
+
   for (size_t i = 0; i < extra_parts_.size(); ++i)
     extra_parts_[i]->OverrideWebkitPrefs(rvh, url, web_prefs);
 }
@@ -2487,7 +2491,7 @@ void ChromeContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 
   flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
   base::FilePath icudata_path =
-      app_data_path.AppendASCII("icudtl.dat");
+      app_data_path.AppendASCII(base::i18n::kIcuDataFileName);
   base::File icudata_file(icudata_path, flags);
   DCHECK(icudata_file.IsValid());
   mappings->Transfer(kAndroidICUDataDescriptor,
@@ -2500,9 +2504,9 @@ void ChromeContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 
   int file_flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
   base::FilePath v8_natives_data_path =
-      v8_data_path.AppendASCII("natives_blob.bin");
+      v8_data_path.AppendASCII(gin::IsolateHolder::kNativesFileName);
   base::FilePath v8_snapshot_data_path =
-      v8_data_path.AppendASCII("snapshot_blob.bin");
+      v8_data_path.AppendASCII(gin::IsolateHolder::kSnapshotFileName);
   base::File v8_natives_data_file(v8_natives_data_path, file_flags);
   base::File v8_snapshot_data_file(v8_snapshot_data_path, file_flags);
   DCHECK(v8_natives_data_file.IsValid());

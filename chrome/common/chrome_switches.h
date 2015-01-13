@@ -44,9 +44,6 @@ extern const char kAppsGalleryUpdateURL[];
 extern const char kAppModeAuthCode[];
 extern const char kAppModeOAuth2Token[];
 extern const char kAuthExtensionPath[];
-extern const char kAuthNegotiateDelegateWhitelist[];
-extern const char kAuthSchemes[];
-extern const char kAuthServerWhitelist[];
 extern const char kAutoLaunchAtStartup[];
 extern const char kAutoSelectDesktopCaptureSource[];
 extern const char kCertificateTransparencyLog[];
@@ -67,7 +64,6 @@ extern const char kDiagnosticsFormat[];
 extern const char kDiagnosticsRecovery[];
 extern const char kDisableAboutInSettings[];
 extern const char kDisableAsyncDns[];
-extern const char kDisableAuthNegotiateCnameLookup[];
 extern const char kDisableBackgroundNetworking[];
 extern const char kDisableBundledPpapiFlash[];
 extern const char kDisableCastStreamingHWEncoding[];
@@ -90,6 +86,7 @@ extern const char kDisableOfflineAutoReloadVisibleOnly[];
 extern const char kDisableOriginChip[];
 extern const char kDisableOutOfProcessPdf[];
 extern const char kDisablePasswordManagerReauthentication[];
+extern const char kDisablePdfMaterialUI[];
 extern const char kDisablePeopleSearch[];
 extern const char kDisablePermissionsBubbles[];
 extern const char kDisablePopupBlocking[];
@@ -119,7 +116,6 @@ extern const char kEasyUnlockAppPath[];
 extern const char kEnableAppList[];
 extern const char kEnableAppsFileAssociations[];
 extern const char kEnableAsyncDns[];
-extern const char kEnableAuthNegotiatePort[];
 extern const char kEnableBenchmarking[];
 extern const char kEnableClientHints[];
 extern const char kEnableBookmarkUndo[];
@@ -148,8 +144,10 @@ extern const char kEnableOriginChipAlways[];
 extern const char kEnableOriginChipOnSrp[];
 extern const char kEnableOutOfProcessPdf[];
 extern const char kEnablePanels[];
+extern const char kEnablePdfMaterialUI[];
 extern const char kEnablePermissionsBubbles[];
 extern const char kEnablePluginPlaceholderShadowDom[];
+extern const char kEnablePotentiallyAnnoyingSecurityFeatures[];
 extern const char kEnablePowerOverlay[];
 extern const char kEnablePrintPreviewRegisterPromos[];
 extern const char kEnablePrivetStorage[];
@@ -198,7 +196,6 @@ extern const char kFlagSwitchesEnd[];
 extern const char kForceAppMode[];
 extern const char kForceFirstRun[];
 extern const char kForceVariationIds[];
-extern const char kGSSAPILibraryName[];
 extern const char kHelp[];
 extern const char kHelpShort[];
 extern const char kHideIcons[];
@@ -211,6 +208,7 @@ extern const char kIgnoreUrlFetcherCertRequests[];
 extern const char kIncognito[];
 extern const char kInstallChromeApp[];
 extern const char kInstallEphemeralAppFromWebstore[];
+extern const char kInstallSupervisedUserWhitelists[];
 extern const char kInstantProcess[];
 extern const char kInvalidationUseGCMChannel[];
 extern const char kIpcFuzzerTestcase[];
@@ -340,10 +338,6 @@ extern const char kWindowSize[];
 extern const char kWinHttpProxyResolver[];
 extern const char kWinJumplistAction[];
 
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-extern const char kPluginsMetadataServerURL[];
-#endif
-
 #if defined(OS_ANDROID)
 extern const char kDisableCast[];
 extern const char kDisableContextualSearch[];
@@ -403,6 +397,7 @@ extern const char kFileManagerExtensionPath[];
 
 bool AboutInSettingsEnabled();
 bool OutOfProcessPdfEnabled();
+bool PdfMaterialUIEnabled();
 bool SettingsWindowEnabled();
 
 #if defined(OS_CHROMEOS)

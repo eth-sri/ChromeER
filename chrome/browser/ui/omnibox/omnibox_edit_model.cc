@@ -26,7 +26,6 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
@@ -53,7 +52,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/bookmarks/browser/bookmark_model.h"
-#include "components/google/core/browser/google_url_tracker.h"
 #include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/omnibox/autocomplete_provider.h"
 #include "components/omnibox/keyword_provider.h"
@@ -688,17 +686,6 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
     match.transition = ui::PAGE_TRANSITION_LINK;
   }
 
-  TemplateURLService* service =
-      TemplateURLServiceFactory::GetForProfile(profile_);
-  const TemplateURL* template_url = match.GetTemplateURL(service, false);
-  if (template_url && template_url->url_ref().HasGoogleBaseURLs(
-          UIThreadSearchTermsData(profile_))) {
-    GoogleURLTracker* tracker =
-        GoogleURLTrackerFactory::GetForProfile(profile_);
-    if (tracker)
-      tracker->SearchCommitted();
-  }
-
   DCHECK(popup_model());
   view_->OpenMatch(match, disposition, alternate_nav_url, base::string16(),
                    popup_model()->selected_line());
@@ -948,7 +935,7 @@ void OmniboxEditModel::OnSetFocus(bool control_down) {
     // that we avoid PermanentURL() here because it's not guaranteed to give us
     // the actual underlying current URL, e.g. if we're on the NTP and the
     // |permanent_text_| is empty.
-    autocomplete_controller()->StartZeroSuggest(AutocompleteInput(
+    autocomplete_controller()->OnOmniboxFocused(AutocompleteInput(
         permanent_text_, base::string16::npos, std::string(),
         delegate_->GetURL(), ClassifyPage(), false, false, true, true,
         ChromeAutocompleteSchemeClassifier(profile_)));

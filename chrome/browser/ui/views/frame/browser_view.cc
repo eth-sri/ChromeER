@@ -80,6 +80,8 @@
 #include "chrome/browser/ui/views/profiles/avatar_menu_bubble_view.h"
 #include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
 #include "chrome/browser/ui/views/profiles/profile_chooser_view.h"
+#include "chrome/browser/ui/views/profiles/profile_reset_bubble_view.h"
+#include "chrome/browser/ui/views/session_crashed_bubble_view.h"
 #include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
 #include "chrome/browser/ui/views/status_bubble_views.h"
 #include "chrome/browser/ui/views/tabs/browser_tab_strip_controller.h"
@@ -87,6 +89,7 @@
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/wrench_toolbar_button.h"
 #include "chrome/browser/ui/views/translate/translate_bubble_view.h"
 #include "chrome/browser/ui/views/update_recommended_message_box.h"
 #include "chrome/browser/ui/views/website_settings/permissions_bubble_view.h"
@@ -745,10 +748,6 @@ gfx::NativeWindow BrowserView::GetNativeWindow() const {
   return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
 }
 
-BrowserWindowTesting* BrowserView::GetBrowserWindowTesting() {
-  return this;
-}
-
 StatusBubble* BrowserView::GetStatusBubble() {
   return status_bubble_.get();
 }
@@ -1267,6 +1266,19 @@ void BrowserView::ShowTranslateBubble(
       error_type, is_user_gesture);
 }
 
+bool BrowserView::ShowSessionCrashedBubble() {
+  return SessionCrashedBubbleView::Show(browser_.get());
+}
+
+bool BrowserView::IsProfileResetBubbleSupported() const {
+  return true;
+}
+
+GlobalErrorBubbleViewBase* BrowserView::ShowProfileResetBubble(
+    const base::WeakPtr<ProfileResetGlobalError>& global_error) {
+  return ProfileResetBubbleView::ShowBubble(global_error, browser_.get());
+}
+
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
 void BrowserView::ShowOneClickSigninBubble(
     OneClickSigninBubbleType type,
@@ -1480,9 +1492,6 @@ FindBar* BrowserView::CreateFindBar() {
 WebContentsModalDialogHost* BrowserView::GetWebContentsModalDialogHost() {
   return GetBrowserViewLayout()->GetWebContentsModalDialogHost();
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// BrowserView, BrowserWindowTesting implementation:
 
 BookmarkBarView* BrowserView::GetBookmarkBarView() const {
   return bookmark_bar_view_.get();

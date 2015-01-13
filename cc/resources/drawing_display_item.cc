@@ -5,6 +5,7 @@
 #include "cc/resources/drawing_display_item.h"
 
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkDrawPictureCallback.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
@@ -27,6 +28,18 @@ void DrawingDisplayItem::Raster(SkCanvas* canvas,
     picture_->playback(canvas, callback);
   else
     canvas->drawPicture(picture_.get());
+  canvas->restore();
+}
+
+void DrawingDisplayItem::RasterForTracing(SkCanvas* canvas) const {
+  canvas->save();
+  canvas->translate(location_.x(), location_.y());
+  // The picture debugger in about:tracing doesn't drill down into |drawPicture|
+  // operations. Calling |playback()| rather than |drawPicture()| causes the
+  // skia operations in |picture_| to appear individually in the picture
+  // produced for tracing rather than being hidden inside a drawPicture
+  // operation.
+  picture_->playback(canvas);
   canvas->restore();
 }
 

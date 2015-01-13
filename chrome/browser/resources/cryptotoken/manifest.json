@@ -9,6 +9,7 @@
     "usb",
     "cryptotokenPrivate",
     "externally_connectable.all_urls",
+    "tabs",
     "u2fDevices",
     "https://*/*",
     "http://*/*",
@@ -23,10 +24,7 @@
   ],
   "externally_connectable": {
     "matches": [
-      "https://login.corp.google.com/*",
-      "https://accounts.google.com/*",
-      "https://myaccount.google.com/*",
-      "https://security.google.com/*"
+      "<all_urls>"
     ],
     "ids": [
       "fjajfjhkeibgmiggdfehjplbhmfkialk"

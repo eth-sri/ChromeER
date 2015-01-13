@@ -8,6 +8,7 @@
 #include <functional>
 #include <iterator>
 
+#include "base/command_line.h"
 #include "base/i18n/timezone.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -26,6 +27,7 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_pref_names.h"
+#include "components/autofill/core/common/autofill_switches.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_formatter.h"
 
@@ -547,6 +549,7 @@ void PersonalDataManager::AddCreditCard(const CreditCard& credit_card) {
 }
 
 void PersonalDataManager::UpdateCreditCard(const CreditCard& credit_card) {
+  DCHECK_EQ(CreditCard::LOCAL_CARD, credit_card.record_type());
   if (is_off_the_record_)
     return;
 
@@ -570,6 +573,36 @@ void PersonalDataManager::UpdateCreditCard(const CreditCard& credit_card) {
   database_->UpdateCreditCard(credit_card);
 
   // Refresh our local cache and send notifications to observers.
+  Refresh();
+}
+
+void PersonalDataManager::UpdateServerCreditCard(
+    const CreditCard& credit_card) {
+  DCHECK_NE(CreditCard::LOCAL_CARD, credit_card.record_type());
+
+  if (is_off_the_record_ || !database_.get())
+    return;
+
+  // Look up by server id, not GUID.
+  CreditCard* existing_credit_card = nullptr;
+  for (auto it : server_credit_cards_) {
+    if (credit_card.server_id() == it->server_id()) {
+      existing_credit_card = it;
+      break;
+    }
+  }
+  if (!existing_credit_card)
+    return;
+
+  DCHECK_NE(existing_credit_card->record_type(), credit_card.record_type());
+  DCHECK_EQ(existing_credit_card->Label(), credit_card.Label());
+  if (existing_credit_card->record_type() == CreditCard::MASKED_SERVER_CARD) {
+    database_->UnmaskServerCreditCard(credit_card.server_id(),
+                                      credit_card.number());
+  } else {
+    database_->MaskServerCreditCard(credit_card.server_id());
+  }
+
   Refresh();
 }
 
@@ -626,8 +659,11 @@ const std::vector<CreditCard*>& PersonalDataManager::GetCreditCards() const {
   credit_cards_.clear();
   credit_cards_.insert(credit_cards_.end(), local_credit_cards_.begin(),
                        local_credit_cards_.end());
-  credit_cards_.insert(credit_cards_.end(), server_credit_cards_.begin(),
-                       server_credit_cards_.end());
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableWalletCardImport)) {
+    credit_cards_.insert(credit_cards_.end(), server_credit_cards_.begin(),
+                         server_credit_cards_.end());
+  }
   return credit_cards_;
 }
 
@@ -713,40 +749,72 @@ std::vector<Suggestion> PersonalDataManager::GetProfileSuggestions(
 std::vector<Suggestion> PersonalDataManager::GetCreditCardSuggestions(
     const AutofillType& type,
     const base::string16& field_contents) {
-  std::vector<Suggestion> suggestions;
+  std::list<const CreditCard*> cards_to_suggest;
   for (const CreditCard* credit_card : GetCreditCards()) {
     // The value of the stored data for this field type in the |credit_card|.
     base::string16 creditcard_field_value =
         credit_card->GetInfo(type, app_locale_);
-    if (!creditcard_field_value.empty() &&
-        (StartsWith(creditcard_field_value, field_contents, false) ||
-         (type.GetStorableType() == CREDIT_CARD_NUMBER &&
-          base::string16::npos !=
-              creditcard_field_value.find(field_contents)))) {
-      // Make a new suggestion.
-      suggestions.push_back(Suggestion());
-      Suggestion* suggestion = &suggestions.back();
+    if (creditcard_field_value.empty())
+      continue;
 
-      // If the value is the card number, the label is the expiration date.
-      // Otherwise the label is the card number, or if that is empty the
-      // cardholder name. The label should never repeat the value.
-      if (type.GetStorableType() == CREDIT_CARD_NUMBER) {
-        creditcard_field_value = credit_card->TypeAndLastFourDigits();
-        suggestion->label = credit_card->GetInfo(
-            AutofillType(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR), app_locale_);
-      } else if (credit_card->number().empty()) {
-        if (type.GetStorableType() != CREDIT_CARD_NAME) {
-          suggestion->label =
-              credit_card->GetInfo(AutofillType(CREDIT_CARD_NAME), app_locale_);
-        }
-      } else {
-        suggestion->label = kCreditCardPrefix;
-        suggestion->label.append(credit_card->LastFourDigits());
+    // For card number fields, suggest the card if:
+    // - the number matches any part of the card, or
+    // - it's a masked card and there are 6 or fewers typed so far.
+    // For other fields, require that the field contents match the beginning of
+    // the stored data.
+    if (type.GetStorableType() == CREDIT_CARD_NUMBER) {
+      if (creditcard_field_value.find(field_contents) == base::string16::npos &&
+          (credit_card->record_type() != CreditCard::MASKED_SERVER_CARD ||
+           field_contents.size() >= 6)) {
+        continue;
       }
+    } else if (!StartsWith(creditcard_field_value, field_contents, false)) {
+      continue;
+    }
 
-      suggestion->value = creditcard_field_value;
-      suggestion->icon = base::UTF8ToUTF16(credit_card->type());
-      suggestion->backend_id.guid = credit_card->guid();
+    cards_to_suggest.push_back(credit_card);
+  }
+
+  // Server cards shadow identical local cards.
+  for (auto outer_it = cards_to_suggest.begin();
+       outer_it != cards_to_suggest.end();
+       ++outer_it) {
+    if ((*outer_it)->record_type() == CreditCard::LOCAL_CARD)
+      continue;
+
+    for (auto inner_it = cards_to_suggest.begin();
+         inner_it != cards_to_suggest.end();) {
+      auto inner_it_copy = inner_it++;
+      if ((*inner_it_copy)->IsLocalDuplicateOfServerCard(**outer_it))
+        cards_to_suggest.erase(inner_it_copy);
+    }
+  }
+
+  std::vector<Suggestion> suggestions;
+  for (const CreditCard* credit_card : cards_to_suggest) {
+    // Make a new suggestion.
+    suggestions.push_back(Suggestion());
+    Suggestion* suggestion = &suggestions.back();
+
+    suggestion->value = credit_card->GetInfo(type, app_locale_);
+    suggestion->icon = base::UTF8ToUTF16(credit_card->type());
+    suggestion->backend_id.guid = credit_card->guid();
+
+    // If the value is the card number, the label is the expiration date.
+    // Otherwise the label is the card number, or if that is empty the
+    // cardholder name. The label should never repeat the value.
+    if (type.GetStorableType() == CREDIT_CARD_NUMBER) {
+      suggestion->value = credit_card->TypeAndLastFourDigits();
+      suggestion->label = credit_card->GetInfo(
+          AutofillType(CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR), app_locale_);
+    } else if (credit_card->number().empty()) {
+      if (type.GetStorableType() != CREDIT_CARD_NAME) {
+        suggestion->label =
+            credit_card->GetInfo(AutofillType(CREDIT_CARD_NAME), app_locale_);
+      }
+    } else {
+      suggestion->label = kCreditCardPrefix;
+      suggestion->label.append(credit_card->LastFourDigits());
     }
   }
   return suggestions;

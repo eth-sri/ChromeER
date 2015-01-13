@@ -6,14 +6,14 @@
 
 #include "base/i18n/case_conversion.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/history/android/android_time.h"
 #include "chrome/browser/history/android/android_urls_sql_handler.h"
 #include "chrome/browser/history/android/bookmark_model_sql_handler.h"
-#include "chrome/browser/history/android/favicon_sql_handler.h"
 #include "chrome/browser/history/android/urls_sql_handler.h"
 #include "chrome/browser/history/android/visit_sql_handler.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/history/history_database.h"
+#include "components/history/core/android/android_time.h"
+#include "components/history/core/android/favicon_sql_handler.h"
 #include "components/history/core/browser/history_backend_notifier.h"
 #include "components/history/core/browser/history_client.h"
 #include "components/history/core/browser/keyword_search_term.h"
@@ -691,7 +691,7 @@ bool AndroidProviderBackend::EnsureInitializedAndUpdated() {
 
 bool AndroidProviderBackend::Init() {
   urls_handler_.reset(new UrlsSQLHandler(history_db_));
-  visit_handler_.reset(new VisitSQLHandler(history_db_));
+  visit_handler_.reset(new VisitSQLHandler(history_db_, history_db_));
   android_urls_handler_.reset(new AndroidURLsSQLHandler(history_db_));
   if (thumbnail_db_)
     favicon_handler_.reset(new FaviconSQLHandler(thumbnail_db_));

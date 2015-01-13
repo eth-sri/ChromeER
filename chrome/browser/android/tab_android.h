@@ -179,6 +179,12 @@ class TabAndroid : public CoreTabHelperDelegate,
                               jint current,
                               jboolean animate);
 
+  void SearchByImageInNewTabAsync(JNIEnv* env, jobject obj);
+
+  void SetInterceptNavigationDelegate(JNIEnv* env,
+                                      jobject obj,
+                                      jobject delegate);
+
   // Register the Tab's native methods through JNI.
   static bool RegisterTabAndroid(JNIEnv* env);
 

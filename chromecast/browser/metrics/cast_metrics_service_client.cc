@@ -175,11 +175,17 @@ CastMetricsServiceClient::CastMetricsServiceClient(
     : io_task_runner_(io_task_runner),
       pref_service_(pref_service),
       cast_service_(NULL),
+#if !defined(OS_ANDROID)
+      external_metrics_(NULL),
+#endif  // !defined(OS_ANDROID)
       metrics_service_loop_(base::MessageLoopProxy::current()),
       request_context_(request_context) {
 }
 
 CastMetricsServiceClient::~CastMetricsServiceClient() {
+#if !defined(OS_ANDROID)
+  DCHECK(!external_metrics_);
+#endif  // !defined(OS_ANDROID)
 }
 
 void CastMetricsServiceClient::Initialize(CastService* cast_service) {
@@ -229,6 +235,10 @@ void CastMetricsServiceClient::Initialize(CastService* cast_service) {
   RegisterPlatformMetricsProviders(metrics_service_.get(), cast_service_);
 
   metrics_service_->InitializeMetricsRecordingState();
+#if !defined(OS_ANDROID)
+  // Reset clean_shutdown bit after InitializeMetricsRecordingState().
+  metrics_service_->LogNeedForCleanShutdown();
+#endif  // !defined(OS_ANDROID)
 
   if (IsReportingEnabled())
     metrics_service_->Start();
@@ -236,9 +246,23 @@ void CastMetricsServiceClient::Initialize(CastService* cast_service) {
   // Start external metrics collection, which feeds data from external
   // processes into the main external metrics.
 #if defined(OS_LINUX)
-  external_metrics_.reset(new ExternalMetrics(stability_provider));
+  external_metrics_ = new ExternalMetrics(stability_provider);
   external_metrics_->Start();
 #endif  // defined(OS_LINUX)
+}
+
+void CastMetricsServiceClient::Finalize() {
+#if !defined(OS_ANDROID)
+  // Set clean_shutdown bit.
+  metrics_service_->RecordCompletedSessionEnd();
+#endif  // !defined(OS_ANDROID)
+
+  // Stop metrics service cleanly before destructing CastMetricsServiceClient.
+#if defined(OS_LINUX)
+  external_metrics_->StopAndDestroy();
+  external_metrics_ = NULL;
+#endif  // defined(OS_LINUX)
+  metrics_service_->Stop();
 }
 
 bool CastMetricsServiceClient::IsReportingEnabled() {

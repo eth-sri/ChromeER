@@ -95,12 +95,12 @@
             'content_settings/core/common/content_settings_pattern_unittest.cc',
             'crx_file/id_util_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler_unittest.cc',
-            'data_reduction_proxy/core/browser/data_reduction_proxy_config_service_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_bypass_protocol_unittest.cc',
+            'data_reduction_proxy/core/browser/data_reduction_proxy_configurator_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_interceptor_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_metrics_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_network_delegate_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_prefs_unittest.cc',
-            'data_reduction_proxy/core/browser/data_reduction_proxy_protocol_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_settings_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs_unittest.cc',
             'data_reduction_proxy/core/browser/data_reduction_proxy_tamper_detection_unittest.cc',
@@ -178,7 +178,6 @@
             'metrics/profiler/profiler_metrics_provider_unittest.cc',
             'navigation_interception/intercept_navigation_resource_throttle_unittest.cc',
             'network_time/network_time_tracker_unittest.cc',
-            'omaha_client/omaha_query_params_unittest.cc',
             'omnibox/answers_cache_unittest.cc',
             'omnibox/base_search_provider_unittest.cc',
             'omnibox/autocomplete_input_unittest.cc',
@@ -191,6 +190,8 @@
             'os_crypt/keychain_password_mac_unittest.mm',
             'os_crypt/os_crypt_unittest.cc',
             'ownership/owner_key_util_impl_unittest.cc',
+            'packed_ct_ev_whitelist/bit_stream_reader_unittest.cc',
+            'packed_ct_ev_whitelist/packed_ct_ev_whitelist_unittest.cc',
             'password_manager/core/browser/affiliation_fetcher_unittest.cc',
             'password_manager/core/browser/affiliation_utils_unittest.cc',
             'password_manager/core/browser/browser_save_password_progress_logger_unittest.cc',
@@ -274,6 +275,7 @@
             'translate/ios/browser/js_translate_manager_unittest.mm',
             'translate/ios/browser/language_detection_controller_unittest.mm',
             'translate/ios/browser/translate_controller_unittest.mm',
+            'update_client/update_query_params_unittest.cc',
             'url_matcher/regex_set_matcher_unittest.cc',
             'url_matcher/string_pattern_unittest.cc',
             'url_matcher/substring_set_matcher_unittest.cc',
@@ -351,6 +353,9 @@
             'components.gyp:content_settings_core_browser',
             'components.gyp:content_settings_core_common',
             'components.gyp:content_settings_core_test_support',
+            
+            # Dependencies of packed CT EV white list
+            'components.gyp:packed_ct_ev_whitelist',
 
             # Dependencies of crash
             'components.gyp:crash_test_support',
@@ -422,9 +427,6 @@
             # Dependencies of network_time
             'components.gyp:network_time',
 
-            # Dependencies of omaha_client
-            'components.gyp:omaha_client',
-
             # Dependencies of omnibox
             'components.gyp:omnibox',
             'components.gyp:omnibox_test_support',
@@ -451,6 +453,7 @@
 
             # Dependencies of rappor
             'components.gyp:rappor',
+            'components.gyp:rappor_test_support',
 
             # Dependencies of search
             'components.gyp:search',
@@ -484,6 +487,9 @@
 
             # Dependencies of wallpaper
             'components.gyp:wallpaper',
+
+            # Dependencies of update_client
+            'components.gyp:update_client',
 
             # Dependencies of url_fixer
             'components.gyp:url_fixer',
@@ -805,7 +811,9 @@
               'sources': [
                 'pairing/message_buffer_unittest.cc',
                 'timers/alarm_timer_unittest.cc',
+                'wifi_sync/wifi_credential_unittest.cc',
                 'wifi_sync/wifi_security_class_chromeos_unittest.cc',
+                'wifi_sync/wifi_security_class_unittest.cc',
               ],
               'sources!': [
                 'storage_monitor/storage_monitor_linux_unittest.cc',

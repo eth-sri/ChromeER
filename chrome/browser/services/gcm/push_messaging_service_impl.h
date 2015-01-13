@@ -68,12 +68,6 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
       const GURL& requesting_origin,
       int64 service_worker_registration_id,
       const content::PushMessagingService::UnregisterCallback&) override;
-  // TODO(mvanouwerkerk): Delete once the Push API flows through platform.
-  // https://crbug.com/389194
-  blink::WebPushPermissionStatus GetPermissionStatus(
-      const GURL& requesting_origin,
-      int renderer_id,
-      int render_frame_id) override;
   blink::WebPushPermissionStatus GetPermissionStatus(
       const GURL& requesting_origin,
       const GURL& embedding_origin) override;
@@ -87,6 +81,12 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   void DeliverMessageCallback(const PushMessagingApplicationId& application_id,
                               const GCMClient::IncomingMessage& message,
                               content::PushDeliveryStatus status);
+
+  // Developers are required to display a Web Notification in response to an
+  // incoming push message in order to clarify to the user that something has
+  // happened in the background. When they forget to do so, display a default
+  // notification on their behalf.
+  void RequireUserVisibleUX(const PushMessagingApplicationId& application_id);
 
   void RegisterEnd(
       const content::PushMessagingService::RegisterCallback& callback,

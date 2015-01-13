@@ -9,6 +9,7 @@
 #include "remoting/proto/mux.pb.h"
 #include "remoting/protocol/buffered_socket_writer.h"
 #include "remoting/protocol/message_reader.h"
+#include "remoting/protocol/protobuf_message_parser.h"
 #include "remoting/protocol/stream_channel_factory.h"
 
 namespace remoting {
@@ -57,7 +58,7 @@ class ChannelMultiplexer : public StreamChannelFactory {
   bool DoWrite(scoped_ptr<MultiplexPacket> packet,
                const base::Closure& done_task);
 
-  // Factory used to create |base_channel_|. Set to NULL once creation is
+  // Factory used to create |base_channel_|. Set to nullptr once creation is
   // finished or failed.
   StreamChannelFactory* base_channel_factory_;
 
@@ -78,7 +79,8 @@ class ChannelMultiplexer : public StreamChannelFactory {
   std::map<int, MuxChannel*> channels_by_receive_id_;
 
   BufferedSocketWriter writer_;
-  ProtobufMessageReader<MultiplexPacket> reader_;
+  MessageReader reader_;
+  ProtobufMessageParser<MultiplexPacket> parser_;
 
   base::WeakPtrFactory<ChannelMultiplexer> weak_factory_;
 

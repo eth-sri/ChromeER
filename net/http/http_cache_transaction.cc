@@ -27,6 +27,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/time/clock.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/completion_callback.h"
@@ -307,9 +308,7 @@ static bool HeaderMatches(const HttpRequestHeaders& headers,
 
 //-----------------------------------------------------------------------------
 
-HttpCache::Transaction::Transaction(
-    RequestPriority priority,
-    HttpCache* cache)
+HttpCache::Transaction::Transaction(RequestPriority priority, HttpCache* cache)
     : next_state_(STATE_NONE),
       request_(NULL),
       priority_(priority),
@@ -330,6 +329,7 @@ HttpCache::Transaction::Transaction(
       vary_mismatch_(false),
       couldnt_conditionalize_request_(false),
       bypass_lock_for_test_(false),
+      fail_conditionalization_for_test_(false),
       io_buf_len_(0),
       read_offset_(0),
       effective_load_flags_(0),
@@ -756,8 +756,8 @@ int HttpCache::Transaction::HandleResult(int rv) {
 // 2. Cached entry, no validation:
 //   Start():
 //   GetBackend* -> InitEntry -> OpenEntry* -> AddToEntry* -> CacheReadResponse*
-//   -> BeginPartialCacheValidation() -> BeginCacheValidation() ->
-//   SetupEntryForRead()
+//   -> CacheDispatchValidation -> BeginPartialCacheValidation() ->
+//   BeginCacheValidation() -> SetupEntryForRead()
 //
 //   Read():
 //   CacheReadData*
@@ -765,10 +765,10 @@ int HttpCache::Transaction::HandleResult(int rv) {
 // 3. Cached entry, validation (304):
 //   Start():
 //   GetBackend* -> InitEntry -> OpenEntry* -> AddToEntry* -> CacheReadResponse*
-//   -> BeginPartialCacheValidation() -> BeginCacheValidation() ->
-//   SendRequest* -> SuccessfulSendRequest -> UpdateCachedResponse ->
-//   CacheWriteResponse* -> UpdateCachedResponseComplete ->
-//   OverwriteCachedResponse -> PartialHeadersReceived
+//   -> CacheDispatchValidation -> BeginPartialCacheValidation() ->
+//   BeginCacheValidation() -> SendRequest* -> SuccessfulSendRequest ->
+//   UpdateCachedResponse -> CacheWriteResponse* -> UpdateCachedResponseComplete
+//   -> OverwriteCachedResponse -> PartialHeadersReceived
 //
 //   Read():
 //   CacheReadData*
@@ -776,10 +776,10 @@ int HttpCache::Transaction::HandleResult(int rv) {
 // 4. Cached entry, validation and replace (200):
 //   Start():
 //   GetBackend* -> InitEntry -> OpenEntry* -> AddToEntry* -> CacheReadResponse*
-//   -> BeginPartialCacheValidation() -> BeginCacheValidation() ->
-//   SendRequest* -> SuccessfulSendRequest -> OverwriteCachedResponse ->
-//   CacheWriteResponse* -> DoTruncateCachedData* -> TruncateCachedMetadata* ->
-//   PartialHeadersReceived
+//   -> CacheDispatchValidation -> BeginPartialCacheValidation() ->
+//   BeginCacheValidation() -> SendRequest* -> SuccessfulSendRequest ->
+//   OverwriteCachedResponse -> CacheWriteResponse* -> DoTruncateCachedData* ->
+//   TruncateCachedMetadata* -> PartialHeadersReceived
 //
 //   Read():
 //   NetworkRead* -> CacheWriteData*
@@ -787,12 +787,12 @@ int HttpCache::Transaction::HandleResult(int rv) {
 // 5. Sparse entry, partially cached, byte range request:
 //   Start():
 //   GetBackend* -> InitEntry -> OpenEntry* -> AddToEntry* -> CacheReadResponse*
-//   -> BeginPartialCacheValidation() -> CacheQueryData* ->
-//   ValidateEntryHeadersAndContinue() -> StartPartialCacheValidation ->
-//   CompletePartialCacheValidation -> BeginCacheValidation() -> SendRequest* ->
-//   SuccessfulSendRequest -> UpdateCachedResponse -> CacheWriteResponse* ->
-//   UpdateCachedResponseComplete -> OverwriteCachedResponse ->
-//   PartialHeadersReceived
+//   -> CacheDispatchValidation -> BeginPartialCacheValidation() ->
+//   CacheQueryData* -> ValidateEntryHeadersAndContinue() ->
+//   StartPartialCacheValidation -> CompletePartialCacheValidation ->
+//   BeginCacheValidation() -> SendRequest* -> SuccessfulSendRequest ->
+//   UpdateCachedResponse -> CacheWriteResponse* -> UpdateCachedResponseComplete
+//   -> OverwriteCachedResponse -> PartialHeadersReceived
 //
 //   Read() 1:
 //   NetworkRead* -> CacheWriteData*
@@ -831,8 +831,9 @@ int HttpCache::Transaction::HandleResult(int rv) {
 //   itself.
 //   Start():
 //   GetBackend* -> InitEntry -> OpenEntry* -> AddToEntry* -> CacheReadResponse*
-//   -> BeginPartialCacheValidation() -> BeginCacheValidation() ->
-//   SendRequest* -> SuccessfulSendRequest -> OverwriteCachedResponse
+//   -> CacheDispatchValidation -> BeginPartialCacheValidation() ->
+//   BeginCacheValidation() -> SendRequest* -> SuccessfulSendRequest ->
+//   OverwriteCachedResponse
 //
 // 10. HEAD. Sparse entry, partially cached:
 //   Serve the request from the cache, as long as it doesn't require
@@ -843,6 +844,28 @@ int HttpCache::Transaction::HandleResult(int rv) {
 //   Start(): Basically the same as example 7, as we never create a partial_
 //   object for this request.
 //
+// 11. Prefetch, not-cached entry:
+//   The same as example 1. The "unused_since_prefetch" bit is stored as true in
+//   UpdateCachedResponse.
+//
+// 12. Prefetch, cached entry:
+//   Like examples 2-4, only CacheToggleUnusedSincePrefetch* is inserted between
+//   CacheReadResponse* and CacheDispatchValidation if the unused_since_prefetch
+//   bit is unset.
+//
+// 13. Cached entry less than 5 minutes old, unused_since_prefetch is true:
+//   Skip validation, similar to example 2.
+//   GetBackend* -> InitEntry -> OpenEntry* -> AddToEntry* -> CacheReadResponse*
+//   -> CacheToggleUnusedSincePrefetch* -> CacheDispatchValidation ->
+//   BeginPartialCacheValidation() -> BeginCacheValidation() ->
+//   SetupEntryForRead()
+//
+//   Read():
+//   CacheReadData*
+//
+// 14. Cached entry more than 5 minutes old, unused_since_prefetch is true:
+//   Like examples 2-4, only CacheToggleUnusedSincePrefetch* is inserted between
+//   CacheReadResponse* and CacheDispatchValidation.
 int HttpCache::Transaction::DoLoop(int result) {
   DCHECK(next_state_ != STATE_NONE);
 
@@ -950,6 +973,17 @@ int HttpCache::Transaction::DoLoop(int result) {
         break;
       case STATE_CACHE_READ_RESPONSE_COMPLETE:
         rv = DoCacheReadResponseComplete(rv);
+        break;
+      case STATE_CACHE_DISPATCH_VALIDATION:
+        DCHECK_EQ(OK, rv);
+        rv = DoCacheDispatchValidation();
+        break;
+      case STATE_TOGGLE_UNUSED_SINCE_PREFETCH:
+        DCHECK_EQ(OK, rv);
+        rv = DoCacheToggleUnusedSincePrefetch();
+        break;
+      case STATE_TOGGLE_UNUSED_SINCE_PREFETCH_COMPLETE:
+        rv = DoCacheToggleUnusedSincePrefetchComplete(rv);
         break;
       case STATE_CACHE_WRITE_RESPONSE:
         DCHECK_EQ(OK, rv);
@@ -1219,6 +1253,7 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
     // If we have an authentication response, we are exposed to weird things
     // hapenning if the user cancels the authentication before we receive
     // the new response.
+    net_log_.AddEvent(NetLog::TYPE_HTTP_CACHE_RE_SEND_PARTIAL_REQUEST);
     UpdateTransactionPattern(PATTERN_NOT_COVERED);
     response_ = HttpResponseInfo();
     ResetNetworkTransaction();
@@ -1629,6 +1664,7 @@ int HttpCache::Transaction::DoUpdateCachedResponse() {
   response_.response_time = new_response_->response_time;
   response_.request_time = new_response_->request_time;
   response_.network_accessed = new_response_->network_accessed;
+  response_.unused_since_prefetch = new_response_->unused_since_prefetch;
 
   if (response_.headers->HasHeaderValue("cache-control", "no-store")) {
     if (!entry_->doomed) {
@@ -1707,6 +1743,16 @@ int HttpCache::Transaction::DoOverwriteCachedResponse() {
     DoneWritingToEntry(false);
     mode_ = NONE;
     new_response_ = NULL;
+    return OK;
+  }
+
+  if (handling_206_ && !CanResume(false)) {
+    // There is no point in storing this resource because it will never be used.
+    // This may change if we support LOAD_ONLY_FROM_CACHE with sparse entries.
+    DoneWritingToEntry(false);
+    if (partial_.get())
+      partial_->FixResponseHeaders(response_.headers.get(), true);
+    next_state_ = STATE_PARTIAL_HEADERS_RECEIVED;
     return OK;
   }
 
@@ -1847,6 +1893,22 @@ int HttpCache::Transaction::DoCacheReadResponseComplete(int result) {
   if (response_.headers->GetContentLength() == current_size)
     truncated_ = false;
 
+  if ((response_.unused_since_prefetch &&
+       !(request_->load_flags & LOAD_PREFETCH)) ||
+      (!response_.unused_since_prefetch &&
+       (request_->load_flags & LOAD_PREFETCH))) {
+    // Either this is the first use of an entry since it was prefetched or
+    // this is a prefetch. The value of response.unused_since_prefetch is valid
+    // for this transaction but the bit needs to be flipped in storage.
+    next_state_ = STATE_TOGGLE_UNUSED_SINCE_PREFETCH;
+    return OK;
+  }
+
+  next_state_ = STATE_CACHE_DISPATCH_VALIDATION;
+  return OK;
+}
+
+int HttpCache::Transaction::DoCacheDispatchValidation() {
   // We now have access to the cache entry.
   //
   //  o if we are a reader for the transaction, then we can start reading the
@@ -1860,6 +1922,7 @@ int HttpCache::Transaction::DoCacheReadResponseComplete(int result) {
   //    conditionalized request (if-modified-since / if-none-match). We check
   //    if the request headers define a validation request.
   //
+  int result = ERR_FAILED;
   switch (mode_) {
     case READ:
       UpdateTransactionPattern(PATTERN_ENTRY_USED);
@@ -1874,9 +1937,28 @@ int HttpCache::Transaction::DoCacheReadResponseComplete(int result) {
     case WRITE:
     default:
       NOTREACHED();
-      result = ERR_FAILED;
   }
   return result;
+}
+
+int HttpCache::Transaction::DoCacheToggleUnusedSincePrefetch() {
+  // Write back the toggled value for the next use of this entry.
+  response_.unused_since_prefetch = !response_.unused_since_prefetch;
+
+  // TODO(jkarlin): If DoUpdateCachedResponse is also called for this
+  // transaction then metadata will be written to cache twice. If prefetching
+  // becomes more common, consider combining the writes.
+  target_state_ = STATE_TOGGLE_UNUSED_SINCE_PREFETCH_COMPLETE;
+  next_state_ = STATE_CACHE_WRITE_RESPONSE;
+  return OK;
+}
+
+int HttpCache::Transaction::DoCacheToggleUnusedSincePrefetchComplete(
+    int result) {
+  // Restore the original value for this transaction.
+  response_.unused_since_prefetch = !response_.unused_since_prefetch;
+  next_state_ = STATE_CACHE_DISPATCH_VALIDATION;
+  return OK;
 }
 
 int HttpCache::Transaction::DoCacheWriteResponse() {
@@ -1976,12 +2058,6 @@ int HttpCache::Transaction::DoCacheQueryDataComplete(int result) {
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422516 HttpCache::Transaction::DoCacheQueryDataComplete"));
 
-  if (result == ERR_NOT_IMPLEMENTED) {
-    // Restart the request overwriting the cache entry.
-    // TODO(pasko): remove this workaround as soon as the SimpleBackendImpl
-    // supports Sparse IO.
-    return DoRestartPartialRequest();
-  }
   DCHECK_EQ(OK, result);
   if (!cache_.get())
     return ERR_UNEXPECTED;
@@ -2211,6 +2287,7 @@ void HttpCache::Transaction::SetRequest(const BoundNetLog& net_log,
 
   bool range_found = false;
   bool external_validation_error = false;
+  bool special_headers = false;
 
   if (request_->extra_headers.HasHeader(HttpRequestHeaders::kRange))
     range_found = true;
@@ -2218,6 +2295,7 @@ void HttpCache::Transaction::SetRequest(const BoundNetLog& net_log,
   for (size_t i = 0; i < arraysize(kSpecialHeaders); ++i) {
     if (HeaderMatches(request_->extra_headers, kSpecialHeaders[i].search)) {
       effective_load_flags_ |= kSpecialHeaders[i].load_flag;
+      special_headers = true;
       break;
     }
   }
@@ -2236,6 +2314,15 @@ void HttpCache::Transaction::SetRequest(const BoundNetLog& net_log,
       external_validation_.values[i] = validation_value;
       external_validation_.initialized = true;
     }
+  }
+
+  if (range_found || special_headers || external_validation_.initialized) {
+    // Log the headers before request_ is modified.
+    std::string empty;
+    net_log_.AddEvent(
+        NetLog::TYPE_HTTP_CACHE_CALLER_REQUEST_HEADERS,
+        base::Bind(&HttpRequestHeaders::NetLogCallback,
+                   base::Unretained(&request_->extra_headers), &empty));
   }
 
   // We don't support ranges and validation headers.
@@ -2539,6 +2626,16 @@ ValidationType HttpCache::Transaction::RequiresValidation() {
   if (effective_load_flags_ & LOAD_PREFERRING_CACHE)
     return VALIDATION_NONE;
 
+  if (response_.unused_since_prefetch &&
+      !(effective_load_flags_ & LOAD_PREFETCH) &&
+      response_.headers->GetCurrentAge(
+          response_.request_time, response_.response_time,
+          cache_->clock_->Now()) < TimeDelta::FromMinutes(kPrefetchReuseMins)) {
+    // The first use of a resource after prefetch within a short window skips
+    // validation.
+    return VALIDATION_NONE;
+  }
+
   if (effective_load_flags_ & (LOAD_VALIDATE_CACHE | LOAD_ASYNC_REVALIDATION))
     return VALIDATION_SYNCHRONOUS;
 
@@ -2546,8 +2643,9 @@ ValidationType HttpCache::Transaction::RequiresValidation() {
     return VALIDATION_SYNCHRONOUS;
 
   ValidationType validation_required_by_headers =
-      response_.headers->RequiresValidation(
-          response_.request_time, response_.response_time, Time::Now());
+      response_.headers->RequiresValidation(response_.request_time,
+                                            response_.response_time,
+                                            cache_->clock_->Now());
 
   if (validation_required_by_headers == VALIDATION_ASYNCHRONOUS) {
     // Asynchronous revalidation is only supported for GET and HEAD methods.
@@ -2570,10 +2668,11 @@ bool HttpCache::Transaction::ConditionalizeRequest() {
     return false;
   }
 
-  if (response_.headers->response_code() == 206 &&
-      !response_.headers->HasStrongValidators()) {
+  if (fail_conditionalization_for_test_)
     return false;
-  }
+
+  DCHECK(response_.headers->response_code() != 206 ||
+         response_.headers->HasStrongValidators());
 
   // Just use the first available ETag and/or Last-Modified header value.
   // TODO(darin): Or should we use the last?
@@ -2608,7 +2707,8 @@ bool HttpCache::Transaction::ConditionalizeRequest() {
         response_.headers->GetFreshnessLifetimes(response_.response_time);
     if (lifetimes.staleness > TimeDelta()) {
       TimeDelta current_age = response_.headers->GetCurrentAge(
-          response_.request_time, response_.response_time, Time::Now());
+          response_.request_time, response_.response_time,
+          cache_->clock_->Now());
 
       custom_request_->extra_headers.SetHeader(
           kFreshnessHeader,
@@ -2712,9 +2812,13 @@ bool HttpCache::Transaction::ValidatePartialResponse() {
       return true;
   } else {
     // We asked for "If-Range: " so a 206 means just another range.
-    if (partial_response && partial_->ResponseHeadersOK(headers)) {
-      handling_206_ = true;
-      return true;
+    if (partial_response) {
+      if (partial_->ResponseHeadersOK(headers)) {
+        handling_206_ = true;
+        return true;
+      } else {
+        failure = true;
+      }
     }
 
     if (!reading_ && !is_sparse_ && !partial_response) {
@@ -2741,18 +2845,21 @@ bool HttpCache::Transaction::ValidatePartialResponse() {
   if (failure) {
     // We cannot truncate this entry, it has to be deleted.
     UpdateTransactionPattern(PATTERN_NOT_COVERED);
-    DoomPartialEntry(false);
     mode_ = NONE;
-    if (!reading_ && !partial_->IsLastRange()) {
-      // We'll attempt to issue another network request, this time without us
-      // messing up the headers.
-      partial_->RestoreHeaders(&custom_request_->extra_headers);
-      partial_.reset();
-      truncated_ = false;
-      return false;
+    if (is_sparse_ || truncated_) {
+      // There was something cached to start with, either sparsed data (206), or
+      // a truncated 200, which means that we probably modified the request,
+      // adding a byte range or modifying the range requested by the caller.
+      if (!reading_ && !partial_->IsLastRange()) {
+        // We have not returned anything to the caller yet so it should be safe
+        // to issue another network request, this time without us messing up the
+        // headers.
+        ResetPartialState(true);
+        return false;
+      }
+      LOG(WARNING) << "Failed to revalidate partial entry";
     }
-    LOG(WARNING) << "Failed to revalidate partial entry";
-    partial_.reset();
+    DoomPartialEntry(true);
     return true;
   }
 
@@ -2979,6 +3086,7 @@ void HttpCache::Transaction::DoomPartialEntry(bool delete_object) {
   cache_->DoneWithEntry(entry_, this, false);
   entry_ = NULL;
   is_sparse_ = false;
+  truncated_ = false;
   if (delete_object)
     partial_.reset(NULL);
 }
@@ -3008,12 +3116,28 @@ int HttpCache::Transaction::DoPartialCacheReadCompleted(int result) {
 
 int HttpCache::Transaction::DoRestartPartialRequest() {
   // The stored data cannot be used. Get rid of it and restart this request.
-  // We need to also reset the |truncated_| flag as a new entry is created.
-  DoomPartialEntry(!range_requested_);
+  net_log_.AddEvent(NetLog::TYPE_HTTP_CACHE_RESTART_PARTIAL_REQUEST);
+
+  // WRITE + Doom + STATE_INIT_ENTRY == STATE_CREATE_ENTRY (without an attempt
+  // to Doom the entry again).
   mode_ = WRITE;
-  truncated_ = false;
-  next_state_ = STATE_INIT_ENTRY;
+  ResetPartialState(!range_requested_);
+  next_state_ = STATE_CREATE_ENTRY;
   return OK;
+}
+
+void HttpCache::Transaction::ResetPartialState(bool delete_object) {
+  partial_->RestoreHeaders(&custom_request_->extra_headers);
+  DoomPartialEntry(delete_object);
+
+  if (!delete_object) {
+    // The simplest way to re-initialize partial_ is to create a new object.
+    partial_.reset(new PartialData());
+    if (partial_->Init(request_->extra_headers))
+      partial_->SetHeaders(custom_request_->extra_headers);
+    else
+      partial_.reset();
+  }
 }
 
 void HttpCache::Transaction::ResetNetworkTransaction() {

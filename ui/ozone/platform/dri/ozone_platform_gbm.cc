@@ -85,8 +85,6 @@ class GbmBufferGenerator : public ScanoutBufferGenerator {
 class OzonePlatformGbm : public OzonePlatform {
  public:
   OzonePlatformGbm(bool use_surfaceless) : use_surfaceless_(use_surfaceless) {
-    base::AtExitManager::RegisterTask(
-        base::Bind(&base::DeletePointer<OzonePlatformGbm>, this));
   }
   ~OzonePlatformGbm() override {}
 
@@ -128,7 +126,8 @@ class OzonePlatformGbm : public OzonePlatform {
     display_manager_.reset(new DisplayManager());
     // Needed since the browser process creates the accelerated widgets and that
     // happens through SFO.
-    surface_factory_ozone_.reset(new GbmSurfaceFactory(use_surfaceless_));
+    if (!surface_factory_ozone_)
+      surface_factory_ozone_.reset(new GbmSurfaceFactory(use_surfaceless_));
     device_manager_ = CreateDeviceManager();
     gpu_platform_support_host_.reset(new DriGpuPlatformSupportHost());
     cursor_factory_ozone_.reset(new BitmapCursorFactoryOzone);
@@ -147,7 +146,7 @@ class OzonePlatformGbm : public OzonePlatform {
   }
 
   void InitializeGPU() override {
-    dri_.reset(new DriWrapper(kDefaultGraphicsCardPath));
+    dri_.reset(new DriWrapper(kDefaultGraphicsCardPath, false));
     dri_->Initialize();
     buffer_generator_.reset(new GbmBufferGenerator(dri_.get()));
     screen_manager_.reset(

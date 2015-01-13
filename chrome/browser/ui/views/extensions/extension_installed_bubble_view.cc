@@ -27,6 +27,7 @@
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_action_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/wrench_toolbar_button.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
 #include "chrome/common/extensions/sync_helper.h"
 #include "chrome/common/url_constants.h"
@@ -331,13 +332,13 @@ bool InstalledBubbleContent::GetKeybinding(extensions::Command* command) {
   if (type_ == ExtensionInstalledBubble::BROWSER_ACTION) {
     return command_service->GetBrowserActionCommand(
         extension_id_,
-        extensions::CommandService::ACTIVE_ONLY,
+        extensions::CommandService::ACTIVE,
         command,
         NULL);
   } else if (type_ == ExtensionInstalledBubble::PAGE_ACTION) {
     return command_service->GetPageActionCommand(
         extension_id_,
-        extensions::CommandService::ACTIVE_ONLY,
+        extensions::CommandService::ACTIVE,
         command,
         NULL);
   } else {

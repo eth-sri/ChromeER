@@ -174,7 +174,132 @@
       'test/weburl_loader_mock.h',
       'test/weburl_loader_mock_factory.cc',
       'test/weburl_loader_mock_factory.h',
-    ]
+    ],
+    'content_browsertests_sources': [
+      'app/mojo/mojo_browsertest.cc',
+      'browser/accessibility/accessibility_event_recorder.cc',
+      'browser/accessibility/accessibility_event_recorder.h',
+      'browser/accessibility/accessibility_event_recorder_mac.mm',
+      'browser/accessibility/accessibility_event_recorder_win.cc',
+      'browser/accessibility/accessibility_ipc_error_browsertest.cc',
+      'browser/accessibility/accessibility_mode_browsertest.cc',
+      'browser/accessibility/cross_platform_accessibility_browsertest.cc',
+      'browser/accessibility/dump_accessibility_browsertest_base.cc',
+      'browser/accessibility/dump_accessibility_browsertest_base.h',
+      'browser/accessibility/dump_accessibility_events_browsertest.cc',
+      'browser/accessibility/dump_accessibility_tree_browsertest.cc',
+      'browser/accessibility/site_per_process_accessibility_browsertest.cc',
+      'browser/battery_status/battery_monitor_impl_browsertest.cc',
+      'browser/battery_status/battery_monitor_integration_browsertest.cc',
+      'browser/compositor/image_transport_factory_browsertest.cc',
+      'browser/bookmarklet_browsertest.cc',
+      'browser/child_process_launcher_browsertest.cc',
+      'browser/child_process_security_policy_browsertest.cc',
+      'browser/cross_site_transfer_browsertest.cc',
+      'browser/database_browsertest.cc',
+      'browser/device_sensors/device_inertial_sensor_browsertest.cc',
+      'browser/devtools/protocol/devtools_protocol_browsertest.cc',
+      'browser/dom_storage/dom_storage_browsertest.cc',
+      'browser/download/download_browsertest.cc',
+      'browser/download/drag_download_file_browsertest.cc',
+      'browser/download/mhtml_generation_browsertest.cc',
+      'browser/download/save_package_browsertest.cc',
+      'browser/fileapi/file_system_browsertest.cc',
+      'browser/frame_host/frame_tree_browsertest.cc',
+      'browser/frame_host/render_frame_host_manager_browsertest.cc',
+      'browser/frame_host/navigation_controller_impl_browsertest.cc',
+      'browser/gpu/gpu_ipc_browsertests.cc',
+      'browser/indexed_db/indexed_db_browsertest.cc',
+      'browser/indexed_db/mock_browsertest_indexed_db_class_factory.cc',
+      'browser/indexed_db/mock_browsertest_indexed_db_class_factory.h',
+      'browser/loader/resource_dispatcher_host_browsertest.cc',
+      'browser/manifest/manifest_browsertest.cc',
+      'browser/media/encrypted_media_browsertest.cc',
+      'browser/media/media_browsertest.cc',
+      'browser/media/media_browsertest.h',
+      'browser/media/media_canplaytype_browsertest.cc',
+      'browser/media/media_source_browsertest.cc',
+      'browser/net_info_browsertest.cc',
+      'browser/plugin_browsertest.cc',
+      'browser/renderer_host/input/touch_action_browsertest.cc',
+      'browser/renderer_host/input/touch_input_browsertest.cc',
+      'browser/renderer_host/render_process_host_browsertest.cc',
+      'browser/renderer_host/render_view_host_browsertest.cc',
+      'browser/renderer_host/render_widget_host_browsertest.cc',
+      'browser/renderer_host/render_widget_host_view_browsertest.cc',
+      'browser/screen_orientation/screen_orientation_browsertest.cc',
+      'browser/security_exploit_browsertest.cc',
+      'browser/service_worker/service_worker_browsertest.cc',
+      'browser/session_history_browsertest.cc',
+      'browser/shared_worker/worker_browsertest.cc',
+      'browser/site_per_process_browsertest.h',
+      'browser/site_per_process_browsertest.cc',
+      'browser/tracing/tracing_controller_browsertest.cc',
+      'browser/transition_browsertest.cc',
+      'browser/web_contents/opened_by_dom_browsertest.cc',
+      'browser/web_contents/touch_editable_impl_aura_browsertest.cc',
+      'browser/web_contents/web_contents_impl_browsertest.cc',
+      'browser/web_contents/web_contents_view_aura_browsertest.cc',
+      'browser/webkit_browsertest.cc',
+      'browser/webui/web_ui_mojo_browsertest.cc',
+      'child/site_isolation_policy_browsertest.cc',
+      'renderer/accessibility/renderer_accessibility_browsertest.cc',
+      'renderer/devtools/v8_sampling_profiler_browsertest.cc',
+      'renderer/gin_browsertest.cc',
+      'renderer/mouse_lock_dispatcher_browsertest.cc',
+      'renderer/render_thread_impl_browsertest.cc',
+      'renderer/render_view_browsertest.cc',
+      'renderer/render_view_browsertest_mac.mm',
+      'renderer/render_widget_browsertest.cc',
+      'test/accessibility_browser_test_utils.cc',
+      'test/accessibility_browser_test_utils.h',
+      'test/browser_test_utils_browsertest.cc',
+      'test/content_browser_test_test.cc',
+      'test/webui_resource_browsertest.cc',
+
+    ],
+    'content_browsertests_android_sources': [
+      'browser/accessibility/android_granularity_movement_browsertest.cc',
+      'browser/accessibility/android_hit_testing_browsertest.cc',
+      'shell/android/browsertests_apk/content_browser_tests_android.cc',
+    ],
+    'content_browsertests_webrtc_sources': [
+      'browser/media/webrtc_aecdump_browsertest.cc',
+      'browser/media/webrtc_browsertest.cc',
+      'browser/media/webrtc_getusermedia_browsertest.cc',
+      'browser/media/webrtc_internals_browsertest.cc',
+      'browser/media/webrtc_webcam_browsertest.cc',
+      'test/webrtc_content_browsertest_base.cc',
+      'test/webrtc_content_browsertest_base.h',
+    ],
+    'content_browsertests_plugins_sources': [
+      'browser/plugin_service_impl_browsertest.cc',
+      'browser/plugin_data_remover_impl_browsertest.cc',
+      'renderer/pepper/fake_pepper_plugin_instance.cc',
+      'renderer/pepper/mock_renderer_ppapi_host.cc',
+      'renderer/pepper/pepper_device_enumeration_host_helper_unittest.cc',
+      'renderer/pepper/pepper_file_chooser_host_unittest.cc',
+      'renderer/pepper/pepper_graphics_2d_host_unittest.cc',
+      'renderer/pepper/pepper_url_request_unittest.cc',
+      'renderer/pepper/plugin_power_saver_helper_browsertest.cc',
+      'test/ppapi/ppapi_browsertest.cc',
+      'test/ppapi/ppapi_test.cc',
+      'test/ppapi/ppapi_test.h',
+    ],
+    'content_browsertests_speech_sources': [
+      'browser/speech/speech_recognition_browsertest.cc',
+    ],
+    'content_browsertests_unofficial_build_sources': [
+      # These tests depend on single process mode, which is disabled
+      # in official builds.
+      'renderer/browser_render_view_browsertest.cc',
+      'renderer/dom_serializer_browsertest.cc',
+      'renderer/resource_fetcher_browsertest.cc',
+      'renderer/savable_resources_browsertest.cc',
+    ],
+    'content_browsertests_win_sources': [
+      'browser/accessibility/accessibility_win_browsertest.cc',
+    ],
   },
   'targets': [
     {
@@ -750,6 +875,7 @@
         'common/webplugininfo_unittest.cc',
         'renderer/android/email_detector_unittest.cc',
         'renderer/android/phone_number_detector_unittest.cc',
+        'renderer/battery_status/battery_status_dispatcher_unittest.cc',
         'renderer/bmp_image_decoder_unittest.cc',
         'renderer/device_sensors/device_light_event_pump_unittest.cc',
         'renderer/device_sensors/device_motion_event_pump_unittest.cc',
@@ -1024,6 +1150,11 @@
             '../ui/ozone/ozone.gyp:ozone_base',
           ],
         }],
+        ['OS == "mac" and use_openssl==1', {
+          'dependencies': [
+            '../third_party/boringssl/boringssl.gyp:boringssl',
+          ],
+        }],
       ],
     },
   ],
@@ -1124,6 +1255,7 @@
           ],
         },
         {
+          # GN version: //content/tests:browsertest_support
           'target_name': 'content_browser_test_support',
           'type': 'static_library',
           'dependencies': [
@@ -1133,6 +1265,7 @@
             '../ui/accessibility/accessibility.gyp:ax_gen',
           ],
           'sources': [
+            # Source list duplicated in GN build.
             'test/content_test_launcher.cc',
             'public/test/content_browser_test.cc',
             'public/test/content_browser_test.h',
@@ -1170,6 +1303,7 @@
           ],
         },
         {
+          # GN version: //content/tests:content_browsertests
           'target_name': 'content_browsertests',
           'type': '<(gtest_target_type)',
           'dependencies': [
@@ -1202,7 +1336,6 @@
             '../ppapi/ppapi_internal.gyp:ppapi_ipc',
             '../ppapi/ppapi_internal.gyp:ppapi_proxy',
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
-            '../ppapi/ppapi_internal.gyp:ppapi_tests',
             '../ppapi/ppapi_internal.gyp:ppapi_unittest_shared',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
@@ -1229,108 +1362,7 @@
           'defines': [
             'HAS_OUT_OF_PROC_TEST_RUNNER',
           ],
-          'sources': [
-            'app/mojo/mojo_browsertest.cc',
-            'browser/accessibility/accessibility_event_recorder.cc',
-            'browser/accessibility/accessibility_event_recorder.h',
-            'browser/accessibility/accessibility_event_recorder_mac.mm',
-            'browser/accessibility/accessibility_event_recorder_win.cc',
-            'browser/accessibility/accessibility_ipc_error_browsertest.cc',
-            'browser/accessibility/accessibility_mode_browsertest.cc',
-            'browser/accessibility/accessibility_win_browsertest.cc',
-            'browser/accessibility/android_granularity_movement_browsertest.cc',
-            'browser/accessibility/android_hit_testing_browsertest.cc',
-            'browser/accessibility/cross_platform_accessibility_browsertest.cc',
-            'browser/accessibility/dump_accessibility_browsertest_base.cc',
-            'browser/accessibility/dump_accessibility_browsertest_base.h',
-            'browser/accessibility/dump_accessibility_events_browsertest.cc',
-            'browser/accessibility/dump_accessibility_tree_browsertest.cc',
-            'browser/accessibility/site_per_process_accessibility_browsertest.cc',
-            'browser/battery_status/battery_monitor_impl_browsertest.cc',
-            'browser/battery_status/battery_monitor_integration_browsertest.cc',
-            'browser/compositor/image_transport_factory_browsertest.cc',
-            'browser/bookmarklet_browsertest.cc',
-            'browser/child_process_launcher_browsertest.cc',
-            'browser/child_process_security_policy_browsertest.cc',
-            'browser/cross_site_transfer_browsertest.cc',
-            'browser/database_browsertest.cc',
-            'browser/device_sensors/device_inertial_sensor_browsertest.cc',
-            'browser/devtools/protocol/devtools_protocol_browsertest.cc',
-            'browser/dom_storage/dom_storage_browsertest.cc',
-            'browser/download/download_browsertest.cc',
-            'browser/download/drag_download_file_browsertest.cc',
-            'browser/download/mhtml_generation_browsertest.cc',
-            'browser/download/save_package_browsertest.cc',
-            'browser/fileapi/file_system_browsertest.cc',
-            'browser/frame_host/frame_tree_browsertest.cc',
-            'browser/frame_host/render_frame_host_manager_browsertest.cc',
-            'browser/frame_host/navigation_controller_impl_browsertest.cc',
-            'browser/gpu/gpu_ipc_browsertests.cc',
-            'browser/indexed_db/indexed_db_browsertest.cc',
-            'browser/indexed_db/mock_browsertest_indexed_db_class_factory.cc',
-            'browser/indexed_db/mock_browsertest_indexed_db_class_factory.h',
-            'browser/loader/resource_dispatcher_host_browsertest.cc',
-            'browser/manifest/manifest_browsertest.cc',
-            'browser/media/encrypted_media_browsertest.cc',
-            'browser/media/media_browsertest.cc',
-            'browser/media/media_browsertest.h',
-            'browser/media/media_canplaytype_browsertest.cc',
-            'browser/media/media_source_browsertest.cc',
-            'browser/net_info_browsertest.cc',
-            'browser/plugin_data_remover_impl_browsertest.cc',
-            'browser/plugin_browsertest.cc',
-            'browser/plugin_service_impl_browsertest.cc',
-            'browser/renderer_host/input/touch_action_browsertest.cc',
-            'browser/renderer_host/input/touch_input_browsertest.cc',
-            'browser/renderer_host/render_process_host_browsertest.cc',
-            'browser/renderer_host/render_view_host_browsertest.cc',
-            'browser/renderer_host/render_widget_host_browsertest.cc',
-            'browser/renderer_host/render_widget_host_view_browsertest.cc',
-            'browser/screen_orientation/screen_orientation_browsertest.cc',
-            'browser/security_exploit_browsertest.cc',
-            'browser/service_worker/service_worker_browsertest.cc',
-            'browser/session_history_browsertest.cc',
-            'browser/shared_worker/worker_browsertest.cc',
-            'browser/site_per_process_browsertest.h',
-            'browser/site_per_process_browsertest.cc',
-            'browser/speech/speech_recognition_browsertest.cc',
-            'browser/tracing/tracing_controller_browsertest.cc',
-            'browser/transition_browsertest.cc',
-            'browser/web_contents/opened_by_dom_browsertest.cc',
-            'browser/web_contents/touch_editable_impl_aura_browsertest.cc',
-            'browser/web_contents/web_contents_impl_browsertest.cc',
-            'browser/web_contents/web_contents_view_aura_browsertest.cc',
-            'browser/webkit_browsertest.cc',
-            'browser/webui/web_ui_mojo_browsertest.cc',
-            'child/site_isolation_policy_browsertest.cc',
-            'renderer/accessibility/renderer_accessibility_browsertest.cc',
-            'renderer/browser_render_view_browsertest.cc',
-            'renderer/devtools/v8_sampling_profiler_browsertest.cc',
-            'renderer/dom_serializer_browsertest.cc',
-            'renderer/gin_browsertest.cc',
-            'renderer/mouse_lock_dispatcher_browsertest.cc',
-            'renderer/pepper/fake_pepper_plugin_instance.cc',
-            'renderer/pepper/mock_renderer_ppapi_host.cc',
-            'renderer/pepper/pepper_device_enumeration_host_helper_unittest.cc',
-            'renderer/pepper/pepper_file_chooser_host_unittest.cc',
-            'renderer/pepper/pepper_graphics_2d_host_unittest.cc',
-            'renderer/pepper/pepper_url_request_unittest.cc',
-            'renderer/pepper/plugin_power_saver_helper_browsertest.cc',
-            'renderer/render_thread_impl_browsertest.cc',
-            'renderer/render_view_browsertest.cc',
-            'renderer/render_view_browsertest_mac.mm',
-            'renderer/render_widget_browsertest.cc',
-            'renderer/resource_fetcher_browsertest.cc',
-            'renderer/savable_resources_browsertest.cc',
-            'test/accessibility_browser_test_utils.cc',
-            'test/accessibility_browser_test_utils.h',
-            'test/browser_test_utils_browsertest.cc',
-            'test/content_browser_test_test.cc',
-            'test/ppapi/ppapi_browsertest.cc',
-            'test/ppapi/ppapi_test.cc',
-            'test/ppapi/ppapi_test.h',
-            'test/webui_resource_browsertest.cc',
-          ],
+          'sources': [ '<@(content_browsertests_sources)' ],
           'conditions': [
             ['chromeos==0', {
               'sources!': [
@@ -1342,6 +1374,7 @@
                 '<(SHARED_INTERMEDIATE_DIR)/webkit',
               ],
               'sources': [
+                '<@(content_browsertests_win_sources)',
                 'shell/app/resource.h',
                 'shell/app/shell.rc',
                 # TODO:  It would be nice to have these pulled in
@@ -1382,16 +1415,8 @@
                 'browser/accessibility/dump_accessibility_tree_browsertest.cc',
               ],
             }],
-            ['OS!="android"', {
-              'sources!': [
-                'browser/accessibility/android_granularity_movement_browsertest.cc',
-                'browser/accessibility/android_hit_testing_browsertest.cc',
-              ]
-            }],
             ['OS=="android"', {
-              'sources': [
-                'shell/android/browsertests_apk/content_browser_tests_android.cc',
-              ],
+              'sources': [ '<@(content_browsertests_android_sources)' ],
               'sources!': [
                 'browser/battery_status/battery_monitor_impl_browsertest.cc',
               ],
@@ -1420,8 +1445,8 @@
               ],
             }],
             ['use_aura!=1 and OS!="mac"', {
-              'sources/': [
-                ['exclude', '^browser/compositor/'],
+              'sources!' :[
+                'browser/compositor/image_transport_factory_browsertest.cc',
               ],
             }],
             ['OS!="android" and OS!="ios" and OS!="linux"', {
@@ -1432,48 +1457,22 @@
               ],
             }],
             ['enable_webrtc==1', {
-              'sources': [
-                'browser/media/webrtc_aecdump_browsertest.cc',
-                'browser/media/webrtc_browsertest.cc',
-                'browser/media/webrtc_getusermedia_browsertest.cc',
-                'browser/media/webrtc_internals_browsertest.cc',
-                'browser/media/webrtc_webcam_browsertest.cc',
-                'test/webrtc_content_browsertest_base.cc',
-                'test/webrtc_content_browsertest_base.h',
-              ],
+              'sources': [ '<@(content_browsertests_webrtc_sources)' ],
               'dependencies': [
                 '../testing/perf/perf_test.gyp:perf_test',
               ],
             }],
-            ['enable_plugins==0', {
-              'sources/': [
-                ['exclude', '^renderer/pepper/'],
-              ],
-              'sources!': [
-                'browser/plugin_service_impl_browsertest.cc',
-                'browser/plugin_data_remover_impl_browsertest.cc',
-                'test/ppapi/ppapi_browsertest.cc',
-                'test/ppapi/ppapi_test.cc',
-                'test/ppapi/ppapi_test.h',
-              ],
-              'dependencies!': [
+            ['enable_plugins==1', {
+              'sources': [ '<@(content_browsertests_plugins_sources)' ],
+              'dependencies': [
                 '../ppapi/ppapi_internal.gyp:ppapi_tests',
               ]
             }],
-            ['enable_web_speech==0', {
-              'sources/': [
-                ['exclude', '^browser/speech/'],
-              ]
+            ['enable_web_speech == 1', {
+              'sources': [ '<@(content_browsertests_speech_sources)' ],
             }],
-            ['branding=="Chrome"', {
-              'sources!': [
-                # These tests depend on single process mode, which is disabled
-                # in official builds.
-                'renderer/browser_render_view_browsertest.cc',
-                'renderer/dom_serializer_browsertest.cc',
-                'renderer/resource_fetcher_browsertest.cc',
-                'renderer/savable_resources_browsertest.cc',
-              ],
+            ['branding != "Chrome"', {
+              'sources': [ '<@(content_browsertests_unofficial_build_sources)' ],
             }],
           ],
         },
@@ -1550,7 +1549,7 @@
         },
       ],
     }],
-    ['(chromeos==1 or OS=="win" or OS=="android") and use_ozone==0', {
+    ['chromeos==1 or OS=="win" or OS=="android"', {
       'targets': [
           {
             'target_name': 'video_decode_accelerator_unittest',
@@ -1618,13 +1617,19 @@
                   '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
                 ],
               }],
+              ['use_ozone==1 and chromeos==1', {
+                'dependencies': [
+                  '../ui/display/display.gyp:display', # Used by rendering_helper.cc
+                  '../ui/ozone/ozone.gyp:ozone',       # Used by rendering_helper.cc
+                ],
+              }],
             ],
             # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
             'msvs_disabled_warnings': [ 4267, ],
           },
         ]
     }],
-    ['chromeos==1 and use_x11 == 1 and target_arch != "arm"', {
+    ['chromeos==1 and target_arch != "arm"', {
       'targets': [
           {
             'target_name': 'vaapi_h264_decoder_unittest',
@@ -1632,7 +1637,6 @@
             'dependencies': [
               'content.gyp:content_common',
               '../base/base.gyp:base',
-              '../build/linux/system.gyp:x11',
               '../media/media.gyp:media',
               '../testing/gtest.gyp:gtest',
               '../third_party/libyuv/libyuv.gyp:libyuv',
@@ -1644,10 +1648,21 @@
             'include_dirs': [
               '<(DEPTH)/third_party/libva',
             ],
+            'conditions': [
+              ['use_x11==1', {
+                'dependencies': [
+                  '../build/linux/system.gyp:x11',
+                ]
+              }, {
+                'dependencies': [
+                  '../build/linux/system.gyp:libdrm',
+                ]
+              }],
+            ],
           },
         ]
     }],
-    ['chromeos==1 and (target_arch == "arm" or use_x11 == 1)', {
+    ['chromeos==1', {
       'targets': [
         {
           'target_name': 'video_encode_accelerator_unittest',
@@ -1676,6 +1691,11 @@
             ['use_x11==1', {
               'dependencies': [
                 '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
+              ],
+            }],
+            ['use_ozone==1', {
+              'dependencies': [
+                '../ui/ozone/ozone.gyp:ozone',
               ],
             }],
           ],

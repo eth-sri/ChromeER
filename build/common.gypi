@@ -161,10 +161,6 @@
         # build system.
         'android_webview_build%': 0,
 
-        # This is set when building the Android WebView in ninja for the
-        # telemetry bot.
-        'android_webview_telemetry_build%': 0,
-
         # Set ARM architecture version.
         'arm_version%': 7,
 
@@ -296,7 +292,6 @@
       'enable_hidpi%': '<(enable_hidpi)',
       'android_channel%': '<(android_channel)',
       'android_webview_build%': '<(android_webview_build)',
-      'android_webview_telemetry_build%': '<(android_webview_telemetry_build)',
       'use_goma%': '<(use_goma)',
       'gomadir%': '<(gomadir)',
       'enable_app_list%': '<(enable_app_list)',
@@ -967,16 +962,16 @@
         }],
 
         # By default, use ICU data file (icudtl.dat) on all platforms
-        # except when building Android WebView or Chromecast.
+        # except when building Android WebView.
         # TODO(jshin): Handle 'use_system_icu' on Linux (Chromium).
         # Set the data reduction proxy origin for Android Webview.
-        ['android_webview_build==0 and android_webview_telemetry_build==0 and chromecast==0', {
+        ['android_webview_build==0', {
           'icu_use_data_file_flag%' : 1,
         }, {
           'icu_use_data_file_flag%' : 0,
         }],
         ['OS=="win" or OS=="mac"', {
-            'enable_wifi_bootstrapping%' : 1,
+          'enable_wifi_bootstrapping%' : 1,
         }],
 
         # Path to sas.dll, which provides the SendSAS function.
@@ -996,7 +991,7 @@
 
         # TODO(baixo): Enable v8_use_external_startup_data
         # http://crbug.com/421063
-        ['android_webview_build==0 and android_webview_telemetry_build==0 and chromecast==0 and chromeos==0 and (OS=="android" or OS=="linux" or OS=="mac")', {
+        ['android_webview_build==0 and chromecast==0 and chromeos==0 and (OS=="android" or OS=="linux" or OS=="mac")', {
           'v8_use_external_startup_data%': 1,
         }, {
           'v8_use_external_startup_data%': 0,
@@ -1176,7 +1171,6 @@
     'use_system_libjpeg%': '<(use_system_libjpeg)',
     'android_channel%': '<(android_channel)',
     'android_webview_build%': '<(android_webview_build)',
-    'android_webview_telemetry_build%': '<(android_webview_telemetry_build)',
     'icu_use_data_file_flag%': '<(icu_use_data_file_flag)',
     'gyp_managed_install%': 0,
     'create_standalone_apk%': 1,
@@ -1812,7 +1806,7 @@
       }],
       ['chromecast==1', {
         'enable_mpeg2ts_stream_parser%': 1,
-        'ffmpeg_branding%': 'Chrome',
+        'ffmpeg_branding%': 'ChromeOS',
         'ozone_platform_ozonex%': 1,
         'use_playready%': 0,
         'conditions': [
@@ -4328,7 +4322,7 @@
           }],
           ['use_custom_libcxx==1', {
             'dependencies': [
-              '<(DEPTH)/third_party/libc++/libc++.gyp:libcxx_proxy',
+              '<(DEPTH)/buildtools/third_party/libc++/libc++.gyp:libcxx_proxy',
             ],
           }],
           ['order_profiling!=0 and (chromeos==1 or OS=="linux" or OS=="android")', {
@@ -5274,6 +5268,11 @@
                 'VCLinkerTool': {
                   # Set /LTCG for the official builds.
                   'LinkTimeCodeGeneration': '1',
+                  'AdditionalOptions': [
+                    # Set the number of LTCG code-gen threads to eight.
+                    # The default is four. This gives a 5-10% link speedup.
+                    '/cgthreads:8',
+                  ],
                 },
               },
               'target_conditions': [

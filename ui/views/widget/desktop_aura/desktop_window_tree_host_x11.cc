@@ -53,6 +53,8 @@
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/window_util.h"
 
+DECLARE_WINDOW_PROPERTY_TYPE(views::DesktopWindowTreeHostX11*);
+
 namespace views {
 
 DesktopWindowTreeHostX11* DesktopWindowTreeHostX11::g_current_capture =
@@ -286,8 +288,7 @@ void DesktopWindowTreeHostX11::OnNativeWidgetCreated(
 }
 
 scoped_ptr<corewm::Tooltip> DesktopWindowTreeHostX11::CreateTooltip() {
-  return scoped_ptr<corewm::Tooltip>(
-      new corewm::TooltipAura(gfx::SCREEN_TYPE_NATIVE));
+  return make_scoped_ptr(new corewm::TooltipAura(gfx::SCREEN_TYPE_NATIVE));
 }
 
 scoped_ptr<aura::client::DragDropClient>
@@ -296,7 +297,7 @@ DesktopWindowTreeHostX11::CreateDragDropClient(
   drag_drop_client_ = new DesktopDragDropClientAuraX11(
       window(), cursor_manager, xdisplay_, xwindow_);
   drag_drop_client_->Init();
-  return scoped_ptr<aura::client::DragDropClient>(drag_drop_client_).Pass();
+  return make_scoped_ptr(drag_drop_client_);
 }
 
 void DesktopWindowTreeHostX11::Close() {

@@ -21,6 +21,9 @@ if (is_chromeos && cpu_arch != "arm") {
     if (use_x11) {
       sources += [ "gpu/media/va_x11.sigs" ]
     }
+    if (use_ozone) {
+      sources += [ "gpu/media/va_drm.sigs" ]
+    }
     stubs_filename_root = "va_stubs"
 
     outputs = [
@@ -278,12 +281,13 @@ source_set("common") {
   }
 
   if (is_chromeos) {
-    if (cpu_arch == "arm" && use_x11) {
+    if (use_v4l2_codec) {
+      defines += [ "USE_V4L2_CODEC" ]
+    }
+    if (cpu_arch == "arm" || (use_ozone && use_v4l2_codec)) {
       sources += [
-        "gpu/media/exynos_v4l2_video_device.cc",
-        "gpu/media/exynos_v4l2_video_device.h",
-        "gpu/media/tegra_v4l2_video_device.cc",
-        "gpu/media/tegra_v4l2_video_device.h",
+        "gpu/media/generic_v4l2_video_device.cc",
+        "gpu/media/generic_v4l2_video_device.h",
         "gpu/media/v4l2_image_processor.cc",
         "gpu/media/v4l2_image_processor.h",
         "gpu/media/v4l2_video_decode_accelerator.cc",
@@ -297,6 +301,12 @@ source_set("common") {
         "EGL",
         "GLESv2",
       ]
+      if (cpu_arch == "arm") {
+        sources += [
+          "gpu/media/tegra_v4l2_video_device.cc",
+          "gpu/media/tegra_v4l2_video_device.h",
+        ]
+      }
     }
     if (cpu_arch != "arm") {
       sources += [
@@ -327,6 +337,12 @@ source_set("common") {
         sources += [
           "gpu/media/vaapi_tfp_picture.cc",
           "gpu/media/vaapi_tfp_picture.h",
+        ]
+      }
+      if (use_ozone) {
+        sources += [
+          "gpu/media/vaapi_drm_picture.cc",
+          "gpu/media/vaapi_drm_picture.h",
         ]
       }
     }

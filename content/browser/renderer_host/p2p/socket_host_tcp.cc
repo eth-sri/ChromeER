@@ -404,7 +404,8 @@ void P2PSocketHostTcpBase::HandleWriteResult(int result) {
   if (result >= 0) {
     write_buffer_->DidConsume(result);
     if (write_buffer_->BytesRemaining() == 0) {
-      message_sender_->Send(new P2PMsg_OnSendComplete(id_));
+      message_sender_->Send(
+          new P2PMsg_OnSendComplete(id_, P2PSendPacketMetrics()));
       if (write_queue_.empty()) {
         write_buffer_ = NULL;
       } else {
@@ -436,6 +437,10 @@ void P2PSocketHostTcpBase::DidCompleteRead(int result) {
     return;
   } else if (result < 0) {
     LOG(ERROR) << "Error when reading from TCP socket: " << result;
+    OnError();
+    return;
+  } else if (result == 0) {
+    LOG(WARNING) << "Remote peer has shutdown TCP socket.";
     OnError();
     return;
   }

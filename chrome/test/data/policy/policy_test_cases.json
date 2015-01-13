@@ -1013,7 +1013,9 @@
           { "policy": { "DefaultPluginsSetting": 1 },
             "value": "allow"},
           { "policy": { "DefaultPluginsSetting": 2 },
-            "value": "block"}
+            "value": "block"},
+          { "policy": { "DefaultPluginsSetting": 3 },
+            "value": "ask"}
         ]
       }
     ],
@@ -1820,15 +1822,6 @@
     "test_policy": { "AudioOutputAllowed": true },
     "pref_mappings": [
       { "pref": "hardware.audio_output_enabled",
-        "local_state": true }
-    ]
-  },
-
-  "AudioCaptureAllowed": {
-    "os": ["chromeos"],
-    "test_policy": { "AudioCaptureAllowed": true },
-    "pref_mappings": [
-      { "pref": "hardware.audio_capture_enabled",
         "local_state": true }
     ]
   },

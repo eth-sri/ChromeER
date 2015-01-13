@@ -121,12 +121,8 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager_client.h"
-#include "components/policy/core/common/policy_map.h"
-#include "components/policy/core/common/policy_namespace.h"
-#include "components/policy/core/common/policy_service.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
-#include "policy/policy_constants.h"
 #include "ui/chromeos/accessibility_types.h"
 #include "ui/gfx/image/image_skia.h"
 #endif  // defined(OS_CHROMEOS)
@@ -1665,13 +1661,12 @@ void BrowserOptionsHandler::ShowCloudPrintDevicesPage(
 void BrowserOptionsHandler::SetHotwordAudioHistorySectionVisible(
     bool always_on, const base::string16& audio_history_state,
     bool success, bool logging_enabled) {
+  bool visible = logging_enabled && success;
   web_ui()->CallJavascriptFunction(
       "BrowserOptions.setAudioHistorySectionVisible",
-      base::FundamentalValue(logging_enabled),
+      base::FundamentalValue(visible),
       base::FundamentalValue(always_on),
       base::StringValue(audio_history_state));
-
-  // TODO(rlp): Add version with error display if !success.
 }
 
 void BrowserOptionsHandler::HandleRequestHotwordAvailable(
@@ -1679,30 +1674,37 @@ void BrowserOptionsHandler::HandleRequestHotwordAvailable(
   Profile* profile = Profile::FromWebUI(web_ui());
 
   bool is_search_provider_google = false;
-  if (template_url_service_) {
+  // The check for default search provider is only valid if the
+  // |template_url_service_| has loaded already.
+  if (template_url_service_ && template_url_service_->loaded()) {
     const TemplateURL* default_url =
         template_url_service_->GetDefaultSearchProvider();
     if (default_url && default_url->HasGoogleBaseURLs(
             template_url_service_->search_terms_data())) {
       is_search_provider_google = true;
+    } else {
+      // If the user has chosen a default search provide other than Google, turn
+      // off hotwording since other providers don't provide that functionality.
+      HotwordService* hotword_service =
+        HotwordServiceFactory::GetForProfile(profile);
+      if (hotword_service)
+        hotword_service->DisableHotwordPreferences();
     }
   }
 
+  // |is_search_provider_google| may be false because |template_url_service_|
+  // does not exist yet or because the user selected a different search
+  // provider. In either case it does not make sense to show the hotwording
+  // options.
   if (!is_search_provider_google) {
-    // If the user has chosen a default search provide other than Google, turn
-    // off hotwording since other providers don't provide that functionality.
     web_ui()->CallJavascriptFunction(
         "BrowserOptions.setAllHotwordSectionsVisible",
         base::FundamentalValue(false));
-    HotwordService* hotword_service =
-        HotwordServiceFactory::GetForProfile(profile);
-    if (hotword_service)
-      hotword_service->DisableHotwordPreferences();
     return;
   }
 
   std::string group = base::FieldTrialList::FindFullName("VoiceTrigger");
-  if (group != "" && group != "Disabled" &&
+  if (!group.empty() && group != "Disabled" &&
       HotwordServiceFactory::IsHotwordAllowed(profile)) {
     // Update the current error value.
     HotwordServiceFactory::IsServiceAvailable(profile);

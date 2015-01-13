@@ -83,8 +83,9 @@ const int kPageFlipZoneSize = 40;
 // Delay in milliseconds to do the page flip.
 const int kPageFlipDelayInMs = 1000;
 
-// How many pages on either side of the selected one we prerender.
-const int kPrerenderPages = 1;
+// How many pages on either side of the selected one we prerender. Currently 0
+// to test impact of prerendering on UI jank for http://crbug.com/440224. Was 1.
+const int kPrerenderPages = 0;
 
 // The drag and drop proxy should get scaled by this factor.
 const float kDragAndDropProxyScale = 1.5f;
@@ -1167,8 +1168,9 @@ void AppsGridView::MoveSelected(int page_delta,
 }
 
 void AppsGridView::CalculateIdealBounds() {
-  // TODO(calamity): This fixes http://crbug.com/422604 on ChromeOS but it's
-  // unclear why. This should be investigated to fix the issue on Linux Ash.
+  // TODO(mgiuca): This is a work-around for http://crbug.com/422604. See
+  // comment in ContentsView::Layout for details. This should be removed once
+  // http://crbug.com/446407 is resolved.
   if (GetContentsBounds().IsEmpty())
     return;
 

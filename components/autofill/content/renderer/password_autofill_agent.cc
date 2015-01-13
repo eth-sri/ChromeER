@@ -322,6 +322,28 @@ bool GetSuggestionsStats(const PasswordFormFillData& fill_data,
   return false;
 }
 
+// Returns true if there exists a credential suggestion whose username field is
+// an exact match to the current username (not just a prefix).
+bool HasExactMatchSuggestion(const PasswordFormFillData& fill_data,
+                             const base::string16& current_username) {
+  if (fill_data.username_field.value == current_username)
+    return true;
+
+  for (const auto& usernames : fill_data.other_possible_usernames) {
+    for (const auto& username_string : usernames.second) {
+      if (username_string == current_username)
+        return true;
+    }
+  }
+
+  for (const auto& login : fill_data.additional_logins) {
+    if (login.first == current_username)
+      return true;
+  }
+
+  return false;
+}
+
 // This function attempts to fill |username_element| and |password_element|
 // with values from |fill_data|. The |password_element| will only have the
 // |suggestedValue| set, and will be registered for copying that to the real
@@ -469,7 +491,8 @@ bool FillFormOnPasswordReceived(
 
     if (form_has_fillable_username) {
       username_element.setAutofilled(true);
-    } else {
+    } else if (username_element.isNull() ||
+               HasExactMatchSuggestion(fill_data, username_element.value())) {
       password_element.setAutofilled(true);
     }
     return false;
@@ -518,6 +541,9 @@ PasswordAutofillAgent::PasswordAutofillAgent(content::RenderFrame* render_frame)
       username_selection_start_(0),
       did_stop_loading_(false),
       weak_ptr_factory_(this) {
+  save_password_on_in_page_navigation_ =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          autofill::switches::kEnablePasswordSaveOnInPageNavigation);
   Send(new AutofillHostMsg_PasswordAutofillAgentConstructed(routing_id()));
 }
 
@@ -934,6 +960,8 @@ void PasswordAutofillAgent::FrameWillClose() {
 }
 
 void PasswordAutofillAgent::DidCommitProvisionalLoad(bool is_new_navigation) {
+  if (!save_password_on_in_page_navigation_)
+    return;
   blink::WebFrame* frame = render_frame()->GetWebFrame();
   // TODO(dvadym): check if we need to check if it is main frame navigation
   // http://crbug.com/443155
@@ -964,9 +992,8 @@ void PasswordAutofillAgent::DidStopLoading() {
   did_stop_loading_ = true;
 }
 
-void PasswordAutofillAgent::FrameDetached(blink::WebFrame* frame) {
-  if (frame == render_frame()->GetWebFrame())
-    FrameClosing();
+void PasswordAutofillAgent::FrameDetached() {
+  FrameClosing();
 }
 
 void PasswordAutofillAgent::WillSendSubmitEvent(
@@ -1354,11 +1381,6 @@ void PasswordAutofillAgent::LegacyPasswordAutofillAgent::DidStopLoading() {
 void PasswordAutofillAgent::LegacyPasswordAutofillAgent::
     DidStartProvisionalLoad(blink::WebLocalFrame* navigated_frame) {
   agent_->LegacyDidStartProvisionalLoad(navigated_frame);
-}
-
-void PasswordAutofillAgent::LegacyPasswordAutofillAgent::FrameDetached(
-    blink::WebFrame* frame) {
-  agent_->FrameDetached(frame);
 }
 
 }  // namespace autofill

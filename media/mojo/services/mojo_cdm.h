@@ -36,12 +36,14 @@ class MojoCdm : public MediaKeys, public mojo::ContentDecryptionModuleClient {
   void SetServerCertificate(const uint8_t* certificate_data,
                             int certificate_data_length,
                             scoped_ptr<SimpleCdmPromise> promise) final;
-  void CreateSession(const std::string& init_data_type,
-                     const uint8_t* init_data,
-                     int init_data_length,
-                     SessionType session_type,
-                     scoped_ptr<NewSessionCdmPromise> promise) final;
-  void LoadSession(const std::string& session_id,
+  void CreateSessionAndGenerateRequest(
+      SessionType session_type,
+      const std::string& init_data_type,
+      const uint8_t* init_data,
+      int init_data_length,
+      scoped_ptr<NewSessionCdmPromise> promise) final;
+  void LoadSession(SessionType session_type,
+                   const std::string& session_id,
                    scoped_ptr<NewSessionCdmPromise> promise) final;
   void UpdateSession(const std::string& session_id,
                      const uint8_t* response,
@@ -56,15 +58,17 @@ class MojoCdm : public MediaKeys, public mojo::ContentDecryptionModuleClient {
  private:
   // mojo::ContentDecryptionModuleClient implementation.
   void OnSessionMessage(const mojo::String& session_id,
-                        mojo::Array<uint8_t> message,
-                        const mojo::String& destination_url) final;
+                        mojo::CdmMessageType message_type,
+                        mojo::Array<uint8_t> message) final;
   void OnSessionClosed(const mojo::String& session_id) final;
   void OnSessionError(const mojo::String& session_id,
                       mojo::CdmException exception,
                       uint32_t system_code,
                       const mojo::String& error_message) final;
-  void OnSessionKeysChange(const mojo::String& session_id,
-                           bool has_additional_usable_key) final;
+  void OnSessionKeysChange(
+      const mojo::String& session_id,
+      bool has_additional_usable_key,
+      mojo::Array<mojo::CdmKeyInformationPtr> keys_info) final;
   void OnSessionExpirationUpdate(const mojo::String& session_id,
                                  int64_t new_expiry_time_usec) final;
 

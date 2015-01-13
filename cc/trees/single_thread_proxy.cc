@@ -113,6 +113,14 @@ void SingleThreadProxy::SetVisible(bool visible) {
   // Changing visibility could change ShouldComposite().
 }
 
+void SingleThreadProxy::SetThrottleFrameProduction(bool throttle) {
+  TRACE_EVENT1("cc", "SingleThreadProxy::SetThrottleFrameProduction",
+               "throttle", throttle);
+  DebugScopedSetImplThread impl(this);
+  if (scheduler_on_impl_thread_)
+    scheduler_on_impl_thread_->SetThrottleFrameProduction(throttle);
+}
+
 void SingleThreadProxy::RequestNewOutputSurface() {
   DCHECK(Proxy::IsMainThread());
   DCHECK(layer_tree_host_->output_surface_lost());
@@ -228,7 +236,7 @@ void SingleThreadProxy::DoCommit() {
 
     layer_tree_host_impl_->CommitComplete();
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
     // In the single-threaded case, the scale and scroll deltas should never be
     // touched on the impl layer tree.
     scoped_ptr<ScrollAndScaleSet> scroll_info =

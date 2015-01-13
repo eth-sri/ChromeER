@@ -117,6 +117,10 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
             min(kMaxInitialRoundTripTimeUs,
                 config.GetInitialRoundTripTimeUsToSend())));
   }
+  // Initial RTT may have changed.
+  if (network_change_visitor_ != nullptr) {
+    network_change_visitor_->OnRttChange();
+  }
   // TODO(ianswett): BBR is currently a server only feature.
   if (FLAGS_quic_allow_bbr &&
       config.HasReceivedConnectionOptions() &&
@@ -414,7 +418,9 @@ bool QuicSentPacketManager::HasPendingRetransmissions() const {
 
 QuicSentPacketManager::PendingRetransmission
     QuicSentPacketManager::NextPendingRetransmission() {
-  DCHECK(!pending_retransmissions_.empty());
+  LOG_IF(DFATAL, pending_retransmissions_.empty())
+      << "Unexpected call to PendingRetransmissions() with empty pending "
+      << "retransmission list. Corrupted memory usage imminent.";
   QuicPacketSequenceNumber sequence_number =
       pending_retransmissions_.begin()->first;
   TransmissionType transmission_type = pending_retransmissions_.begin()->second;
@@ -775,6 +781,11 @@ bool QuicSentPacketManager::MaybeUpdateRTT(
       ack_receive_time.Subtract(transmission_info.sent_time);
   rtt_stats_.UpdateRtt(
       send_delta, ack_frame.delta_time_largest_observed, ack_receive_time);
+
+  if (network_change_visitor_ != nullptr) {
+    network_change_visitor_->OnRttChange();
+  }
+
   return true;
 }
 
@@ -837,7 +848,9 @@ const QuicTime QuicSentPacketManager::GetRetransmissionTime() const {
     case RTO_MODE: {
       // The RTO is based on the first outstanding packet.
       const QuicTime sent_time =
-          unacked_packets_.GetFirstInFlightPacketSentTime();
+          FLAGS_quic_rto_uses_last_sent
+              ? unacked_packets_.GetLastPacketSentTime()
+              : unacked_packets_.GetFirstInFlightPacketSentTime();
       QuicTime rto_time = sent_time.Add(GetRetransmissionDelay());
       // Wait for TLP packets to be acked before an RTO fires.
       QuicTime tlp_time =

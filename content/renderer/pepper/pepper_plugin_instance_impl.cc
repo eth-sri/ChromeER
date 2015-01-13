@@ -487,6 +487,8 @@ PepperPluginInstanceImpl::PepperPluginInstanceImpl(
       layer_bound_to_fullscreen_(false),
       layer_is_hardware_(false),
       plugin_url_(plugin_url),
+      is_flash_plugin_(module->name() == kFlashPluginName),
+      javascript_used_(false),
       full_frame_(false),
       sent_initial_did_change_view_(false),
       bound_graphics_2d_platform_(NULL),
@@ -840,7 +842,7 @@ bool PepperPluginInstanceImpl::Initialize(
   blink::WebRect bounds = container()->element().boundsInViewportSpace();
 
   throttler_.reset(new PepperPluginInstanceThrottler(
-      render_frame(), bounds, module()->name(), plugin_url_, power_saver_mode,
+      render_frame(), bounds, is_flash_plugin_, plugin_url_, power_saver_mode,
       base::Bind(&PepperPluginInstanceImpl::SendDidChangeView,
                  weak_factory_.GetWeakPtr())));
 
@@ -1227,6 +1229,7 @@ PP_Var PepperPluginInstanceImpl::GetInstanceObject(v8::Isolate* isolate) {
   scoped_refptr<PepperPluginInstanceImpl> ref(this);
 
   DCHECK_EQ(isolate, isolate_);
+  RecordFlashJavaScriptUse();
 
   // If the plugin supports the private instance interface, try to retrieve its
   // instance object.
@@ -2303,7 +2306,7 @@ PP_Bool PepperPluginInstanceImpl::FlashIsFullscreen(PP_Instance instance) {
 PP_Var PepperPluginInstanceImpl::GetWindowObject(PP_Instance instance) {
   if (!container_)
     return PP_MakeUndefined();
-
+  RecordFlashJavaScriptUse();
   V8VarConverter converter(pp_instance_, V8VarConverter::kAllowObjectVars);
   PepperTryCatchVar try_catch(this, &converter, NULL);
   WebLocalFrame* frame = container_->element().document().frame();
@@ -2321,6 +2324,7 @@ PP_Var PepperPluginInstanceImpl::GetWindowObject(PP_Instance instance) {
 PP_Var PepperPluginInstanceImpl::GetOwnerElementObject(PP_Instance instance) {
   if (!container_)
     return PP_MakeUndefined();
+  RecordFlashJavaScriptUse();
   V8VarConverter converter(pp_instance_, V8VarConverter::kAllowObjectVars);
   PepperTryCatchVar try_catch(this, &converter, NULL);
   ScopedPPVar result = try_catch.FromV8(container_->v8ObjectForElement());
@@ -2333,6 +2337,7 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
                                                PP_Var* exception) {
   if (!container_)
     return PP_MakeUndefined();
+  RecordFlashJavaScriptUse();
 
   // Executing the script may remove the plugin from the DOM, so we need to keep
   // a reference to ourselves so that we can still process the result after the
@@ -2411,13 +2416,6 @@ void PepperPluginInstanceImpl::PromiseResolvedWithSession(
                                                             web_session_id_var);
 }
 
-void PepperPluginInstanceImpl::PromiseResolvedWithKeyIds(PP_Instance instance,
-                                                         uint32 promise_id,
-                                                         PP_Var key_ids_var) {
-  content_decryptor_delegate_->OnPromiseResolvedWithKeyIds(promise_id,
-                                                           key_ids_var);
-}
-
 void PepperPluginInstanceImpl::PromiseRejected(
     PP_Instance instance,
     uint32 promise_id,
@@ -2430,18 +2428,21 @@ void PepperPluginInstanceImpl::PromiseRejected(
 
 void PepperPluginInstanceImpl::SessionMessage(PP_Instance instance,
                                               PP_Var web_session_id_var,
-                                              PP_Var message_var,
-                                              PP_Var destination_url_var) {
-  content_decryptor_delegate_->OnSessionMessage(
-      web_session_id_var, message_var, destination_url_var);
+                                              PP_CdmMessageType message_type,
+                                              PP_Var message_var) {
+  content_decryptor_delegate_->OnSessionMessage(web_session_id_var,
+                                                message_type, message_var);
 }
 
 void PepperPluginInstanceImpl::SessionKeysChange(
     PP_Instance instance,
     PP_Var web_session_id_var,
-    PP_Bool has_additional_usable_key) {
+    PP_Bool has_additional_usable_key,
+    uint32_t key_count,
+    const struct PP_KeyInformation key_information[]) {
   content_decryptor_delegate_->OnSessionKeysChange(web_session_id_var,
-                                                   has_additional_usable_key);
+                                                   has_additional_usable_key,
+                                                   key_count, key_information);
 }
 
 void PepperPluginInstanceImpl::SessionExpirationChange(
@@ -2450,11 +2451,6 @@ void PepperPluginInstanceImpl::SessionExpirationChange(
     PP_Time new_expiry_time) {
   content_decryptor_delegate_->OnSessionExpirationChange(web_session_id_var,
                                                          new_expiry_time);
-}
-
-void PepperPluginInstanceImpl::SessionReady(PP_Instance instance,
-                                            PP_Var web_session_id_var) {
-  content_decryptor_delegate_->OnSessionReady(web_session_id_var);
 }
 
 void PepperPluginInstanceImpl::SessionClosed(PP_Instance instance,
@@ -3293,6 +3289,14 @@ void PepperPluginInstanceImpl::DidDataFromWebURLResponse(
         ppapi::proxy::HostDispatcher::GetForInstance(pp_instance());
     dispatcher->Send(new PpapiMsg_PPPInstance_HandleDocumentLoad(
         ppapi::API_ID_PPP_INSTANCE, pp_instance(), pending_host_id, data));
+  }
+}
+
+void PepperPluginInstanceImpl::RecordFlashJavaScriptUse() {
+  if (!javascript_used_ && is_flash_plugin_) {
+    javascript_used_ = true;
+    RenderThread::Get()->RecordAction(
+        base::UserMetricsAction("Flash.JavaScriptUsed"));
   }
 }
 

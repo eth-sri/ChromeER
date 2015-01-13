@@ -746,6 +746,7 @@ IndexedDBBackingStore::RecordIdentifier::~RecordIdentifier() {}
 IndexedDBBackingStore::Cursor::CursorOptions::CursorOptions() {}
 IndexedDBBackingStore::Cursor::CursorOptions::~CursorOptions() {}
 
+// Values match entries in tools/metrics/histograms/histograms.xml
 enum IndexedDBBackingStoreOpenResult {
   INDEXED_DB_BACKING_STORE_OPEN_MEMORY_SUCCESS,
   INDEXED_DB_BACKING_STORE_OPEN_SUCCESS,
@@ -755,7 +756,7 @@ enum IndexedDBBackingStoreOpenResult {
   INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_FAILED,
   INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_SUCCESS,
   INDEXED_DB_BACKING_STORE_OPEN_FAILED_IO_ERROR_CHECKING_SCHEMA,
-  INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR,
+  INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR_DEPRECATED,
   INDEXED_DB_BACKING_STORE_OPEN_MEMORY_FAILED,
   INDEXED_DB_BACKING_STORE_OPEN_ATTEMPT_NON_ASCII,
   INDEXED_DB_BACKING_STORE_OPEN_DISK_FULL_DEPRECATED,
@@ -1015,12 +1016,12 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     }
   }
 
-  DCHECK(status->ok() || !is_schema_known || leveldb_env::IsIOError(*status) ||
+  DCHECK(status->ok() || !is_schema_known || status->IsIOError() ||
          status->IsCorruption());
 
   if (db) {
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_SUCCESS, origin_url);
-  } else if (leveldb_env::IsIOError(*status)) {
+  } else if (status->IsIOError()) {
     LOG(ERROR) << "Unable to open backing store, not trying to recover - "
                << status->ToString();
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_NO_RECOVERY, origin_url);
@@ -1046,13 +1047,6 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
     }
     HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_CLEANUP_REOPEN_SUCCESS,
                         origin_url);
-  }
-
-  if (!db) {
-    NOTREACHED();
-    HistogramOpenStatus(INDEXED_DB_BACKING_STORE_OPEN_FAILED_UNKNOWN_ERR,
-                        origin_url);
-    return scoped_refptr<IndexedDBBackingStore>();
   }
 
   scoped_refptr<IndexedDBBackingStore> backing_store =

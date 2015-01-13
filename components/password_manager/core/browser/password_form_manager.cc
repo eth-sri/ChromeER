@@ -99,7 +99,7 @@ PasswordFormManager::~PasswordFormManager() {
     LogPasswordGenerationSubmissionEvent(PASSWORD_NOT_SUBMITTED);
 }
 
-int PasswordFormManager::GetActionsTaken() {
+int PasswordFormManager::GetActionsTaken() const {
   return user_action_ + kUserActionMax * (manager_action_ +
          kManagerActionMax * submit_result_);
 }
@@ -154,7 +154,7 @@ PasswordFormManager::MatchResultMask PasswordFormManager::DoesManage(
   return result;
 }
 
-bool PasswordFormManager::IsBlacklisted() {
+bool PasswordFormManager::IsBlacklisted() const {
   DCHECK_EQ(state_, POST_MATCHING_PHASE);
   if (preferred_match_ && preferred_match_->blacklisted_by_user)
     return true;
@@ -201,12 +201,12 @@ void PasswordFormManager::PermanentlyBlacklist() {
   SaveAsNewLogin(false);
 }
 
-bool PasswordFormManager::IsNewLogin() {
+bool PasswordFormManager::IsNewLogin() const {
   DCHECK_EQ(state_, POST_MATCHING_PHASE);
   return is_new_login_;
 }
 
-bool PasswordFormManager::IsPendingCredentialsPublicSuffixMatch() {
+bool PasswordFormManager::IsPendingCredentialsPublicSuffixMatch() const {
   return pending_credentials_.IsPublicSuffixMatch();
 }
 
@@ -214,14 +214,14 @@ void PasswordFormManager::SetHasGeneratedPassword() {
   has_generated_password_ = true;
 }
 
-bool PasswordFormManager::HasGeneratedPassword() {
+bool PasswordFormManager::HasGeneratedPassword() const {
   // This check is permissive, as the user may have generated a password and
   // then edited it in the form itself. However, even in this case the user
   // has already given consent, so we treat these cases the same.
   return has_generated_password_;
 }
 
-bool PasswordFormManager::HasValidPasswordForm() {
+bool PasswordFormManager::HasValidPasswordForm() const {
   DCHECK_EQ(state_, POST_MATCHING_PHASE);
   // Non-HTML password forms (primarily HTTP and FTP autentication)
   // do not contain username_element and password_element values.
@@ -375,6 +375,19 @@ void PasswordFormManager::FetchMatchingLoginsFromPasswordStore(
     logger->LogMessage(Logger::STRING_FETCH_LOGINS_METHOD);
   }
 
+  // Do not autofill on sign-up or change password forms (until we have some
+  // working change password functionality).
+  if (!observed_form_.new_password_element.empty()) {
+    if (logger)
+      logger->LogMessage(Logger::STRING_FORM_NOT_AUTOFILLED);
+    client_->AutofillResultsComputed();
+    // There is no point in looking for the credentials in the store when they
+    // won't be autofilled, so pretend there were none.
+    std::vector<autofill::PasswordForm*> dummy_results;
+    OnGetPasswordStoreResults(dummy_results);
+    return;
+  }
+
   PasswordStore* password_store = client_->GetPasswordStore();
   if (!password_store) {
     if (logger)
@@ -385,7 +398,7 @@ void PasswordFormManager::FetchMatchingLoginsFromPasswordStore(
   password_store->GetLogins(observed_form_, prompt_policy, this);
 }
 
-bool PasswordFormManager::HasCompletedMatching() {
+bool PasswordFormManager::HasCompletedMatching() const {
   return state_ == POST_MATCHING_PHASE;
 }
 
@@ -557,10 +570,6 @@ void PasswordFormManager::OnGetPasswordStoreResults(
 }
 
 bool PasswordFormManager::ShouldIgnoreResult(const PasswordForm& form) const {
-  // Do not autofill on sign-up or change password forms (until we have some
-  // working change password functionality).
-  if (!observed_form_.new_password_element.empty())
-    return true;
   // Don't match an invalid SSL form with one saved under secure circumstances.
   if (form.ssl_valid && !observed_form_.ssl_valid)
     return true;

@@ -17,6 +17,10 @@ from telemetry.value import scalar
 
 
 class _MapsMeasurement(page_test.PageTest):
+  def __init__(self):
+    super(_MapsMeasurement, self).__init__(
+      action_name_to_run='RunPageInteractions')
+
   def ValidateAndMeasurePage(self, page, tab, results):
     js_get_results = 'document.getElementsByTagName("pre")[0].innerText'
     test_results = tab.EvaluateJavaScript(js_get_results)
@@ -50,8 +54,8 @@ class MapsBenchmark(benchmark.Benchmark):
     page_set_path = os.path.join(
         util.GetChromiumSrcDir(), 'tools', 'perf', 'page_sets')
     ps = page_set_module.PageSet(
-        archive_data_file='data/maps.json',
-        file_path=page_set_path)
+        archive_data_file='data/maps.json', file_path=page_set_path,
+        bucket=page_set_module.PUBLIC_BUCKET)
     ps.AddUserStory(MapsPage(ps, ps.base_dir))
     return ps
 

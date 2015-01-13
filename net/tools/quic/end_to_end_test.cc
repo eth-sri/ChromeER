@@ -201,14 +201,10 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     VLOG(1) << "Using Configuration: " << GetParam();
 
     // Use different flow control windows for client/server.
-    client_config_.SetInitialFlowControlWindowToSend(
-        2 * kInitialSessionFlowControlWindowForTest);
     client_config_.SetInitialStreamFlowControlWindowToSend(
         2 * kInitialStreamFlowControlWindowForTest);
     client_config_.SetInitialSessionFlowControlWindowToSend(
         2 * kInitialSessionFlowControlWindowForTest);
-    server_config_.SetInitialFlowControlWindowToSend(
-        3 * kInitialSessionFlowControlWindowForTest);
     server_config_.SetInitialStreamFlowControlWindowToSend(
         3 * kInitialStreamFlowControlWindowForTest);
     server_config_.SetInitialSessionFlowControlWindowToSend(
@@ -239,12 +235,6 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     return client;
   }
 
-  void set_client_initial_flow_control_receive_window(uint32 window) {
-    CHECK(client_.get() == nullptr);
-    DVLOG(1) << "Setting client initial flow control window: " << window;
-    client_config_.SetInitialFlowControlWindowToSend(window);
-  }
-
   void set_client_initial_stream_flow_control_receive_window(uint32 window) {
     CHECK(client_.get() == nullptr);
     DVLOG(1) << "Setting client initial stream flow control window: " << window;
@@ -256,12 +246,6 @@ class EndToEndTest : public ::testing::TestWithParam<TestParams> {
     DVLOG(1) << "Setting client initial session flow control window: "
              << window;
     client_config_.SetInitialSessionFlowControlWindowToSend(window);
-  }
-
-  void set_server_initial_flow_control_receive_window(uint32 window) {
-    CHECK(server_thread_.get() == nullptr);
-    DVLOG(1) << "Setting server initial flow control window: " << window;
-    server_config_.SetInitialFlowControlWindowToSend(window);
   }
 
   void set_server_initial_stream_flow_control_receive_window(uint32 window) {
@@ -471,18 +455,17 @@ TEST_P(EndToEndTest, SeparateFinPacket) {
                       HttpConstants::POST, "/foo");
   request.set_has_complete_message(false);
 
+  // Send a request in two parts: the request and then an empty packet with FIN.
   client_->SendMessage(request);
-
-  client_->SendData(string(), true);
-
+  client_->SendData("", true);
   client_->WaitForResponse();
   EXPECT_EQ(kFooResponseBody, client_->response_body());
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
 
+  // Now do the same thing but with a content length.
   request.AddBody("foo", true);
-
   client_->SendMessage(request);
-  client_->SendData(string(), true);
+  client_->SendData("", true);
   client_->WaitForResponse();
   EXPECT_EQ(kFooResponseBody, client_->response_body());
   EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
@@ -767,7 +750,7 @@ TEST_P(EndToEndTest, DoNotSetResumeWriteAlarmIfConnectionFlowControlBlocked) {
   // Ensure both stream and connection level are flow control blocked by setting
   // the send window offset to 0.
   const uint64 kFlowControlWindow =
-      server_config_.GetInitialFlowControlWindowToSend();
+      server_config_.GetInitialStreamFlowControlWindowToSend();
   QuicSpdyClientStream* stream = client_->GetOrCreateStream();
   QuicSession* session = client_->client()->session();
   QuicFlowControllerPeer::SetSendWindowOffset(stream->flow_controller(), 0);
@@ -1018,6 +1001,78 @@ TEST_P(EndToEndTest, MinInitialRTT) {
   server_thread_->Resume();
 }
 
+TEST_P(EndToEndTest, 0ByteConnectionId) {
+  ValueRestore<bool> old_flag(&FLAGS_allow_truncated_connection_ids_for_quic,
+                              true);
+  client_config_.SetBytesForConnectionIdToSend(0);
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+
+  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
+      client_->client()->session()->connection());
+  EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID,
+            header->public_header.connection_id_length);
+}
+
+TEST_P(EndToEndTest, 1ByteConnectionId) {
+  ValueRestore<bool> old_flag(&FLAGS_allow_truncated_connection_ids_for_quic,
+                              true);
+  client_config_.SetBytesForConnectionIdToSend(1);
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
+      client_->client()->session()->connection());
+  EXPECT_EQ(PACKET_1BYTE_CONNECTION_ID,
+            header->public_header.connection_id_length);
+}
+
+TEST_P(EndToEndTest, 4ByteConnectionId) {
+  ValueRestore<bool> old_flag(&FLAGS_allow_truncated_connection_ids_for_quic,
+                              true);
+  client_config_.SetBytesForConnectionIdToSend(4);
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
+      client_->client()->session()->connection());
+  EXPECT_EQ(PACKET_4BYTE_CONNECTION_ID,
+            header->public_header.connection_id_length);
+}
+
+TEST_P(EndToEndTest, 8ByteConnectionId) {
+  ValueRestore<bool> old_flag(&FLAGS_allow_truncated_connection_ids_for_quic,
+                              true);
+  client_config_.SetBytesForConnectionIdToSend(8);
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
+      client_->client()->session()->connection());
+  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
+            header->public_header.connection_id_length);
+}
+
+TEST_P(EndToEndTest, 15ByteConnectionId) {
+  ValueRestore<bool> old_flag(&FLAGS_allow_truncated_connection_ids_for_quic,
+                              true);
+  client_config_.SetBytesForConnectionIdToSend(15);
+  ASSERT_TRUE(Initialize());
+
+  // Our server is permissive and allows for out of bounds values.
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  EXPECT_EQ(200u, client_->response_headers()->parsed_response_code());
+  QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
+      client_->client()->session()->connection());
+  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
+            header->public_header.connection_id_length);
+}
+
 TEST_P(EndToEndTest, ResetConnection) {
   ASSERT_TRUE(Initialize());
   client_->client()->WaitForCryptoHandshakeConfirmed();
@@ -1174,47 +1229,7 @@ TEST_P(EndToEndTest, ConnectionMigrationClientPortChanged) {
   EXPECT_NE(old_address.port(), new_address.port());
 }
 
-
-TEST_P(EndToEndTest, DifferentFlowControlWindowsQ019) {
-  // TODO(rjshade): Remove this test when removing QUIC_VERSION_19.
-  // Client and server can set different initial flow control receive windows.
-  // These are sent in CHLO/SHLO. Tests that these values are exchanged properly
-  // in the crypto handshake.
-
-  const uint32 kClientIFCW = 123456;
-  set_client_initial_flow_control_receive_window(kClientIFCW);
-
-  const uint32 kServerIFCW = 654321;
-  set_server_initial_flow_control_receive_window(kServerIFCW);
-
-  ASSERT_TRUE(Initialize());
-  if (negotiated_version_ > QUIC_VERSION_19) {
-    return;
-  }
-
-  // Values are exchanged during crypto handshake, so wait for that to finish.
-  client_->client()->WaitForCryptoHandshakeConfirmed();
-  server_thread_->WaitForCryptoHandshakeConfirmed();
-
-  // Client should have the right value for server's receive window.
-  EXPECT_EQ(kServerIFCW, client_->client()
-                             ->session()
-                             ->config()
-                             ->ReceivedInitialFlowControlWindowBytes());
-
-  // Server should have the right value for client's receive window.
-  server_thread_->Pause();
-  QuicDispatcher* dispatcher =
-      QuicServerPeer::GetDispatcher(server_thread_->server());
-  QuicSession* session = dispatcher->session_map().begin()->second;
-  EXPECT_EQ(kClientIFCW,
-            session->config()->ReceivedInitialFlowControlWindowBytes());
-  server_thread_->Resume();
-}
-
-TEST_P(EndToEndTest, DifferentFlowControlWindowsQ020) {
-  // TODO(rjshade): Rename to DifferentFlowControlWindows when removing
-  // QUIC_VERSION_19.
+TEST_P(EndToEndTest, DifferentFlowControlWindows) {
   // Client and server can set different initial flow control receive windows.
   // These are sent in CHLO/SHLO. Tests that these values are exchanged properly
   // in the crypto handshake.
@@ -1229,9 +1244,6 @@ TEST_P(EndToEndTest, DifferentFlowControlWindowsQ020) {
   set_server_initial_session_flow_control_receive_window(kServerSessionIFCW);
 
   ASSERT_TRUE(Initialize());
-  if (negotiated_version_ == QUIC_VERSION_19) {
-    return;
-  }
 
   // Values are exchanged during crypto handshake, so wait for that to finish.
   client_->client()->WaitForCryptoHandshakeConfirmed();
@@ -1283,9 +1295,6 @@ TEST_P(EndToEndTest, HeadersAndCryptoStreamsNoConnectionFlowControl) {
   set_server_initial_session_flow_control_receive_window(kSessionIFCW);
 
   ASSERT_TRUE(Initialize());
-  if (negotiated_version_ < QUIC_VERSION_21) {
-    return;
-  }
 
   // Wait for crypto handshake to finish. This should have contributed to the
   // crypto stream flow control window, but not affected the session flow

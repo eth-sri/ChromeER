@@ -11,10 +11,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_auth_request_handler.h"
-#include "components/data_reduction_proxy/core/browser/data_reduction_proxy_protocol.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_statistics_prefs.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_usage_stats.h"
+#include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
+#include "net/proxy/proxy_info.h"
+#include "net/proxy/proxy_server.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_status.h"
@@ -145,10 +147,12 @@ void DataReductionProxyNetworkDelegate::OnResolveProxyInternal(
     int load_flags,
     const net::ProxyService& proxy_service,
     net::ProxyInfo* result) {
+  // TODO(sclittle): Call OnResolveProxyHandler directly, see
+  // http://crbug.com/447346.
   if (!on_resolve_proxy_handler_.is_null() &&
       !proxy_config_getter_.is_null()) {
     on_resolve_proxy_handler_.Run(
-        url, load_flags, proxy_config_getter_.Run(), proxy_service.config(),
+        url, load_flags, proxy_config_getter_.Run(),
         proxy_service.proxy_retry_info(), data_reduction_proxy_params_, result);
   }
 }
@@ -175,6 +179,7 @@ void DataReductionProxyNetworkDelegate::OnBeforeSendProxyHeadersInternal(
 void DataReductionProxyNetworkDelegate::OnCompletedInternal(
     net::URLRequest* request,
     bool started) {
+  DCHECK(request);
   if (data_reduction_proxy_usage_stats_)
     data_reduction_proxy_usage_stats_->OnUrlRequestCompleted(request, started);
 
@@ -218,7 +223,7 @@ void DataReductionProxyNetworkDelegate::OnCompletedInternal(
         data_reduction_proxy_usage_stats_ &&
         !proxy_config_getter_.is_null()) {
       data_reduction_proxy_usage_stats_->RecordBytesHistograms(
-          request,
+          *request,
           *data_reduction_proxy_enabled_,
           proxy_config_getter_.Run());
     }
@@ -248,6 +253,39 @@ void DataReductionProxyNetworkDelegate::AccumulateContentLength(
   }
   received_content_length_ += received_content_length;
   original_content_length_ += original_content_length;
+}
+
+void OnResolveProxyHandler(const GURL& url,
+                           int load_flags,
+                           const net::ProxyConfig& data_reduction_proxy_config,
+                           const net::ProxyRetryInfoMap& proxy_retry_info,
+                           const DataReductionProxyParams* params,
+                           net::ProxyInfo* result) {
+  DCHECK(params);
+  DCHECK(result->is_empty() || result->is_direct() ||
+         !params->IsDataReductionProxy(result->proxy_server().host_port_pair(),
+                                       NULL));
+  if (data_reduction_proxy_config.is_valid() &&
+      result->proxy_server().is_direct() &&
+      result->proxy_list().size() == 1 &&
+      !url.SchemeIsWSOrWSS()) {
+    net::ProxyInfo data_reduction_proxy_info;
+    data_reduction_proxy_config.proxy_rules().Apply(
+        url, &data_reduction_proxy_info);
+    data_reduction_proxy_info.DeprioritizeBadProxies(proxy_retry_info);
+    if (!data_reduction_proxy_info.proxy_server().is_direct())
+      result->OverrideProxyList(data_reduction_proxy_info.proxy_list());
+  }
+
+  if ((load_flags & net::LOAD_BYPASS_DATA_REDUCTION_PROXY) &&
+      DataReductionProxyParams::IsIncludedInCriticalPathBypassFieldTrial()) {
+    if (!result->is_empty() &&
+        !result->is_direct() &&
+        params->IsDataReductionProxy(result->proxy_server().host_port_pair(),
+                                     NULL)) {
+      result->RemoveProxiesWithoutScheme(net::ProxyServer::SCHEME_DIRECT);
+    }
+  }
 }
 
 }  // namespace data_reduction_proxy

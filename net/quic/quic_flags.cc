@@ -4,14 +4,6 @@
 
 #include "net/quic/quic_flags.h"
 
-// TODO(rtenneti): Remove this.
-// Do not flip this flag until the flakiness of the
-// net/tools/quic/end_to_end_test is fixed.
-// If true, then QUIC connections will track the retransmission history of a
-// packet so that an ack of a previous transmission will ack the data of all
-// other transmissions.
-bool FLAGS_track_retransmission_history = false;
-
 bool FLAGS_quic_allow_oversized_packets_for_test = false;
 
 // When true, the use time based loss detection instead of nack.
@@ -37,7 +29,7 @@ bool FLAGS_quic_use_bbr_congestion_control = false;
 bool FLAGS_quic_allow_bbr = false;
 
 // If true, truncate QUIC connection IDs if the client requests it.
-bool FLAGS_allow_truncated_connection_ids_for_quic = false;
+bool FLAGS_allow_truncated_connection_ids_for_quic = true;
 
 // Do not flip this flag.  jokulik plans more testing and additional monitoring
 // before the flag can go the auto-flip process.
@@ -68,3 +60,14 @@ bool FLAGS_quic_disallow_multiple_pending_ack_frames = true;
 // If true, then the source address tokens generated for QUIC connects will
 // store multiple addresses.
 bool FLAGS_quic_use_multiple_address_in_source_tokens = false;
+
+// If true, an attempt to send an empty data string with no FIN will return
+// early, and not create a frame.
+bool FLAGS_quic_empty_data_no_fin_early_return = true;
+
+// If true, if min RTT and/or SRTT have not yet been set then initial RTT is
+// used to initialize them in a call to QuicConnection::GetStats.
+bool FLAGS_quic_use_initial_rtt_for_stats = true;
+
+// If true, uses the last sent packet for the RTO timer instead of the earliest.
+bool FLAGS_quic_rto_uses_last_sent = true;

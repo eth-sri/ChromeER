@@ -18,10 +18,6 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 
-#if defined(OS_WIN)
-#include "ui/base/win/shell.h"
-#endif
-
 namespace content {
 
 ImageTransportSurface::ImageTransportSurface() {}
@@ -137,14 +133,6 @@ bool ImageTransportHelper::MakeCurrent() {
 }
 
 void ImageTransportHelper::SetSwapInterval(gfx::GLContext* context) {
-#if defined(OS_WIN)
-  // If Aero Glass is enabled, then the renderer will handle ratelimiting and
-  // there's no tearing, so waiting for vsync is unnecessary.
-  if (ui::win::IsAeroGlassEnabled()) {
-    context->ForceSwapIntervalZero(true);
-    return;
-  }
-#endif
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuVsync))
     context->ForceSwapIntervalZero(true);
@@ -215,6 +203,9 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
   // GetVsyncValues before SwapBuffers to work around Mali driver bug:
   // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
+  for (auto& latency : latency_info_)
+    latency.AddLatencyNumber(ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0);
+
   // We use WeakPtr here to avoid manual management of life time of an instance
   // of this class. Callback will not be called once the instance of this class
   // is destroyed. However, this also means that the callback can be run on

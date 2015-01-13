@@ -216,30 +216,6 @@ void SitePerProcessBrowserTest::StartFrameAtDataURL() {
   ASSERT_TRUE(ExecuteScript(shell()->web_contents(), data_url_script));
 }
 
-bool SitePerProcessBrowserTest::NavigateIframeToURL(Shell* window,
-                                                    const GURL& url,
-                                                    std::string iframe_id) {
-  // TODO(creis): This should wait for LOAD_STOP, but cross-site subframe
-  // navigations generate extra DidStartLoading and DidStopLoading messages.
-  // Until we replace swappedout:// with frame proxies, we need to listen for
-  // something else.  For now, we trigger NEW_SUBFRAME navigations and listen
-  // for commit.
-  std::string script = base::StringPrintf(
-      "setTimeout(\""
-      "var iframes = document.getElementById('%s');iframes.src='%s';"
-      "\",0)",
-      iframe_id.c_str(), url.spec().c_str());
-  WindowedNotificationObserver load_observer(
-      NOTIFICATION_NAV_ENTRY_COMMITTED,
-      Source<NavigationController>(
-          &window->web_contents()->GetController()));
-  if (!ExecuteScript(window->web_contents(), script))
-    return false;
-  load_observer.Wait();
-
-  return true;
-}
-
 void SitePerProcessBrowserTest::SetUpCommandLine(
     base::CommandLine* command_line) {
   command_line->AppendSwitch(switches::kSitePerProcess);
@@ -346,7 +322,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, CrossSiteIframe) {
       proxy_to_parent->cross_process_frame_connector()->get_view_for_testing());
 }
 
-IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, NavigateRemoteFrame) {
+// Disabled for flaky crashing: crbug.com/446575
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       DISABLED_NavigateRemoteFrame) {
   GURL main_url(embedded_test_server()->GetURL("/site_per_process_main.html"));
   NavigateToURL(shell(), main_url);
 
@@ -378,7 +356,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, NavigateRemoteFrame) {
   // Emulate the main frame changing the src of the iframe such that it
   // navigates cross-site.
   url = embedded_test_server()->GetURL("bar.com", "/title3.html");
-  NavigateIframeToURL(shell(), url, "test");
+  NavigateIframeToURL(shell()->web_contents(), "test", url);
   EXPECT_TRUE(observer.navigation_succeeded());
   EXPECT_EQ(url, observer.navigation_url());
 
@@ -515,9 +493,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, CrashSubframe) {
 
   // Load cross-site page into iframe.
   EXPECT_TRUE(NavigateIframeToURL(
-      shell(),
-      embedded_test_server()->GetURL("/cross-site/foo.com/title2.html"),
-      "test"));
+      shell()->web_contents(), "test",
+      embedded_test_server()->GetURL("/cross-site/foo.com/title2.html")));
 
   // Check the subframe process.
   FrameTreeNode* root =
@@ -591,8 +568,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
     // Should be blocked.
     GURL client_redirect_https_url(https_server.GetURL(
         "client-redirect?files/title1.html"));
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    client_redirect_https_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    client_redirect_https_url));
     // DidFailProvisionalLoad when navigating to client_redirect_https_url.
     EXPECT_EQ(observer.navigation_url(), client_redirect_https_url);
     EXPECT_FALSE(observer.navigation_succeeded());
@@ -603,8 +580,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
     // which redirects to same-site page.
     GURL server_redirect_http_url(https_server.GetURL(
         "server-redirect?" + http_url.spec()));
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    server_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    server_redirect_http_url));
     EXPECT_EQ(observer.navigation_url(), http_url);
     EXPECT_TRUE(observer.navigation_succeeded());
   }
@@ -614,8 +591,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
     // which redirects to cross-site page.
     GURL server_redirect_http_url(https_server.GetURL(
         "server-redirect?files/title1.html"));
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    server_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    server_redirect_http_url));
     // DidFailProvisionalLoad when navigating to https_url.
     EXPECT_EQ(observer.navigation_url(), https_url);
     EXPECT_FALSE(observer.navigation_succeeded());
@@ -626,8 +603,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
     // which redirects to cross-site page.
     GURL server_redirect_http_url(test_server()->GetURL(
         "server-redirect?" + https_url.spec()));
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    server_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    server_redirect_http_url));
 
     EXPECT_EQ(observer.navigation_url(), https_url);
     EXPECT_FALSE(observer.navigation_succeeded());
@@ -644,8 +621,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
         Source<NavigationController>(
             &shell()->web_contents()->GetController()));
 
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    client_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    client_redirect_http_url));
 
     // Same-site Client-Redirect Page should be loaded successfully.
     EXPECT_EQ(observer.navigation_url(), client_redirect_http_url);
@@ -662,8 +639,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
     // which redirects to same-site page.
     GURL server_redirect_http_url(test_server()->GetURL(
         "server-redirect?files/title1.html"));
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    server_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    server_redirect_http_url));
     EXPECT_EQ(observer.navigation_url(), http_url);
     EXPECT_TRUE(observer.navigation_succeeded());
    }
@@ -678,8 +655,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
         Source<NavigationController>(
             &shell()->web_contents()->GetController()));
 
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    client_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    client_redirect_http_url));
 
     // Same-site Client-Redirect Page should be loaded successfully.
     EXPECT_EQ(observer.navigation_url(), client_redirect_http_url);
@@ -726,7 +703,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
         Source<NavigationController>(
             &shell()->web_contents()->GetController()));
 
-    EXPECT_TRUE(NavigateIframeToURL(shell(), client_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    client_redirect_http_url));
 
     // DidFailProvisionalLoad when navigating to client_redirect_https_url.
     load_observer2.Wait();
@@ -741,8 +719,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
         "server-redirect?" + http_url.spec()));
     GURL server_redirect_http_url(test_server()->GetURL(
         "server-redirect?" + server_redirect_https_url.spec()));
-    EXPECT_TRUE(NavigateIframeToURL(shell(),
-                                    server_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    server_redirect_http_url));
     EXPECT_EQ(observer.navigation_url(), http_url);
     EXPECT_TRUE(observer.navigation_succeeded());
   }
@@ -754,7 +732,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
         "server-redirect?" + https_url.spec()));
     GURL server_redirect_http_url(test_server()->GetURL(
         "server-redirect?" + server_redirect_https_url.spec()));
-    EXPECT_TRUE(NavigateIframeToURL(shell(), server_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    server_redirect_http_url));
 
     // DidFailProvisionalLoad when navigating to https_url.
     EXPECT_EQ(observer.navigation_url(), https_url);
@@ -768,7 +747,8 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
         "client-redirect?" + http_url.spec()));
     GURL server_redirect_http_url(test_server()->GetURL(
         "server-redirect?" + client_redirect_http_url.spec()));
-    EXPECT_TRUE(NavigateIframeToURL(shell(), server_redirect_http_url, "test"));
+    EXPECT_TRUE(NavigateIframeToURL(shell()->web_contents(), "test",
+                                    server_redirect_http_url));
 
     // DidFailProvisionalLoad when navigating to client_redirect_http_url.
     EXPECT_EQ(observer.navigation_url(), client_redirect_http_url);

@@ -34,7 +34,7 @@ void MockCryptoClientStream::OnHandshakeMessage(
   CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
 }
 
-bool MockCryptoClientStream::CryptoConnect() {
+void MockCryptoClientStream::CryptoConnect() {
   switch (handshake_mode_) {
     case ZERO_RTT: {
       encryption_established_ = true;
@@ -67,7 +67,6 @@ bool MockCryptoClientStream::CryptoConnect() {
       break;
     }
   }
-  return true;
 }
 
 void MockCryptoClientStream::SendOnCryptoHandshakeEvent(
@@ -88,15 +87,17 @@ void MockCryptoClientStream::SetConfigNegotiated() {
   cgst.push_back(kTBBR);
 #endif
   cgst.push_back(kQBIC);
-  session()->config()->SetCongestionFeedback(cgst, kQBIC);
-  session()->config()->SetIdleConnectionStateLifetime(
+  QuicConfig config;
+  config.SetCongestionFeedback(cgst, kQBIC);
+  config.SetIdleConnectionStateLifetime(
       QuicTime::Delta::FromSeconds(2 * kMaximumIdleTimeoutSecs),
       QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs));
-  session()->config()->SetMaxStreamsPerConnection(
-      2 * kDefaultMaxStreamsPerConnection, kDefaultMaxStreamsPerConnection);
+  config.SetMaxStreamsPerConnection(kDefaultMaxStreamsPerConnection / 2,
+                                    kDefaultMaxStreamsPerConnection / 2);
+  config.SetBytesForConnectionIdToSend(PACKET_8BYTE_CONNECTION_ID);
 
   CryptoHandshakeMessage msg;
-  session()->config()->ToHandshakeMessage(&msg);
+  config.ToHandshakeMessage(&msg);
   string error_details;
   const QuicErrorCode error =
       session()->config()->ProcessPeerHello(msg, CLIENT, &error_details);

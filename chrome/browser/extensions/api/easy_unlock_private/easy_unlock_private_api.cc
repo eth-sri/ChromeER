@@ -217,6 +217,12 @@ bool EasyUnlockPrivateGetStringsFunction::RunSync() {
       "setupSecurePhoneHeaderText",
       l10n_util::GetStringFUTF16(IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_HEADER_TEXT,
                                  device_type));
+  strings->SetString("setupSecurePhoneButtonLabel",
+                     l10n_util::GetStringUTF16(
+                         IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_BUTTON_LABEL));
+  strings->SetString("setupSecurePhoneLinkText",
+                     l10n_util::GetStringUTF16(
+                         IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_LINK_TEXT));
   // Step 2: Found a viable phone.
   strings->SetString(
       "setupFoundPhoneHeaderTitle",
@@ -708,6 +714,49 @@ bool EasyUnlockPrivateGetUserImageFunction::RunSync() {
   SetError("Not supported on non-ChromeOS platforms.");
 #endif
   return true;
+}
+
+EasyUnlockPrivateGetConnectionInfoFunction::
+    EasyUnlockPrivateGetConnectionInfoFunction() {
+}
+
+EasyUnlockPrivateGetConnectionInfoFunction::
+    ~EasyUnlockPrivateGetConnectionInfoFunction() {
+}
+
+bool EasyUnlockPrivateGetConnectionInfoFunction::DoWork(
+    scoped_refptr<device::BluetoothAdapter> adapter) {
+  scoped_ptr<easy_unlock_private::GetConnectionInfo::Params> params =
+      easy_unlock_private::GetConnectionInfo::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  device::BluetoothDevice* device = adapter->GetDevice(params->device_address);
+
+  std::string error;
+  if (!device)
+    error = "Invalid Bluetooth device.";
+  else if (!device->IsConnected())
+    error = "Bluetooth device not connected.";
+
+  if (!error.empty()) {
+    SetError(error);
+    SendResponse(false);
+    return true;
+  }
+
+  device->GetConnectionInfo(base::Bind(
+      &EasyUnlockPrivateGetConnectionInfoFunction::OnConnectionInfo, this));
+  return false;
+}
+
+void EasyUnlockPrivateGetConnectionInfoFunction::OnConnectionInfo(
+    const device::BluetoothDevice::ConnectionInfo& connection_info) {
+  scoped_ptr<base::ListValue> results(new base::ListValue());
+  results->AppendInteger(connection_info.rssi);
+  results->AppendInteger(connection_info.transmit_power);
+  results->AppendInteger(connection_info.max_transmit_power);
+  SetResultList(results.Pass());
+  SendResponse(true);
 }
 
 }  // namespace api

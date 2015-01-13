@@ -45,6 +45,7 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/bluetooth/bluetooth_pairing_dialog.h"
 #include "chrome/browser/chromeos/events/system_key_event_listener.h"
+#include "chrome/browser/chromeos/input_method/input_method_switch_recorder.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
@@ -596,11 +597,6 @@ void SystemTrayDelegateChromeOS::ShowUserLogin() {
   }
 }
 
-void SystemTrayDelegateChromeOS::ShutDown() {
-  ash::Shell::GetInstance()->lock_state_controller()->RequestShutdown(
-      ash::LockStateController::POWER_OFF);
-}
-
 void SystemTrayDelegateChromeOS::SignOut() {
   chrome::AttemptUserExit();
 }
@@ -730,6 +726,8 @@ void SystemTrayDelegateChromeOS::SwitchIME(const std::string& ime_id) {
   input_method::InputMethodManager::Get()
       ->GetActiveIMEState()
       ->ChangeInputMethod(ime_id, false /* show_message */);
+  input_method::InputMethodSwitchRecorder::Get()->RecordSwitch(
+      true /* by_tray_menu */);
 }
 
 void SystemTrayDelegateChromeOS::ActivateIMEProperty(const std::string& key) {

@@ -68,10 +68,20 @@ class PlatformBackend(object):
         profiling_controller_backend.ProfilingControllerBackend(self))
 
   @classmethod
+  def IsPlatformBackendForHost(cls):
+    """ Returns whether this platform backend is the platform backend to be used
+    for the host device which telemetry is running on. """
+    return False
+
+  @classmethod
   def SupportsDevice(cls, device):
     """ Returns whether this platform backend supports intialization from the
     device. """
     return False
+
+  @classmethod
+  def CreatePlatformForDevice(cls, device):
+    raise NotImplementedError
 
   def SetPlatform(self, platform):
     assert self._platform == None
@@ -141,9 +151,16 @@ class PlatformBackend(object):
     return False
 
   def StartDisplayTracing(self):
+    """Start gathering a trace with frame timestamps close to physical
+    display."""
     raise NotImplementedError()
 
   def StopDisplayTracing(self):
+    """Stop gathering a trace with frame timestamps close to physical display.
+
+    Returns a raw tracing events that contains the timestamps of physical
+    display.
+    """
     raise NotImplementedError()
 
   def SetFullPerformanceModeEnabled(self, enabled):

@@ -100,21 +100,6 @@ const char kAppModeOAuth2Token[]            = "app-mode-oauth-token";
 // Enables overriding the path for the default authentication extension.
 const char kAuthExtensionPath[]             = "auth-ext-path";
 
-// Whitelist of servers that Negotiate will generate delegated Kerberos tickets
-// for.
-const char kAuthNegotiateDelegateWhitelist[] =
-    "auth-negotiate-delegate-whitelist";
-
-// HTTP authentication schemes to enable. This is a comma-separated list of
-// authentication schemes (basic, digest, ntlm, and negotiate). By default all
-// schemes are enabled. The primary use of this command line flag is to help
-// triage authentication-related issues reported by end-users.
-const char kAuthSchemes[]                   = "auth-schemes";
-
-// Whitelist of servers which NTLM and Negotiate can automatically authenticate
-// with using the default credentials of the currently logged in user.
-const char kAuthServerWhitelist[]           = "auth-server-whitelist";
-
 // A flag that is used to tell Chrome that it was launched automatically at
 // computer startup and not by some user action.
 const char kAutoLaunchAtStartup[]           = "auto-launch-at-startup";
@@ -213,12 +198,6 @@ const char kDisableAboutInSettings[]        = "disable-about-in-settings";
 // Disables the experimental asynchronous DNS client.
 const char kDisableAsyncDns[]               = "disable-async-dns";
 
-// Disables CNAME lookup of the host when generating the Kerberos SPN for a
-// Negotiate challenge. See HttpAuthHandlerNegotiate::CreateSPN for more
-// background.
-const char kDisableAuthNegotiateCnameLookup[] =
-    "disable-auth-negotiate-cname-lookup";
-
 // Disable several subsystems which run network requests in the background.
 // This is for use when doing network performance testing to avoid noise in the
 // measurements.
@@ -303,6 +282,9 @@ const char kDisableOutOfProcessPdf[]        = "disable-out-of-process-pdf";
 // revealing plaintext passwords in the password manager.
 const char kDisablePasswordManagerReauthentication[] =
     "disable-password-manager-reauthentication";
+
+// Disable the new material UI - requires out of process PDF plugin.
+const char kDisablePdfMaterialUI[]          = "disable-pdf-material-ui";
 
 // Enables searching for people from the apps list search box.
 const char kDisablePeopleSearch[]           = "disable-people-search";
@@ -409,11 +391,6 @@ const char kEnableAppsFileAssociations[]    = "enable-apps-file-associations";
 // Enables the experimental asynchronous DNS client.
 const char kEnableAsyncDns[]                = "enable-async-dns";
 
-// Enables the inclusion of non-standard ports when generating the Kerberos SPN
-// in response to a Negotiate challenge. See
-// HttpAuthHandlerNegotiate::CreateSPN for more background.
-const char kEnableAuthNegotiatePort[]       = "enable-auth-negotiate-port";
-
 // Enables the benchmarking extensions.
 const char kEnableBenchmarking[]            = "enable-benchmarking";
 
@@ -516,9 +493,17 @@ const char kEnableOutOfProcessPdf[]         = "enable-out-of-process-pdf";
 // Enables panels (always on-top docked pop-up windows).
 const char kEnablePanels[]                  = "enable-panels";
 
+// Enable the new material UI - requires out of process PDF plugin.
+const char kEnablePdfMaterialUI[]           = "enable-pdf-material-ui";
+
 // Enables presenting plugin placeholder content as shadow DOM.
 const char kEnablePluginPlaceholderShadowDom[] =
     "enable-plugin-placeholder-shadow-dom";
+
+// Enables a number of potentially annoying security features (strict mixed
+// content mode, powerful feature restrictions, etc.)
+const char kEnablePotentiallyAnnoyingSecurityFeatures[] =
+    "enable-potentially-annoying-security-features";
 
 // Enables the Power overlay in Settings.
 const char kEnablePowerOverlay[]            = "enable-power-overlay";
@@ -693,9 +678,6 @@ const char kForceFirstRun[]                 = "force-first-run";
 // prefixed with the character "t" will be treated as Trigger Variation Ids.
 const char kForceVariationIds[]             = "force-variation-ids";
 
-// Specifies a custom name for the GSSAPI library to load.
-const char kGSSAPILibraryName[]             = "gssapi-library-name";
-
 // These flags show the man page on Linux. They are equivalent to each
 // other.
 const char kHelp[]                          = "help";
@@ -759,6 +741,11 @@ const char kInstallChromeApp[]              = "install-chrome-app";
 // This is allowed *only* for ephemeral apps. All other ids will be ignored.
 const char kInstallEphemeralAppFromWebstore[] =
     "install-ephemeral-app-from-webstore";
+
+// A list of whitelists to install for a supervised user, for testing.
+// The list is of the following form: <id>[:<name>],[<id>[:<name>],...]
+const char kInstallSupervisedUserWhitelists[] =
+    "install-supervised-user-whitelists";
 
 // Marks a renderer as an Instant process.
 const char kInstantProcess[]                = "instant-process";
@@ -1248,11 +1235,6 @@ const char kWinHttpProxyResolver[]          = "winhttp-proxy-resolver";
 // resulted in a browser startup.
 const char kWinJumplistAction[]             = "win-jumplist-action";
 
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-// Specifies a custom URL for fetching plug-ins metadata. Used for testing.
-const char kPluginsMetadataServerURL[]      = "plugins-metadata-server-url";
-#endif
-
 #if defined(OS_ANDROID)
 // Disables support for playing videos on Chromecast devices.
 const char kDisableCast[]                    = "disable-cast";
@@ -1388,6 +1370,17 @@ bool OutOfProcessPdfEnabled() {
 
   // Default.
   return false;
+}
+
+bool PdfMaterialUIEnabled() {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kEnablePdfMaterialUI))
+    return true;
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kDisablePdfMaterialUI))
+    return false;
+
+  // Default.
+  return true;
 }
 
 bool SettingsWindowEnabled() {

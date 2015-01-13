@@ -24,6 +24,7 @@ HttpServerPropertiesImpl::HttpServerPropertiesImpl()
     : spdy_servers_map_(SpdyServerHostPortMap::NO_AUTO_EVICT),
       alternate_protocol_map_(AlternateProtocolMap::NO_AUTO_EVICT),
       spdy_settings_map_(SpdySettingsMap::NO_AUTO_EVICT),
+      server_network_stats_map_(ServerNetworkStatsMap::NO_AUTO_EVICT),
       alternate_protocol_probability_threshold_(1),
       weak_ptr_factory_(this) {
   canonical_suffixes_.push_back(".c.youtube.com");
@@ -109,6 +110,15 @@ void HttpServerPropertiesImpl::InitializeSupportsQuic(
   }
 }
 
+void HttpServerPropertiesImpl::InitializeServerNetworkStats(
+    ServerNetworkStatsMap* server_network_stats_map) {
+  for (ServerNetworkStatsMap::reverse_iterator it =
+           server_network_stats_map->rbegin();
+       it != server_network_stats_map->rend(); ++it) {
+    server_network_stats_map_.Put(it->first, it->second);
+  }
+}
+
 void HttpServerPropertiesImpl::GetSpdyServerList(
     base::ListValue* spdy_server_list,
     size_t max_size) const {
@@ -155,10 +165,11 @@ void HttpServerPropertiesImpl::Clear() {
   canonical_host_to_origin_map_.clear();
   spdy_settings_map_.Clear();
   supports_quic_map_.clear();
+  server_network_stats_map_.Clear();
 }
 
 bool HttpServerPropertiesImpl::SupportsSpdy(
-    const net::HostPortPair& host_port_pair) {
+    const HostPortPair& host_port_pair) {
   DCHECK(CalledOnValidThread());
   if (host_port_pair.host().empty())
     return false;
@@ -171,7 +182,7 @@ bool HttpServerPropertiesImpl::SupportsSpdy(
 }
 
 void HttpServerPropertiesImpl::SetSupportsSpdy(
-    const net::HostPortPair& host_port_pair,
+    const HostPortPair& host_port_pair,
     bool support_spdy) {
   DCHECK(CalledOnValidThread());
   if (host_port_pair.host().empty())
@@ -185,6 +196,31 @@ void HttpServerPropertiesImpl::SetSupportsSpdy(
   }
   // Cache the data.
   spdy_servers_map_.Put(host_port_pair.ToString(), support_spdy);
+}
+
+bool HttpServerPropertiesImpl::RequiresHTTP11(
+    const net::HostPortPair& host_port_pair) {
+  DCHECK(CalledOnValidThread());
+  if (host_port_pair.host().empty())
+    return false;
+
+  return (http11_servers_.find(host_port_pair) != http11_servers_.end());
+}
+
+void HttpServerPropertiesImpl::SetHTTP11Required(
+    const net::HostPortPair& host_port_pair) {
+  DCHECK(CalledOnValidThread());
+  if (host_port_pair.host().empty())
+    return;
+
+  http11_servers_.insert(host_port_pair);
+}
+
+void HttpServerPropertiesImpl::MaybeForceHTTP11(const HostPortPair& server,
+                                                SSLConfig* ssl_config) {
+  if (RequiresHTTP11(server)) {
+    ForceHTTP11(ssl_config);
+  }
 }
 
 bool HttpServerPropertiesImpl::HasAlternateProtocol(
@@ -412,26 +448,29 @@ void HttpServerPropertiesImpl::SetSupportsQuic(
   supports_quic_map_.insert(std::make_pair(host_port_pair, supports_quic));
 }
 
-const SupportsQuicMap&
-HttpServerPropertiesImpl::supports_quic_map() const {
+const SupportsQuicMap& HttpServerPropertiesImpl::supports_quic_map() const {
   return supports_quic_map_;
 }
 
 void HttpServerPropertiesImpl::SetServerNetworkStats(
     const HostPortPair& host_port_pair,
-    NetworkStats stats) {
-  server_network_stats_map_[host_port_pair] = stats;
+    ServerNetworkStats stats) {
+  server_network_stats_map_.Put(host_port_pair, stats);
 }
 
-const HttpServerProperties::NetworkStats*
-HttpServerPropertiesImpl::GetServerNetworkStats(
-    const HostPortPair& host_port_pair) const {
-  ServerNetworkStatsMap::const_iterator it =
-      server_network_stats_map_.find(host_port_pair);
+const ServerNetworkStats* HttpServerPropertiesImpl::GetServerNetworkStats(
+    const HostPortPair& host_port_pair) {
+  ServerNetworkStatsMap::iterator it =
+      server_network_stats_map_.Get(host_port_pair);
   if (it == server_network_stats_map_.end()) {
     return NULL;
   }
   return &it->second;
+}
+
+const ServerNetworkStatsMap&
+HttpServerPropertiesImpl::server_network_stats_map() const {
+  return server_network_stats_map_;
 }
 
 void HttpServerPropertiesImpl::SetAlternateProtocolProbabilityThreshold(

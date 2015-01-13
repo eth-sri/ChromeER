@@ -84,6 +84,22 @@ class DeviceUtilsGetAVDsTest(mock_calls.TestCase):
                         device_utils.GetAVDs())
 
 
+class DeviceUtilsRestartServerTest(mock_calls.TestCase):
+
+  @mock.patch('time.sleep', mock.Mock())
+  def testRestartServer_succeeds(self):
+    with self.assertCalls(
+        mock.call.pylib.device.adb_wrapper.AdbWrapper.KillServer(),
+        (mock.call.pylib.cmd_helper.GetCmdStatusAndOutput(['pgrep', 'adb']),
+         (1, '')),
+        mock.call.pylib.device.adb_wrapper.AdbWrapper.StartServer(),
+        (mock.call.pylib.cmd_helper.GetCmdStatusAndOutput(['pgrep', 'adb']),
+         (1, '')),
+        (mock.call.pylib.cmd_helper.GetCmdStatusAndOutput(['pgrep', 'adb']),
+         (0, '123\n'))):
+      device_utils.RestartServer()
+
+
 class MockTempFile(object):
 
   def __init__(self, name='/tmp/some/file'):
@@ -191,10 +207,10 @@ class DeviceUtilsNewImplTest(mock_calls.TestCase):
         self.adb, default_timeout=10, default_retries=0)
     self.watchMethodCalls(self.call.adb, ignore=['GetDeviceSerial'])
 
-  def ShellError(self, output=None, exit_code=1):
+  def ShellError(self, output=None, status=1):
     def action(cmd, *args, **kwargs):
-      raise device_errors.AdbCommandFailedError(
-          cmd, output, exit_code, str(self.device))
+      raise device_errors.AdbShellCommandFailedError(
+          cmd, output, status, str(self.device))
     if output is None:
       output = 'Permission denied\n'
     return action
@@ -892,14 +908,12 @@ class DeviceUtilsBroadcastIntentTest(DeviceUtilsNewImplTest):
       self.device.BroadcastIntent(test_intent)
 
 
-class DeviceUtilsGoHomeTest(DeviceUtilsOldImplTest):
+class DeviceUtilsGoHomeTest(DeviceUtilsNewImplTest):
 
   def testGoHome(self):
-    with self.assertCalls(
-        "adb -s 0123456789abcdef shell 'am start "
-            "-W "
-            "-a android.intent.action.MAIN "
-            "-c android.intent.category.HOME'",
+    with self.assertCall(
+        self.call.adb.Shell('am start -W -a android.intent.action.MAIN '
+                            '-c android.intent.category.HOME'),
         'Starting: Intent { act=android.intent.action.MAIN }\r\n'):
       self.device.GoHome()
 

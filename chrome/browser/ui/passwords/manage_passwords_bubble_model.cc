@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/passwords/manage_passwords_bubble_model.h"
 
 #include "chrome/browser/password_manager/password_store_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
@@ -205,7 +206,13 @@ void ManagePasswordsBubbleModel::OnBubbleHidden() {
 
   if (password_manager::ui::IsAskSubmitURLState(state_)) {
     state_ = password_manager::ui::ASK_USER_REPORT_URL_BUBBLE_SHOWN_STATE;
+    metrics_util::LogAllowToCollectURLBubbleUIDismissalReason(
+        dismissal_reason_);
+    // Return since we do not want to include "Allow to collect URL?" bubble
+    // data in other PasswordManager metrics.
+    return;
   }
+
   metrics_util::LogUIDismissalReason(dismissal_reason_);
   // Other use cases have been reported in the callbacks like OnSaveClicked().
   if (dismissal_reason_ == metrics_util::NO_DIRECT_INTERACTION)
@@ -273,12 +280,7 @@ void ManagePasswordsBubbleModel::OnSaveClicked() {
   ManagePasswordsUIController* manage_passwords_ui_controller =
       ManagePasswordsUIController::FromWebContents(web_contents());
   manage_passwords_ui_controller->SavePassword();
-  if (ShouldShowOSPasswordBubble()) {
-    state_ = password_manager::ui::SETUP_OS_PASSWORD_BUBBLE_STATE;
-    title_ = l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_OS_PASSWORD_TITLE);
-  } else {
-    state_ = password_manager::ui::MANAGE_STATE;
-  }
+  state_ = password_manager::ui::MANAGE_STATE;
 }
 
 void ManagePasswordsBubbleModel::OnDoneClicked() {
@@ -305,8 +307,8 @@ void ManagePasswordsBubbleModel::OnPasswordAction(
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
   password_manager::PasswordStore* password_store =
-      PasswordStoreFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS)
-          .get();
+      PasswordStoreFactory::GetForProfile(
+          profile, ServiceAccessType::EXPLICIT_ACCESS).get();
   DCHECK(password_store);
   if (action == REMOVE_PASSWORD)
     password_store->RemoveLogin(password_form);
@@ -324,14 +326,6 @@ void ManagePasswordsBubbleModel::OnChooseCredentials(
   state_ = password_manager::ui::INACTIVE_STATE;
 }
 
-void ManagePasswordsBubbleModel::OnShowOSPasswordHelpArticle() {
-  // TODO(vasilii): open the Help Article.
-}
-
-void ManagePasswordsBubbleModel::OnHideOSPasswordBubble(bool permanently) {
-  // TODO(vasilii): Save the decision to prefs.
-}
-
 // static
 int ManagePasswordsBubbleModel::UsernameFieldWidth() {
   return GetFieldWidth(USERNAME_FIELD);
@@ -340,8 +334,4 @@ int ManagePasswordsBubbleModel::UsernameFieldWidth() {
 // static
 int ManagePasswordsBubbleModel::PasswordFieldWidth() {
   return GetFieldWidth(PASSWORD_FIELD);
-}
-
-bool ManagePasswordsBubbleModel::ShouldShowOSPasswordBubble() {
-  return false;
 }

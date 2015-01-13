@@ -70,7 +70,7 @@
 #include "ui/gfx/frame_time.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/rect_conversions.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/surface/transport_dib.h"
@@ -835,7 +835,7 @@ void RenderWidget::OnClose() {
   // If there is a Send call on the stack, then it could be dangerous to close
   // now.  Post a task that only gets invoked when there are no nested message
   // loops.
-  base::MessageLoop::current()->PostNonNestableTask(
+  RenderThread::Get()->GetTaskRunner()->PostNonNestableTask(
       FROM_HERE, base::Bind(&RenderWidget::Close, this));
 
   // Balances the AddRef taken when we called AddRoute.
@@ -1198,12 +1198,16 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
         "RenderWidget::OnHandleInputEvent ack throttled",
         TRACE_EVENT_SCOPE_THREAD);
       if (pending_input_event_ack_) {
+        TRACE_EVENT_ASYNC_END0("input", "RenderWidget::ThrottledInputEventAck",
+                               pending_input_event_ack_.get());
         // As two different kinds of events could cause us to postpone an ack
         // we send it now, if we have one pending. The Browser should never
         // send us the same kind of event we are delaying the ack for.
         Send(pending_input_event_ack_.release());
       }
       pending_input_event_ack_ = response.Pass();
+      TRACE_EVENT_ASYNC_BEGIN0("input", "RenderWidget::ThrottledInputEventAck",
+                               pending_input_event_ack_.get());
       if (compositor_)
         compositor_->NotifyInputThrottledUntilCommit();
     } else {
@@ -1260,8 +1264,11 @@ void RenderWidget::ClearFocus() {
 }
 
 void RenderWidget::FlushPendingInputEventAck() {
-  if (pending_input_event_ack_)
+  if (pending_input_event_ack_) {
+    TRACE_EVENT_ASYNC_END0("input", "RenderWidget::ThrottledInputEventAck",
+                           pending_input_event_ack_.get());
     Send(pending_input_event_ack_.release());
+  }
   total_input_handling_time_this_frame_ = base::TimeDelta();
 }
 
@@ -1500,7 +1507,7 @@ void RenderWidget::closeWidgetSoon() {
   // could be closed before the JS finishes executing.  So instead, post a
   // message back to the message loop, which won't run until the JS is
   // complete, and then the Close message can be sent.
-  base::MessageLoop::current()->PostTask(
+  RenderThread::Get()->GetTaskRunner()->PostTask(
       FROM_HERE, base::Bind(&RenderWidget::DoDeferredClose, this));
 }
 

@@ -434,7 +434,8 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
     return true;
 #endif
 
-  if (toolbar_->HandleEvent(event_device_res))
+  if (!IsMouseOnScrollbar(event_device_res) &&
+      toolbar_->HandleEvent(event_device_res))
     return true;
 
 #ifdef ENABLE_THUMBNAILS
@@ -496,14 +497,8 @@ bool Instance::HandleInputEvent(const pp::InputEvent& event) {
         if (!IsOverlayScrollbar() &&
             !available_area_.Contains(mouse_event.GetPosition())) {
           try_engine_first = false;
-        } else if (IsOverlayScrollbar()) {
-          pp::Rect temp;
-          if ((v_scrollbar_.get() && v_scrollbar_->GetLocation(&temp) &&
-              temp.Contains(mouse_event_dip.GetPosition())) ||
-              (h_scrollbar_.get() && h_scrollbar_->GetLocation(&temp) &&
-              temp.Contains(mouse_event_dip.GetPosition()))) {
+        } else if (IsOverlayScrollbar() && IsMouseOnScrollbar(event)) {
             try_engine_first = false;
-          }
         }
       }
       break;
@@ -1231,7 +1226,13 @@ void Instance::NavigateTo(const std::string& url, bool open_in_new_tab) {
     // If |url_copy| starts with '#', then it's for the same URL with a
     // different URL fragment.
     if (url_copy[0] == '#') {
-      url_copy = url_ + url_copy;
+      // if '#' is already present in |url_| then remove old fragment and add
+      // new |url_copy| fragment.
+      std::size_t index = url_.find('#');
+      if (index != std::string::npos)
+        url_copy = url_.substr(0, index) + url_copy;
+      else
+        url_copy = url_ + url_copy;
       // Changing the href does not actually do anything when navigating in the
       // same tab, so do the actual page scroll here. Then fall through so the
       // href gets updated.
@@ -1602,6 +1603,22 @@ void Instance::RotateClockwise() {
 
 void Instance::RotateCounterclockwise() {
   engine_->RotateCounterclockwise();
+}
+
+bool Instance::IsMouseOnScrollbar(const pp::InputEvent& event) {
+  pp::MouseInputEvent mouse_event(event);
+  if (mouse_event.is_null())
+    return false;
+
+  pp::Point pt = mouse_event.GetPosition();
+  pp::Rect temp;
+  if ((v_scrollbar_.get() && v_scrollbar_->GetLocation(&temp) &&
+       temp.Contains(pt)) ||
+      (h_scrollbar_.get() && h_scrollbar_->GetLocation(&temp) &&
+       temp.Contains(pt))) {
+    return true;
+  }
+  return false;
 }
 
 void Instance::PreviewDocumentLoadComplete() {

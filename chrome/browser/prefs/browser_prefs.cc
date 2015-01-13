@@ -24,7 +24,6 @@
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/geolocation/geolocation_prefs.h"
-#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/gpu/gl_string_manager.h"
 #include "chrome/browser/gpu/gpu_mode_manager.h"
 #include "chrome/browser/intranet_redirect_detector.h"
@@ -86,8 +85,6 @@
 #include "components/dom_distiller/core/distilled_page_prefs.h"
 #include "components/enhanced_bookmarks/bookmark_server_cluster_service.h"
 #include "components/gcm_driver/gcm_channel_status_syncer.h"
-#include "components/google/core/browser/google_pref_names.h"
-#include "components/google/core/browser/google_url_tracker.h"
 #include "components/network_time/network_time_tracker.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_url_collection_experiment.h"
@@ -124,16 +121,19 @@
 #include "chrome/browser/signin/easy_unlock_service.h"
 #include "chrome/browser/ui/webui/extensions/extension_settings_handler.h"
 #include "extensions/browser/extension_prefs.h"
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+#include "chrome/browser/extensions/api/copresence/copresence_api.h"
 #endif
+#endif  // defined(ENABLE_EXTENSIONS)
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 #include "chrome/browser/plugins/plugins_resource_service.h"
 #endif
 
 #if defined(ENABLE_SUPERVISED_USERS)
+#include "chrome/browser/supervised_user/legacy/supervised_user_shared_settings_service.h"
+#include "chrome/browser/supervised_user/legacy/supervised_user_sync_service.h"
 #include "chrome/browser/supervised_user/supervised_user_service.h"
-#include "chrome/browser/supervised_user/supervised_user_shared_settings_service.h"
-#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
 #include "chrome/browser/supervised_user/supervised_user_whitelist_service.h"
 #endif
 
@@ -224,7 +224,6 @@ enum MigratedPreferences {
   NO_PREFS = 0,
   DNS_PREFS = 1 << 0,
   WINDOWS_PREFS = 1 << 1,
-  GOOGLE_URL_TRACKER_PREFS = 1 << 2,
 };
 
 // A previous feature (see
@@ -324,8 +323,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
 
 #if defined(OS_CHROMEOS)
   ChromeOSMetricsProvider::RegisterPrefs(registry);
-  chromeos::AudioDevicesPrefHandlerImpl::RegisterPrefs(
-      registry, prefs::kAudioCaptureAllowed);
+  chromeos::AudioDevicesPrefHandlerImpl::RegisterPrefs(registry);
   chromeos::ChromeUserManagerImpl::RegisterPrefs(registry);
   chromeos::DataPromoNotification::RegisterPrefs(registry);
   chromeos::DeviceOAuth2TokenService::RegisterPrefs(registry);
@@ -442,7 +440,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   extensions::launch_util::RegisterProfilePrefs(registry);
   ExtensionWebUI::RegisterProfilePrefs(registry);
   extensions::ExtensionPrefs::RegisterProfilePrefs(registry);
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  extensions::CopresenceService::RegisterProfilePrefs(registry);
 #endif
+#endif  // defined(ENABLE_EXTENSIONS)
 
 #if defined(ENABLE_NOTIFICATIONS)
   DesktopNotificationService::RegisterProfilePrefs(registry);
@@ -620,29 +621,6 @@ void MigrateBrowserPrefs(Profile* profile, PrefService* local_state) {
     local_state->ClearPref(prefs::kBrowserWindowPlacement);
 
     current_version |= WINDOWS_PREFS;
-    local_state->SetInteger(prefs::kMultipleProfilePrefMigration,
-                            current_version);
-  }
-
-  if (!(current_version & GOOGLE_URL_TRACKER_PREFS)) {
-    registry->RegisterStringPref(prefs::kLastKnownGoogleURL,
-                                 GoogleURLTracker::kDefaultGoogleHomepage);
-    if (local_state->HasPrefPath(prefs::kLastKnownGoogleURL)) {
-      user_prefs->SetString(prefs::kLastKnownGoogleURL,
-                            local_state->GetString(prefs::kLastKnownGoogleURL));
-    }
-    local_state->ClearPref(prefs::kLastKnownGoogleURL);
-
-    registry->RegisterStringPref(prefs::kLastPromptedGoogleURL,
-                                 std::string());
-    if (local_state->HasPrefPath(prefs::kLastPromptedGoogleURL)) {
-      user_prefs->SetString(
-          prefs::kLastPromptedGoogleURL,
-          local_state->GetString(prefs::kLastPromptedGoogleURL));
-    }
-    local_state->ClearPref(prefs::kLastPromptedGoogleURL);
-
-    current_version |= GOOGLE_URL_TRACKER_PREFS;
     local_state->SetInteger(prefs::kMultipleProfilePrefMigration,
                             current_version);
   }

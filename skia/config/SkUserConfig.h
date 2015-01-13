@@ -138,6 +138,16 @@
 #define SK_SUPPORT_UNITTEST
 #endif
 
+/* If cross process SkPictureImageFilters are not explicitly enabled then
+   they are always disabled.
+ */
+#ifndef SK_ALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
+    #ifndef SK_DISALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
+        #define SK_DISALLOW_CROSSPROCESS_PICTUREIMAGEFILTERS
+    #endif
+#endif
+
+
 /* If your system embeds skia and has complex event logging, define this
    symbol to name a file that maps the following macros to your system's
    equivalents:
@@ -197,14 +207,14 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_CPU_LENDIAN
 #undef  SK_CPU_BENDIAN
 
-#elif defined(SK_BUILD_FOR_UNIX)
+#elif defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
 
 // Prefer FreeType's emboldening algorithm to Skia's
 // TODO: skia used to just use hairline, but has improved since then, so
 // we should revisit this choice...
 #define SK_USE_FREETYPE_EMBOLDEN
 
-#ifdef SK_CPU_BENDIAN
+#if defined(SK_BUILD_FOR_UNIX) && defined(SK_CPU_BENDIAN)
 // Above we set the order for ARGB channels in registers. I suspect that, on
 // big endian machines, you can keep this the same and everything will work.
 // The in-memory order will be different, of course, but as long as everything
@@ -257,16 +267,24 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_GRADIENT_PRECISION
-#   define SK_SUPPORT_LEGACY_GRADIENT_PRECISION
-#endif
-
 #ifndef    SK_IGNORE_ETC1_SUPPORT
 #   define SK_IGNORE_ETC1_SUPPORT
 #endif
 
 #ifndef    SK_IGNORE_GPU_DITHER
 #   define SK_IGNORE_GPU_DITHER
+#endif
+
+#ifndef SK_SUPPORT_LEGACY_ADDOVAL
+#   define SK_SUPPORT_LEGACY_ADDOVAL
+#endif
+
+#ifndef SK_SUPPORT_LEGACY_ADDRRECT
+#   define SK_SUPPORT_LEGACY_ADDRRECT
+#endif
+
+#ifndef SK_IGNORE_GPU_LAYER_HOISTING
+#   define SK_IGNORE_GPU_LAYER_HOISTING
 #endif
 
 // If this goes well, we can have Skia respect DYNAMIC_ANNOTATIONS_ENABLED directly.

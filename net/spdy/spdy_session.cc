@@ -918,7 +918,7 @@ void SpdySession::CancelStreamRequest(
   CHECK_GE(priority, MINIMUM_PRIORITY);
   CHECK_LE(priority, MAXIMUM_PRIORITY);
 
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   // |request| should not be in a queue not matching its priority.
   for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
     if (priority == i)
@@ -1631,7 +1631,7 @@ int SpdySession::DoWriteComplete(int result) {
 }
 
 void SpdySession::DcheckGoingAway() const {
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   DCHECK_GE(availability_state_, STATE_GOING_AWAY);
   for (int i = MINIMUM_PRIORITY; i <= MAXIMUM_PRIORITY; ++i) {
     DCHECK(pending_create_stream_queues_[i].empty());
@@ -1705,6 +1705,11 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   }
   MakeUnavailable();
 
+  // Mark host_port_pair requiring HTTP/1.1 for subsequent connections.
+  if (err == ERR_HTTP_1_1_REQUIRED) {
+    http_server_properties_->SetHTTP11Required(host_port_pair());
+  }
+
   // If |err| indicates an error occurred, inform the peer that we're closing
   // and why. Don't GOAWAY on a graceful or idle close, as that may
   // unnecessarily wake the radio. We could technically GOAWAY on network errors
@@ -1713,7 +1718,7 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   if (err != OK &&
       err != ERR_ABORTED &&  // Used by SpdySessionPool to close idle sessions.
       err != ERR_NETWORK_CHANGED &&  // Used to deprecate sessions on IP change.
-      err != ERR_SOCKET_NOT_CONNECTED &&
+      err != ERR_SOCKET_NOT_CONNECTED && err != ERR_HTTP_1_1_REQUIRED &&
       err != ERR_CONNECTION_CLOSED && err != ERR_CONNECTION_RESET) {
     // Enqueue a GOAWAY to inform the peer of why we're closing the connection.
     SpdyGoAwayIR goaway_ir(last_accepted_push_stream_id_,
@@ -2432,6 +2437,13 @@ void SpdySession::OnRstStream(SpdyStreamId stream_id,
     it->second.stream->OnDataReceived(scoped_ptr<SpdyBuffer>());
   } else if (status == RST_STREAM_REFUSED_STREAM) {
     CloseActiveStreamIterator(it, ERR_SPDY_SERVER_REFUSED_STREAM);
+  } else if (status == RST_STREAM_HTTP_1_1_REQUIRED) {
+    // TODO(bnc): Record histogram with number of open streams capped at 50.
+    it->second.stream->LogStreamError(
+        ERR_HTTP_1_1_REQUIRED,
+        base::StringPrintf(
+            "SPDY session closed because of stream with status: %d", status));
+    DoDrainSession(ERR_HTTP_1_1_REQUIRED, "HTTP_1_1_REQUIRED for stream.");
   } else {
     RecordProtocolErrorHistogram(
         PROTOCOL_ERROR_RST_STREAM_FOR_NON_ACTIVE_STREAM);
@@ -2457,7 +2469,12 @@ void SpdySession::OnGoAway(SpdyStreamId last_accepted_stream_id,
                  unclaimed_pushed_streams_.size(),
                  status));
   MakeUnavailable();
-  StartGoingAway(last_accepted_stream_id, ERR_ABORTED);
+  if (status == GOAWAY_HTTP_1_1_REQUIRED) {
+    // TODO(bnc): Record histogram with number of open streams capped at 50.
+    DoDrainSession(ERR_HTTP_1_1_REQUIRED, "HTTP_1_1_REQUIRED for stream.");
+  } else {
+    StartGoingAway(last_accepted_stream_id, ERR_ABORTED);
+  }
   // This is to handle the case when we already don't have any active
   // streams (i.e., StartGoingAway() did nothing). Otherwise, we have
   // active streams and so the last one being closed will finish the
@@ -3248,7 +3265,7 @@ void SpdySession::ResumeSendStalledStreams() {
 
   while (!IsSendStalled()) {
     size_t old_size = 0;
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
     old_size = GetTotalSize(stream_send_unstall_queue_);
 #endif
 

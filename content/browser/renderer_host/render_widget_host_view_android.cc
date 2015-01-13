@@ -78,8 +78,8 @@
 #include "ui/gfx/android/view_configuration.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/geometry/dip_util.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/touch_selection/touch_selection_controller.h"
 
 namespace content {
@@ -191,7 +191,8 @@ GLHelperHolder::CreateContext3D() {
           url, gpu_channel_host.get(), attrs, lose_context_when_out_of_memory,
           limits, nullptr));
   if (context->InitializeOnCurrentThread()) {
-    context->pushGroupMarkerEXT(
+    context->traceBeginCHROMIUM(
+        "gpu_toplevel",
         base::StringPrintf("CmdBufferImageTransportFactory-%p",
                            context.get()).c_str());
   } else {
@@ -1359,7 +1360,10 @@ void RenderWidgetHostViewAndroid::OnFrameMetadataUpdated(
   if (host_ && host_->IsRenderView()) {
     RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
         RenderViewHost::From(host_));
-    rvhi->media_web_contents_observer()->OnFrameInfoUpdated();
+    WebContentsImpl* web_contents_impl =
+        static_cast<WebContentsImpl*>(WebContents::FromRenderViewHost(rvhi));
+    if (web_contents_impl)
+      web_contents_impl->media_web_contents_observer()->OnFrameInfoUpdated();
   }
 #endif  // defined(VIDEO_HOLE)
 }
@@ -1440,12 +1444,8 @@ void RenderWidgetHostViewAndroid::SendBeginFrame(base::TimeTicks frame_time,
                "frame_time_us", frame_time.ToInternalValue());
   base::TimeTicks display_time = frame_time + vsync_period;
 
-  // TODO(brianderson): Use adaptive draw-time estimation.
-  base::TimeDelta estimated_browser_composite_time =
-      base::TimeDelta::FromMicroseconds(
-          (1.0f * base::Time::kMicrosecondsPerSecond) / (3.0f * 60));
-
-  base::TimeTicks deadline = display_time - estimated_browser_composite_time;
+  base::TimeTicks deadline =
+      display_time - host_->GetEstimatedBrowserCompositeTime();
 
   host_->Send(new ViewMsg_BeginFrame(
       host_->GetRoutingID(),

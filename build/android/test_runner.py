@@ -128,9 +128,9 @@ def AddRemoteDeviceOptions(parser):
   group.add_argument('--collect', default='',
                    help=('Only collects the test results if set. '
                          'Gets test_run_id from given file path.'))
-  group.add_argument('--remote-device', default='Nexus 5',
+  group.add_argument('--remote-device', default='',
                    help=('Device type to run test on.'))
-  group.add_argument('--remote-device-os', default='4.4.2',
+  group.add_argument('--remote-device-os', default='',
                    help=('OS to have on the device.'))
   group.add_argument('--results-path', default='',
                    help=('File path to download results to.'))
@@ -247,6 +247,10 @@ def AddJavaTestOptions(argument_group):
             'should be of the form <target>:<source>, <target> is relative to '
             'the device data directory, and <source> is relative to the '
             'chromium build directory.'))
+  argument_group.add_argument(
+      '--disable-dalvik-asserts', dest='set_asserts', action='store_false',
+      default=True, help='Removes the dalvik.vm.enableassertions property')
+
 
 
 def ProcessJavaTestOptions(args):
@@ -356,7 +360,8 @@ def ProcessInstrumentationOptions(args):
       args.test_runner,
       args.test_support_apk_path,
       args.device_flags,
-      args.isolate_file_path
+      args.isolate_file_path,
+      args.set_asserts
       )
 
 
@@ -414,7 +419,8 @@ def ProcessUIAutomatorOptions(args):
       args.screenshot_failures,
       args.uiautomator_jar,
       args.uiautomator_info_jar,
-      args.package)
+      args.package,
+      args.set_asserts)
 
 
 def AddJUnitTestOptions(parser):
@@ -767,13 +773,10 @@ def _RunPerfTests(args):
     return perf_test_runner.OutputJsonList(
         perf_options.steps, perf_options.output_json_list)
 
-  if perf_options.output_chartjson_data:
-    return perf_test_runner.OutputChartjson(
-        perf_options.print_step, perf_options.output_chartjson_data)
-
   # Just print the results from a single previously executed step.
   if perf_options.print_step:
-    return perf_test_runner.PrintTestOutput(perf_options.print_step)
+    return perf_test_runner.PrintTestOutput(
+        perf_options.print_step, perf_options.output_chartjson_data)
 
   runner_factory, tests, devices = perf_setup.Setup(perf_options)
 

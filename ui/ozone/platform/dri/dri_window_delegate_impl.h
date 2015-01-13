@@ -40,11 +40,13 @@ class DriWindowDelegateImpl : public DriWindowDelegate {
   void SetCursor(const std::vector<SkBitmap>& bitmaps,
                  const gfx::Point& location,
                  int frame_delay_ms) override;
+  void SetCursorWithoutAnimations(const std::vector<SkBitmap>& bitmaps,
+                                  const gfx::Point& location) override;
   void MoveCursor(const gfx::Point& location) override;
 
  private:
   // Draw the last set cursor & update the cursor plane.
-  void ResetCursor();
+  void ResetCursor(bool bitmap_only);
 
   // Draw next frame in an animated cursor.
   void OnCursorAnimationTimeout();

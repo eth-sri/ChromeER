@@ -13,6 +13,7 @@ import android.util.Log;
 import android.view.ContextMenu;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.FrameLayout;
 
@@ -24,6 +25,7 @@ import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.TabState.WebContentsState;
 import org.chromium.chrome.browser.banners.AppBannerManager;
+import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuItemDelegate;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator;
 import org.chromium.chrome.browser.contextmenu.ContextMenuParams;
@@ -41,6 +43,7 @@ import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabModelBase;
 import org.chromium.chrome.browser.toolbar.ToolbarModel;
 import org.chromium.chrome.browser.ui.toolbar.ToolbarModelSecurityLevel;
+import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.ContentViewCore;
@@ -52,7 +55,9 @@ import org.chromium.content_public.common.TopControlsState;
 import org.chromium.printing.PrintManagerDelegateImpl;
 import org.chromium.printing.PrintingController;
 import org.chromium.printing.PrintingControllerImpl;
+import org.chromium.ui.WindowOpenDisposition;
 import org.chromium.ui.base.Clipboard;
+import org.chromium.ui.base.LocalizationUtils;
 import org.chromium.ui.base.PageTransition;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.gfx.DeviceDisplayInfo;
@@ -91,8 +96,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  *  unless special care is taken to make sure {@link Tab#incrementIdCounterTo(int)} is called with
  *  the correct value across all affected {@link Activity}s.
  */
-public class Tab {
+public class Tab implements ViewGroup.OnHierarchyChangeListener,
+        View.OnSystemUiVisibilityChangeListener {
     public static final int INVALID_TAB_ID = -1;
+    private static final long INVALID_TIMESTAMP = -1;
 
     /** Used for logging. */
     private static final String TAG = "Tab";
@@ -139,6 +146,9 @@ public class Tab {
     /** {@link ContentViewCore} showing the current page, or {@code null} if the tab is frozen. */
     private ContentViewCore mContentViewCore;
 
+    /** The parent view of the ContentView and the InfoBarContainer. */
+    private FrameLayout mContentViewParent;
+
     /** A list of Tab observers.  These are used to broadcast Tab events to listeners. */
     private final ObserverList<TabObserver> mObservers = new ObserverList<TabObserver>();
 
@@ -161,7 +171,8 @@ public class Tab {
      */
     private boolean mGroupedWithParent = true;
 
-    private boolean mIsClosing = false;
+    private boolean mIsClosing;
+    private boolean mIsShowingErrorPage;
 
     private Bitmap mFavicon;
 
@@ -227,6 +238,29 @@ public class Tab {
      */
     private boolean mIsHidden = true;
 
+    /**
+     * The last time this tab was shown or the time of its initialization if it wasn't yet shown.
+     */
+    private long mTimestampMillis = INVALID_TIMESTAMP;
+
+    /**
+     * Title of the ContentViews webpage.Always update mTitle through updateTitle() so that it also
+     * updates mIsTitleDirectionRtl correctly.
+     */
+    private String mTitle;
+
+    /**
+     * Indicates if mTitle should be displayed from right to left.
+     */
+    private boolean mIsTitleDirectionRtl;
+
+    /**
+     * The mInterceptNavigationDelegate will be consulted for top-level frame navigations. This
+     * allows presenting the intent picker to the user so that a native Android application can be
+     * used if available.
+     */
+    private InterceptNavigationDelegate mInterceptNavigationDelegate;
+
     private FullscreenManager mFullscreenManager;
     private float mPreviousFullscreenTopControlsOffsetY = Float.NaN;
     private float mPreviousFullscreenContentOffsetY = Float.NaN;
@@ -271,6 +305,19 @@ public class Tab {
         @Override
         public String getPageUrl() {
             return getUrl();
+        }
+
+        @Override
+        public void onOpenImageUrl(String url, Referrer referrer) {
+            LoadUrlParams loadUrlParams = new LoadUrlParams(url);
+            loadUrlParams.setTransitionType(PageTransition.AUTO_BOOKMARK);
+            loadUrlParams.setReferrer(referrer);
+            loadUrl(loadUrlParams);
+        }
+
+        @Override
+        public void onSearchByImageInNewTab() {
+            triggerSearchByImage();
         }
     }
 
@@ -377,6 +424,13 @@ public class Tab {
             return mFullscreenManager == null
                     ? false : mFullscreenManager.getPersistentFullscreenMode();
         }
+
+        @Override
+        public void openNewTab(String url, String extraHeaders, byte[] postData, int disposition,
+                boolean isRendererInitiated) {
+            Tab.this.openNewTab(
+                    url, extraHeaders, postData, disposition, true, isRendererInitiated);
+        }
     }
 
     /**
@@ -384,6 +438,11 @@ public class Tab {
      * by child classes.
      */
     protected class TabContentViewClient extends ContentViewClient {
+        @Override
+        public void onUpdateTitle(String title) {
+            updateTitle(title);
+        }
+
         @Override
         public void onContextualActionBarShown() {
             for (TabObserver observer : mObservers) {
@@ -432,18 +491,27 @@ public class Tab {
         }
 
         @Override
+        public void didFinishLoad(long frameId, String validatedUrl, boolean isMainFrame) {
+            if (isMainFrame) didFinishPageLoad();
+        }
+
+        @Override
         public void didFailLoad(boolean isProvisionalLoad, boolean isMainFrame, int errorCode,
                 String description, String failingUrl) {
             for (TabObserver observer : mObservers) {
                 observer.onDidFailLoad(Tab.this, isProvisionalLoad, isMainFrame, errorCode,
                         description, failingUrl);
             }
+
+            if (isMainFrame) didFailPageLoad(errorCode);
         }
 
         @Override
         public void didStartProvisionalLoadForFrame(long frameId, long parentFrameId,
                 boolean isMainFrame, String validatedUrl, boolean isErrorPage,
                 boolean isIframeSrcdoc) {
+            if (isMainFrame) didStartPageLoad(validatedUrl, isErrorPage);
+
             for (TabObserver observer : mObservers) {
                 observer.onDidStartProvisionalLoadForFrame(Tab.this, frameId, parentFrameId,
                         isMainFrame, validatedUrl, isErrorPage, isIframeSrcdoc);
@@ -453,15 +521,32 @@ public class Tab {
         @Override
         public void didCommitProvisionalLoadForFrame(long frameId, boolean isMainFrame, String url,
                 int transitionType) {
+            if (isMainFrame && UmaUtils.isRunningApplicationStart()) {
+                nativeRecordStartupToCommitUma();
+                UmaUtils.setRunningApplicationStart(false);
+            }
+
+            if (isMainFrame) {
+                mIsTabStateDirty = true;
+                updateTitle();
+            }
+
             for (TabObserver observer : mObservers) {
                 observer.onDidCommitProvisionalLoadForFrame(
                         Tab.this, frameId, isMainFrame, url, transitionType);
             }
+
+            notifyPageUrlChanged();
         }
 
         @Override
         public void didNavigateMainFrame(String url, String baseUrl,
                 boolean isNavigationToDifferentPage, boolean isFragmentNavigation, int statusCode) {
+            FullscreenManager fullscreenManager = getFullscreenManager();
+            if (isNavigationToDifferentPage && fullscreenManager != null) {
+                fullscreenManager.setPersistentFullscreenMode(false);
+            }
+
             for (TabObserver observer : mObservers) {
                 observer.onDidNavigateMainFrame(
                         Tab.this, url, baseUrl, isNavigationToDifferentPage,
@@ -479,6 +564,9 @@ public class Tab {
 
         @Override
         public void didAttachInterstitialPage() {
+            getInfoBarContainer().setVisibility(View.INVISIBLE);
+            showRenderedPage();
+
             for (TabObserver observer : mObservers) {
                 observer.onDidAttachInterstitialPage(Tab.this);
             }
@@ -486,6 +574,8 @@ public class Tab {
 
         @Override
         public void didDetachInterstitialPage() {
+            getInfoBarContainer().setVisibility(View.VISIBLE);
+
             for (TabObserver observer : mObservers) {
                 observer.onDidDetachInterstitialPage(Tab.this);
             }
@@ -573,7 +663,12 @@ public class Tab {
         mFrozenContentsState = state.contentsState;
         mSyncId = (int) state.syncId;
         mShouldPreserve = state.shouldPreserve;
+        mTimestampMillis = state.timestampMillis;
         mUrl = state.getVirtualUrlFromState();
+
+        mTitle = state.getDisplayTitleFromState();
+        mIsTitleDirectionRtl = LocalizationUtils.getFirstStrongCharacterDirection(mTitle)
+                == LocalizationUtils.RIGHT_TO_LEFT;
     }
 
     /**
@@ -689,6 +784,13 @@ public class Tab {
     }
 
     /**
+     * @return Whether the {@link Tab} is currently showing an error page.
+     */
+    public boolean isShowingErrorPage() {
+        return mIsShowingErrorPage;
+    }
+
+    /**
      * @return Whether or not the tab has something valid to render.
      */
     public boolean isReady() {
@@ -701,8 +803,7 @@ public class Tab {
      *         This can be {@code null}, if the tab is frozen or being initialized or destroyed.
      */
     public View getView() {
-        return mNativePage != null ? mNativePage.getView() :
-                (mContentViewCore != null ? mContentViewCore.getContainerView() : null);
+        return mNativePage != null ? mNativePage.getView() : mContentViewParent;
     }
 
     /**
@@ -744,6 +845,7 @@ public class Tab {
         tabState.parentId = mParentId;
         tabState.shouldPreserve = mShouldPreserve;
         tabState.syncId = mSyncId;
+        tabState.timestampMillis = mTimestampMillis;
         return tabState;
     }
 
@@ -1011,6 +1113,12 @@ public class Tab {
             if (mContentViewCore != null) mContentViewCore.onShow();
 
             showInternal(type);
+
+            // Updating the timestamp has to happen after the showInternal() call since subclasses
+            // may use it for logging.
+            mTimestampMillis = System.currentTimeMillis();
+
+            for (TabObserver observer : mObservers) observer.onShown(this);
         } finally {
             TraceEvent.end("Tab.show");
         }
@@ -1041,6 +1149,8 @@ public class Tab {
         }
 
         hideInternal();
+
+        for (TabObserver observer : mObservers) observer.onHidden(this);
     }
 
     /**
@@ -1076,6 +1186,8 @@ public class Tab {
      * Hides the current {@link NativePage}, if any, and shows the {@link ContentViewCore}'s view.
      */
     protected void showRenderedPage() {
+        updateTitle();
+
         if (mNativePage == null) return;
         NativePage previousNativePage = mNativePage;
         mNativePage = null;
@@ -1084,28 +1196,120 @@ public class Tab {
     }
 
     /**
-     * Initializes this {@link Tab}.
+     * Initializes the ChromeTab after construction.
+     * @param nativeWebContents native WebContents object if available or 0 when creating a brand
+     *                          new tab
+     * @param tabContentManager A TabContentManager instance or {@code null} if the layer should not
+     *                          be attached to one.
+     * @param initiallyHidden   true iff the tab being initialized is created in background
      */
-    public void initialize() {
+    public void initialize(long nativeWebContents, TabContentManager tabContentManager,
+            boolean initiallyHidden) {
+        try {
+            TraceEvent.begin("Tab.initialize");
+            internalInit(tabContentManager);
+
+            if (getFrozenContentsState() == null && getPendingLoadParams() == null) {
+                boolean existingWebContents = nativeWebContents != 0;
+                // There is no frozen WebContents state or pending lazy load, create new
+                // WebContents.
+                if (nativeWebContents == 0) {
+                    nativeWebContents =
+                            ContentViewUtil.createNativeWebContents(isIncognito(), initiallyHidden);
+                }
+                initContentViewCore(nativeWebContents);
+                if (existingWebContents) {
+                    WebContents webContents = getWebContents();
+                    assert webContents != null;
+                    if (webContents.isLoadingToDifferentDocument()) {
+                        didStartPageLoad(webContents.getUrl(), false);
+                    }
+                }
+            }
+            if (mTimestampMillis == INVALID_TIMESTAMP) {
+                mTimestampMillis = System.currentTimeMillis();
+            }
+        } finally {
+            TraceEvent.end("Tab.initialize");
+        }
+    }
+
+    /**
+     * Handles common post-construction initialization.
+     * @param contentViewCore   ContentViewCore object to attach to the tab.
+     * @param tabContentManager A TabContentManager instance or {@code null} if the layer should not
+     *                          be attached to one.
+     */
+    public void initialize(ContentViewCore contentViewCore, TabContentManager tabContentManager) {
+        try {
+            TraceEvent.begin("Tab.initialize");
+            internalInit(tabContentManager);
+            setContentViewCore(contentViewCore);
+            if (mTimestampMillis == INVALID_TIMESTAMP) {
+                mTimestampMillis = System.currentTimeMillis();
+            }
+        } finally {
+            TraceEvent.end("Tab.initialize");
+        }
+    }
+
+    /**
+     * Perform any subclass-specific initialization tasks.
+     */
+    protected void internalInit(TabContentManager tabContentManager) {
         initializeNative();
+    }
+
+    /**
+     * Called when a page has started loading.
+     * @param validatedUrl URL being loaded.
+     * @param showingErrorPage Whether an error page is being shown.
+     */
+    protected void didStartPageLoad(String validatedUrl, boolean showingErrorPage) {
+        mIsShowingErrorPage = showingErrorPage;
+
+        updateTitle();
+        removeSadTabIfPresent();
+        mInfoBarContainer.onPageStarted();
+
+        if (getContentViewCore() != null) {
+            getContentViewCore().stopCurrentAccessibilityNotifications();
+        }
+
+        clearHungRendererState();
+
+        for (TabObserver observer : mObservers) observer.onPageLoadStarted(this);
+    }
+
+    /**
+     * Called when a page has finished loading.
+     */
+    protected void didFinishPageLoad() {
+        mIsTabStateDirty = true;
+        updateTitle();
+        updateFullscreenEnabledState();
+
+        for (TabObserver observer : mObservers) observer.onPageLoadFinished(this);
+    }
+
+    /**
+     * Called when a page has failed loading.
+     * @param errorCode The error code causing the page to fail loading.
+     */
+    protected void didFailPageLoad(int errorCode) {
+        for (TabObserver observer : mObservers) observer.onPageLoadFailed(this, errorCode);
     }
 
     /**
      * Builds the native counterpart to this class.  Meant to be overridden by subclasses to build
      * subclass native counterparts instead.  Subclasses should not call this via super and instead
      * rely on the native class to create the JNI association.
+     *
+     * TODO(dfalcantara): Make this function harder to access.
      */
-    protected void initializeNative() {
+    public void initializeNative() {
         if (mNativeTabAndroid == 0) nativeInit();
         assert mNativeTabAndroid != 0;
-    }
-
-    /**
-     * A helper method to initialize a {@link ContentViewCore} without any
-     * native WebContents pointer.
-     */
-    protected final void initContentViewCore() {
-        initContentViewCore(ContentViewUtil.createNativeWebContents(mIncognito));
     }
 
     /**
@@ -1138,6 +1342,20 @@ public class Tab {
         destroyNativePageInternal(previousNativePage);
 
         mContentViewCore = cvc;
+        cvc.getContainerView().setOnHierarchyChangeListener(this);
+        cvc.getContainerView().setOnSystemUiVisibilityChangeListener(this);
+
+        // Wrap the ContentView in a FrameLayout, which will contain both the ContentView and the
+        // InfoBarContainer. The alternative -- placing the InfoBarContainer inside the ContentView
+        // -- causes problems since then the ContentView would contain both real views (the
+        // infobars) and virtual views (the web page elements), which breaks Android accessibility.
+        // http://crbug.com/416663
+        if (mContentViewParent != null) {
+            assert false;
+            mContentViewParent.removeAllViews();
+        }
+        mContentViewParent = new FrameLayout(mContext);
+        mContentViewParent.addView(cvc.getContainerView());
 
         mWebContentsDelegate = createWebContentsDelegate();
         mWebContentsObserver = new TabWebContentsObserver(mContentViewCore.getWebContents());
@@ -1157,9 +1375,9 @@ public class Tab {
             // initialized.
             WebContents webContents = mContentViewCore.getWebContents();
             mInfoBarContainer = new InfoBarContainer(
-                    (Activity) mContext, getId(), mContentViewCore.getContainerView(), webContents);
+                    mContext, getId(), mContentViewParent, webContents);
         } else {
-            mInfoBarContainer.onParentViewChanged(getId(), mContentViewCore.getContainerView());
+            mInfoBarContainer.onParentViewChanged(getId(), mContentViewParent);
         }
 
         if (AppBannerManager.isEnabled() && mAppBannerManager == null) {
@@ -1235,6 +1453,9 @@ public class Tab {
      * this method is called.  Once this call is made this {@link Tab} should no longer be used.
      */
     public void destroy() {
+        // Update the title before destroying the tab. http://b/5783092
+        updateTitle();
+
         for (TabObserver observer : mObservers) observer.onDestroyed(this);
         mObservers.clear();
 
@@ -1290,9 +1511,67 @@ public class Tab {
      */
     @CalledByNative
     public String getTitle() {
-        if (mNativePage != null) return mNativePage.getTitle();
-        if (getWebContents() != null) return getWebContents().getTitle();
-        return "";
+        if (mTitle == null) updateTitle();
+        return mTitle;
+    }
+
+    private void updateTitle() {
+        if (isFrozen()) return;
+
+        // When restoring the tabs, the title will no longer be populated, so request it from the
+        // ContentViewCore or NativePage (if present).
+        String title = "";
+        if (mNativePage != null) title = mNativePage.getTitle();
+        if (getWebContents() != null) title = getWebContents().getTitle();
+        updateTitle(title);
+    }
+
+    /**
+     * Cache the title for the current page.
+     *
+     * {@link ContentViewClient#onUpdateTitle} is unreliable, particularly for navigating backwards
+     * and forwards in the history stack, so pull the correct title whenever the page changes.
+     * onUpdateTitle is only called when the title of a navigation entry changes. When the user goes
+     * back a page the navigation entry exists with the correct title, thus the title is not
+     * actually changed, and no notification is sent.
+     * @param title Title of the page.
+     */
+    private void updateTitle(String title) {
+        if (TextUtils.equals(mTitle, title)) return;
+
+        mIsTabStateDirty = true;
+        mTitle = title;
+        mIsTitleDirectionRtl = LocalizationUtils.getFirstStrongCharacterDirection(title)
+                == LocalizationUtils.RIGHT_TO_LEFT;
+        notifyPageTitleChanged();
+    }
+
+    protected void notifyPageTitleChanged() {
+        RewindableIterator<TabObserver> observers = getTabObservers();
+        while (observers.hasNext()) {
+            observers.next().onTitleUpdated(this);
+        }
+    }
+
+    protected void notifyFaviconChanged() {
+        RewindableIterator<TabObserver> observers = getTabObservers();
+        while (observers.hasNext()) {
+            observers.next().onFaviconUpdated(this);
+        }
+    }
+
+    private void notifyPageUrlChanged() {
+        RewindableIterator<TabObserver> observers = getTabObservers();
+        while (observers.hasNext()) {
+            observers.next().onUrlUpdated(this);
+        }
+    }
+
+    /**
+     * @return True if the tab title should be displayed from right to left.
+     */
+    public boolean isTitleDirectionRtl() {
+        return mIsTitleDirectionRtl;
     }
 
     /**
@@ -1303,13 +1582,12 @@ public class Tab {
         // If we have no content or a native page, return null.
         if (getContentViewCore() == null) return null;
 
-        if (mFavicon != null) return mFavicon;
+        // Use the cached favicon only if the page wasn't changed.
+        if (mFavicon != null && mFaviconUrl != null && mFaviconUrl.equals(getUrl())) {
+            return mFavicon;
+        }
 
-        // Cache the result so we don't keep querying it.
-        mFavicon = nativeGetFavicon(mNativeTabAndroid);
-        // Invalidate the favicon URL so that if we do get a favicon for this page we don't drop it.
-        mFaviconUrl = null;
-        return mFavicon;
+        return nativeGetFavicon(mNativeTabAndroid);
     }
 
     /**
@@ -1425,6 +1703,8 @@ public class Tab {
      */
     public void setClosing(boolean closing) {
         mIsClosing = closing;
+
+        for (TabObserver observer : mObservers) observer.onClosingStateChanged(this, closing);
     }
 
     /**
@@ -1489,14 +1769,18 @@ public class Tab {
 
         destroyContentViewCoreInternal(mContentViewCore);
 
-        if (mInfoBarContainer != null && mInfoBarContainer.getParent() != null) {
-            mInfoBarContainer.removeFromParentView();
-        }
+        mContentViewParent.removeAllViews();
+        mContentViewParent = null;
         mContentViewCore.destroy();
-
         mContentViewCore = null;
+
         mWebContentsDelegate = null;
-        mWebContentsObserver = null;
+
+        if (mWebContentsObserver != null) {
+            mWebContentsObserver.detachFromWebContents();
+            mWebContentsObserver = null;
+        }
+
         mVoiceSearchTabHelper = null;
 
         assert mNativeTabAndroid != 0;
@@ -1512,6 +1796,8 @@ public class Tab {
      *            cleaned up.
      */
     protected void destroyContentViewCoreInternal(ContentViewCore cvc) {
+        cvc.getContainerView().setOnHierarchyChangeListener(null);
+        cvc.getContainerView().setOnSystemUiVisibilityChangeListener(null);
     }
 
     /**
@@ -1558,7 +1844,6 @@ public class Tab {
         boolean needUpdate = false;
         String url = getUrl();
         boolean pageUrlChanged = !url.equals(mFaviconUrl);
-
         // This method will be called multiple times if the page has more than one favicon.
         // we are trying to use the 16x16 DP icon here, Bitmap.createScaledBitmap will return
         // the origin bitmap if it is already 16x16 DP.
@@ -1728,6 +2013,13 @@ public class Tab {
      */
     public void setAppAssociatedWith(String appId) {
         mAppAssociatedWith = appId;
+    }
+
+    /**
+     * @return See {@link #mTimestampMillis}.
+     */
+    protected long getTimestampMillis() {
+        return mTimestampMillis;
     }
 
     /**
@@ -1939,6 +2231,117 @@ public class Tab {
                 getNativePage().getTitle());
     }
 
+    @Override
+    public void onChildViewRemoved(View parent, View child) {
+        FullscreenManager fullscreenManager = getFullscreenManager();
+        if (fullscreenManager != null) {
+            fullscreenManager.updateContentViewChildrenState();
+        }
+    }
+
+    @Override
+    public void onChildViewAdded(View parent, View child) {
+        FullscreenManager fullscreenManager = getFullscreenManager();
+        if (fullscreenManager != null) {
+            fullscreenManager.updateContentViewChildrenState();
+        }
+    }
+
+    @Override
+    public void onSystemUiVisibilityChange(int visibility) {
+        FullscreenManager fullscreenManager = getFullscreenManager();
+        if (fullscreenManager != null) {
+            fullscreenManager.onContentViewSystemUiVisibilityChange(visibility);
+        }
+    }
+
+    /**
+     * Triggers native search by image method.
+     */
+    public void triggerSearchByImage() {
+        if (mNativeTabAndroid != 0) nativeSearchByImageInNewTabAsync(mNativeTabAndroid);
+    }
+
+    /**
+     * Request that this tab receive focus. Currently, this function requests focus for the main
+     * View (usually a ContentView).
+     */
+    public void requestFocus() {
+        View view = getView();
+        if (view != null) view.requestFocus();
+    }
+
+    @CalledByNative
+    protected void openNewTab(String url, String extraHeaders, byte[] postData, int disposition,
+            boolean hasParent, boolean isRendererInitiated) {
+        if (isClosing()) return;
+
+        boolean incognito = isIncognito();
+        TabLaunchType tabLaunchType = TabLaunchType.FROM_LONGPRESS_FOREGROUND;
+        Tab parentTab = hasParent ? this : null;
+
+        switch (disposition) {
+            case WindowOpenDisposition.NEW_WINDOW: // fall through
+            case WindowOpenDisposition.NEW_FOREGROUND_TAB:
+                break;
+            case WindowOpenDisposition.NEW_POPUP: // fall through
+            case WindowOpenDisposition.NEW_BACKGROUND_TAB:
+                tabLaunchType = TabLaunchType.FROM_LONGPRESS_BACKGROUND;
+                break;
+            case WindowOpenDisposition.OFF_THE_RECORD:
+                assert incognito;
+                incognito = true;
+                break;
+            default:
+                assert false;
+        }
+
+        // If shouldIgnoreNewTab returns true, the intent is handled by another
+        // activity. As a result, don't launch a new tab to open the URL.
+        if (shouldIgnoreNewTab(url, incognito)) return;
+
+        LoadUrlParams loadUrlParams = new LoadUrlParams(url);
+        loadUrlParams.setVerbatimHeaders(extraHeaders);
+        loadUrlParams.setPostData(postData);
+        loadUrlParams.setIsRendererInitiated(isRendererInitiated);
+        openNewTab(loadUrlParams, tabLaunchType, parentTab, incognito);
+    }
+
+    /**
+     * Asks the Tab to open another Tab with the given parameters.  Must be implemented by
+     * subclasses because the Tab itself has no access to a TabModel.
+     * @param params Parameters for loading a URL in the new Tab.
+     * @param launchType How the Tab is being launched.
+     * @param parentTab Tab that is spawning a new Tab.
+     * @param incognito Whether the new Tab is supposed to be incognito.
+     */
+    protected void openNewTab(
+            LoadUrlParams params, TabLaunchType launchType, Tab parentTab, boolean incognito) {
+        assert false : "Subclasses must implement this method.";
+    }
+
+    /**
+     * @return True if the Tab should block the creation of new tabs via {@link #openNewTab}.
+     */
+    protected boolean shouldIgnoreNewTab(String url, boolean incognito) {
+        return false;
+    }
+
+    /**
+     * See {@link #mInterceptNavigationDelegate}.
+     */
+    protected InterceptNavigationDelegate getInterceptNavigationDelegate() {
+        return mInterceptNavigationDelegate;
+    }
+
+    /**
+     * See {@link #mInterceptNavigationDelegate}.
+     */
+    protected void setInterceptNavigationDelegate(InterceptNavigationDelegate delegate) {
+        mInterceptNavigationDelegate = delegate;
+        nativeSetInterceptNavigationDelegate(mNativeTabAndroid, delegate);
+    }
+
     /**
      * Ensures the counter is at least as high as the specified value.  The counter should always
      * point to an unused ID (which will be handed out next time a request comes in).  Exposed so
@@ -1972,4 +2375,8 @@ public class Tab {
     private native void nativeCreateHistoricalTab(long nativeTabAndroid);
     private native void nativeUpdateTopControlsState(
             long nativeTabAndroid, int constraints, int current, boolean animate);
+    private native void nativeSearchByImageInNewTabAsync(long nativeTabAndroid);
+    private native void nativeSetInterceptNavigationDelegate(long nativeTabAndroid,
+            InterceptNavigationDelegate delegate);
+    private static native void nativeRecordStartupToCommitUma();
 }

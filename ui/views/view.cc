@@ -1052,8 +1052,7 @@ ui::EventTarget* View::GetParentTarget() {
 }
 
 scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
-  return scoped_ptr<ui::EventTargetIterator>(
-      new ui::EventTargetIteratorImpl<View>(children_));
+  return make_scoped_ptr(new ui::EventTargetIteratorImpl<View>(children_));
 }
 
 ui::EventTargeter* View::GetEventTargeter() {
@@ -1915,6 +1914,17 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
                      parent_->CalculateOffsetToAncestorWithLayer(NULL));
     } else {
       SetLayerBounds(bounds_);
+    }
+
+    // In RTL mode, if our width has changed, our children's mirrored bounds
+    // will have changed. Update the child's layer bounds, or if it is not a
+    // layer, the bounds of any layers inside the child.
+    if (base::i18n::IsRTL() && bounds_.width() != previous_bounds.width()) {
+      for (int i = 0; i < child_count(); ++i) {
+        View* child = child_at(i);
+        child->UpdateChildLayerBounds(
+            gfx::Vector2d(child->GetMirroredX(), child->y()));
+      }
     }
   } else {
     // If our bounds have changed, then any descendant layer bounds may have

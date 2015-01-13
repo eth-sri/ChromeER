@@ -44,6 +44,7 @@
 #include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -54,7 +55,6 @@
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebPageSerializerClient.h"
-#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/base/window_open_disposition.h"
@@ -125,7 +125,6 @@ class DevToolsAgent;
 class DocumentState;
 class HistoryController;
 class HistoryEntry;
-class ImageResourceFetcher;
 class MouseLockDispatcher;
 class NavigationState;
 class PageState;
@@ -468,11 +467,6 @@ class CONTENT_EXPORT RenderViewImpl
   // appropriate section, add it there. If not, there are some random functions
   // nearer to the top you can add it to.
 
-  // Cannot use std::set unfortunately since linked_ptr<> does not support
-  // operator<.
-  typedef std::vector<linked_ptr<ImageResourceFetcher> >
-      ImageResourceFetcherList;
-
  protected:
   // RenderWidget overrides:
   void OnClose() override;
@@ -755,7 +749,7 @@ class CONTENT_EXPORT RenderViewImpl
   // Starts nav_state_sync_timer_ if it isn't already running.
   void StartNavStateSyncTimerIfNecessary();
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_WIN) || (defined(OS_POSIX) && !defined(OS_MACOSX))
   void UpdateFontRenderingFromRendererPrefs();
 #else
   void UpdateFontRenderingFromRendererPrefs() {}

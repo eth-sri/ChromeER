@@ -20,6 +20,7 @@
 #include "cc/scheduler/begin_frame_source.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "gpu/blink/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "gpu/command_buffer/client/gl_in_process_context.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "ui/gfx/frame_time.h"
@@ -28,14 +29,13 @@
 #include "ui/gfx/transform.h"
 #include "ui/gl/gl_bindings.h"
 #include "webkit/common/gpu/context_provider_in_process.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace android_webview {
 
 namespace {
 
 using gpu_blink::WebGraphicsContext3DImpl;
-using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
+using gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl;
 
 scoped_refptr<cc::ContextProvider> CreateContext(
     scoped_refptr<gfx::GLSurface> surface,
@@ -117,13 +117,13 @@ HardwareRenderer::~HardwareRenderer() {
   root_layer_ = NULL;
   delegated_layer_ = NULL;
   frame_provider_ = NULL;
-#if DCHECK_IS_ON
+#if DCHECK_IS_ON()
   // Check collection is empty.
   cc::ReturnedResourceArray returned_resources;
   resource_collection_->TakeUnusedResourcesForChildCompositor(
       &returned_resources);
   DCHECK_EQ(0u, returned_resources.size());
-#endif  // DCHECK_IS_ON
+#endif  // DCHECK_IS_ON()
 
   resource_collection_->SetClient(NULL);
 

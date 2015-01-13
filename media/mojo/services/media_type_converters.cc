@@ -6,6 +6,7 @@
 
 #include "media/base/audio_decoder_config.h"
 #include "media/base/buffering_state.h"
+#include "media/base/cdm_key_information.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/demuxer_stream.h"
@@ -141,6 +142,7 @@ ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV12J, VIDEO_FORMAT_YV12J);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::NV12, VIDEO_FORMAT_NV12);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::YV24, VIDEO_FORMAT_YV24);
+ASSERT_ENUM_EQ_RAW(VideoFrame::Format, VideoFrame::ARGB, VIDEO_FORMAT_ARGB);
 ASSERT_ENUM_EQ_RAW(VideoFrame::Format,
                    VideoFrame::FORMAT_MAX,
                    VIDEO_FORMAT_FORMAT_MAX);
@@ -231,7 +233,29 @@ ASSERT_CDM_EXCEPTION(OUTPUT_ERROR);
                         ContentDecryptionModule::SESSION_TYPE_##value), \
                 "Mismatched CDM Session Type")
 ASSERT_CDM_SESSION_TYPE(TEMPORARY_SESSION);
-ASSERT_CDM_SESSION_TYPE(PERSISTENT_SESSION);
+ASSERT_CDM_SESSION_TYPE(PERSISTENT_LICENSE_SESSION);
+ASSERT_CDM_SESSION_TYPE(PERSISTENT_RELEASE_MESSAGE_SESSION);
+
+// CDM Key Status
+#define ASSERT_CDM_KEY_STATUS(value)                                  \
+  static_assert(media::CdmKeyInformation::value ==                    \
+                    static_cast<media::CdmKeyInformation::KeyStatus>( \
+                        CDM_KEY_STATUS_##value),                      \
+                "Mismatched CDM Key Status")
+ASSERT_CDM_KEY_STATUS(USABLE);
+ASSERT_CDM_KEY_STATUS(INTERNAL_ERROR);
+ASSERT_CDM_KEY_STATUS(EXPIRED);
+ASSERT_CDM_KEY_STATUS(OUTPUT_NOT_ALLOWED);
+
+// CDM Message Type
+#define ASSERT_CDM_MESSAGE_TYPE(value)                                       \
+  static_assert(                                                             \
+      media::MediaKeys::value == static_cast<media::MediaKeys::MessageType>( \
+                                     CDM_MESSAGE_TYPE_##value),              \
+      "Mismatched CDM Message Type")
+ASSERT_CDM_MESSAGE_TYPE(LICENSE_REQUEST);
+ASSERT_CDM_MESSAGE_TYPE(LICENSE_RENEWAL);
+ASSERT_CDM_MESSAGE_TYPE(LICENSE_RELEASE);
 
 // static
 SubsampleEntryPtr
@@ -424,6 +448,30 @@ TypeConverter<media::VideoDecoderConfig, VideoDecoderConfigPtr>::Convert(
       input->is_encrypted,
       false);
   return config;
+}
+
+// static
+CdmKeyInformationPtr
+TypeConverter<CdmKeyInformationPtr, media::CdmKeyInformation>::Convert(
+    const media::CdmKeyInformation& input) {
+  CdmKeyInformationPtr info(CdmKeyInformation::New());
+  std::vector<uint8_t> key_id_copy(input.key_id);
+  info->key_id.Swap(&key_id_copy);
+  info->status = static_cast<CdmKeyStatus>(input.status);
+  info->system_code = input.system_code;
+  return info.Pass();
+}
+
+// static
+scoped_ptr<media::CdmKeyInformation> TypeConverter<
+    scoped_ptr<media::CdmKeyInformation>,
+    CdmKeyInformationPtr>::Convert(const CdmKeyInformationPtr& input) {
+  scoped_ptr<media::CdmKeyInformation> info(new media::CdmKeyInformation);
+  info->key_id = input->key_id.storage();
+  info->status =
+      static_cast<media::CdmKeyInformation::KeyStatus>(input->status);
+  info->system_code = input->system_code;
+  return info.Pass();
 }
 
 }  // namespace mojo

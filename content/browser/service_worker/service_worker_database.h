@@ -178,6 +178,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   Status DeleteUserData(int64 registration_id,
                         const std::string& user_data_name);
 
+  // Reads user data for all registrations that have data with |user_data_name|
+  // from the database. Returns OK if they are successfully read or not found.
+  Status ReadUserDataForAllRegistrations(
+      const std::string& user_data_name,
+      std::vector<std::pair<int64, std::string>>* user_data);
+
   // As new resources are put into the diskcache, they go into an uncommitted
   // list. When a registration is saved that refers to those ids, they're
   // removed from that list. When a resource no longer has any registrations or
@@ -356,6 +362,10 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, OpenDatabase_InMemory);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DatabaseVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, GetNextAvailableIds);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest,
+                           Registration_UninitializedDatabase);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest,
+                           UserData_UninitializedDatabase);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerDatabaseTest, DestroyDatabase);
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDatabase);

@@ -588,6 +588,16 @@ _NAMED_TYPE_INFO = {
       'GL_RENDERBUFFER',
     ],
   },
+  'IndexedBufferTarget': {
+    'type': 'GLenum',
+    'valid': [
+      'GL_TRANSFORM_FEEDBACK_BUFFER',
+      'GL_UNIFORM_BUFFER',
+    ],
+    'invalid': [
+      'GL_RENDERBUFFER',
+    ],
+  },
   'BufferUsage': {
     'type': 'GLenum',
     'valid': [
@@ -1417,6 +1427,11 @@ _FUNCTION_INFO = {
     'type': 'Bind',
     'decoder_func': 'DoBindBuffer',
     'gen_func': 'GenBuffersARB',
+  },
+  'BindBufferBase': {
+    'type': 'Bind',
+    'id_mapping': [ 'Buffer' ],
+    'unsafe': True,
   },
   'BindFramebuffer': {
     'type': 'Bind',
@@ -2356,6 +2371,12 @@ _FUNCTION_INFO = {
     'data_transfer_methods': ['shm'],
     'client_test': False,
   },
+  'TexImage3D': {
+    'type': 'Manual',
+    'data_transfer_methods': ['shm'],
+    'client_test': False,
+    'unsafe': True,
+  },
   'TexParameterf': {
     'decoder_func': 'DoTexParameterf',
     'valid_args': {
@@ -2396,6 +2417,17 @@ _FUNCTION_INFO = {
                 'GLsizei width, GLsizei height, '
                 'GLenumTextureFormat format, GLenumPixelType type, '
                 'const void* pixels, GLboolean internal'
+  },
+  'TexSubImage3D': {
+    'type': 'Manual',
+    'data_transfer_methods': ['shm'],
+    'client_test': False,
+    'cmd_args': 'GLenumTextureTarget target, GLint level, '
+                'GLint xoffset, GLint yoffset, GLint zoffset, '
+                'GLsizei width, GLsizei height, GLsizei depth, '
+                'GLenumTextureFormat format, GLenumPixelType type, '
+                'const void* pixels, GLboolean internal',
+    'unsafe': True,
   },
   'Uniform1f': {'type': 'PUTXn', 'count': 1},
   'Uniform1fv': {
@@ -4383,7 +4415,7 @@ TEST_P(%(test_name)s, %(name)sValidArgsNewId) {
       self.WriteValidUnitTest(func, file, valid_test, {
           'first_arg': func.GetOriginalArgs()[0].GetValidArg(func),
           'first_gl_arg': func.GetOriginalArgs()[0].GetValidGLArg(func),
-          'resource_type': func.GetOriginalArgs()[1].resource_type,
+          'resource_type': func.GetOriginalArgs()[-1].resource_type,
           'gl_gen_func_name': func.GetInfo("gen_func"),
       }, *extras)
 
@@ -4439,7 +4471,7 @@ TEST_P(%(test_name)s, %(name)sInvalidArgs%(arg_index)d_%(value_index)d) {
         name_arg = func.GetOriginalArgs()[0]
       else:
         # Bind functions that have both a target and a name (like BindTexture)
-        name_arg = func.GetOriginalArgs()[1]
+        name_arg = func.GetOriginalArgs()[-1]
 
       file.Write(code % {
           'name': func.name,

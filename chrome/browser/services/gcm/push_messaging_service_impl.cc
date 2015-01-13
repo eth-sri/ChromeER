@@ -10,6 +10,10 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/notifications/notification_ui_manager.h"
+#include "chrome/browser/notifications/platform_notification_service_impl.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
@@ -19,12 +23,17 @@
 #include "chrome/browser/services/gcm/push_messaging_permission_context_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/content_settings/core/common/permission_request_id.h"
 #include "components/gcm_driver/gcm_driver.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/child_process_host.h"
+#include "content/public/common/platform_notification_data.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace gcm {
 
@@ -152,7 +161,6 @@ void PushMessagingServiceImpl::OnMessage(
   // TODO(johnme): Make sure this is clearly documented for developers.
   PushMessagingApplicationId application_id =
       PushMessagingApplicationId::Parse(app_id);
-  DCHECK(application_id.IsValid());
   GCMClient::MessageData::const_iterator it = message.data.find("data");
   if (application_id.IsValid() && it != message.data.end()) {
     if (!HasPermission(application_id.origin)) {
@@ -174,10 +182,8 @@ void PushMessagingServiceImpl::OnMessage(
                    message));
   } else {
     // Drop the message, as it is invalid.
-    // TODO(mvanouwerkerk): Show a warning in the developer console of the
-    // Service Worker corresponding to app_id.
-    // TODO(johnme): Add diagnostic observers (e.g. UMA and an internals page)
-    // to know when bad things happen.
+    DeliverMessageCallback(application_id, message,
+                           content::PUSH_DELIVERY_STATUS_INVALID_MESSAGE);
   }
 }
 
@@ -190,16 +196,60 @@ void PushMessagingServiceImpl::DeliverMessageCallback(
     const GCMClient::IncomingMessage& message,
     content::PushDeliveryStatus status) {
   // TODO(mvanouwerkerk): UMA logging.
+  // TODO(mvanouwerkerk): Show a warning in the developer console of the
+  // Service Worker corresponding to app_id (and/or on an internals page).
   // TODO(mvanouwerkerk): Is there a way to recover from failure?
   switch (status) {
+    // Call RequireUserVisibleUX if the message was delivered to the Service
+    // Worker JS, even if the website's event handler failed (to prevent sites
+    // deliberately failing in order to avoid having to show notifications).
     case content::PUSH_DELIVERY_STATUS_SUCCESS:
-    case content::PUSH_DELIVERY_STATUS_SERVICE_WORKER_ERROR:
     case content::PUSH_DELIVERY_STATUS_EVENT_WAITUNTIL_REJECTED:
+      RequireUserVisibleUX(application_id);
+      break;
+    case content::PUSH_DELIVERY_STATUS_INVALID_MESSAGE:
+    case content::PUSH_DELIVERY_STATUS_SERVICE_WORKER_ERROR:
       break;
     case content::PUSH_DELIVERY_STATUS_NO_SERVICE_WORKER:
       Unregister(application_id, UnregisterCallback());
       break;
   }
+}
+
+void PushMessagingServiceImpl::RequireUserVisibleUX(
+    const PushMessagingApplicationId& application_id) {
+#if defined(ENABLE_NOTIFICATIONS)
+  // TODO(johnme): Add test.
+  // TODO(johnme): Relax this heuristic slightly.
+  int notification_count = g_browser_process->notification_ui_manager()->
+      GetAllIdsByProfileAndSourceOrigin(profile_, application_id.origin).size();
+  if (notification_count > 0)
+    return;
+
+  // If we haven't returned yet, the site failed to show a notification, so we
+  // will show a generic notification. See https://crbug.com/437277
+  // TODO(johnme): The generic notification should probably automatically close
+  // itself when the next push message arrives?
+  content::PlatformNotificationData notification_data;
+  // TODO(johnme): Switch to FormatOriginForDisplay from crbug.com/402698
+  notification_data.title = l10n_util::GetStringFUTF16(
+      IDS_PUSH_MESSAGING_GENERIC_NOTIFICATION_TITLE,
+      base::UTF8ToUTF16(application_id.origin.host()));
+  notification_data.direction =
+      content::PlatformNotificationData::NotificationDirectionLeftToRight;
+  notification_data.body =
+      l10n_util::GetStringUTF16(IDS_PUSH_MESSAGING_GENERIC_NOTIFICATION_BODY);
+  notification_data.tag =
+      base::ASCIIToUTF16("user_visible_auto_notification");
+  notification_data.icon = GURL();  // TODO(johnme): Better icon?
+  PlatformNotificationServiceImpl::GetInstance()->DisplayPersistentNotification(
+      profile_,
+      application_id.service_worker_registration_id,
+      application_id.origin,
+      SkBitmap() /* icon */,
+      notification_data,
+      content::ChildProcessHost::kInvalidUniqueID /* render_process_id */);
+#endif
 }
 
 void PushMessagingServiceImpl::OnMessagesDeleted(const std::string& app_id) {
@@ -246,13 +296,6 @@ void PushMessagingServiceImpl::RegisterFromDocument(
                 content::PUSH_REGISTRATION_STATUS_LIMIT_REACHED);
     return;
   }
-
-  // TODO(johnme): This is probably redundant due to
-  // https://codereview.chromium.org/756063002, or even if it isn't it'll
-  // interfere with auto-removing the app handler, so should be removed.
-  // If this is registering for the first time then the driver does not have
-  // this as an app handler and registration would fail.
-  AddAppHandlerIfNecessary();
 
   content::RenderFrameHost* render_frame_host =
       content::RenderFrameHost::FromID(renderer_id, render_frame_id);
@@ -315,10 +358,6 @@ void PushMessagingServiceImpl::RegisterFromWorker(
     return;
   }
 
-  // If this is registering for the first time then the driver does not have
-  // this as an app handler and registration would fail.
-  AddAppHandlerIfNecessary();
-
   GURL embedding_origin = requesting_origin;
   blink::WebPushPermissionStatus permission_status =
       PushMessagingServiceImpl::GetPermissionStatus(requesting_origin,
@@ -334,28 +373,6 @@ void PushMessagingServiceImpl::RegisterFromWorker(
       application_id.ToString(), sender_ids,
       base::Bind(&PushMessagingServiceImpl::DidRegister,
                  weak_factory_.GetWeakPtr(), register_callback));
-}
-
-blink::WebPushPermissionStatus PushMessagingServiceImpl::GetPermissionStatus(
-    const GURL& requesting_origin,
-    int renderer_id,
-    int render_frame_id) {
-  content::RenderFrameHost* render_frame_host =
-      content::RenderFrameHost::FromID(renderer_id, render_frame_id);
-  if (!render_frame_host)
-    return blink::WebPushPermissionStatusDenied;
-
-  content::WebContents* web_contents =
-      content::WebContents::FromRenderFrameHost(render_frame_host);
-  if (!web_contents)
-    return blink::WebPushPermissionStatusDenied;
-
-  GURL embedder_origin = web_contents->GetLastCommittedURL().GetOrigin();
-  gcm::PushMessagingPermissionContext* permission_context =
-      gcm::PushMessagingPermissionContextFactory::GetForProfile(profile_);
-  return ToPushPermission(
-      permission_context->GetPermissionStatus(
-          requesting_origin, embedder_origin));
 }
 
 blink::WebPushPermissionStatus PushMessagingServiceImpl::GetPermissionStatus(
@@ -453,7 +470,6 @@ void PushMessagingServiceImpl::DidUnregister(
     case GCMClient::SERVER_ERROR:
     case GCMClient::INVALID_PARAMETER:
     case GCMClient::GCM_DISABLED:
-    case GCMClient::NOT_SIGNED_IN:
     case GCMClient::ASYNC_OPERATION_PENDING:
     case GCMClient::UNKNOWN_ERROR:
       callback.Run(content::PUSH_UNREGISTRATION_STATUS_UNKNOWN_ERROR);
@@ -476,13 +492,6 @@ bool PushMessagingServiceImpl::HasPermission(const GURL& origin) {
 
   return permission_context->GetPermissionStatus(origin, origin) ==
       CONTENT_SETTING_ALLOW;
-}
-
-void PushMessagingServiceImpl::AddAppHandlerIfNecessary() {
-  if (gcm_profile_service_->driver()->GetAppHandler(
-          kPushMessagingApplicationIdPrefix) != this)
-    gcm_profile_service_->driver()->AddAppHandler(
-        kPushMessagingApplicationIdPrefix, this);
 }
 
 }  // namespace gcm

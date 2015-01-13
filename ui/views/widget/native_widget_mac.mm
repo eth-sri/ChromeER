@@ -195,12 +195,15 @@ void NativeWidgetMac::ViewRemoved(View* view) {
 }
 
 void NativeWidgetMac::SetNativeWindowProperty(const char* name, void* value) {
-  NOTIMPLEMENTED();
+  if (bridge_)
+    bridge_->SetNativeWindowProperty(name, value);
 }
 
 void* NativeWidgetMac::GetNativeWindowProperty(const char* name) const {
-  NOTIMPLEMENTED();
-  return NULL;
+  if (bridge_)
+    return bridge_->GetNativeWindowProperty(name);
+
+  return nullptr;
 }
 
 TooltipManager* NativeWidgetMac::GetTooltipManager() const {

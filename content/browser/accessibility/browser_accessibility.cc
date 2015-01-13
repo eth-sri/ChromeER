@@ -51,6 +51,7 @@ bool BrowserAccessibility::PlatformIsLeaf() const {
   // implementation details, but we want to expose them as leaves
   // to platform accessibility APIs.
   switch (GetRole()) {
+    case ui::AX_ROLE_LINE_BREAK:
     case ui::AX_ROLE_SLIDER:
     case ui::AX_ROLE_STATIC_TEXT:
     case ui::AX_ROLE_TEXT_AREA:
@@ -660,6 +661,12 @@ bool BrowserAccessibility::GetAriaTristate(
 
 bool BrowserAccessibility::HasState(ui::AXState state_enum) const {
   return (GetState() >> state_enum) & 1;
+}
+
+bool BrowserAccessibility::IsCellOrTableHeaderRole() const {
+  return (GetRole() == ui::AX_ROLE_CELL ||
+          GetRole() == ui::AX_ROLE_COLUMN_HEADER ||
+          GetRole() == ui::AX_ROLE_ROW_HEADER);
 }
 
 bool BrowserAccessibility::IsEditableText() const {

@@ -25,6 +25,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/time/clock.h"
 #include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
@@ -126,6 +127,10 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
     scoped_refptr<base::SingleThreadTaskRunner> thread_;
   };
 
+  // The number of minutes after a resource is prefetched that it can be used
+  // again without validation.
+  static const int kPrefetchReuseMins = 5;
+
   // The disk cache is initialized lazily (by CreateTransaction) in this case.
   // The HttpCache takes ownership of the |backend_factory|.
   HttpCache(const net::HttpNetworkSession::Params& params,
@@ -181,6 +186,12 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   void set_mode(Mode value) { mode_ = value; }
   Mode mode() { return mode_; }
 
+  // Get/Set the cache's clock. These are public only for testing.
+  void SetClockForTesting(scoped_ptr<base::Clock> clock) {
+    clock_.reset(clock.release());
+  }
+  base::Clock* clock() const { return clock_.get(); }
+
   // Close currently active sockets so that fresh page loads will not use any
   // recycled connections.  For sockets currently in use, they may not close
   // immediately, but they will not be reusable. This is for debugging.
@@ -200,6 +211,12 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // the cache lock whenever there is lock contention.
   void BypassLockForTest() {
     bypass_lock_for_test_ = true;
+  }
+
+  // Causes all transactions created after this point to generate a failure
+  // when attempting to conditionalize a network request.
+  void FailConditionalizationForTest() {
+    fail_conditionalization_for_test_ = true;
   }
 
   bool use_stale_while_revalidate() const {
@@ -426,6 +443,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   scoped_ptr<BackendFactory> backend_factory_;
   bool building_backend_;
   bool bypass_lock_for_test_;
+  bool fail_conditionalization_for_test_;
 
   // true if the implementation of Cache-Control: stale-while-revalidate
   // directive is enabled (either via command-line flag or experiment).
@@ -454,6 +472,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   // The async validations currently in progress, keyed by URL.
   AsyncValidationMap async_validations_;
+
+  // A clock that can be swapped out for testing.
+  scoped_ptr<base::Clock> clock_;
 
   base::WeakPtrFactory<HttpCache> weak_factory_;
 

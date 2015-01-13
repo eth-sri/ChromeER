@@ -118,8 +118,6 @@ void ExtensionOptionsGuest::CreateWebContents(
 }
 
 void ExtensionOptionsGuest::DidAttachToEmbedder() {
-  SetUpAutoSize();
-
   // We should not re-navigate on reattachment.
   if (has_navigated_)
     return;
@@ -156,16 +154,30 @@ int ExtensionOptionsGuest::GetTaskPrefix() const {
 void ExtensionOptionsGuest::GuestSizeChangedDueToAutoSize(
     const gfx::Size& old_size,
     const gfx::Size& new_size) {
-  scoped_ptr<base::DictionaryValue> args(new base::DictionaryValue());
-  args->SetInteger(extensionoptions::kNewWidth, new_size.width());
-  args->SetInteger(extensionoptions::kNewHeight, new_size.height());
-  args->SetInteger(extensionoptions::kOldWidth, old_size.width());
-  args->SetInteger(extensionoptions::kOldHeight, old_size.height());
+  extension_options_internal::SizeChangedOptions options;
+  options.old_width = old_size.width();
+  options.old_height = old_size.height();
+  options.new_width = new_size.width();
+  options.new_height = new_size.height();
   DispatchEventToEmbedder(new extensions::GuestViewBase::Event(
-      extension_options_internal::OnSizeChanged::kEventName, args.Pass()));
+      extension_options_internal::OnSizeChanged::kEventName,
+      options.ToValue()));
+}
+
+void ExtensionOptionsGuest::OnPreferredSizeChanged(const gfx::Size& pref_size) {
+  extension_options_internal::PreferredSizeChangedOptions options;
+  options.width = pref_size.width();
+  options.height = pref_size.height();
+  DispatchEventToEmbedder(new extensions::GuestViewBase::Event(
+      extension_options_internal::OnPreferredSizeChanged::kEventName,
+      options.ToValue()));
 }
 
 bool ExtensionOptionsGuest::IsAutoSizeSupported() const {
+  return true;
+}
+
+bool ExtensionOptionsGuest::IsPreferredSizeModeEnabled() const {
   return true;
 }
 
@@ -259,31 +271,6 @@ void ExtensionOptionsGuest::OnRequest(
     const ExtensionHostMsg_Request_Params& params) {
   extension_function_dispatcher_->Dispatch(params,
                                            web_contents()->GetRenderViewHost());
-}
-
-void ExtensionOptionsGuest::SetUpAutoSize() {
-  // Read the autosize parameters passed in from the embedder.
-  bool auto_size_enabled = false;
-  attach_params()->GetBoolean(extensionoptions::kAttributeAutoSize,
-                              &auto_size_enabled);
-
-  int max_height = 0;
-  int max_width = 0;
-  attach_params()->GetInteger(extensionoptions::kAttributeMaxHeight,
-                              &max_height);
-  attach_params()->GetInteger(extensionoptions::kAttributeMaxWidth, &max_width);
-
-  int min_height = 0;
-  int min_width = 0;
-  attach_params()->GetInteger(extensionoptions::kAttributeMinHeight,
-                              &min_height);
-  attach_params()->GetInteger(extensionoptions::kAttributeMinWidth, &min_width);
-
-  // Call SetAutoSize to apply all the appropriate validation and clipping of
-  // values.
-  SetAutoSize(auto_size_enabled,
-              gfx::Size(min_width, min_height),
-              gfx::Size(max_width, max_height));
 }
 
 }  // namespace extensions

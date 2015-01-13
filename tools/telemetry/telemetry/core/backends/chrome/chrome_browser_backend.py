@@ -23,10 +23,8 @@ from telemetry.core.backends import browser_backend
 from telemetry.core.backends.chrome import extension_backend
 from telemetry.core.backends.chrome import system_info_backend
 from telemetry.core.backends.chrome import tab_list_backend
-from telemetry.core.backends.chrome import tracing_backend
 from telemetry.core.backends.chrome_inspector import devtools_client_backend
 from telemetry.core.backends.chrome_inspector import devtools_http
-from telemetry.timeline import trace_data as trace_data_module
 from telemetry.unittest_util import options_for_unittests
 
 
@@ -39,15 +37,14 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
                supports_extensions, browser_options, output_profile_path,
                extensions_to_load):
     super(ChromeBrowserBackend, self).__init__(
+        platform_backend=platform_backend,
         supports_extensions=supports_extensions,
         browser_options=browser_options,
         tab_list_backend=tab_list_backend.TabListBackend)
     self._port = None
 
-    self._platform_backend = platform_backend
     self._supports_tab_control = supports_tab_control
     self._devtools_client = None
-    self._tracing_backend = None
     self._system_info_backend = None
 
     self._output_profile_path = output_profile_path
@@ -76,7 +73,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     if not self._devtools_client:
       assert self._port, 'No DevTools port info available.'
       self._devtools_client = devtools_client_backend.DevToolsClientBackend(
-          self._port)
+          self._port, self)
     return self._devtools_client
 
   @property
@@ -146,7 +143,7 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
       # from the target platform to replay (on the host platform).
       # This allows the browser to exercise DNS requests.
       return False
-    if self.browser_options.netsim and self._platform_backend.is_host_platform:
+    if self.browser_options.netsim and self.platform_backend.is_host_platform:
       # Avoid --host-resolver-rules when replay will configure the platform to
       # resolve hosts to replay.
       # This allows the browser to exercise DNS requests.
@@ -166,8 +163,8 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
                          self.forwarder_factory.host_ip)  # replay's host_ip
     # Force the browser to send HTTP/HTTPS requests to fixed ports if they
     # are not the standard HTTP/HTTPS ports.
-    http_port = self._platform_backend.wpr_http_device_port
-    https_port = self._platform_backend.wpr_https_device_port
+    http_port = self.platform_backend.wpr_http_device_port
+    https_port = self.platform_backend.wpr_https_device_port
     if http_port != 80:
       replay_args.append('--testing-fixed-http-port=%s' % http_port)
     if https_port != 443:
@@ -265,25 +262,11 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
                          "webkit,cc,disabled-by-default-cc.debug" to trace only
                          those three event categories.
     """
-    assert trace_options and trace_options.enable_chrome_trace
-    if self._tracing_backend is None:
-      self._tracing_backend = tracing_backend.TracingBackend(self._port, self)
-    return self._tracing_backend.StartTracing(
+    return self.devtools_client.StartChromeTracing(
         trace_options, custom_categories, timeout)
 
   def StopTracing(self, trace_data_builder):
-    for (i, _) in enumerate(self.browser.tabs):
-      tab = self.tab_list_backend.Get(i, None)
-      if tab:
-        success = tab.EvaluateJavaScript(
-            "console.time('" + tab.id + "');" +
-            "console.timeEnd('" + tab.id + "');" +
-            "console.time.toString().indexOf('[native code]') != -1;")
-        if not success:
-          raise Exception('Page stomped on console.time')
-        trace_data_builder.AddEventsTo(trace_data_module.TAB_ID_PART, [tab.id])
-
-    self._tracing_backend.StopTracing(trace_data_builder)
+    self.devtools_client.StopChromeTracing(trace_data_builder)
 
   def GetProcessName(self, cmd_line):
     """Returns a user-friendly name for the process of the given |cmd_line|."""
@@ -301,9 +284,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     return m.group(1)
 
   def Close(self):
-    if self._tracing_backend:
-      self._tracing_backend.Close()
-      self._tracing_backend = None
+    if self._devtools_client:
+      self._devtools_client.Close()
+      self._devtools_client = None
 
   @property
   def supports_system_info(self):

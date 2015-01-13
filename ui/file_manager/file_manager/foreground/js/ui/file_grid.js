@@ -240,19 +240,22 @@ FileGrid.decorateThumbnailBox = function(
 
   var metadataTypes = 'thumbnail|filesystem|external|media';
 
-  // Drive provides high quality thumbnails via USE_EMBEDDED, however local
-  // images usually provide very tiny thumbnails, therefore USE_EMBEDDE can't
-  // be used to obtain high quality output.
-  var useEmbedded;
+  // CONTENT_METADATA contains usually very tiny thumbnails. So use it only for
+  // ThumbnailQuality.LOW.
+  var loadTargets;
   switch (quality) {
     case FileGrid.ThumbnailQuality.LOW:
-      useEmbedded = ThumbnailLoader.UseEmbedded.USE_EMBEDDED;
+      loadTargets = [
+        ThumbnailLoader.LoadTarget.CONTENT_METADATA,
+        ThumbnailLoader.LoadTarget.EXTERNAL_METADATA,
+        ThumbnailLoader.LoadTarget.FILE_ENTRY
+      ];
       break;
     case FileGrid.ThumbnailQuality.HIGH:
-      // TODO(mtomasz): Use Entry instead of paths.
-      useEmbedded = (locationInfo && locationInfo.isDriveBased) ?
-          ThumbnailLoader.UseEmbedded.USE_EMBEDDED :
-          ThumbnailLoader.UseEmbedded.NO_EMBEDDED;
+      loadTargets = [
+        ThumbnailLoader.LoadTarget.EXTERNAL_METADATA,
+        ThumbnailLoader.LoadTarget.FILE_ENTRY
+      ];
       break;
   }
 
@@ -262,7 +265,7 @@ FileGrid.decorateThumbnailBox = function(
                             ThumbnailLoader.LoaderType.IMAGE,
                             metadata,
                             undefined,  // opt_mediaType
-                            useEmbedded).
+                            loadTargets).
             load(box,
                 fillMode,
                 ThumbnailLoader.OptimizationMode.DISCARD_DETACHED,
@@ -294,10 +297,22 @@ FileGrid.applyHistoryBadges_ = function(entry, box, history) {
               // a possibly-fragile sibling selector we just
               // plop the imported class on the parent of both.
               box.parentElement.classList.add('imported');
+            } else {
+              history.wasCopied(entry, importer.Destination.GOOGLE_DRIVE)
+                  .then(
+                      function(copied) {
+                        if (copied) {
+                          // TODO(smckay): update badges when history changes
+                          // "box" is currently the sibling of the elemement
+                          // we want to style. So rather than employing
+                          // a possibly-fragile sibling selector we just
+                          // plop the imported class on the parent of both.
+                          box.parentElement.classList.add('copied');
+                        }
+                      });
             }
           });
 };
-
 
 /**
  * Item for the Grid View.

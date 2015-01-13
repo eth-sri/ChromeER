@@ -76,13 +76,24 @@ QuicClient::~QuicClient() {
     session()->connection()->SendConnectionClosePacket(
         QUIC_PEER_GOING_AWAY, "");
   }
-  if (fd_ > 0) {
-    epoll_server_->UnregisterFD(fd_);
-  }
+
+  CleanUpUDPSocket();
 }
 
 bool QuicClient::Initialize() {
   DCHECK(!initialized_);
+
+  // If an initial flow control window has not explicitly been set, then use the
+  // same value that Chrome uses: 10 Mb.
+  const uint32 kInitialFlowControlWindow = 10 * 1024 * 1024;  // 10 Mb
+  if (config_.GetInitialStreamFlowControlWindowToSend() ==
+      kMinimumFlowControlSendWindow) {
+    config_.SetInitialStreamFlowControlWindowToSend(kInitialFlowControlWindow);
+  }
+  if (config_.GetInitialSessionFlowControlWindowToSend() ==
+      kMinimumFlowControlSendWindow) {
+    config_.SetInitialSessionFlowControlWindowToSend(kInitialFlowControlWindow);
+  }
 
   epoll_server_->set_timeout_in_us(50 * 1000);
 
@@ -174,16 +185,14 @@ bool QuicClient::CreateUDPSocket() {
 }
 
 bool QuicClient::Connect() {
-  if (!StartConnect()) {
-    return false;
-  }
+  StartConnect();
   while (EncryptionBeingEstablished()) {
     WaitForEvents();
   }
   return session_->connection()->connected();
 }
 
-bool QuicClient::StartConnect() {
+void QuicClient::StartConnect() {
   DCHECK(initialized_);
   DCHECK(!connected());
 
@@ -208,7 +217,7 @@ bool QuicClient::StartConnect() {
     writer_.reset(writer);
   }
   session_->InitializeSession(server_id_, &crypto_config_);
-  return session_->CryptoConnect();
+  session_->CryptoConnect();
 }
 
 bool QuicClient::EncryptionBeingEstablished() {
@@ -222,10 +231,18 @@ void QuicClient::Disconnect() {
   if (connected()) {
     session()->connection()->SendConnectionClose(QUIC_PEER_GOING_AWAY);
   }
-  epoll_server_->UnregisterFD(fd_);
-  close(fd_);
-  fd_ = -1;
+
+  CleanUpUDPSocket();
+
   initialized_ = false;
+}
+
+void QuicClient::CleanUpUDPSocket() {
+  if (fd_ > -1) {
+    epoll_server_->UnregisterFD(fd_);
+    close(fd_);
+    fd_ = -1;
+  }
 }
 
 void QuicClient::SendRequestsAndWaitForResponse(

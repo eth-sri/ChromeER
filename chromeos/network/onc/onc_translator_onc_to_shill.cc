@@ -198,9 +198,11 @@ void LocalTranslator::TranslateVPN() {
 
 void LocalTranslator::TranslateWiFi() {
   std::string security;
-  onc_object_->GetStringWithoutPathExpansion(::onc::wifi::kSecurity, &security);
-  TranslateWithTableAndSet(security, kWiFiSecurityTable,
-                           shill::kSecurityProperty);
+  if (onc_object_->GetStringWithoutPathExpansion(
+          ::onc::wifi::kSecurity, &security)) {
+    TranslateWithTableAndSet(security, kWiFiSecurityTable,
+                             shill::kSecurityClassProperty);
+  }
 
   std::string ssid;
   onc_object_->GetStringWithoutPathExpansion(::onc::wifi::kSSID, &ssid);
@@ -257,6 +259,19 @@ void LocalTranslator::TranslateNetworkConfiguration() {
   if (type == ::onc::network_type::kVPN)
     CopyFieldFromONCToShill(::onc::network_config::kName, shill::kNameProperty);
 
+  std::string ip_address_config_type, name_servers_config_type;
+  onc_object_->GetStringWithoutPathExpansion(
+      ::onc::network_config::kIPAddressConfigType, &ip_address_config_type);
+  onc_object_->GetStringWithoutPathExpansion(
+      ::onc::network_config::kNameServersConfigType, &name_servers_config_type);
+  if ((ip_address_config_type == ::onc::network_config::kIPConfigTypeDHCP) ||
+      (name_servers_config_type == ::onc::network_config::kIPConfigTypeDHCP)) {
+    // If either type is set to DHCP, provide an empty dictionary to ensure
+    // that any unset properties are cleared. Note: if either type is specified,
+    // the other type defaults to DHCP if not specified.
+    shill_dictionary_->SetWithoutPathExpansion(shill::kStaticIPConfigProperty,
+                                               new base::DictionaryValue);
+  }
   CopyFieldsAccordingToSignature();
 }
 
@@ -323,7 +338,7 @@ void LocalTranslator::TranslateWithTableAndSet(
   // occurs, we should check here. Otherwise the failure will only show up much
   // later in Shill.
   LOG(ERROR) << "Value '" << onc_value
-             << "' cannot be translated to Shill property "
+             << "' cannot be translated to Shill property: "
              << shill_property_name;
 }
 

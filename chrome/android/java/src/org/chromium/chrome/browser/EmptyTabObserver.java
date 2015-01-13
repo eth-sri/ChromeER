@@ -12,6 +12,15 @@ import android.view.ContextMenu;
 public class EmptyTabObserver implements TabObserver {
 
     @Override
+    public void onShown(Tab tab) { }
+
+    @Override
+    public void onHidden(Tab tab) { }
+
+    @Override
+    public void onClosingStateChanged(Tab tab, boolean closing) { }
+
+    @Override
     public void onDestroyed(Tab tab) { }
 
     @Override
@@ -19,6 +28,15 @@ public class EmptyTabObserver implements TabObserver {
 
     @Override
     public void onLoadUrl(Tab tab, String url, int loadType) { }
+
+    @Override
+    public void onPageLoadStarted(Tab tab) { }
+
+    @Override
+    public void onPageLoadFinished(Tab tab) { }
+
+    @Override
+    public void onPageLoadFailed(Tab tab, int errorCode) { }
 
     @Override
     public void onFaviconUpdated(Tab tab) { }
@@ -31,6 +49,9 @@ public class EmptyTabObserver implements TabObserver {
 
     @Override
     public void onSSLStateUpdated(Tab tab) { }
+
+    @Override
+    public void onCrash(Tab tab, boolean sadTabShown) { }
 
     @Override
     public void onWebContentsSwapped(Tab tab, boolean didStartLoad, boolean didFinishLoad) { }

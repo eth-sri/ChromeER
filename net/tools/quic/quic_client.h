@@ -75,7 +75,7 @@ class QuicClient : public EpollCallbackInterface,
   // Start the crypto handshake.  This can be done in place of the synchronous
   // Connect(), but callers are responsible for making sure the crypto handshake
   // completes.
-  bool StartConnect();
+  void StartConnect();
 
   // Returns true if the crypto handshake has yet to establish encryption.
   // Returns false if encryption is active (even if the server hasn't confirmed
@@ -203,6 +203,9 @@ class QuicClient : public EpollCallbackInterface,
   // Used during initialization: creates the UDP socket FD, sets socket options,
   // and binds the socket to our address.
   bool CreateUDPSocket();
+
+  // If the socket has been created, then unregister and close() the FD.
+  void CleanUpUDPSocket();
 
   // Read a UDP packet and hand it to the framer.
   bool ReadAndProcessPacket();

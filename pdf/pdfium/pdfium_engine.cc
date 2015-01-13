@@ -135,10 +135,10 @@ struct PDFFontSubstitution {
 };
 
 PP_BrowserFont_Trusted_Weight WeightToBrowserFontTrustedWeight(int weight) {
-  COMPILE_ASSERT(PP_BROWSERFONT_TRUSTED_WEIGHT_100 == 0,
-                 PP_BrowserFont_Trusted_Weight_Min);
-  COMPILE_ASSERT(PP_BROWSERFONT_TRUSTED_WEIGHT_900 == 8,
-                 PP_BrowserFont_Trusted_Weight_Max);
+  static_assert(PP_BROWSERFONT_TRUSTED_WEIGHT_100 == 0,
+                "PP_BrowserFont_Trusted_Weight min");
+  static_assert(PP_BROWSERFONT_TRUSTED_WEIGHT_900 == 8,
+                "PP_BrowserFont_Trusted_Weight max");
   const int kMinimumWeight = 100;
   const int kMaximumWeight = 900;
   int normalized_weight =
@@ -1605,8 +1605,25 @@ PDFiumPage::Area PDFiumEngine::GetCharIndex(
 }
 
 bool PDFiumEngine::OnMouseDown(const pp::MouseInputEvent& event) {
-  if (event.GetButton() != PP_INPUTEVENT_MOUSEBUTTON_LEFT)
+  if (event.GetButton() != PP_INPUTEVENT_MOUSEBUTTON_LEFT &&
+      event.GetButton() != PP_INPUTEVENT_MOUSEBUTTON_RIGHT) {
     return false;
+  }
+  if (event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_RIGHT) {
+    if (!selection_.size())
+      return false;
+    std::vector<pp::Rect> selection_rect_vector;
+    GetAllScreenRectsUnion(&selection_, GetVisibleRect().point(),
+                           &selection_rect_vector);
+    pp::Point point = event.GetPosition();
+    for (size_t i = 0; i < selection_rect_vector.size(); ++i) {
+      if (selection_rect_vector[i].Contains(point.x(), point.y()))
+        return false;
+    }
+    SelectionChangeInvalidator selection_invalidator(this);
+    selection_.clear();
+    return true;
+  }
 
   SelectionChangeInvalidator selection_invalidator(this);
   selection_.clear();
@@ -2050,12 +2067,20 @@ void PDFiumEngine::SearchUsingICU(const base::string16& term,
   }
   if (text_length <= 0)
     return;
+
   unsigned short* data =
       reinterpret_cast<unsigned short*>(WriteInto(&page_text, text_length + 1));
-  FPDFText_GetText(pages_[current_page]->GetTextPage(),
-                   character_to_start_searching_from,
-                   text_length,
-                   data);
+  // |written| includes the trailing terminator, so get rid of the trailing
+  // NUL character by calling resize().
+  int written = FPDFText_GetText(pages_[current_page]->GetTextPage(),
+                                 character_to_start_searching_from,
+                                 text_length,
+                                 data);
+  if (written < 1)
+    page_text.resize(0);
+  else
+    page_text.resize(written - 1);
+
   std::vector<PDFEngine::Client::SearchStringResult> results;
   client_->SearchString(
       page_text.c_str(), term.c_str(), case_sensitive, &results);
@@ -2178,18 +2203,23 @@ void PDFiumEngine::StopFind() {
   find_factory_.CancelAll();
 }
 
-void PDFiumEngine::UpdateTickMarks() {
-  std::vector<pp::Rect> tickmarks;
-  for (size_t i = 0; i < find_results_.size(); ++i) {
+void PDFiumEngine::GetAllScreenRectsUnion(std::vector<PDFiumRange>* rect_range,
+                                          const pp::Point& offset_point,
+                                          std::vector<pp::Rect>* rect_vector) {
+  for (std::vector<PDFiumRange>::iterator it = rect_range->begin();
+       it != rect_range->end(); ++it) {
     pp::Rect rect;
-    // Always use an origin of 0,0 since scroll positions don't affect tickmark.
-    std::vector<pp::Rect> rects = find_results_[i].GetScreenRects(
-      pp::Point(0, 0), current_zoom_, current_rotation_);
+    std::vector<pp::Rect> rects =
+        it->GetScreenRects(offset_point, current_zoom_, current_rotation_);
     for (size_t j = 0; j < rects.size(); ++j)
       rect = rect.Union(rects[j]);
-    tickmarks.push_back(rect);
+    rect_vector->push_back(rect);
   }
+}
 
+void PDFiumEngine::UpdateTickMarks() {
+  std::vector<pp::Rect> tickmarks;
+  GetAllScreenRectsUnion(&find_results_, pp::Point(0, 0), &tickmarks);
   client_->UpdateTickMarks(tickmarks);
 }
 
@@ -2221,11 +2251,14 @@ void PDFiumEngine::InvalidateAllPages() {
 
 std::string PDFiumEngine::GetSelectedText() {
   base::string16 result;
+  base::string16 new_line_char = base::UTF8ToUTF16("\n");
   for (size_t i = 0; i < selection_.size(); ++i) {
     if (i > 0 &&
         selection_[i - 1].page_index() > selection_[i].page_index()) {
-      result = selection_[i].GetText() + result;
+      result = selection_[i].GetText() + new_line_char + result;
     } else {
+      if (i > 0)
+        result.append(new_line_char);
       result.append(selection_[i].GetText());
     }
   }

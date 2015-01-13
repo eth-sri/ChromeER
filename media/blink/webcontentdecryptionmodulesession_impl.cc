@@ -23,6 +23,31 @@ namespace media {
 const char kCreateSessionUMAName[] = "CreateSession";
 const char kLoadSessionUMAName[] = "LoadSession";
 
+// TODO(jrummell): Pass an enum from blink. http://crbug.com/418239.
+const char kTemporarySessionType[] = "temporary";
+const char kPersistentLicenseSessionType[] = "persistent-license";
+const char kPersistentReleaseMessageSessionType[] =
+    "persistent-release-message";
+
+static blink::WebContentDecryptionModuleSession::Client::MessageType
+convertMessageType(MediaKeys::MessageType message_type) {
+  switch (message_type) {
+    case media::MediaKeys::LICENSE_REQUEST:
+      return blink::WebContentDecryptionModuleSession::Client::MessageType::
+          LicenseRequest;
+    case media::MediaKeys::LICENSE_RENEWAL:
+      return blink::WebContentDecryptionModuleSession::Client::MessageType::
+          LicenseRenewal;
+    case media::MediaKeys::LICENSE_RELEASE:
+      return blink::WebContentDecryptionModuleSession::Client::MessageType::
+          LicenseRelease;
+  }
+
+  NOTREACHED();
+  return blink::WebContentDecryptionModuleSession::Client::MessageType::
+      LicenseRequest;
+}
+
 WebContentDecryptionModuleSessionImpl::WebContentDecryptionModuleSessionImpl(
     const scoped_refptr<CdmSessionAdapter>& adapter)
     : adapter_(adapter), is_closed_(false), weak_ptr_factory_(this) {
@@ -87,9 +112,19 @@ void WebContentDecryptionModuleSessionImpl::initializeNewSession(
       << "init_data_type '" << init_data_type_as_ascii
       << "' may be a MIME type";
 
+  MediaKeys::SessionType session_type_enum;
+  if (session_type == kPersistentLicenseSessionType) {
+    session_type_enum = MediaKeys::PERSISTENT_LICENSE_SESSION;
+  } else if (session_type == kPersistentReleaseMessageSessionType) {
+    session_type_enum = MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION;
+  } else {
+    DCHECK(session_type == kTemporarySessionType);
+    session_type_enum = MediaKeys::TEMPORARY_SESSION;
+  }
+
   adapter_->InitializeNewSession(
       init_data_type_as_ascii, init_data,
-      base::saturated_cast<int>(init_data_length), MediaKeys::TEMPORARY_SESSION,
+      base::saturated_cast<int>(init_data_length), session_type_enum,
       scoped_ptr<NewSessionCdmPromise>(new NewSessionCdmResultPromise(
           result, adapter_->GetKeySystemUMAPrefix() + kCreateSessionUMAName,
           base::Bind(
@@ -103,8 +138,11 @@ void WebContentDecryptionModuleSessionImpl::load(
   DCHECK(!session_id.isEmpty());
   DCHECK(web_session_id_.empty());
 
+  // TODO(jrummell): Now that there are 2 types of persistent sessions, the
+  // session type should be passed from blink. Type should also be passed in the
+  // constructor (and removed from initializeNewSession()).
   adapter_->LoadSession(
-      base::UTF16ToASCII(session_id),
+      MediaKeys::PERSISTENT_LICENSE_SESSION, base::UTF16ToASCII(session_id),
       scoped_ptr<NewSessionCdmPromise>(new NewSessionCdmResultPromise(
           result, adapter_->GetKeySystemUMAPrefix() + kLoadSessionUMAName,
           base::Bind(
@@ -146,11 +184,11 @@ void WebContentDecryptionModuleSessionImpl::release(
 }
 
 void WebContentDecryptionModuleSessionImpl::OnSessionMessage(
-    const std::vector<uint8>& message,
-    const GURL& destination_url) {
+    MediaKeys::MessageType message_type,
+    const std::vector<uint8>& message) {
   DCHECK(client_) << "Client not set before message event";
-  client_->message(message.empty() ? NULL : &message[0], message.size(),
-                   destination_url);
+  client_->message(convertMessageType(message_type),
+                   message.empty() ? NULL : &message[0], message.size());
 }
 
 void WebContentDecryptionModuleSessionImpl::OnSessionKeysChange(

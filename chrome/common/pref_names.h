@@ -252,6 +252,7 @@ extern const char kPowerAllowScreenWakeLocks[];
 extern const char kPowerPresentationScreenDimDelayFactor[];
 extern const char kPowerUserActivityScreenDimDelayFactor[];
 extern const char kPowerWaitForInitialUserActivity[];
+extern const char kPowerForceNonzeroBrightnessForUserActivity[];
 extern const char kTermsOfServiceURL[];
 extern const char kUsedPolicyCertificatesOnce[];
 extern const char kAttestationEnabled[];
@@ -410,6 +411,11 @@ extern const char kEasyUnlockProximityRequired[];
 extern const char kEasyUnlockShowTutorial[];
 
 extern const char kZeroSuggestCachedResults[];
+
+#if defined(ENABLE_EXTENSIONS) && !defined(OS_ANDROID) && !defined(OS_IOS)
+extern const char kCopresenceAuthenticatedDeviceId[];
+extern const char kCopresenceAnonymousDeviceId[];
+#endif
 
 // Local state prefs. Please add Profile prefs above instead.
 extern const char kCertRevocationCheckingEnabled[];

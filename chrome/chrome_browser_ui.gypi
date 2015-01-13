@@ -270,7 +270,6 @@
       'browser/ui/cocoa/bookmarks/bookmark_button_cell.mm',
       'browser/ui/cocoa/bookmarks/bookmark_context_menu_cocoa_controller.h',
       'browser/ui/cocoa/bookmarks/bookmark_context_menu_cocoa_controller.mm',
-      'browser/ui/cocoa/bookmarks/bookmark_drag_drop_cocoa.h',
       'browser/ui/cocoa/bookmarks/bookmark_drag_drop_cocoa.mm',
       'browser/ui/cocoa/bookmarks/bookmark_editor_base_controller.h',
       'browser/ui/cocoa/bookmarks/bookmark_editor_base_controller.mm',
@@ -839,7 +838,6 @@
       'browser/ui/settings_window_manager.cc',
       'browser/ui/settings_window_manager.h',
       'browser/ui/settings_window_manager_observer.h',
-      'browser/ui/profile_reset_bubble.h',
       'browser/ui/simple_message_box.h',
       'browser/ui/status_bubble.h',
       'browser/ui/sync/inline_login_dialog.cc',
@@ -964,8 +962,6 @@
       'browser/ui/webui/chromeos/login/screenlock_icon_provider.h',
       'browser/ui/webui/chromeos/login/screenlock_icon_source.cc',
       'browser/ui/webui/chromeos/login/screenlock_icon_source.h',
-      'browser/ui/webui/chromeos/login/shutdown_policy_observer.cc',
-      'browser/ui/webui/chromeos/login/shutdown_policy_observer.h',
       'browser/ui/webui/chromeos/login/signin_screen_handler.cc',
       'browser/ui/webui/chromeos/login/signin_screen_handler.h',
       'browser/ui/webui/chromeos/login/supervised_user_creation_screen_handler.cc',
@@ -1302,9 +1298,6 @@
       'browser/ui/aura/active_desktop_monitor.cc',
       'browser/ui/aura/active_desktop_monitor.h',
     ],
-    'chrome_browser_ui_non_aura_sources': [
-      'browser/ui/profile_reset_bubble_stub.cc',
-    ],
     # ChromeOS-only sources that don't end in _chromeos or live in a chromeos
     # directory.
     'chrome_browser_ui_chromeos_sources': [
@@ -1366,7 +1359,6 @@
       'browser/ui/webui/certificate_viewer_webui.h',
     ],
     'chrome_browser_ui_mac_sources': [
-      'browser/ui/startup/session_crashed_bubble.cc',
       'browser/ui/startup/autolaunch_prompt.cc',
       'browser/ui/web_contents_sizer.mm',
     ],
@@ -1540,7 +1532,6 @@
       'browser/ui/startup/google_api_keys_infobar_delegate.h',
       'browser/ui/startup/obsolete_system_infobar_delegate.cc',
       'browser/ui/startup/obsolete_system_infobar_delegate.h',
-      'browser/ui/startup/session_crashed_bubble.h',
       'browser/ui/startup/session_crashed_infobar_delegate.cc',
       'browser/ui/startup/session_crashed_infobar_delegate.h',
       'browser/ui/startup/startup_browser_creator.cc',
@@ -2000,7 +1991,6 @@
       'browser/ui/views/bookmarks/bookmark_context_menu.cc',
       'browser/ui/views/bookmarks/bookmark_context_menu.h',
       'browser/ui/views/bookmarks/bookmark_drag_drop_views.cc',
-      'browser/ui/views/bookmarks/bookmark_drag_drop_views.h',
       'browser/ui/views/bookmarks/bookmark_editor_view.cc',
       'browser/ui/views/bookmarks/bookmark_editor_view.h',
       'browser/ui/views/bookmarks/bookmark_menu_controller_observer.h',
@@ -2110,7 +2100,6 @@
       'browser/ui/views/frame/browser_window_factory.cc',
       'browser/ui/views/frame/browser_window_property_manager_win.cc',
       'browser/ui/views/frame/browser_window_property_manager_win.h',
-      'browser/ui/views/frame/browser_window_testing_views.h',
       'browser/ui/views/frame/contents_layout_manager.cc',
       'browser/ui/views/frame/contents_layout_manager.h',
       'browser/ui/views/frame/contents_web_view.cc',
@@ -2512,8 +2501,8 @@
       'browser/ui/webui/extensions/extension_icon_source.h',
       'browser/ui/webui/extensions/pack_extension_handler.cc',
       'browser/ui/webui/extensions/pack_extension_handler.h',
-      'browser/ui/webui/voicesearch_ui.cc',
-      'browser/ui/webui/voicesearch_ui.h',
+      'browser/ui/webui/voice_search_ui.cc',
+      'browser/ui/webui/voice_search_ui.h',
     ],
     'chrome_browser_ui_global_error_sources': [
       'browser/ui/cocoa/global_error_bubble_controller.h',
@@ -2672,10 +2661,10 @@
         '../components/components.gyp:feedback_proto',
         '../components/components.gyp:history_core_browser_proto',
         '../components/components.gyp:invalidation',
-        '../components/components.gyp:omaha_client',
         '../components/components.gyp:onc_component',
         '../components/components.gyp:password_manager_core_browser',
         '../components/components.gyp:ui_zoom',
+        '../components/components.gyp:update_client',
         '../components/components_resources.gyp:components_resources',
         '../components/components_strings.gyp:components_strings',
         '../content/content.gyp:content_browser',
@@ -2882,11 +2871,13 @@
               'conditions': [
                 ['mac_views_browser==1', {
                   'sources!': [
+                    'browser/ui/cocoa/bookmarks/bookmark_drag_drop_cocoa.mm',
                     'browser/ui/cocoa/browser_window_factory_cocoa.mm',
                     'browser/ui/cocoa/tab_dialogs_cocoa.mm',
                   ],
                 }, {
                   'sources!': [
+                    'browser/ui/views/bookmarks/bookmark_drag_drop_views.cc',
                     'browser/ui/views/frame/browser_window_factory.cc',
                     'browser/ui/views/tab_dialogs_views.cc',
                   ],
@@ -2926,8 +2917,6 @@
               'sources': [ '<@(chrome_browser_ui_aura_non_chromeos)' ],
             }],
           ],
-        }, { # else: use_aura==0
-          'sources': [ '<@(chrome_browser_ui_non_aura_sources)' ],
         }],
         ['ui_compositor_image_transport==1', {
           'dependencies': [

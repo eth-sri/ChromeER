@@ -425,7 +425,8 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
 };
 
 // Flaky on Windows: http://crbug.com/305722
-#if defined(OS_WIN)
+// The test frequently times out on Linux, too. See crbug.com/440043.
+#if defined(OS_WIN) || defined(OS_LINUX)
 #define MAYBE_OverscrollNavigation DISABLED_OverscrollNavigation
 #else
 #define MAYBE_OverscrollNavigation OverscrollNavigation
@@ -980,7 +981,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
       WaitAFrame();
 
       blink::WebGestureEvent scroll_update =
-          SyntheticWebGestureEventBuilder::BuildScrollUpdate(dx, 5, 0);
+          SyntheticWebGestureEventBuilder::BuildScrollUpdate(
+              dx, 5, 0, blink::WebGestureDeviceTouchscreen);
 
       GetRenderWidgetHost()->ForwardGestureEventWithLatencyInfo(
           scroll_update, ui::LatencyInfo());
@@ -1059,7 +1061,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_VerticalOverscroll) {
     }
 
     ui::TouchEvent release(ui::ET_TOUCH_RELEASED, location, 0, timestamp);
-    details = dispatcher->OnEventFromSource(&press);
+    details = dispatcher->OnEventFromSource(&release);
     ASSERT_FALSE(details.dispatcher_destroyed);
     WaitAFrame();
 

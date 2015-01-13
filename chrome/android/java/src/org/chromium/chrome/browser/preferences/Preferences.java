@@ -11,6 +11,7 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Resources;
 import android.graphics.BitmapFactory;
 import android.nfc.NfcAdapter;
+import android.os.Build;
 import android.os.Bundle;
 import android.preference.Preference;
 import android.preference.PreferenceFragment;
@@ -19,7 +20,6 @@ import android.support.v4.view.ViewCompat;
 import android.support.v7.app.ActionBarActivity;
 import android.util.Log;
 import android.view.MenuItem;
-import android.view.View;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.VisibleForTesting;
@@ -146,6 +146,18 @@ public abstract class Preferences extends ActionBarActivity implements
     }
 
     @Override
+    public void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            Fragment fragment = getFragmentManager().findFragmentById(android.R.id.content);
+            if (fragment instanceof PreferenceFragment && fragment.getView() != null) {
+                // Set list view padding to 0 so dividers are the full width of the screen.
+                fragment.getView().findViewById(android.R.id.list).setPadding(0, 0, 0, 0);
+            }
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
 
@@ -206,7 +218,7 @@ public abstract class Preferences extends ActionBarActivity implements
     private void workAroundPlatformBugs() {
         // Workaround for an Android bug where the fragment's view may not be attached to the view
         // hierarchy. http://b/18525402
-        setContentView(new View(this));
+        getSupportActionBar();
 
         // Workaround for HTC One S bug which causes all the text in settings to turn white.
         // This must be called after setContentView().

@@ -18,7 +18,7 @@
 #include "base/threading/thread_checker.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "device/usb/usb_device.h"
+#include "device/usb/usb_service.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_manager_observer.h"
 
@@ -31,10 +31,6 @@ class Value;
 
 namespace content {
 class BrowserContext;
-}
-
-namespace device {
-class UsbDevice;
 }
 
 namespace extensions {
@@ -106,10 +102,13 @@ class DevicePermissions {
  public:
   virtual ~DevicePermissions();
 
-  // Attempts to find a permission entry matching the given device. This
-  // function must be called from the FILE thread. crbug.com/427985
+  // Attempts to find a permission entry matching the given device. The device
+  // serial number is presented separately so that this function does not need
+  // to call device->GetSerialNumber() which may not be possible on the
+  // current thread.
   scoped_refptr<DevicePermissionEntry> FindEntry(
-      scoped_refptr<device::UsbDevice> device) const;
+      scoped_refptr<device::UsbDevice> device,
+      const base::string16& serial_number) const;
 
   const std::set<scoped_refptr<DevicePermissionEntry>>& entries() const {
     return entries_;
@@ -136,7 +135,7 @@ class DevicePermissions {
 class DevicePermissionsManager : public KeyedService,
                                  public base::NonThreadSafe,
                                  public ProcessManagerObserver,
-                                 public device::UsbDevice::Observer {
+                                 public device::UsbService::Observer {
  public:
   static DevicePermissionsManager* Get(content::BrowserContext* context);
 
@@ -184,13 +183,15 @@ class DevicePermissionsManager : public KeyedService,
   // ProcessManagerObserver implementation
   void OnBackgroundHostClose(const std::string& extension_id) override;
 
-  // device::UsbDevice::Observer implementation
-  void OnDisconnect(scoped_refptr<device::UsbDevice> device) override;
+  // device::UsbService::Observer implementation
+  void OnDeviceRemoved(scoped_refptr<device::UsbDevice> device) override;
 
   content::BrowserContext* context_;
   std::map<std::string, DevicePermissions*> extension_id_to_device_permissions_;
   ScopedObserver<ProcessManager, ProcessManagerObserver>
       process_manager_observer_;
+  ScopedObserver<device::UsbService, device::UsbService::Observer>
+      usb_service_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(DevicePermissionsManager);
 };

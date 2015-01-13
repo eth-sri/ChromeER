@@ -5,6 +5,7 @@
 #include "net/quic/quic_crypto_client_stream.h"
 
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/null_encrypter.h"
@@ -122,10 +123,9 @@ void QuicCryptoClientStream::OnHandshakeMessage(
   DoHandshakeLoop(&message);
 }
 
-bool QuicCryptoClientStream::CryptoConnect() {
+void QuicCryptoClientStream::CryptoConnect() {
   next_state_ = STATE_INITIALIZE;
   DoHandshakeLoop(nullptr);
-  return true;
 }
 
 int QuicCryptoClientStream::num_sent_client_hellos() const {
@@ -176,6 +176,11 @@ static const int kMaxClientHellos = 3;
 
 void QuicCryptoClientStream::DoHandshakeLoop(
     const CryptoHandshakeMessage* in) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicCryptoClientStream::DoHandshakeLoop"));
+
   QuicCryptoClientConfig::CachedState* cached =
       crypto_config_->LookupOrCreate(server_id_);
 

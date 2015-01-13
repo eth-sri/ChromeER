@@ -33,10 +33,14 @@ class AutofillProfile : public AutofillDataModel {
     LOCAL_PROFILE,
 
     // A profile synced down from the server. These are read-only locally.
-    WALLET_PROFILE,
+    SERVER_PROFILE,
   };
 
   AutofillProfile(const std::string& guid, const std::string& origin);
+
+  // Server profile constructor. The type must be SERVER_PROFILE (this serves
+  // to differentiate this constructor).
+  AutofillProfile(RecordType type, const std::string& server_id);
 
   // For use in STL containers.
   AutofillProfile();
@@ -65,7 +69,6 @@ class AutofillProfile : public AutofillDataModel {
 
   // How this card is stored.
   RecordType record_type() const { return record_type_; }
-  void set_record_type(RecordType rt) { record_type_ = rt; }
 
   // Multi-value equivalents to |GetInfo| and |SetInfo|.
   void SetRawMultiInfo(ServerFieldType type,
@@ -122,6 +125,13 @@ class AutofillProfile : public AutofillDataModel {
   void OverwriteWithOrAddTo(const AutofillProfile& profile,
                             const std::string& app_locale);
 
+  // Sets |name_| to the user-input values in |names|, but uses names in |from|
+  // as a starting point. If the full names are equivalent, the parsing in
+  // |from| will take precedence. |from| can be null.
+  void CopyAndUpdateNameList(const std::vector<base::string16> names,
+                             const AutofillProfile* from,
+                             const std::string& app_locale);
+
   // Returns |true| if |type| accepts multi-values.
   static bool SupportsMultiValue(ServerFieldType type);
 
@@ -156,6 +166,9 @@ class AutofillProfile : public AutofillDataModel {
   void set_language_code(const std::string& language_code) {
     language_code_ = language_code;
   }
+
+  // Nonempty only when type() == SERVER_PROFILE.
+  const std::string& server_id() const { return server_id_; }
 
   // Returns a standardized representation of the given string for comparison
   // purposes. The resulting string will be lower-cased with all punctuation
@@ -229,6 +242,9 @@ class AutofillProfile : public AutofillDataModel {
 
   // The BCP 47 language code that can be used to format |address_| for display.
   std::string language_code_;
+
+  // ID assigned by the server. This will be set only for WALLET_PROFILEs.
+  std::string server_id_;
 };
 
 // So we can compare AutofillProfiles with EXPECT_EQ().

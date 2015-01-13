@@ -72,10 +72,11 @@ class MEDIA_EXPORT ProxyDecryptor {
 
   // Callbacks for firing session events.
   void OnSessionMessage(const std::string& web_session_id,
-                        const std::vector<uint8>& message,
-                        const GURL& default_url);
+                        MediaKeys::MessageType message_type,
+                        const std::vector<uint8>& message);
   void OnSessionKeysChange(const std::string& web_session_id,
-                           bool has_additional_usable_key);
+                           bool has_additional_usable_key,
+                           CdmKeysInfo keys_info);
   void OnSessionExpirationUpdate(const std::string& web_session_id,
                                  const base::Time& new_expiry_time);
   void GenerateKeyAdded(const std::string& web_session_id);

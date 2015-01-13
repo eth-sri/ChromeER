@@ -65,7 +65,8 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
                             scoped_ptr<NewSessionCdmPromise> promise);
 
   // Loads the session specified by |web_session_id|.
-  void LoadSession(const std::string& web_session_id,
+  void LoadSession(MediaKeys::SessionType session_type,
+                   const std::string& web_session_id,
                    scoped_ptr<NewSessionCdmPromise> promise);
 
   // Updates the session specified by |web_session_id| with |response|.
@@ -101,10 +102,11 @@ class CdmSessionAdapter : public base::RefCounted<CdmSessionAdapter> {
 
   // Callbacks for firing session events.
   void OnSessionMessage(const std::string& web_session_id,
-                        const std::vector<uint8>& message,
-                        const GURL& destination_url);
+                        MediaKeys::MessageType message_type,
+                        const std::vector<uint8>& message);
   void OnSessionKeysChange(const std::string& web_session_id,
-                           bool has_additional_usable_key);
+                           bool has_additional_usable_key,
+                           CdmKeysInfo keys_info);
   void OnSessionExpirationUpdate(const std::string& web_session_id,
                                  const base::Time& new_expiry_time);
   void OnSessionClosed(const std::string& web_session_id);

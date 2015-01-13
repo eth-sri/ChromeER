@@ -14,16 +14,16 @@
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
+#include "cc/debug/picture_debug_util.h"
 #include "cc/debug/traced_picture.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/content_layer_client.h"
 #include "skia/ext/pixel_ref_utils.h"
 #include "third_party/skia/include/core/SkBBHFactory.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkData.h"
+#include "third_party/skia/include/core/SkDrawPictureCallback.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
-#include "third_party/skia/include/core/SkPixelSerializer.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/utils/SkNullCanvas.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
@@ -35,40 +35,6 @@
 namespace cc {
 
 namespace {
-
-class BitmapSerializer : public SkPixelSerializer {
- protected:
-  bool onUseEncodedData(const void* data, size_t len) override { return true; }
-
-  SkData* onEncodePixels(const SkImageInfo& info,
-                         const void* pixels,
-                         size_t row_bytes) override {
-    const int kJpegQuality = 80;
-    std::vector<unsigned char> data;
-
-    // If bitmap is opaque, encode as JPEG.
-    // Otherwise encode as PNG.
-    bool encoding_succeeded = false;
-    if (info.isOpaque()) {
-      encoding_succeeded =
-          gfx::JPEGCodec::Encode(reinterpret_cast<const unsigned char*>(pixels),
-                                 gfx::JPEGCodec::FORMAT_SkBitmap, info.width(),
-                                 info.height(), row_bytes, kJpegQuality, &data);
-    } else {
-      SkBitmap bm;
-      // The cast is ok, since we only read the bm.
-      if (!bm.installPixels(info, const_cast<void*>(pixels), row_bytes)) {
-        return nullptr;
-      }
-      encoding_succeeded = gfx::PNGCodec::EncodeBGRASkBitmap(bm, false, &data);
-    }
-
-    if (encoding_succeeded) {
-      return SkData::NewWithCopy(&data.front(), data.size());
-    }
-    return nullptr;
-  }
-};
 
 bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
   const unsigned char* data = static_cast<const unsigned char *>(buffer);
@@ -176,7 +142,7 @@ Picture::Picture(const skia::RefPtr<SkPicture>& picture,
 
 Picture::~Picture() {
   TRACE_EVENT_OBJECT_DELETED_WITH_ID(
-    TRACE_DISABLED_BY_DEFAULT("cc.debug"), "cc::Picture", this);
+      TRACE_DISABLED_BY_DEFAULT("cc.debug.picture"), "cc::Picture", this);
 }
 
 bool Picture::IsSuitableForGpuRasterization(const char** reason) const {
@@ -370,28 +336,19 @@ void Picture::Replay(SkCanvas* canvas) {
 }
 
 scoped_ptr<base::Value> Picture::AsValue() const {
-  SkDynamicMemoryWStream stream;
-  BitmapSerializer serializer;
-  picture_->serialize(&stream, &serializer);
-
   // Encode the picture as base64.
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
   res->Set("params.layer_rect", MathUtil::AsValue(layer_rect_).release());
-
-  size_t serialized_size = stream.bytesWritten();
-  scoped_ptr<char[]> serialized_picture(new char[serialized_size]);
-  stream.copyTo(serialized_picture.get());
   std::string b64_picture;
-  base::Base64Encode(std::string(serialized_picture.get(), serialized_size),
-                     &b64_picture);
+  PictureDebugUtil::SerializeAsBase64(picture_.get(), &b64_picture);
   res->SetString("skp64", b64_picture);
   return res.Pass();
 }
 
 void Picture::EmitTraceSnapshot() const {
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug") "," TRACE_DISABLED_BY_DEFAULT(
-          "devtools.timeline.picture"),
+      TRACE_DISABLED_BY_DEFAULT("cc.debug.picture") ","
+          TRACE_DISABLED_BY_DEFAULT("devtools.timeline.picture"),
       "cc::Picture",
       this,
       TracedPicture::AsTraceablePicture(this));
@@ -399,8 +356,8 @@ void Picture::EmitTraceSnapshot() const {
 
 void Picture::EmitTraceSnapshotAlias(Picture* original) const {
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug") "," TRACE_DISABLED_BY_DEFAULT(
-          "devtools.timeline.picture"),
+      TRACE_DISABLED_BY_DEFAULT("cc.debug.picture") ","
+          TRACE_DISABLED_BY_DEFAULT("devtools.timeline.picture"),
       "cc::Picture",
       this,
       TracedPicture::AsTraceablePictureAlias(original));

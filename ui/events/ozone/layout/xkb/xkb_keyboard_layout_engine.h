@@ -6,10 +6,14 @@
 #define UI_EVENTS_OZONE_LAYOUT_XKB_XKB_KEYBOARD_LAYOUT_ENGINE_H_
 
 #include <xkbcommon/xkbcommon.h>
+#include <vector>
 
 #include "base/containers/hash_tables.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
+#include "base/task_runner.h"
 #include "ui/events/ozone/layout/events_ozone_layout_export.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine.h"
 #include "ui/events/ozone/layout/xkb/scoped_xkb.h"
@@ -21,21 +25,25 @@ class EVENTS_OZONE_LAYOUT_EXPORT XkbKeyboardLayoutEngine
     : public KeyboardLayoutEngine {
  public:
   XkbKeyboardLayoutEngine(const XkbKeyCodeConverter& converter);
-  virtual ~XkbKeyboardLayoutEngine();
+  ~XkbKeyboardLayoutEngine() override;
 
   // KeyboardLayoutEngine:
-  virtual bool CanSetCurrentLayout() const override;
-  virtual bool SetCurrentLayoutByName(const std::string& layout_name) override;
+  bool CanSetCurrentLayout() const override;
+  bool SetCurrentLayoutByName(const std::string& layout_name) override;
 
-  virtual bool UsesISOLevel5Shift() const override;
-  virtual bool UsesAltGr() const override;
+  bool UsesISOLevel5Shift() const override;
+  bool UsesAltGr() const override;
 
-  virtual bool Lookup(DomCode dom_code,
-                      int flags,
-                      DomKey* dom_key,
-                      base::char16* character,
-                      KeyboardCode* key_code,
-                      uint32* platform_keycode) const override;
+  bool Lookup(DomCode dom_code,
+              int flags,
+              DomKey* dom_key,
+              base::char16* character,
+              KeyboardCode* key_code,
+              uint32* platform_keycode) const override;
+
+  // Gets the names of the RMLO rule for libxkbcommon.
+  // Makes it protected for testing.
+  scoped_ptr<xkb_rule_names> GetXkbRuleNames(const std::string& layout_name);
 
  protected:
   // Table for EventFlagsToXkbFlags().
@@ -44,6 +52,9 @@ class EVENTS_OZONE_LAYOUT_EXPORT XkbKeyboardLayoutEngine
     xkb_mod_mask_t xkb_flag;
   };
   std::vector<XkbFlagMapEntry> xkb_flag_map_;
+
+  // Flag mask for num lock, which is always considered enabled.
+  xkb_mod_mask_t num_lock_mod_mask_;
 
   // Determines the Windows-based KeyboardCode (VKEY) for a character key,
   // accounting for non-US layouts. May return VKEY_UNKNOWN, in which case the
@@ -60,6 +71,11 @@ class EVENTS_OZONE_LAYOUT_EXPORT XkbKeyboardLayoutEngine
   const XkbKeyCodeConverter& key_code_converter_;
 
  private:
+  struct XkbKeymapEntry {
+    std::string layout_name;
+    xkb_keymap* keymap;
+  };
+  std::vector<XkbKeymapEntry> xkb_keymaps_;
   // Sets a new XKB keymap. This updates xkb_state_ (which takes ownership
   // of the keymap), and updates xkb_flag_map_ for the new keymap.
   void SetKeymap(xkb_keymap* keymap);
@@ -82,10 +98,18 @@ class EVENTS_OZONE_LAYOUT_EXPORT XkbKeyboardLayoutEngine
                                base::char16 base_character,
                                int ui_flags) const;
 
+  // Callback when keymap file is loaded complete.
+  void OnKeymapLoaded(const std::string& layout_name, const char* keymap_str);
+
   // libxkbcommon uses explicit reference counting for its structures,
   // so we need to trigger its cleanup.
   scoped_ptr<xkb_context, XkbContextDeleter> xkb_context_;
   scoped_ptr<xkb_state, XkbStateDeleter> xkb_state_;
+
+  std::string current_layout_name_;
+
+  // Support weak pointers for attach & detach callbacks.
+  base::WeakPtrFactory<XkbKeyboardLayoutEngine> weak_ptr_factory_;
 };
 
 }  // namespace ui

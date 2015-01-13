@@ -129,10 +129,9 @@ class HistoryQuickProviderTest : public testing::Test {
     Profile* profile = static_cast<Profile*>(context);
     return new TemplateURLService(
         profile->GetPrefs(), make_scoped_ptr(new SearchTermsData), NULL,
-        scoped_ptr<TemplateURLServiceClient>(
-            new ChromeTemplateURLServiceClient(
-                HistoryServiceFactory::GetForProfile(
-                    profile, Profile::EXPLICIT_ACCESS))),
+        scoped_ptr<TemplateURLServiceClient>(new ChromeTemplateURLServiceClient(
+            HistoryServiceFactory::GetForProfile(
+                profile, ServiceAccessType::EXPLICIT_ACCESS))),
         NULL, NULL, base::Closure());
   }
 
@@ -186,9 +185,8 @@ void HistoryQuickProviderTest::SetUp() {
   bookmarks::test::WaitForBookmarkModelToLoad(
       BookmarkModelFactory::GetForProfile(profile_.get()));
   profile_->BlockUntilHistoryIndexIsRefreshed();
-  history_service_ =
-      HistoryServiceFactory::GetForProfile(profile_.get(),
-                                           Profile::EXPLICIT_ACCESS);
+  history_service_ = HistoryServiceFactory::GetForProfile(
+      profile_.get(), ServiceAccessType::EXPLICIT_ACCESS);
   EXPECT_TRUE(history_service_);
   provider_ = new HistoryQuickProvider(profile_.get());
   TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
@@ -292,7 +290,7 @@ void HistoryQuickProviderTest::RunTestWithCursor(
                           metrics::OmniboxEventProto::INVALID_SPEC,
                           prevent_inline_autocomplete, false, true, true,
                           ChromeAutocompleteSchemeClassifier(profile_.get()));
-  provider_->Start(input, false);
+  provider_->Start(input, false, false);
   EXPECT_TRUE(provider_->done());
 
   ac_matches_ = provider_->matches();
@@ -712,6 +710,16 @@ TEST_F(HistoryQuickProviderTest, CullSearchResults) {
   RunTest(ASCIIToUTF16("testsearch"), false, expected_urls, true,
           ASCIIToUTF16("testsearch.com"),
                     ASCIIToUTF16(".com"));
+}
+
+TEST_F(HistoryQuickProviderTest, DoesNotProvideMatchesOnFocus) {
+  AutocompleteInput input(ASCIIToUTF16("popularsite"), base::string16::npos,
+                          std::string(), GURL(),
+                          metrics::OmniboxEventProto::INVALID_SPEC,
+                          false, false, true, true,
+                          ChromeAutocompleteSchemeClassifier(profile_.get()));
+  provider_->Start(input, false, true);
+  EXPECT_TRUE(provider_->matches().empty());
 }
 
 // HQPOrderingTest -------------------------------------------------------------

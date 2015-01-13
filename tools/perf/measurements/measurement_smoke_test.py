@@ -13,6 +13,7 @@ from telemetry.core import discover
 from telemetry.page import page_test
 from telemetry.unittest_util import options_for_unittests
 from telemetry.util import classes
+from telemetry.web_perf import timeline_based_measurement
 
 
 # Do NOT add new items to this list!
@@ -25,9 +26,9 @@ _ACTION_NAMES_WHITE_LIST = (
 
 def _GetAllPossiblePageTestInstances():
   page_test_instances = []
-  benchmarks_dir = os.path.dirname(__file__)
-  top_level_dir = os.path.dirname(benchmarks_dir)
-  measurements_dir = os.path.join(top_level_dir, 'measurements')
+  measurements_dir = os.path.dirname(__file__)
+  top_level_dir = os.path.dirname(measurements_dir)
+  benchmarks_dir = os.path.join(top_level_dir, 'benchmarks')
 
   # Get all page test instances from measurement classes that are directly
   # constructable
@@ -44,9 +45,17 @@ def _GetAllPossiblePageTestInstances():
   # Note: since this depends on the command line options, there is no guaranteed
   # that this will generate all possible page test instances but it's worth
   # enough for smoke test purpose.
-  options = options_for_unittests.GetCopy()
   for benchmark_class in all_benchmarks_classes:
-    page_test_instances.append(benchmark_class().CreatePageTest(options))
+    options = options_for_unittests.GetCopy()
+    parser = options.CreateParser()
+    benchmark_class.AddCommandLineArgs(parser)
+    benchmark_module.AddCommandLineArgs(parser)
+    benchmark_class.SetArgumentDefaults(parser)
+    options.MergeDefaultValues(parser.get_default_values())
+    pt = benchmark_class().CreatePageTest(options)
+    if not isinstance(pt, timeline_based_measurement.TimelineBasedMeasurement):
+      page_test_instances.append(pt)
+
   return page_test_instances
 
 
@@ -55,10 +64,14 @@ class MeasurementSmokeTest(unittest.TestCase):
   def testNoNewActionNameToRunUsed(self):
     invalid_tests = []
     for test in _GetAllPossiblePageTestInstances():
+      if not hasattr(test, 'action_name_to_run'):
+        invalid_tests.append(test)
+        logging.error('Test %s missing action_name_to_run attribute.',
+                      test.__class__.__name__)
       if test.action_name_to_run not in _ACTION_NAMES_WHITE_LIST:
         invalid_tests.append(test)
         logging.error('Page test %s has invalid action_name_to_run: %s' %
-                     (test.__class__.__name__, test.action_name_to_run))
+                     (test.__class__.__name__, repr(test.action_name_to_run)))
     self.assertFalse(
       invalid_tests,
       'New page tests with invalid action_name_to_run found. Please only use '

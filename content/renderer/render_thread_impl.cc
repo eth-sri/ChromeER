@@ -26,6 +26,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
@@ -539,9 +540,18 @@ void RenderThreadImpl::Init() {
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   is_elastic_overscroll_enabled_ =
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableThreadedEventHandlingMac) &&
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableThreadedEventHandlingMac) &&
       base::mac::IsOSLionOrLater();
+  if (is_elastic_overscroll_enabled_) {
+    base::ScopedCFTypeRef<CFStringRef> key(
+        base::SysUTF8ToCFStringRef("NSScrollViewRubberbanding"));
+    Boolean key_exists = false;
+    Boolean value = CFPreferencesGetAppBooleanValue(
+        key, kCFPreferencesCurrentApplication, &key_exists);
+    if (key_exists && !value)
+      is_elastic_overscroll_enabled_ = false;
+  }
 #else
   is_elastic_overscroll_enabled_ = false;
 #endif
@@ -820,8 +830,8 @@ bool RenderThreadImpl::Send(IPC::Message* msg) {
   return rv;
 }
 
-base::MessageLoop* RenderThreadImpl::GetMessageLoop() {
-  return message_loop();
+scoped_refptr<base::SingleThreadTaskRunner> RenderThreadImpl::GetTaskRunner() {
+  return GetRendererScheduler()->DefaultTaskRunner();
 }
 
 IPC::SyncChannel* RenderThreadImpl::GetChannel() {
@@ -947,6 +957,8 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
     gin::Debug::SetJitCodeEventHandler(vTune::GetVtuneCodeEventHandler());
 #endif
 
+  SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
+
   blink_platform_impl_.reset(
       new RendererBlinkPlatformImpl(renderer_scheduler_.get()));
   blink::initialize(blink_platform_impl_.get());
@@ -1033,8 +1045,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
 
   EnableBlinkPlatformLogChannels(
       command_line.GetSwitchValueASCII(switches::kBlinkPlatformLogChannels));
-
-  SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
 
   if (!media::IsMediaLibraryInitialized()) {
     WebRuntimeFeatures::enableWebAudio(false);

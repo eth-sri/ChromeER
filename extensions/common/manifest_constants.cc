@@ -30,6 +30,7 @@ const char kContentPackSites[] = "sites";
 const char kContentScripts[] = "content_scripts";
 const char kContentSecurityPolicy[] = "content_security_policy";
 const char kConvertedFromUserScript[] = "converted_from_user_script";
+const char kCopresence[] = "copresence";
 const char kCss[] = "css";
 const char kCtrlKey[] = "ctrlKey";
 const char kCurrentLocale[] = "current_locale";
@@ -224,6 +225,7 @@ const char kRunAtDocumentIdle[] = "document_idle";
 const char kPageActionCommandEvent[] = "_execute_page_action";
 const char kPageActionTypeTab[] = "tab";
 const char kPageActionTypePermanent[] = "permanent";
+const char kProjectId[] = "project_id";
 const char kLaunchContainerPanel[] = "panel";
 const char kLaunchContainerTab[] = "tab";
 const char kLaunchContainerWindow[] = "window";
@@ -314,10 +316,18 @@ const char kInvalidContentPackSites[] =
     "Invalid value for Content Pack sites - files must be strings.";
 const char kInvalidContentScript[] =
     "Invalid value for 'content_scripts[*]'.";
-const char kInvalidContentSecurityPolicy[] =
-    "Invalid value for 'content_security_policy'.";
 const char kInvalidContentScriptsList[] =
     "Invalid value for 'content_scripts'.";
+const char kInvalidContentSecurityPolicy[] =
+    "Invalid value for 'content_security_policy'.";
+const char kInvalidCopresenceConfig[] = "Invalid value for 'copresence'.";
+const char kInvalidCopresenceProjectId[] =
+    "copresence.project_id must not be empty.";
+const char kInvalidCSPInsecureValue[] =
+    "Ignored insecure CSP value \"*\" in directive '*'.";
+const char kInvalidCSPMissingSecureSrc[] =
+    "CSP directive '*' must be specified (either explicitly, or implicitly via"
+    " 'default-src') and must whitelist only secure resources.";
 const char kInvalidCss[] =
     "Invalid value for 'content_scripts[*].css[*]'.";
 const char kInvalidCssList[] =
@@ -627,14 +637,6 @@ const char kInvalidWebURLs[] =
     "Invalid value for 'app.urls'.";
 const char kInvalidZipHash[] =
     "Required key 'zip_hash' is missing or invalid.";
-const char kInsecureContentSecurityPolicy[] =
-    "Invalid value for 'content_security_policy': Both 'script-src' and"
-    " 'object-src' directives must be specified (either explicitly, or"
-    " implicitly via 'default-src'), and both must whitelist only secure"
-    " resources. You may include any of the following sources: \"'self'\","
-    " \"'unsafe-eval'\", \"http://127.0.0.1\", \"http://localhost\", or any"
-    " \"https://\" or \"chrome-extension://\" origin. For more information,"
-    " see http://developer.chrome.com/extensions/contentSecurityPolicy.html";
 const char kKeyIsDeprecatedWithReplacement[] =
     "Key \"*\" is deprecated.  Key \"*\" should be used instead.";
 const char kLauncherPagePageRequired[] =

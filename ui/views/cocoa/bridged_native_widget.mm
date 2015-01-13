@@ -4,6 +4,8 @@
 
 #import "ui/views/cocoa/bridged_native_widget.h"
 
+#import <objc/runtime.h>
+
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #import "base/mac/sdk_forward_declarations.h"
@@ -26,6 +28,8 @@
 #include "ui/views/widget/widget.h"
 
 namespace {
+
+int kWindowPropertiesKey;
 
 float GetDeviceScaleFactorFromView(NSView* view) {
   gfx::Display display =
@@ -121,7 +125,11 @@ void BridgedNativeWidget::SetFocusManager(FocusManager* focus_manager) {
 }
 
 void BridgedNativeWidget::SetBounds(const gfx::Rect& new_bounds) {
-  [window_ setFrame:gfx::ScreenRectToNSRect(new_bounds)
+  gfx::Rect actual_new_bounds(new_bounds);
+  if (parent_)
+    actual_new_bounds.Offset(parent_->GetRestoredBounds().OffsetFromOrigin());
+
+  [window_ setFrame:gfx::ScreenRectToNSRect(actual_new_bounds)
             display:YES
             animate:NO];
 }
@@ -160,7 +168,6 @@ void BridgedNativeWidget::SetVisibilityState(WindowVisibilityState new_state) {
   if (new_state == HIDE_WINDOW) {
     [window_ orderOut:nil];
     DCHECK(!window_visible_);
-    NotifyVisibilityChangeDown();
     return;
   }
 
@@ -189,7 +196,6 @@ void BridgedNativeWidget::SetVisibilityState(WindowVisibilityState new_state) {
               relativeTo:parent_window_number];
   }
   DCHECK(window_visible_);
-  NotifyVisibilityChangeDown();
 }
 
 void BridgedNativeWidget::AcquireCapture() {
@@ -206,6 +212,22 @@ void BridgedNativeWidget::ReleaseCapture() {
 
 bool BridgedNativeWidget::HasCapture() {
   return mouse_capture_ && mouse_capture_->IsActive();
+}
+
+void BridgedNativeWidget::SetNativeWindowProperty(const char* name,
+                                                  void* value) {
+  NSString* key = [NSString stringWithUTF8String:name];
+  if (value) {
+    [GetWindowProperties() setObject:[NSValue valueWithPointer:value]
+                              forKey:key];
+  } else {
+    [GetWindowProperties() removeObjectForKey:key];
+  }
+}
+
+void* BridgedNativeWidget::GetNativeWindowProperty(const char* name) const {
+  NSString* key = [NSString stringWithUTF8String:name];
+  return [[GetWindowProperties() objectForKey:key] pointerValue];
 }
 
 void BridgedNativeWidget::OnWindowWillClose() {
@@ -308,12 +330,20 @@ void BridgedNativeWidget::OnVisibilityChangedTo(bool new_visibility) {
   // If made visible externally (e.g. Cmd+H), just roll with it. Don't try (yet)
   // to distinguish being *hidden* externally from being hidden by a parent
   // window - we might not need that.
-  if (window_visible_)
+  if (window_visible_) {
     wants_to_be_visible_ = true;
 
-  // Capture on hidden windows is not permitted.
-  if (!window_visible_)
-    mouse_capture_.reset();
+    if (parent_)
+      [parent_->ns_window() addChildWindow:window_ ordered:NSWindowAbove];
+  } else {
+    mouse_capture_.reset();  // Capture on hidden windows is not permitted.
+
+    // When becoming invisible, remove the entry in any parent's childWindow
+    // list. Cocoa's childWindow management breaks down when child windows are
+    // hidden.
+    if (parent_)
+      [parent_->ns_window() removeChildWindow:window_];
+  }
 
   // TODO(tapted): Investigate whether we want this for Mac. This is what Aura
   // does, and it is what tests expect. However, because layer drawing is
@@ -326,6 +356,8 @@ void BridgedNativeWidget::OnVisibilityChangedTo(bool new_visibility) {
     layer()->SetVisible(window_visible_);
     layer()->SchedulePaint(gfx::Rect(GetClientAreaSize()));
   }
+
+  NotifyVisibilityChangeDown();
 
   native_widget_mac_->GetWidget()->OnNativeWidgetVisibilityChanged(
       window_visible_);
@@ -500,27 +532,43 @@ void BridgedNativeWidget::NotifyVisibilityChangeDown() {
   const size_t child_count = child_windows_.size();
   if (!window_visible_) {
     for (BridgedNativeWidget* child : child_windows_) {
-      if (child->window_visible_) {
+      if (child->window_visible_)
         [child->ns_window() orderOut:nil];
-        child->NotifyVisibilityChangeDown();
-        CHECK_EQ(child_count, child_windows_.size());
-      }
+
+      DCHECK(!child->window_visible_);
+      CHECK_EQ(child_count, child_windows_.size());
     }
+    // The orderOut calls above should result in a call to OnVisibilityChanged()
+    // in each child. There, children will remove themselves from the NSWindow
+    // childWindow list as well as propagate NotifyVisibilityChangeDown() calls
+    // to any children of their own.
+    DCHECK_EQ(0u, [[window_ childWindows] count]);
     return;
   }
 
+  NSUInteger visible_children = 0;  // For a DCHECK below.
   NSInteger parent_window_number = [window_ windowNumber];
   for (BridgedNativeWidget* child: child_windows_) {
     // Note: order the child windows on top, regardless of whether or not they
     // are currently visible. They probably aren't, since the parent was hidden
     // prior to this, but they could have been made visible in other ways.
     if (child->wants_to_be_visible_) {
+      ++visible_children;
+      // Here -[NSWindow orderWindow:relativeTo:] is used to put the window on
+      // screen. However, that by itself is insufficient to guarantee a correct
+      // z-order relationship. If this function is being called from a z-order
+      // change in the parent, orderWindow turns out to be unreliable (i.e. the
+      // ordering doesn't always take effect). What this actually relies on is
+      // the resulting call to OnVisibilityChanged() in the child, which will
+      // then insert itself into -[NSWindow childWindows] to let Cocoa do its
+      // internal layering magic.
       [child->ns_window() orderWindow:NSWindowAbove
                            relativeTo:parent_window_number];
-      child->NotifyVisibilityChangeDown();
-      CHECK_EQ(child_count, child_windows_.size());
+      DCHECK(child->window_visible_);
     }
+    CHECK_EQ(child_count, child_windows_.size());
   }
+  DCHECK_EQ(visible_children, [[window_ childWindows] count]);
 }
 
 gfx::Size BridgedNativeWidget::GetClientAreaSize() const {
@@ -607,6 +655,17 @@ void BridgedNativeWidget::UpdateLayerProperties() {
   float scale_factor = GetDeviceScaleFactorFromView(compositor_superview_);
   compositor_->SetScaleAndSize(scale_factor,
                                ConvertSizeToPixel(scale_factor, size_in_dip));
+}
+
+NSMutableDictionary* BridgedNativeWidget::GetWindowProperties() const {
+  NSMutableDictionary* properties = objc_getAssociatedObject(
+      window_, &kWindowPropertiesKey);
+  if (!properties) {
+    properties = [NSMutableDictionary dictionary];
+    objc_setAssociatedObject(window_, &kWindowPropertiesKey,
+                             properties, OBJC_ASSOCIATION_RETAIN);
+  }
+  return properties;
 }
 
 }  // namespace views

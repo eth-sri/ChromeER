@@ -4,6 +4,7 @@
 
 #include "device/hid/hid_service.h"
 
+#include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
@@ -21,27 +22,16 @@ namespace device {
 
 namespace {
 
-HidService* g_service = NULL;
+HidService* g_service;
+}
 
-}  // namespace
+void HidService::Observer::OnDeviceAdded(
+    scoped_refptr<HidDeviceInfo> device_info) {
+}
 
-class HidService::Destroyer : public base::MessageLoop::DestructionObserver {
- public:
-  explicit Destroyer(HidService* hid_service)
-      : hid_service_(hid_service) {}
-  ~Destroyer() override {}
-
- private:
-  // base::MessageLoop::DestructionObserver implementation.
-  void WillDestroyCurrentMessageLoop() override {
-    base::MessageLoop::current()->RemoveDestructionObserver(this);
-    delete hid_service_;
-    delete this;
-    g_service = NULL;
-  }
-
-  HidService* hid_service_;
-};
+void HidService::Observer::OnDeviceRemoved(
+    scoped_refptr<HidDeviceInfo> device_info) {
+}
 
 HidService* HidService::GetInstance(
     scoped_refptr<base::SingleThreadTaskRunner> file_task_runner) {
@@ -54,8 +44,8 @@ HidService* HidService::GetInstance(
     g_service = new HidServiceWin();
 #endif
     if (g_service != nullptr) {
-      Destroyer* destroyer = new Destroyer(g_service);
-      base::MessageLoop::current()->AddDestructionObserver(destroyer);
+      base::AtExitManager::RegisterTask(base::Bind(
+          &base::DeletePointer<HidService>, base::Unretained(g_service)));
     }
   }
   return g_service;
@@ -64,18 +54,14 @@ HidService* HidService::GetInstance(
 void HidService::SetInstanceForTest(HidService* instance) {
   DCHECK(!g_service);
   g_service = instance;
-  Destroyer* destroyer = new Destroyer(g_service);
-  base::MessageLoop::current()->AddDestructionObserver(destroyer);
-}
-
-HidService::~HidService() {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  base::AtExitManager::RegisterTask(base::Bind(&base::DeletePointer<HidService>,
+                                               base::Unretained(g_service)));
 }
 
 void HidService::GetDevices(const GetDevicesCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (enumeration_ready_) {
-    std::vector<HidDeviceInfo> devices;
+    std::vector<scoped_refptr<HidDeviceInfo>> devices;
     for (const auto& map_entry : devices_) {
       devices.push_back(map_entry.second);
     }
@@ -95,26 +81,30 @@ void HidService::RemoveObserver(HidService::Observer* observer) {
 }
 
 // Fills in the device info struct of the given device_id.
-bool HidService::GetDeviceInfo(const HidDeviceId& device_id,
-                               HidDeviceInfo* info) const {
+scoped_refptr<HidDeviceInfo> HidService::GetDeviceInfo(
+    const HidDeviceId& device_id) const {
   DCHECK(thread_checker_.CalledOnValidThread());
   DeviceMap::const_iterator it = devices_.find(device_id);
-  if (it == devices_.end())
-    return false;
-  *info = it->second;
-  return true;
+  if (it == devices_.end()) {
+    return nullptr;
+  }
+  return it->second;
 }
 
 HidService::HidService() : enumeration_ready_(false) {
 }
 
-void HidService::AddDevice(const HidDeviceInfo& info) {
+HidService::~HidService() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!ContainsKey(devices_, info.device_id)) {
-    devices_[info.device_id] = info;
+}
+
+void HidService::AddDevice(scoped_refptr<HidDeviceInfo> device_info) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (!ContainsKey(devices_, device_info->device_id())) {
+    devices_[device_info->device_id()] = device_info;
 
     if (enumeration_ready_) {
-      FOR_EACH_OBSERVER(Observer, observer_list_, OnDeviceAdded(info));
+      FOR_EACH_OBSERVER(Observer, observer_list_, OnDeviceAdded(device_info));
     }
   }
 }
@@ -134,7 +124,7 @@ void HidService::FirstEnumerationComplete() {
   enumeration_ready_ = true;
 
   if (!pending_enumerations_.empty()) {
-    std::vector<HidDeviceInfo> devices;
+    std::vector<scoped_refptr<HidDeviceInfo>> devices;
     for (const auto& map_entry : devices_) {
       devices.push_back(map_entry.second);
     }

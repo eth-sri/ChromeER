@@ -64,8 +64,8 @@ const QuicPacketCount kInitialCongestionWindowSecure = 32;
 // Be conservative, and just use double a typical TCP ICWND for HTTP.
 const QuicPacketCount kInitialCongestionWindowInsecure = 20;
 
-// Default size of initial flow control window, for both stream and session.
-const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
+// Minimum size of initial flow control window, for both stream and session.
+const uint32 kMinimumFlowControlSendWindow = 16 * 1024;  // 16 KB
 
 // Minimum size of the CWND, in packets, when doing bandwidth resumption.
 const QuicPacketCount kMinCongestionWindowForBandwidthResumption = 10;
@@ -310,7 +310,6 @@ enum QuicVersion {
   // Special case to indicate unknown/unsupported QUIC version.
   QUIC_VERSION_UNSUPPORTED = 0,
 
-  QUIC_VERSION_19 = 19,  // Connection level flow control.
   QUIC_VERSION_21 = 21,  // Headers/crypto streams are flow controlled.
   QUIC_VERSION_22 = 22,  // Send Server Config Update messages on crypto stream.
   QUIC_VERSION_23 = 23,  // Timestamp in the ack frame.
@@ -324,8 +323,7 @@ enum QuicVersion {
 // IMPORTANT: if you are adding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
 static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_23,
-                                                     QUIC_VERSION_22,
-                                                     QUIC_VERSION_19};
+                                                     QUIC_VERSION_22};
 
 typedef std::vector<QuicVersion> QuicVersionVector;
 

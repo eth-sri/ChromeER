@@ -30,16 +30,18 @@ WifiCredential::CredentialSet GetWifiCredentialsForShillProfile(
     if (network->profile_path() != shill_profile_path)
       continue;
 
-    // TODO(quiche): Switch away from network->security(), once we have
-    // a security_class() field in NetworkState.
-    //
     // TODO(quiche): Fill in the actual passphrase via an asynchronous
     // call to a chromeos::NetworkConfigurationHandler instance's
     // GetProperties method.
-    credentials.insert(
-        WifiCredential(network->raw_ssid(),
-                       WifiSecurityClassFromShillSecurity(network->security()),
-                       ""  /* empty passphrase */));
+    scoped_ptr<WifiCredential> credential =
+        WifiCredential::Create(
+            network->raw_ssid(),
+            WifiSecurityClassFromShillSecurity(network->security_class()),
+            ""  /* empty passphrase */);
+    if (!credential)
+      LOG(ERROR) << "Failed to create credential";
+    else
+      credentials.insert(*credential);
   }
   return credentials;
 }

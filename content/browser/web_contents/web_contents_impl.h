@@ -39,7 +39,7 @@
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/gfx/geometry/rect_f.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct ViewHostMsg_DateTimeDialogValue_Params;
@@ -55,6 +55,7 @@ class GeolocationServiceContext;
 class InterstitialPageImpl;
 class JavaScriptDialogManager;
 class ManifestManagerHost;
+class MediaWebContentsObserver;
 class PluginContentOriginWhitelist;
 class PowerSaveBlocker;
 class RenderViewHost;
@@ -411,7 +412,8 @@ class CONTENT_EXPORT WebContentsImpl
   void UpdateState(RenderViewHost* render_view_host,
                    int32 page_id,
                    const PageState& page_state) override;
-  void UpdateTargetURL(const GURL& url) override;
+  void UpdateTargetURL(RenderViewHost* render_view_host,
+                       const GURL& url) override;
   void Close(RenderViewHost* render_view_host) override;
   void RequestMove(const gfx::Rect& new_bounds) override;
   void DidCancelLoading() override;
@@ -501,6 +503,7 @@ class CONTENT_EXPORT WebContentsImpl
                                 ui::PageTransition transition_type) override;
   void DidNavigateMainFramePreCommit(bool navigation_is_within_page) override;
   void DidNavigateMainFramePostCommit(
+      RenderFrameHostImpl* render_frame_host,
       const LoadCommittedDetails& details,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) override;
   void DidNavigateAnyFramePostCommit(
@@ -665,6 +668,12 @@ class CONTENT_EXPORT WebContentsImpl
   bool has_video_power_save_blocker_for_testing() const {
     return video_power_save_blocker_;
   }
+
+#if defined(ENABLE_BROWSER_CDMS)
+  MediaWebContentsObserver* media_web_contents_observer() {
+    return media_web_contents_observer_.get();
+  }
+#endif
 
  private:
   friend class WebContentsObserver;
@@ -1225,6 +1234,11 @@ class CONTENT_EXPORT WebContentsImpl
   scoped_ptr<WebContentsAudioMuter> audio_muter_;
 
   bool virtual_keyboard_requested_;
+
+#if defined(ENABLE_BROWSER_CDMS)
+  // Manages all the media player and CDM managers and forwards IPCs to them.
+  scoped_ptr<MediaWebContentsObserver> media_web_contents_observer_;
+#endif
 
   base::WeakPtrFactory<WebContentsImpl> loading_weak_factory_;
 

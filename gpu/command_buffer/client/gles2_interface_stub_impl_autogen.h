@@ -23,6 +23,10 @@ void GLES2InterfaceStub::BindAttribLocation(GLuint /* program */,
 }
 void GLES2InterfaceStub::BindBuffer(GLenum /* target */, GLuint /* buffer */) {
 }
+void GLES2InterfaceStub::BindBufferBase(GLenum /* target */,
+                                        GLuint /* index */,
+                                        GLuint /* buffer */) {
+}
 void GLES2InterfaceStub::BindFramebuffer(GLenum /* target */,
                                          GLuint /* framebuffer */) {
 }
@@ -499,6 +503,17 @@ void GLES2InterfaceStub::TexImage2D(GLenum /* target */,
                                     GLenum /* type */,
                                     const void* /* pixels */) {
 }
+void GLES2InterfaceStub::TexImage3D(GLenum /* target */,
+                                    GLint /* level */,
+                                    GLint /* internalformat */,
+                                    GLsizei /* width */,
+                                    GLsizei /* height */,
+                                    GLsizei /* depth */,
+                                    GLint /* border */,
+                                    GLenum /* format */,
+                                    GLenum /* type */,
+                                    const void* /* pixels */) {
+}
 void GLES2InterfaceStub::TexParameterf(GLenum /* target */,
                                        GLenum /* pname */,
                                        GLfloat /* param */) {
@@ -528,6 +543,18 @@ void GLES2InterfaceStub::TexSubImage2D(GLenum /* target */,
                                        GLint /* yoffset */,
                                        GLsizei /* width */,
                                        GLsizei /* height */,
+                                       GLenum /* format */,
+                                       GLenum /* type */,
+                                       const void* /* pixels */) {
+}
+void GLES2InterfaceStub::TexSubImage3D(GLenum /* target */,
+                                       GLint /* level */,
+                                       GLint /* xoffset */,
+                                       GLint /* yoffset */,
+                                       GLint /* zoffset */,
+                                       GLsizei /* width */,
+                                       GLsizei /* height */,
+                                       GLsizei /* depth */,
                                        GLenum /* format */,
                                        GLenum /* type */,
                                        const void* /* pixels */) {

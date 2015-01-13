@@ -172,11 +172,9 @@ function checkViewsAfterLogLoaded() {
     modules: true,
     tests: false,
     hsts: false,
-    logs: false,
     prerender: true,
     bandwidth: true,
-    chromeos: false,
-    visualizer: false
+    chromeos: false
   };
   NetInternalsTest.checkTabHandleVisibility(tabVisibilityState, false);
 }
@@ -204,11 +202,9 @@ function checkViewsAfterNetLogLoggerLogLoaded() {
     modules: false,
     tests: false,
     hsts: false,
-    logs: false,
     prerender: false,
     bandwidth: false,
-    chromeos: false,
-    visualizer: false
+    chromeos: false
   };
   NetInternalsTest.checkTabHandleVisibility(tabVisibilityState, false);
 }

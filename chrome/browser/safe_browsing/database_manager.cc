@@ -88,6 +88,7 @@ safe_browsing_util::ListType GetHashSeverestThreatListType(
         case safe_browsing_util::BINURL:                   // Falls through.
         case safe_browsing_util::CSDWHITELIST:             // Falls through.
         case safe_browsing_util::DOWNLOADWHITELIST:        // Falls through.
+        case safe_browsing_util::INCLUSIONWHITELIST:       // Falls through.
         case safe_browsing_util::EXTENSIONBLACKLIST:       // Falls through.
         case safe_browsing_util::SIDEEFFECTFREEWHITELIST:  // Falls through.
         case safe_browsing_util::IPBLACKLIST:
@@ -133,6 +134,7 @@ safe_browsing_util::ListType GetUrlSeverestThreatListType(
       case safe_browsing_util::BINURL:                   // Falls through.
       case safe_browsing_util::CSDWHITELIST:             // Falls through.
       case safe_browsing_util::DOWNLOADWHITELIST:        // Falls through.
+      case safe_browsing_util::INCLUSIONWHITELIST:       // Falls through.
       case safe_browsing_util::EXTENSIONBLACKLIST:       // Falls through.
       case safe_browsing_util::SIDEEFFECTFREEWHITELIST:  // Falls through.
       case safe_browsing_util::IPBLACKLIST:
@@ -434,6 +436,13 @@ bool SafeBrowsingDatabaseManager::MatchDownloadWhitelistString(
     return true;
   }
   return database_->ContainsDownloadWhitelistedString(str);
+}
+
+bool SafeBrowsingDatabaseManager::MatchInclusionWhitelistUrl(const GURL& url) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!enabled_ || !MakeDatabaseAvailable())
+    return true;
+  return database_->ContainsInclusionWhitelistedUrl(url);
 }
 
 bool SafeBrowsingDatabaseManager::IsMalwareKillSwitchOn() {

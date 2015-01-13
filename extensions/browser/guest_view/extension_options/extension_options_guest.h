@@ -38,6 +38,8 @@ class ExtensionOptionsGuest
   void GuestSizeChangedDueToAutoSize(const gfx::Size& old_size,
                                      const gfx::Size& new_size) override;
   bool IsAutoSizeSupported() const override;
+  void OnPreferredSizeChanged(const gfx::Size& pref_size) override;
+  bool IsPreferredSizeModeEnabled() const override;
 
   // ExtensionFunctionDispatcher::Delegate implementation.
   content::WebContents* GetAssociatedWebContents() const override;
@@ -70,7 +72,6 @@ class ExtensionOptionsGuest
                         int guest_instance_id);
   ~ExtensionOptionsGuest() override;
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
-  void SetUpAutoSize();
 
   scoped_ptr<extensions::ExtensionFunctionDispatcher>
       extension_function_dispatcher_;

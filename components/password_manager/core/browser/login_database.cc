@@ -28,7 +28,7 @@ using autofill::PasswordForm;
 
 namespace password_manager {
 
-static const int kCurrentVersionNumber = 9;
+const int kCurrentVersionNumber = 9;
 static const int kCompatibleVersionNumber = 1;
 
 Pickle SerializeVector(const std::vector<base::string16>& vec) {
@@ -116,6 +116,18 @@ void BindAddStatement(const PasswordForm& form,
 void AddCallback(int err, sql::Statement* /*stmt*/) {
   if (err == 19 /*SQLITE_CONSTRAINT*/)
     DLOG(WARNING) << "LoginDatabase::AddLogin updated an existing form";
+}
+
+bool DoesMatchConstraints(const PasswordForm& form) {
+  if (form.origin.is_empty()) {
+    DLOG(ERROR) << "Constraint violation: form.origin is empty";
+    return false;
+  }
+  if (form.signon_realm.empty()) {
+    DLOG(ERROR) << "Constraint violation: form.signon_realm is empty";
+    return false;
+  }
+  return true;
 }
 
 // UMA_* macros assume that the name never changes. This is a helper function
@@ -430,6 +442,8 @@ void LoginDatabase::ReportMetrics(const std::string& sync_username,
 
 PasswordStoreChangeList LoginDatabase::AddLogin(const PasswordForm& form) {
   PasswordStoreChangeList list;
+  if (!DoesMatchConstraints(form))
+    return list;
   std::string encrypted_password;
   if (EncryptedString(form.password_value, &encrypted_password) !=
           ENCRYPTION_RESULT_SUCCESS)

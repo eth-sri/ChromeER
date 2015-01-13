@@ -14,6 +14,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "sandbox/sandbox_export.h"
 
@@ -24,19 +25,16 @@ namespace sandbox {
 // implemented by the Linux kernel.
 class SANDBOX_EXPORT Credentials {
  public:
-  Credentials();
-  ~Credentials();
-
   // Drop all capabilities in the effective, inheritable and permitted sets for
   // the current process.
-  bool DropAllCapabilities();
+  static bool DropAllCapabilities() WARN_UNUSED_RESULT;
   // Return true iff there is any capability in any of the capabilities sets
   // of the current process.
-  bool HasAnyCapability() const;
+  static bool HasAnyCapability();
   // Returns the capabilities of the current process in textual form, as
   // documented in libcap2's cap_to_text(3). This is mostly useful for
   // debugging and tests.
-  scoped_ptr<std::string> GetCurrentCapString() const;
+  static scoped_ptr<std::string> GetCurrentCapString();
 
   // Returns whether the kernel supports CLONE_NEWUSER and whether it would be
   // possible to immediately move to a new user namespace. There is no point
@@ -51,7 +49,7 @@ class SANDBOX_EXPORT Credentials {
   // change.
   // If this call succeeds, the current process will be granted a full set of
   // capabilities in the new namespace.
-  bool MoveToNewUserNS();
+  static bool MoveToNewUserNS() WARN_UNUSED_RESULT;
 
   // Remove the ability of the process to access the file system. File
   // descriptors which are already open prior to calling this API remain
@@ -60,12 +58,14 @@ class SANDBOX_EXPORT Credentials {
   // CAP_SYS_CHROOT can be acquired by using the MoveToNewUserNS() API.
   // Make sure to call DropAllCapabilities() after this call to prevent
   // escapes.
-  // To be secure, it's very important for this API to not be called while the
-  // process has any directory file descriptor open.
-  bool DropFileSystemAccess();
+  // To be secure, the caller must ensure that any directory file descriptors
+  // are closed (for example, by checking the result of
+  // ProcUtil::HasOpenDirectory with a file descriptor for /proc, then closing
+  // that file descriptor). Otherwise it may be possible to escape the chroot.
+  static bool DropFileSystemAccess() WARN_UNUSED_RESULT;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(Credentials);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(Credentials);
 };
 
 }  // namespace sandbox.

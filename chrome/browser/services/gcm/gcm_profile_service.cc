@@ -48,8 +48,6 @@ class GCMProfileService::IdentityObserver : public IdentityProvider::Observer {
   void OnActiveAccountLogin() override;
   void OnActiveAccountLogout() override;
 
-  std::string SignedInUserName() const;
-
  private:
   void StartAccountTracker();
 
@@ -91,23 +89,17 @@ void GCMProfileService::IdentityObserver::OnActiveAccountLogin() {
   const std::string account_id = identity_provider_->GetActiveAccountId();
   if (account_id == account_id_)
     return;
-
   account_id_ = account_id;
+
+  // Still need to notify GCMDriver for UMA purpose.
   driver_->OnSignedIn();
 }
 
 void GCMProfileService::IdentityObserver::OnActiveAccountLogout() {
   account_id_.clear();
 
-  // When sign-in enforcement is not dropped, OnSignedOut will also clear all
-  // the GCM data and a new GCM ID will be retrieved after the user signs in
-  // again. Otherwise, the user sign-out will not affect the existing GCM
-  // data.
+  // Still need to notify GCMDriver for UMA purpose.
   driver_->OnSignedOut();
-}
-
-std::string GCMProfileService::IdentityObserver::SignedInUserName() const {
-  return driver_->IsStarted() ? account_id_ : std::string();
 }
 
 void GCMProfileService::IdentityObserver::StartAccountTracker() {
@@ -142,10 +134,31 @@ void GCMProfileService::RegisterProfilePrefs(
 }
 
 #if defined(OS_ANDROID)
+static GCMProfileService* debug_instance = nullptr;
+
 GCMProfileService::GCMProfileService(Profile* profile)
     : profile_(profile),
       push_messaging_service_(this, profile) {
-  DCHECK(!profile->IsOffTheRecord());
+  CHECK(!profile->IsOffTheRecord());
+
+  // TODO(johnme): Remove debug_instance and this logging code once
+  // crbug.com/437827 is fixed.
+  if (debug_instance != nullptr) {
+    LOG(FATAL) << "An instance of GCMProfileService already exists!"
+               << " Old profile: " << debug_instance->profile_ << " "
+               << debug_instance->profile_->GetDebugName() << " "
+               << debug_instance->profile_->GetProfileType() << " "
+               << debug_instance->profile_->IsSupervised() << " "
+               << debug_instance->profile_->IsNewProfile() << " "
+               << debug_instance->profile_->GetStartTime().ToInternalValue()
+               << ", new profile: " << profile << " "
+               << profile->GetDebugName() << " "
+               << profile->GetProfileType() << " "
+               << profile->IsSupervised() << " "
+               << profile->IsNewProfile() << " "
+               << profile->GetStartTime().ToInternalValue();
+  }
+  debug_instance = this;
 
   driver_.reset(new GCMDriverAndroid);
 }
@@ -173,6 +186,9 @@ GCMProfileService::GCMProfileService()
 }
 
 GCMProfileService::~GCMProfileService() {
+#if defined(OS_ANDROID)
+  debug_instance = nullptr;
+#endif
 }
 
 void GCMProfileService::Shutdown() {
@@ -183,15 +199,6 @@ void GCMProfileService::Shutdown() {
     driver_->Shutdown();
     driver_.reset();
   }
-}
-
-std::string GCMProfileService::SignedInUserName() const {
-#if defined(OS_ANDROID)
-  return std::string();
-#else
-  return identity_observer_ ? identity_observer_->SignedInUserName()
-                            : std::string();
-#endif  // defined(OS_ANDROID)
 }
 
 void GCMProfileService::SetDriverForTesting(GCMDriver* driver) {

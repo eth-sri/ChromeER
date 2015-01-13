@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/webstore_installer.h"
 
+#include <set>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -33,7 +34,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/crx_file/id_util.h"
-#include "components/omaha_client/omaha_query_params.h"
+#include "components/update_client/update_query_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_save_info.h"
@@ -48,6 +49,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/install/crx_installer_error.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/manifest_constants.h"
@@ -199,8 +201,8 @@ GURL WebstoreInstaller::GetWebstoreInstallURL(
   std::string url_string = extension_urls::GetWebstoreUpdateUrl().spec();
 
   GURL url(url_string + "?response=redirect&" +
-           omaha_client::OmahaQueryParams::Get(
-               omaha_client::OmahaQueryParams::CRX) +
+           update_client::UpdateQueryParams::Get(
+               update_client::UpdateQueryParams::CRX) +
            "&x=" + net::EscapeQueryParamValue(JoinString(params, '&'), true));
   DCHECK(url.is_valid());
 
@@ -362,9 +364,9 @@ void WebstoreInstaller::Observe(int type,
 
       // TODO(rdevlin.cronin): Continue removing std::string errors and
       // replacing with base::string16. See crbug.com/71980.
-      const base::string16* error =
-          content::Details<const base::string16>(details).ptr();
-      const std::string utf8_error = base::UTF16ToUTF8(*error);
+      const extensions::CrxInstallerError* error =
+          content::Details<const extensions::CrxInstallerError>(details).ptr();
+      const std::string utf8_error = base::UTF16ToUTF8(error->message());
       crx_installer_ = NULL;
       // ReportFailure releases a reference to this object so it must be the
       // last operation in this method.

@@ -149,6 +149,7 @@
       'public/browser/media_capture_devices.h',
       'public/browser/media_device_id.cc',
       'public/browser/media_device_id.h',
+      'public/browser/memory_pressure_observer.h',
       'public/browser/message_port_provider.h',
       'public/browser/native_web_keyboard_event.h',
       'public/browser/navigation_controller.cc',
@@ -1522,6 +1523,7 @@
       'browser/compositor/software_output_device_x11.cc',
       'browser/compositor/software_output_device_x11.h',
       'browser/context_factory.cc',
+      'browser/memory_pressure_observer.cc',
     ],
     'compositor_browser_surface_sources': [
       'browser/compositor/onscreen_display_client.cc',
@@ -1956,6 +1958,11 @@
         # This works on Android because enable_browser_cdms==1 on Android.
         'browser/media/media_web_contents_observer.cc',
         'browser/media/media_web_contents_observer.h',
+      ],
+    }],
+    ['OS == "linux" and use_openssl==1', {
+      'dependencies': [
+        '../third_party/boringssl/boringssl.gyp:boringssl',
       ],
     }],
   ],

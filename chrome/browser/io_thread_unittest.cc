@@ -93,8 +93,7 @@ TEST_F(IOThreadTest, SpdyFieldTrialSpdy4Enabled) {
               ElementsAre(net::kProtoHTTP11,
                           net::kProtoQUIC1SPDY3,
                           net::kProtoSPDY31,
-                          net::kProtoSPDY4_14,
-                          net::kProtoSPDY4_15));
+                          net::kProtoSPDY4_14));
   globals_.use_alternate_protocols.CopyToIfSet(&use_alternate_protocols);
   EXPECT_TRUE(use_alternate_protocols);
 }
@@ -134,6 +133,8 @@ TEST_F(IOThreadTest, EnableQuicFromFieldTrialGroup) {
   EXPECT_FALSE(params.quic_disable_connection_pooling);
   EXPECT_EQ(0, params.quic_load_server_info_timeout_ms);
   EXPECT_FALSE(params.quic_disable_loading_server_info_for_new_servers);
+  EXPECT_EQ(0.0f, params.quic_load_server_info_timeout_srtt_multiplier);
+  EXPECT_FALSE(params.quic_enable_truncated_connection_ids);
 }
 
 TEST_F(IOThreadTest, EnableQuicFromCommandLine) {
@@ -314,6 +315,24 @@ TEST_F(IOThreadTest, QuicDisableLoadingServerInfoForNewServers) {
   net::HttpNetworkSession::Params params;
   InitializeNetworkSessionParams(&params);
   EXPECT_TRUE(params.quic_disable_loading_server_info_for_new_servers);
+}
+
+TEST_F(IOThreadTest, QuicLoadServerInfoTimeToSmoothedRttFromFieldTrialParams) {
+  field_trial_group_ = "Enabled";
+  field_trial_params_["load_server_info_time_to_srtt"] = "0.5";
+  ConfigureQuicGlobals();
+  net::HttpNetworkSession::Params params;
+  InitializeNetworkSessionParams(&params);
+  EXPECT_EQ(0.5f, params.quic_load_server_info_timeout_srtt_multiplier);
+}
+
+TEST_F(IOThreadTest, QuicDisableTruncatedConnectionIds) {
+  field_trial_group_ = "Enabled";
+  field_trial_params_["enable_truncated_connection_ids"] = "true";
+  ConfigureQuicGlobals();
+  net::HttpNetworkSession::Params params;
+  InitializeNetworkSessionParams(&params);
+  EXPECT_TRUE(params.quic_enable_truncated_connection_ids);
 }
 
 TEST_F(IOThreadTest,

@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "media/base/media_export.h"
 #include "url/gurl.h"
 
@@ -21,12 +22,14 @@ class Time;
 namespace media {
 
 class CdmContext;
+struct CdmKeyInformation;
 
 template <typename... T>
 class CdmPromiseTemplate;
 
 typedef CdmPromiseTemplate<std::string> NewSessionCdmPromise;
 typedef CdmPromiseTemplate<> SimpleCdmPromise;
+typedef ScopedVector<CdmKeyInformation> CdmKeysInfo;
 
 // Performs media key operations.
 //
@@ -63,13 +66,21 @@ class MEDIA_EXPORT MediaKeys{
 
   // Type of license required when creating/loading a session.
   // Must be consistent with the values specified in the spec:
-  // https://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#extensions
+  // https://w3c.github.io/encrypted-media/#idl-def-MediaKeySessionType
   enum SessionType {
     TEMPORARY_SESSION,
-    PERSISTENT_SESSION
+    PERSISTENT_LICENSE_SESSION,
+    PERSISTENT_RELEASE_MESSAGE_SESSION
   };
 
-  static const uint32 kInvalidSessionId = 0;
+  // Type of message being sent to the application.
+  // Must be consistent with the values specified in the spec:
+  // https://w3c.github.io/encrypted-media/#idl-def-MediaKeyMessageType
+  enum MessageType {
+      LICENSE_REQUEST,
+      LICENSE_RENEWAL,
+      LICENSE_RELEASE
+  };
 
   virtual ~MediaKeys();
 
@@ -83,16 +94,18 @@ class MEDIA_EXPORT MediaKeys{
   // provided.
   // Note: UpdateSession() and ReleaseSession() should only be called after
   // |promise| is resolved.
-  virtual void CreateSession(const std::string& init_data_type,
-                             const uint8* init_data,
-                             int init_data_length,
-                             SessionType session_type,
-                             scoped_ptr<NewSessionCdmPromise> promise) = 0;
+  virtual void CreateSessionAndGenerateRequest(
+      SessionType session_type,
+      const std::string& init_data_type,
+      const uint8* init_data,
+      int init_data_length,
+      scoped_ptr<NewSessionCdmPromise> promise) = 0;
 
   // Loads a session with the |web_session_id| provided.
   // Note: UpdateSession() and ReleaseSession() should only be called after
   // |promise| is resolved.
-  virtual void LoadSession(const std::string& web_session_id,
+  virtual void LoadSession(SessionType session_type,
+                           const std::string& web_session_id,
                            scoped_ptr<NewSessionCdmPromise> promise) = 0;
 
   // Updates a session specified by |web_session_id| with |response|.
@@ -125,8 +138,9 @@ class MEDIA_EXPORT MediaKeys{
 // Key event callbacks. See the spec for details:
 // https://dvcs.w3.org/hg/html-media/raw-file/default/encrypted-media/encrypted-media.html#event-summary
 typedef base::Callback<void(const std::string& web_session_id,
-                            const std::vector<uint8>& message,
-                            const GURL& destination_url)> SessionMessageCB;
+                            MediaKeys::MessageType message_type,
+                            const std::vector<uint8>& message)>
+    SessionMessageCB;
 
 typedef base::Callback<void(const std::string& web_session_id)> SessionClosedCB;
 
@@ -136,8 +150,8 @@ typedef base::Callback<void(const std::string& web_session_id,
                             const std::string& error_message)> SessionErrorCB;
 
 typedef base::Callback<void(const std::string& web_session_id,
-                            bool has_additional_usable_key)>
-    SessionKeysChangeCB;
+                            bool has_additional_usable_key,
+                            CdmKeysInfo keys_info)> SessionKeysChangeCB;
 
 typedef base::Callback<void(const std::string& web_session_id,
                             const base::Time& new_expiry_time)>

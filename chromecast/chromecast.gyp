@@ -8,6 +8,7 @@
         '../third_party/android_tools/android_tools.gyp:android_support_v13_javalib',
     'chromium_code': 1,
     'chromecast_branding%': 'Chromium',
+    'disable_display%': 0,
   },
   'includes': [
     'chromecast_tests.gypi',
@@ -15,6 +16,11 @@
   'target_defaults': {
     'include_dirs': [
       '..',  # Root of Chromium checkout
+    ],
+    'conditions': [
+      ['disable_display==1', {
+        'defines': ['DISABLE_DISPLAY'],
+      }],
     ],
   },
   'targets': [
@@ -113,6 +119,7 @@
         'chromecast_locales.gyp:chromecast_settings',
         'media/media.gyp:media_base',
         '../base/base.gyp:base',
+        '../components/components.gyp:breakpad_host',
         '../components/components.gyp:cdm_renderer',
         '../components/components.gyp:component_metrics_proto',
         '../components/components.gyp:crash_component',
@@ -195,6 +202,7 @@
           'sources': [
             'browser/cast_network_delegate_simple.cc',
             'browser/devtools/remote_debugging_server_simple.cc',
+            'browser/media/cast_browser_cdm_factory_simple.cc',
             'browser/metrics/platform_metrics_providers_simple.cc',
             'browser/pref_service_helper_simple.cc',
             'common/platform_client_auth_simple.cc',
@@ -270,11 +278,23 @@
     ['OS=="android"', {
       'targets': [
         {
+          'target_name': 'cast_shell_icudata',
+          'type': 'none',
+          'dependencies': [
+            '../third_party/icu/icu.gyp:icudata',
+          ],
+          'copies': [{
+            'destination': '<(PRODUCT_DIR)/assets',
+            'files': ['<(PRODUCT_DIR)/icudtl.dat'],
+          }],
+        },
+        {
           'target_name': 'libcast_shell_android',
           'type': 'shared_library',
           'dependencies': [
             'cast_jni_headers',
             'cast_shell_common',
+            'cast_shell_icudata',
             'cast_shell_pak',
             'cast_version_header',
             '../base/base.gyp:base',
@@ -426,8 +446,11 @@
             'media/media.gyp:cast_media',
             '../content/content.gyp:content',
             '../ipc/ipc.gyp:ipc',
+            '../media/media.gyp:media',
           ],
           'sources': [
+            'browser/media/cast_browser_cdm_factory.cc',
+            'browser/media/cast_browser_cdm_factory.h',
             'browser/media/cma_message_filter_host.cc',
             'browser/media/cma_message_filter_host.h',
             'browser/media/cma_message_loop.cc',

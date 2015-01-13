@@ -164,6 +164,8 @@ class QuicStreamFactoryTest : public ::testing::TestWithParam<QuicVersion> {
                  /*disable_connection_pooling=*/false,
                  /*load_server_info_timeout=*/0u,
                  /*disable_loading_server_info_for_new_servers=*/false,
+                 /*load_server_info_timeout_srtt_multiplier=*/0.0f,
+                 /*enable_truncated_connection_ids=*/true,
                  QuicTagVector()),
         host_port_pair_(kDefaultServerHostName, kDefaultServerPort),
         is_https_(false),
@@ -1092,8 +1094,8 @@ TEST_P(QuicStreamFactoryTest, MaxOpenStream) {
   HttpRequestInfo request_info;
   std::vector<QuicHttpStream*> streams;
   // The MockCryptoClientStream sets max_open_streams to be
-  // 2 * kDefaultMaxStreamsPerConnection.
-  for (size_t i = 0; i < 2 * kDefaultMaxStreamsPerConnection; i++) {
+  // kDefaultMaxStreamsPerConnection / 2.
+  for (size_t i = 0; i < kDefaultMaxStreamsPerConnection / 2; i++) {
     QuicStreamRequest request(&factory_);
     int rv = request.Request(host_port_pair_,
                              is_https_,

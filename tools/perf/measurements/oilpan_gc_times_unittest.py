@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 from measurements import oilpan_gc_times
-from telemetry.core import wpr_modes
 from telemetry.unittest_util import options_for_unittests
 from telemetry.unittest_util import page_test_test_case
 
@@ -23,8 +22,10 @@ class OilpanGCTimesTest(page_test_test_case.PageTestTestCase):
     results = self.RunMeasurement(measurement, ps, options=self._options)
     self.assertEquals(0, len(results.failures))
 
-    precise_mark = results.FindAllPageSpecificValuesNamed('oilpan_precise_mark')
-    self.assertLess(0, len(precise_mark))
+    precise = results.FindAllPageSpecificValuesNamed('oilpan_precise_mark')
+    conservative = results.FindAllPageSpecificValuesNamed(
+        'oilpan_conservative_mark')
+    self.assertLess(0, len(precise) + len(conservative))
 
   def testForBlinkPerf(self):
     ps = self.CreatePageSetFromFileInUnittestDataDir('create_many_objects.html')
@@ -32,5 +33,7 @@ class OilpanGCTimesTest(page_test_test_case.PageTestTestCase):
     results = self.RunMeasurement(measurement, ps, options=self._options)
     self.assertEquals(0, len(results.failures))
 
-    precise_mark = results.FindAllPageSpecificValuesNamed('oilpan_precise_mark')
-    self.assertLess(0, len(precise_mark))
+    precise = results.FindAllPageSpecificValuesNamed('oilpan_precise_mark')
+    conservative = results.FindAllPageSpecificValuesNamed(
+        'oilpan_conservative_mark')
+    self.assertLess(0, len(precise) + len(conservative))

@@ -6013,12 +6013,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_ENABLE_SPDY4_DESCRIPTION" desc="Description for the flag to enable SPDY/4.">
         Enable SPDY/4, which is the HTTP/2 standard. Currently experimental.
       </message>
-      <message name="IDS_FLAGS_ENABLE_ASYNC_DNS_NAME" desc="Title for the flag to enable asynchronous DNS client.">
-        Built-in Asynchronous DNS
-      </message>
-      <message name="IDS_FLAGS_ENABLE_ASYNC_DNS_DESCRIPTION" desc="Description for the flag to enable asynchronous DNS client.">
-        Enable experimental asynchronous DNS client.
-      </message>
       <message name="IDS_FLAGS_DISABLE_MEDIA_SOURCE_NAME" desc="Title for the flag to disable the Media Source API.">
         Disable Media Source API.
       </message>
@@ -6134,6 +6128,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_FORCE_GPU_RASTERIZATION" desc="Description of the 'Force GPU rasterization' experiment">
         Force-enabled for all layers
+      </message>
+      <message name="IDS_FLAGS_EXPERIMENTAL_SECURITY_FEATURES_NAME" desc="Name for the flag to enable experimental security features.">
+        Enable potentially annoying security features.
+      </message>
+      <message name="IDS_FLAGS_EXPERIMENTAL_SECURITY_FEATURES_DESCRIPTION" desc="Description for the flag to enable experimental security features.">
+        Enables several security features that will likely break one or more pages that you visit on a daily basis. Strict mixed content checking, for example. And locking powerful features to secure contexts. This flag will probably annoy you.
       </message>
       <message name="IDS_FLAGS_EXPERIMENTAL_WEB_PLATFORM_FEATURES_NAME" desc="Name for the flag to enable experimental Web Platform features.">
         Enable experimental Web Platform features.
@@ -6298,6 +6298,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_PASSWORD_MANAGER_LINK_DESCRIPTION" desc="Description of the flag to enable showing a link to account central on password settings page">
         Show a link in the password manager settings page to manage your synced passwords online.
+      </message>      
+      <message name="IDS_FLAGS_ENABLE_SAVE_PASSOWRD_ON_IN_PAGE_NAVIGATION_NAME" desc="Name of the flag to enable showing of the password save prompt on in-page navigations">
+        Enable showing of password prompt on in-page navigations.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_SAVE_PASSOWRD_ON_IN_PAGE_NAVIGATION_DESCRIPTION" desc="Description of the flag to enable showing of password save prompt on in-page navigations">
+        Enable showing of the password prompt on in-page navigations. This allows for saving passwords on more pages but might sometimes trigger the prompt on unsuccessful login attempts.
       </message>
       <message name="IDS_FLAGS_AUTOFILL_SYNC_CREDENTIAL_NAME" desc="Name of the flag specifying how the browser will handle autofilling the users sync credential.">
         Autofill sync credential
@@ -6775,6 +6781,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Enable the zoomed bubble that appears on touchscreens when accidentally touching more than one link at a time.
         </message>
       </if>
+      <message name="IDS_FLAGS_ENABLE_WIFI_CREDENTIAL_SYNC_NAME" desc="Title for the flag to enable WiFi credential sync, a feature which enables synchronizing WiFi network settings across devices.">
+        Enable WiFi credential sync.
+      </message>
+      <message name="IDS_FLAGS_ENABLE_WIFI_CREDENTIAL_SYNC_DESCRIPTION" desc="Decription for the flag to enable WiFi credential sync, a feature which enables synchronizing WiFi network settings across devices.">
+        Enables synchronizing WiFi network settings across devices. When enabled, the WiFi credential datatype is registered with Chrome Sync, and WiFi credentials are synchronized subject to user preferences. (See also, chrome://settings/syncSetup.)
+      </message>
 
       <!-- Crashes -->
       <message name="IDS_CRASHES_TITLE" desc="Title for the chrome://crashes page.">
@@ -6987,6 +6999,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </if> <!-- is_win -->
 
       <!-- Plug-in placeholders -->
+      <message name="IDS_PLUGIN_LOAD" desc="The link for loading a blocked plug-in, displayed in the click to play UI.">
+        Click to run <ph name="PLUGIN_NAME">$1<ex>Flash</ex></ph>.
+      </message>
       <message name="IDS_PLUGIN_HIDE" desc="The tooltip for hiding a blocked plug-in, displayed in the click to play UI.">
         Hide this plug-in
       </message>
@@ -7561,12 +7576,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_PASSWORD_MANAGER_TOOLTIP_MANAGE" desc="Text for the 'Manage Passwords' icon's 'saving passwords' state">
           Manage your passwords
         </message>
-        <message name="IDS_PASSWORD_MANAGER_SETUP_OS_LINK_BUTTON" desc="Text for the button leading to the Help Center article about setting up an OS password">
-          Read more on how to set one up
-        </message>
-        <message name="IDS_PASSWORD_MANAGER_DISMISS_OS_BUBBLE_BUTTON" desc="Text for the button disabling the warning about a missing OS password">
-          I like living dangerously
-        </message>
       </if>
       <if expr="is_android">
         <message name="IDS_PASSWORD_MANAGER_SAVE_BUTTON" desc="Mobile: Button text for the 'Save Password' infobar's 'Remember password' option">
@@ -7860,11 +7869,20 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_BLOCK_INTERSTITIAL_REQUEST_SENT_MESSAGE" desc="The text that tells the supervised user that a request has been sent.">
         Your request to access this site has been sent to <ph name="NAME">$1<ex>John Doe</ex></ph>.
       </message>
-      <message name="IDS_CHILD_BLOCK_INTERSTITIAL_REQUEST_SENT_MESSAGE_SINGLE_PARENT" desc="The text that tells the child user that a request has been sent to their parent.">
+      <message name="IDS_BLOCK_INTERSTITIAL_REQUEST_FAILED_MESSAGE" desc="The text that tells the supervised user that a request could not be sent.">
+        Your request to access this site could not be sent to <ph name="NAME">$1<ex>John Doe</ex></ph>. Please try again.
+      </message>
+      <message name="IDS_CHILD_BLOCK_INTERSTITIAL_REQUEST_SENT_MESSAGE_SINGLE_PARENT" desc="The text that tells the child user that a request has been sent to his/her parent.">
         You asked your parent if it's ok to visit this page.
       </message>
-      <message name="IDS_CHILD_BLOCK_INTERSTITIAL_REQUEST_SENT_MESSAGE_MULTI_PARENT" desc="The text that tells the child user that a request has been sent to their parents.">
+      <message name="IDS_CHILD_BLOCK_INTERSTITIAL_REQUEST_SENT_MESSAGE_MULTI_PARENT" desc="The text that tells the child user that a request has been sent to his/her parents.">
         You asked your parents if it's ok to visit this page.
+      </message>
+      <message name="IDS_CHILD_BLOCK_INTERSTITIAL_REQUEST_FAILED_MESSAGE_SINGLE_PARENT" desc="The text that tells the child user that a request to his/her parent failed.">
+        We could not reach your parent at the moment. Please try again.
+      </message>
+      <message name="IDS_CHILD_BLOCK_INTERSTITIAL_REQUEST_FAILED_MESSAGE_MULTI_PARENT" desc="The text that tells the child user that a request to his/her parents failed.">
+        We could not reach your parents at the moment. Please try again.
       </message>
       <message name="IDS_SUPERVISED_USER_BLOCK_MESSAGE_DEFAULT" desc="Message to be shown when a site was blocked due to the default fallback behavior.">
         This site was blocked due to the default fallback behavior.
@@ -8034,6 +8052,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_PLUGIN_DETECT_RADIO" desc="A radio button in the Content Settings dialog for detecting and running important plugin content only.">
         Detect and run important plugin content
+      </message>
+      <message name="IDS_PLUGIN_ASK_RADIO" desc="A radio button in the Content Settings dialog for gating plug-ins on a mouse click (left button).">
+        Click to play
       </message>
       <message name="IDS_PLUGIN_BLOCK_RADIO" desc="A radio button in the Content Settings dialog for gating plug-ins on a context menu activation.">
         Do not run plugins by default
@@ -9857,6 +9878,20 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
       </if>
 
+      <!-- Captive portal interstitial -->
+      <message name="IDS_CAPTIVE_PORTAL_TITLE" desc="Title in the error page when a secure request is blocked because the network is redirecting the request to another page until the user logs in">
+        Connect to Network
+      </message>
+      <message name="IDS_CAPTIVE_PORTAL_HEADING" desc="Heading in the error page when a secure request is blocked because a captive portal is manipulating a connection">
+        Connect to network
+      </message>
+      <message name="IDS_CAPTIVE_PORTAL_PRIMARY_PARAGRAPH" desc="The primary explanatory paragraph for the captive portal error page for network connections.">
+        The network you are using may require you to visit its login page.
+      </message>
+      <message name="IDS_CAPTIVE_PORTAL_BUTTON_OPEN_LOGIN_PAGE" desc="Text for the open login page button">
+        Connect
+      </message>
+
       <!-- Misc strings for SSL UI -->
       <message name="IDS_UNSAFE_FRAME_MESSAGE" desc="The text displayed in the content that is subsituted to an unsafe frame.">
         This frame was blocked because it contains some insecure content.
@@ -11541,7 +11576,7 @@ Chrome ran out of memory.
         <if expr="is_macosx">
           <message name="IDS_NEW_TAB_APP_CREATE_SHORTCUT"
                    desc="Text for the context menu item that creates an app shortcut. (In sentence case.)">
-            Create shortcut
+            Create shortcut...
           </message>
         </if>
         <if expr="not is_macosx">
@@ -11592,7 +11627,7 @@ Chrome ran out of memory.
         <if expr="is_macosx">
           <message name="IDS_NEW_TAB_APP_CREATE_SHORTCUT"
                    desc="Text for the context menu item that creates an app shortcut. (In title case.)">
-            Create Shortcut
+            Create Shortcut...
           </message>
         </if>
         <if expr="not is_macosx">
@@ -12049,8 +12084,8 @@ The following application will be launched if you accept this request:
       </message>
 
       <if expr="chromeos">
-        <message name="IDS_OPTIONS_DISABLE_GDATA" desc="The text in the options panel describes that we can disable webdrive on Chrome OS.">
-          Disable Google Drive on this device
+        <message name="IDS_OPTIONS_DISABLE_GDATA" desc="The text in the options panel describes that we can disable webdrive on Chrome OS for active user.">
+          Disconnect Google Drive account
         </message>
       </if>
 
@@ -12556,7 +12591,7 @@ Some features may be unavailable.  Please check that the profile exists and you 
           Open Tabs
         </message>
         <message name="IDS_SYNC_DATATYPE_WIFI_CREDENTIALS" desc="WiFi network names and passwords, one of the data types that we allow syncing.">
-          WiFi Credentials
+          Wi-Fi networks
         </message>
 
         <!-- Encryption tab of the configure sync dialog -->
@@ -13373,9 +13408,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
       <message name="IDS_MANAGE_PASSWORDS_CHOOSE_TITLE" desc="The title of the password bubble when a credential should be chosen.">
       Choose an account from your Google Smart Lock
       </message>
-      <message name="IDS_MANAGE_PASSWORDS_OS_PASSWORD_TITLE" desc="The title of the password bubble when the user is prompted to set up an OS password.">
-      You don't have an OS password. Everybody can come to your computer and look up your credentials.
-      </message>
 
       <message name="IDS_ALLOW_AUTOFILL_SYNC_CREDENTIAL" desc="The text for the choice to allow autofilling in about:flags">
         Allow
@@ -13718,9 +13750,6 @@ Some features may be unavailable.  Please check that the profile exists and you 
         </message>
         <message name="IDS_PROFILES_MANAGE_ICON_LABEL" desc="Label above the profile avatar icon chooser.">
           Choose a picture and name
-        </message>
-        <message name="IDS_PROFILES_MANAGE_DUPLICATE_NAME_ERROR" desc="error bubble displayed when the user is attempting to rename a profile to a name that is used.">
-          Whoops, this name is already in use!
         </message>
 
         <!-- Delete Profile Dialog -->
@@ -14101,11 +14130,11 @@ Do you accept?
       <message name="IDS_FLAGS_ENABLE_WEB_BASED_SIGNIN_DESCRIPTION" desc="Description for the flag to enable web-based sign-in flows">
         When enabled, will use a pure web-based sign-in flow on first run/NTP/wrench menu/settings page. Otherwise use a native flow with embedded webview.
       </message>
-      <message name="IDS_FLAGS_ENABLE_WEBVIEW_BASED_SIGNIN_NAME" desc="Title for the flag to enable webview-based sign-in flows.">
-        Enables webview-based Chrome sign-in flows. This flag overrides --enable-web-based-signin.
+      <message name="IDS_FLAGS_ENABLE_IFRAME_BASED_SIGNIN_NAME" desc="Title for the flag to enable iframe-based sign-in flows.">
+        Enables iframe-based Chrome sign-in flows. This flag overrides --enable-web-based-signin.
       </message>
-      <message name="IDS_FLAGS_ENABLE_WEBVIEW_BASED_SIGNIN_DESCRIPTION" desc="Description for the flag to enable webview-based sign-in flows">
-        When enabled, will use a webview-based Chrome sign-in flow.
+      <message name="IDS_FLAGS_ENABLE_IFRAME_BASED_SIGNIN_DESCRIPTION" desc="Description for the flag to enable iframe-based sign-in flows">
+        When enabled, will use an iframe-based Chrome sign-in flow; otherwise uses a webview-based flow.
       </message>
       <message name="IDS_FLAGS_ENABLE_GOOGLE_PROFILE_INFO_NAME" desc="Title for the flag to enable the google profile information">
         Enable Google profile name and icon
@@ -14133,11 +14162,11 @@ Do you accept?
       </message>
 
       <if expr="chromeos">
-        <message name="IDS_FLAGS_DISABLE_SMART_VIRTUAL_KEYBOARD_NAME" desc="Name of about:flags option to turn off smart deployment of the virtual keyboard.">
-          Disable Smart Virtual Keyboard
+        <message name="IDS_FLAGS_ENABLE_AUTO_VIRTUAL_KEYBOARD_NAME" desc="Name of about:flags option to turn on automatic deployment of the virtual keyboard.">
+          Auto Virtual Keyboard
         </message>
-        <message name="IDS_FLAGS_DISABLE_SMART_VIRTUAL_KEYBOARD_DESCRIPTION" desc="Description of about:flags option to turn off smart deployment of the virtual keyboard">
-          Disable smart deployment of the virtual keyboard.
+        <message name="IDS_FLAGS_ENABLE_AUTO_VIRTUAL_KEYBOARD_DESCRIPTION" desc="Description of about:flags option to turn on automatic deployment of the virtual keyboard">
+          Enable automatic deployment of the virtual keyboard.
         </message>
 
         <message name="IDS_FLAGS_ENABLE_VIRTUAL_KEYBOARD_NAME" desc="Name of about:flags option to turn on the virtual keyboard">
@@ -15014,10 +15043,20 @@ Do you accept?
       <message name="IDS_PUSH_MESSAGES_BUBBLE_FRAGMENT" desc="Question asked on the info bar whenever a domain wants to send push messages">
           push notifications
       </message>
+      <if expr="enable_notifications">
+        <message name="IDS_PUSH_MESSAGING_GENERIC_NOTIFICATION_TITLE" desc="Title of an auto-generated notification informing the user that the site may have received an update in the background, in case the site did not satisfy the visible notification requirement itself.">
+          <ph name="URL">
+            $1<ex>push.google.com</ex>
+          </ph> has been updated
+        </message>
+        <message name="IDS_PUSH_MESSAGING_GENERIC_NOTIFICATION_BODY" desc="Body text of an auto-generated notification informing the user that the site may have received an update in the background, in case the site did not satisfy the visible notification requirement itself.">
+          This site updated in the background.
+        </message>
+      </if>
 
       <!-- Copresence settings/debug strings -->
       <if expr="not is_android and not is_ios">
-        <message name="IDS_COPRESENCE_TITLE" desc="Title for the chrome://copresence page">
+        <message name="IDS_COPRESENCE_TITLE" desc="Title for the chrome://copresence page.">
           Google Copresence Info
         </message>
 
@@ -15040,17 +15079,24 @@ Do you accept?
         <message name="IDS_COPRESENCE_RECEIVED_TOKENS_TITLE" desc="Title for the table of copresence tokens recently received.">
           Tokens Received
         </message>
-        <message name="IDS_COPRESENCE_TOKEN_ID" desc="Title for the column in a tokens table listing the token id (base64 encoded)">
+        <message name="IDS_COPRESENCE_TOKEN_ID" desc="Title for the column in a tokens table listing the token id (base64 encoded).">
           Token ID
         </message>
         <message name="IDS_COPRESENCE_TOKEN_STATUS" desc="Title for the column in a tokens table indicating the status of a token: e.g. 'transmitted', 'received', 'expired', etc.">
           Status
         </message>
-        <message name="IDS_COPRESENCE_TOKEN_TRANSMIT_TIME" desc="Title for the column in the transmitted tokens table indicating when the token was first transmitted, e.g. '12:34 PM'">
+        <message name="IDS_COPRESENCE_TOKEN_TRANSMIT_TIME" desc="Title for the column in the transmitted tokens table indicating when the token was first transmitted, e.g. '12:34 PM'.">
           Time First Transmitted
         </message>
-        <message name="IDS_COPRESENCE_TOKEN_RECEIVE_TIME" desc="Title for the column in the received tokens table indicating when the token was last received, e.g. '12:34 AM'">
+        <message name="IDS_COPRESENCE_TOKEN_RECEIVE_TIME" desc="Title for the column in the received tokens table indicating when the token was last received, e.g. '12:34 AM'.">
           Time Last Received
+        </message>
+
+        <message name="IDS_COPRESENCE_CLEAR_STATE" desc="Label for the button that deletes all copresence state in the current profile.">
+          Clear Copresence State
+        </message>
+        <message name="IDS_COPRESENCE_CONFIRM_DELETE" desc="Message explaining which state will be deleted and the effect it will have.">
+          Attempts to connect to nearby devices will be cancelled. All local copresence data will be cleared, and apps using copresence may stop working. Are you sure?
         </message>
       </if>
 
@@ -15119,10 +15165,16 @@ Do you accept?
       </message>
       <!-- Step 1.5: "Secure this phone to continue" -->
       <message name="IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog after a phone has been found but is not secured by a lock screen.">
-        Secure this phone to continue
+        Secure your <ph name="PHONE_TYPE">$1<ex>LGE Nexus 5</ex></ph> to continue
       </message>
       <message name="IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_HEADER_TEXT" desc="The text to show as the header body text of the Easy Unlock dialog after a suitable phone has been found but is not secured by a lock screen. Note that the &lt;a&gt; element surrounds a link; these HTML elements should be preserved in the translation.">
-        To keep your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> safe, Smart Lock for Chrome requires a screen lock on your phone. &lt;a&gt;Learn how to secure your phone&lt;/a&gt;
+        To keep your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> safe, Smart Lock requires a screen lock on the phone that unlocks it. Already secured your phone? Click “Check again” to verify and continue setup.
+      </message>
+      <message name="IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_BUTTON_LABEL" desc="The text to show as the 'How to secure the phone' button label in the Easy Unlock dialog. This button is visible during step 1.5, if the user is prompted to secure their phone.">
+        How to secure the phone
+      </message>
+      <message name="IDS_EASY_UNLOCK_SETUP_SECURE_PHONE_LINK_TEXT" desc="The text to show for the link to check the phone again, after the user has enabled a secure lock screen. This button is visible during the 1.5th step of the Easy Unlock dialog, when the user is prompted to secure their phone.">
+        Check again
       </message>
       <!-- Step 2: Phone Found -->
       <message name="IDS_EASY_UNLOCK_SETUP_FOUND_PHONE_HEADER_TITLE" desc="The text to show as the header title of the Easy Unlock dialog during the second step, after a suitable phone has been found.">
@@ -15249,7 +15301,7 @@ Do you accept?
         To set up Smart Lock for Chrome, Google needs to make sure it’s you—type your password to get started.
       </message>
       <message name="IDS_EASY_UNLOCK_SCREENLOCK_USER_POD_AUTH_VALUE" desc="Message on lock screen user pod shown in place of password field when Easy Unlock is enabled and a phone that can unlock the Chromebook is detected in proximity.">
-        Click to enter
+        Click your photo
       </message>
       <message name="IDS_SMART_LOCK_SPINNER_ACCESSIBILITY_LABEL" desc="Label for the spinner icon used for accessibility purposes. This label is needed because this state does not have a tooltip.">
         Finding your phone
@@ -15309,6 +15361,9 @@ Do you accept?
       </message>
 
      <!-- Hotword Audio Verification (opt-in) App strings. -->
+      <message name="IDS_HOTWORD_OPT_IN_CLOSE" desc="Label for the close button for the 'Ok Google' hotword opt-in dialog.">
+        Close
+      </message>
       <message name="IDS_HOTWORD_OPT_IN_CANCEL" desc="Text on the cancel button for the 'Ok Google' hotword opt-in dialog.">
         CANCEL
       </message>
@@ -15325,7 +15380,7 @@ Do you accept?
         To make this happen, you'll need to train your Chromebook in the following step.
       </message>
       <message name="IDS_HOTWORD_OPT_IN_INTRO_START" desc="Text on the start button for the 'Ok Google' hotword opt-in dialog.">
-        GET STARTED
+        Get Started
       </message>
       <message name="IDS_HOTWORD_OPT_IN_AUDIO_HISTORY_TITLE" desc="Title of the Audio History page of the 'Ok Google' hotword opt-in dialog.">
         Enable Voice &amp; Audio Activity

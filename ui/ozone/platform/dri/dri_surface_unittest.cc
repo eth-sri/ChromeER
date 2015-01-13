@@ -48,6 +48,8 @@ class MockDriWindowDelegate : public ui::DriWindowDelegate {
   void SetCursor(const std::vector<SkBitmap>& bitmaps,
                  const gfx::Point& location,
                  int frame_delay_ms) override {}
+  void SetCursorWithoutAnimations(const std::vector<SkBitmap>& bitmaps,
+                                  const gfx::Point& location) override {}
   void MoveCursor(const gfx::Point& location) override {}
 
  private:
@@ -79,7 +81,7 @@ void DriSurfaceTest::SetUp() {
   message_loop_.reset(new base::MessageLoopForUI);
   std::vector<uint32_t> crtcs;
   crtcs.push_back(kDefaultCrtc);
-  drm_.reset(new ui::MockDriWrapper(3, crtcs, kPlanesPerCrtc));
+  drm_.reset(new ui::MockDriWrapper(3, true, crtcs, kPlanesPerCrtc));
   window_delegate_.reset(new MockDriWindowDelegate(drm_.get()));
   surface_.reset(new ui::DriSurface(window_delegate_.get(), drm_.get()));
   surface_->ResizeCanvas(gfx::Size(kDefaultMode.hdisplay,

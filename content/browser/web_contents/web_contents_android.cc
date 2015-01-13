@@ -42,6 +42,16 @@ void JavaScriptResultCallback(const ScopedJavaGlobalRef<jobject>& callback,
       env, j_json.obj(), callback.obj());
 }
 
+void ReleaseAllMediaPlayers(content::WebContents* web_contents,
+                            content::RenderFrameHost* render_frame_host) {
+  content::BrowserMediaPlayerManager* manager =
+      static_cast<content::WebContentsImpl*>(web_contents)->
+          media_web_contents_observer()->GetMediaPlayerManager(
+              render_frame_host);
+  if (manager)
+    manager->ReleaseAllMediaPlayers();
+}
+
 }  // namespace
 
 namespace content {
@@ -123,9 +133,10 @@ RenderWidgetHostViewAndroid*
   RenderWidgetHostView* rwhv = NULL;
   rwhv = web_contents_->GetRenderWidgetHostView();
   if (web_contents_->ShowingInterstitialPage()) {
-    rwhv = static_cast<InterstitialPageImpl*>(
-        web_contents_->GetInterstitialPage())->
-            GetRenderViewHost()->GetView();
+    rwhv = web_contents_->GetInterstitialPage()
+               ->GetMainFrame()
+               ->GetRenderViewHost()
+               ->GetView();
   }
   return static_cast<RenderWidgetHostViewAndroid*>(rwhv);
 }
@@ -271,16 +282,8 @@ void WebContentsAndroid::OnShow(JNIEnv* env, jobject obj) {
 
 void WebContentsAndroid::ReleaseMediaPlayers(JNIEnv* env, jobject jobj) {
 #if defined(ENABLE_BROWSER_CDMS)
-  RenderViewHostImpl* rvhi = static_cast<RenderViewHostImpl*>(
-      web_contents_->GetRenderViewHost());
-  if (!rvhi || !rvhi->GetMainFrame())
-    return;
-
-  BrowserMediaPlayerManager* manager =
-      rvhi->media_web_contents_observer()->GetMediaPlayerManager(
-          rvhi->GetMainFrame());
-  if (manager)
-    manager->ReleaseAllMediaPlayers();
+  web_contents_->ForEachFrame(
+      base::Bind(&ReleaseAllMediaPlayers, base::Unretained(web_contents_)));
 #endif // defined(ENABLE_BROWSER_CDMS)
 }
 

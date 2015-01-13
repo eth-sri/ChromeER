@@ -7,7 +7,6 @@
 
 #include "net/base/net_export.h"
 
-NET_EXPORT_PRIVATE extern bool FLAGS_track_retransmission_history;
 NET_EXPORT_PRIVATE extern bool FLAGS_quic_allow_oversized_packets_for_test;
 NET_EXPORT_PRIVATE extern bool FLAGS_quic_use_time_loss_detection;
 NET_EXPORT_PRIVATE extern bool FLAGS_use_early_return_when_verifying_chlo;
@@ -25,5 +24,8 @@ NET_EXPORT_PRIVATE extern bool FLAGS_quic_allow_silent_close;
 NET_EXPORT_PRIVATE extern bool FLAGS_quic_use_std_cbrt;
 NET_EXPORT_PRIVATE extern bool FLAGS_quic_disallow_multiple_pending_ack_frames;
 NET_EXPORT_PRIVATE extern bool FLAGS_quic_use_multiple_address_in_source_tokens;
+NET_EXPORT_PRIVATE extern bool FLAGS_quic_empty_data_no_fin_early_return;
+NET_EXPORT_PRIVATE extern bool FLAGS_quic_use_initial_rtt_for_stats;
+NET_EXPORT_PRIVATE extern bool FLAGS_quic_rto_uses_last_sent;
 
 #endif  // NET_QUIC_QUIC_FLAGS_H_

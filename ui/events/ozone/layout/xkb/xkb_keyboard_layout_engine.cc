@@ -6,7 +6,13 @@
 
 #include <xkbcommon/xkbcommon-names.h>
 
+#include "base/bind.h"
+#include "base/location.h"
 #include "base/logging.h"
+#include "base/single_thread_task_runner.h"
+#include "base/task_runner.h"
+#include "base/thread_task_runner_handle.h"
+#include "base/threading/worker_pool.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/dom3/dom_code.h"
 #include "ui/events/keycodes/dom3/dom_key.h"
@@ -17,6 +23,9 @@
 namespace ui {
 
 namespace {
+
+typedef base::Callback<void(const std::string&, const char*)>
+    LoadKeymapCallback;
 
 DomKey CharacterToDomKey(base::char16 character) {
   switch (character) {
@@ -616,6 +625,22 @@ const PrintableSimpleEntry kSimpleMap[] = {
     {0x0259, VKEY_OEM_3},      // schwa
 };
 
+void LoadKeymap(const std::string& layout_name,
+                scoped_ptr<xkb_rule_names> names,
+                scoped_refptr<base::SingleThreadTaskRunner> reply_runner,
+                const LoadKeymapCallback& reply_callback) {
+  scoped_ptr<xkb_context, XkbContextDeleter> context;
+  context.reset(xkb_context_new(XKB_CONTEXT_NO_DEFAULT_INCLUDES));
+  xkb_context_include_path_append(context.get(), "/usr/share/X11/xkb");
+  scoped_ptr<xkb_keymap, XkbKeymapDeleter> keymap;
+  keymap.reset(xkb_keymap_new_from_names(context.get(), names.get(),
+                                         XKB_KEYMAP_COMPILE_NO_FLAGS));
+  char* keymap_str =
+      xkb_keymap_get_as_string(keymap.get(), XKB_KEYMAP_FORMAT_TEXT_V1);
+  reply_runner->PostTask(FROM_HERE, base::Bind(reply_callback, layout_name,
+                                               base::Owned(keymap_str)));
+}
+
 }  // anonymous namespace
 
 XkbKeyCodeConverter::XkbKeyCodeConverter() {
@@ -626,7 +651,9 @@ XkbKeyCodeConverter::~XkbKeyCodeConverter() {
 
 XkbKeyboardLayoutEngine::XkbKeyboardLayoutEngine(
     const XkbKeyCodeConverter& converter)
-    : key_code_converter_(converter) {
+    : num_lock_mod_mask_(0),
+      key_code_converter_(converter),
+      weak_ptr_factory_(this) {
   // TODO: add XKB_CONTEXT_NO_ENVIRONMENT_NAMES
   xkb_context_.reset(xkb_context_new(XKB_CONTEXT_NO_DEFAULT_INCLUDES));
   xkb_context_include_path_append(xkb_context_.get(),
@@ -634,6 +661,9 @@ XkbKeyboardLayoutEngine::XkbKeyboardLayoutEngine(
 }
 
 XkbKeyboardLayoutEngine::~XkbKeyboardLayoutEngine() {
+  for (const auto& entry : xkb_keymaps_) {
+    xkb_keymap_unref(entry.keymap);
+  }
 }
 
 bool XkbKeyboardLayoutEngine::CanSetCurrentLayout() const {
@@ -647,6 +677,34 @@ bool XkbKeyboardLayoutEngine::CanSetCurrentLayout() const {
 bool XkbKeyboardLayoutEngine::SetCurrentLayoutByName(
     const std::string& layout_name) {
 #if defined(OS_CHROMEOS)
+  current_layout_name_ = layout_name;
+  for (const auto& entry : xkb_keymaps_) {
+    if (entry.layout_name == layout_name) {
+      SetKeymap(entry.keymap);
+      return true;
+    }
+  }
+  LoadKeymapCallback reply_callback = base::Bind(
+      &XkbKeyboardLayoutEngine::OnKeymapLoaded, weak_ptr_factory_.GetWeakPtr());
+  scoped_ptr<xkb_rule_names> names = GetXkbRuleNames(layout_name);
+  base::WorkerPool::PostTask(
+      FROM_HERE,
+      base::Bind(&LoadKeymap, layout_name, base::Passed(&names),
+                 base::ThreadTaskRunnerHandle::Get(), reply_callback),
+      true);
+#else
+  xkb_keymap* keymap = xkb_map_new_from_string(
+      xkb_context_.get(), layout_name.c_str(), XKB_KEYMAP_FORMAT_TEXT_V1,
+      XKB_KEYMAP_COMPILE_NO_FLAGS);
+  if (!keymap)
+    return false;
+  SetKeymap(keymap);
+#endif  // defined(OS_CHROMEOS)
+  return true;
+}
+
+scoped_ptr<xkb_rule_names> XkbKeyboardLayoutEngine::GetXkbRuleNames(
+    const std::string& layout_name) {
   size_t dash_index = layout_name.find('-');
   size_t parentheses_index = layout_name.find('(');
   std::string layout_id = layout_name;
@@ -662,22 +720,27 @@ bool XkbKeyboardLayoutEngine::SetCurrentLayoutByName(
     layout_id = layout_name.substr(0, dash_index);
     layout_variant = layout_name.substr(dash_index + 1);
   }
-  struct xkb_rule_names names = {
-    .rules = NULL,
-    .model = "pc101",
-    .layout = layout_id.c_str(),
-    .variant = layout_variant.c_str(),
-    .options = ""
-  };
-  xkb_keymap* keymap = xkb_keymap_new_from_names(xkb_context_.get(),
-                                                 &names,
+  return make_scoped_ptr<xkb_rule_names>(
+      new xkb_rule_names{.rules = NULL,
+                         .model = "pc101",
+                         .layout = layout_id.c_str(),
+                         .variant = layout_variant.c_str(),
+                         .options = ""});
+}
+
+void XkbKeyboardLayoutEngine::OnKeymapLoaded(const std::string& layout_name,
+                                             const char* keymap_str) {
+  if (keymap_str) {
+    xkb_keymap* keymap = xkb_map_new_from_string(xkb_context_.get(), keymap_str,
+                                                 XKB_KEYMAP_FORMAT_TEXT_V1,
                                                  XKB_KEYMAP_COMPILE_NO_FLAGS);
-  if (keymap) {
-    SetKeymap(keymap);
-    return true;
+    XkbKeymapEntry entry = {layout_name, keymap};
+    xkb_keymaps_.push_back(entry);
+    if (layout_name == current_layout_name_)
+      SetKeymap(keymap);
+  } else {
+    LOG(ERROR) << "Keymap file fail to load: " << layout_name;
   }
-#endif  // defined(OS_CHROMEOS)
-  return false;
 }
 
 bool XkbKeyboardLayoutEngine::UsesISOLevel5Shift() const {
@@ -743,7 +806,6 @@ void XkbKeyboardLayoutEngine::SetKeymap(xkb_keymap* keymap) {
                {ui::EF_ALT_DOWN, XKB_MOD_NAME_ALT},
                {ui::EF_CAPS_LOCK_DOWN, XKB_MOD_NAME_CAPS},
                {ui::EF_COMMAND_DOWN, XKB_MOD_NAME_LOGO},
-               {ui::EF_NUMPAD_KEY, XKB_MOD_NAME_NUM},
                {ui::EF_MOD3_DOWN, "Mod3"},
                {ui::EF_ALTGR_DOWN, "Mod5"}};
   xkb_flag_map_.clear();
@@ -758,6 +820,13 @@ void XkbKeyboardLayoutEngine::SetKeymap(xkb_keymap* keymap) {
       xkb_flag_map_.push_back(e);
     }
   }
+
+  // Update num lock mask.
+  num_lock_mod_mask_ = 0;
+  xkb_mod_index_t num_mod_index =
+      xkb_keymap_mod_get_index(keymap, XKB_MOD_NAME_NUM);
+  if (num_mod_index != XKB_MOD_INVALID)
+    num_lock_mod_mask_ = static_cast<xkb_mod_mask_t>(1) << num_mod_index;
 }
 
 xkb_mod_mask_t XkbKeyboardLayoutEngine::EventFlagsToXkbFlags(
@@ -767,6 +836,8 @@ xkb_mod_mask_t XkbKeyboardLayoutEngine::EventFlagsToXkbFlags(
     if (ui_flags & entry.ui_flag)
       xkb_flags |= entry.xkb_flag;
   }
+  // NumLock is always on.
+  xkb_flags |= num_lock_mod_mask_;
   return xkb_flags;
 }
 

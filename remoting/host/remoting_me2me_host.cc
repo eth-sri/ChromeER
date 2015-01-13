@@ -171,7 +171,8 @@ class HostProcess
   // HostChangeNotificationListener::Listener overrides.
   void OnHostDeleted() override;
 
-  // Initializes the pairing registry on Windows.
+  // Handler of the ChromotingDaemonNetworkMsg_InitializePairingRegistry IPC
+  // message.
   void OnInitializePairingRegistry(
       IPC::PlatformFileForTransit privileged_key,
       IPC::PlatformFileForTransit unprivileged_key);
@@ -204,8 +205,8 @@ class HostProcess
     //   STOPPING->STOPPED
     //   STOPPED->STARTED
     //
-    // |host_| must be NULL in INITIALIZING and STOPPED states and not-NULL in
-    // all other states.
+    // |host_| must be nullptr in INITIALIZING and STOPPED states and not
+    // nullptr in all other states.
   };
 
   friend class base::RefCountedThreadSafe<HostProcess>;
@@ -270,6 +271,14 @@ class HostProcess
   void ShutdownOnNetworkThread();
 
   void OnPolicyWatcherShutdown();
+
+#if defined(OS_WIN)
+  // Initializes the pairing registry on Windows. This should be invoked on the
+  // network thread.
+  void InitializePairingRegistry(
+      IPC::PlatformFileForTransit privileged_key,
+      IPC::PlatformFileForTransit unprivileged_key);
+#endif  // defined(OS_WIN)
 
   // Crashes the process in response to a daemon's request. The daemon passes
   // the location of the code that detected the fatal error resulted in this
@@ -352,7 +361,7 @@ class HostProcess
   int* exit_code_out_;
   bool signal_parent_;
 
-  scoped_ptr<PairingRegistry::Delegate> pairing_registry_delegate_;
+  scoped_refptr<PairingRegistry> pairing_registry_;
 
   ShutdownWatchdog* shutdown_watchdog_;
 };
@@ -376,7 +385,7 @@ HostProcess::HostProcess(scoped_ptr<ChromotingHostContext> context,
       enable_window_capture_(false),
       window_id_(0),
 #if defined(REMOTING_MULTI_PROCESS)
-      desktop_session_connector_(NULL),
+      desktop_session_connector_(nullptr),
 #endif  // defined(REMOTING_MULTI_PROCESS)
       self_(this),
       exit_code_out_(exit_code_out),
@@ -608,24 +617,31 @@ void HostProcess::CreateAuthenticatorFactory() {
     return;
   }
 
-  scoped_refptr<PairingRegistry> pairing_registry = NULL;
-  if (allow_pairing_) {
-    if (!pairing_registry_delegate_)
-      pairing_registry_delegate_ = CreatePairingRegistryDelegate();
-
-    if (pairing_registry_delegate_) {
-      pairing_registry = new PairingRegistry(context_->file_task_runner(),
-                                             pairing_registry_delegate_.Pass());
-    }
-  }
-
   scoped_ptr<protocol::AuthenticatorFactory> factory;
 
   if (third_party_auth_config_.is_empty()) {
+    scoped_refptr<PairingRegistry> pairing_registry;
+    if (allow_pairing_) {
+      // On Windows |pairing_registry_| is initialized in
+      // InitializePairingRegistry().
+#if !defined(OS_WIN)
+      if (!pairing_registry_) {
+        scoped_ptr<PairingRegistry::Delegate> delegate =
+            CreatePairingRegistryDelegate();
+
+        pairing_registry_ = new PairingRegistry(context_->file_task_runner(),
+                                                delegate.Pass());
+      }
+#endif  // defined(OS_WIN)
+
+      pairing_registry = pairing_registry_;
+    }
+
     factory = protocol::Me2MeHostAuthenticatorFactory::CreateWithSharedSecret(
         use_service_account_, host_owner_, local_certificate, key_pair_,
         host_secret_hash_, pairing_registry);
 
+    host_->set_pairing_registry(pairing_registry);
   } else if (third_party_auth_config_.is_valid()) {
     scoped_ptr<protocol::TokenValidatorFactory> token_validator_factory(
         new TokenValidatorFactoryImpl(
@@ -652,8 +668,6 @@ void HostProcess::CreateAuthenticatorFactory() {
   factory.reset(new PamAuthorizationFactory(factory.Pass()));
 #endif
   host_->SetAuthenticatorFactory(factory.Pass());
-
-  host_->set_pairing_registry(pairing_registry);
 }
 
 // IPC::Listener implementation.
@@ -768,14 +782,14 @@ void HostProcess::ShutdownOnUiThread() {
   desktop_environment_factory_.reset();
 
   // It is now safe for the HostProcess to be deleted.
-  self_ = NULL;
+  self_ = nullptr;
 
 #if defined(OS_LINUX)
   // Cause the global AudioPipeReader to be freed, otherwise the audio
   // thread will remain in-use and prevent the process from exiting.
   // TODO(wez): DesktopEnvironmentFactory should own the pipe reader.
   // See crbug.com/161373 and crbug.com/104544.
-  AudioCapturerLinux::InitializePipeReader(NULL, base::FilePath());
+  AudioCapturerLinux::InitializePipeReader(nullptr, base::FilePath());
 #endif
 }
 
@@ -803,25 +817,44 @@ void HostProcess::OnHostDeleted() {
 void HostProcess::OnInitializePairingRegistry(
     IPC::PlatformFileForTransit privileged_key,
     IPC::PlatformFileForTransit unprivileged_key) {
-  DCHECK(!pairing_registry_delegate_);
+  DCHECK(context_->ui_task_runner()->BelongsToCurrentThread());
 
 #if defined(OS_WIN)
-  // Initialize the pairing registry delegate.
-  scoped_ptr<PairingRegistryDelegateWin> delegate(
-      new PairingRegistryDelegateWin());
-  bool result = delegate->SetRootKeys(
-      reinterpret_cast<HKEY>(
-          IPC::PlatformFileForTransitToPlatformFile(privileged_key)),
-      reinterpret_cast<HKEY>(
-          IPC::PlatformFileForTransitToPlatformFile(unprivileged_key)));
-  if (!result)
-    return;
-
-  pairing_registry_delegate_ = delegate.Pass();
+  context_->network_task_runner()->PostTask(FROM_HERE, base::Bind(
+      &HostProcess::InitializePairingRegistry,
+      this, privileged_key, unprivileged_key));
 #else  // !defined(OS_WIN)
   NOTREACHED();
 #endif  // !defined(OS_WIN)
 }
+
+#if defined(OS_WIN)
+void HostProcess::InitializePairingRegistry(
+    IPC::PlatformFileForTransit privileged_key,
+    IPC::PlatformFileForTransit unprivileged_key) {
+  DCHECK(context_->network_task_runner()->BelongsToCurrentThread());
+  // |privileged_key| can be nullptr but not |unprivileged_key|.
+  DCHECK(unprivileged_key);
+  // |pairing_registry_| should only be initialized once.
+  DCHECK(!pairing_registry_);
+
+  HKEY privileged_hkey = reinterpret_cast<HKEY>(
+      IPC::PlatformFileForTransitToPlatformFile(privileged_key));
+  HKEY unprivileged_hkey = reinterpret_cast<HKEY>(
+      IPC::PlatformFileForTransitToPlatformFile(unprivileged_key));
+
+  scoped_ptr<PairingRegistryDelegateWin> delegate(
+      new PairingRegistryDelegateWin());
+  delegate->SetRootKeys(privileged_hkey, unprivileged_hkey);
+
+  pairing_registry_ = new PairingRegistry(context_->file_task_runner(),
+                                          delegate.Pass());
+
+  // (Re)Create the authenticator factory now that |pairing_registry_| has been
+  // initialized.
+  CreateAuthenticatorFactory();
+}
+#endif  // !defined(OS_WIN)
 
 // Applies the host config, returning true if successful.
 bool HostProcess::ApplyConfig(const base::DictionaryValue& config) {
@@ -1477,7 +1510,7 @@ int HostProcessMain() {
   // Required for any calls into GTK functions, such as the Disconnect and
   // Continue windows, though these should not be used for the Me2Me case
   // (crbug.com/104377).
-  gtk_init(NULL, NULL);
+  gtk_init(nullptr, nullptr);
 #endif
 
   // Enable support for SSL server sockets, which must be done while still

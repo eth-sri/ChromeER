@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "media/base/cdm_callback_promise.h"
+#include "media/base/cdm_key_information.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "media/cdm/json_web_key.h"
@@ -156,10 +157,12 @@ static cdm::Error ConvertException(media::MediaKeys::Exception exception_code) {
 static media::MediaKeys::SessionType ConvertSessionType(
     cdm::SessionType session_type) {
   switch (session_type) {
-    case cdm::kPersistent:
-      return media::MediaKeys::PERSISTENT_SESSION;
     case cdm::kTemporary:
       return media::MediaKeys::TEMPORARY_SESSION;
+    case cdm::kPersistentLicense:
+      return media::MediaKeys::PERSISTENT_LICENSE_SESSION;
+    case cdm::kPersistentKeyRelease:
+      return media::MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION;
   }
   NOTIMPLEMENTED();
   return media::MediaKeys::TEMPORARY_SESSION;
@@ -254,11 +257,10 @@ void ClearKeyCdm::CreateSession(uint32 promise_id,
           base::Bind(&ClearKeyCdm::OnPromiseFailed,
                      base::Unretained(this),
                      promise_id)));
-  decryptor_.CreateSession(std::string(init_data_type, init_data_type_size),
-                           init_data,
-                           init_data_size,
-                           ConvertSessionType(session_type),
-                           promise.Pass());
+  decryptor_.CreateSessionAndGenerateRequest(
+      ConvertSessionType(session_type),
+      std::string(init_data_type, init_data_type_size), init_data,
+      init_data_size, promise.Pass());
 
   if (key_system_ == kExternalClearKeyFileIOTestKeySystem)
     StartFileIOTest();
@@ -292,11 +294,9 @@ void ClearKeyCdm::LoadSession(uint32 promise_id,
           base::Bind(&ClearKeyCdm::OnPromiseFailed,
                      base::Unretained(this),
                      promise_id)));
-  decryptor_.CreateSession(std::string(kLoadableSessionContentType),
-                           NULL,
-                           0,
-                           MediaKeys::TEMPORARY_SESSION,
-                           promise.Pass());
+  decryptor_.CreateSessionAndGenerateRequest(
+      MediaKeys::TEMPORARY_SESSION, std::string(kLoadableSessionContentType),
+      NULL, 0, promise.Pass());
 }
 
 void ClearKeyCdm::UpdateSession(uint32 promise_id,
@@ -670,8 +670,8 @@ void ClearKeyCdm::LoadLoadableSession() {
 }
 
 void ClearKeyCdm::OnSessionMessage(const std::string& web_session_id,
-                                   const std::vector<uint8>& message,
-                                   const GURL& destination_url) {
+                                   MediaKeys::MessageType message_type,
+                                   const std::vector<uint8>& message) {
   DVLOG(1) << "OnSessionMessage: " << message.size();
 
   // Ignore the message when we are waiting to update the loadable session.
@@ -681,20 +681,24 @@ void ClearKeyCdm::OnSessionMessage(const std::string& web_session_id,
   // OnSessionMessage() only called during CreateSession(), so no promise
   // involved (OnSessionCreated() called to resolve the CreateSession()
   // promise).
+  // TODO(jrummell): Pass |message_type| on when this class is updated
+  // to Host_7. For now, pass NULL as the |destination_url| since we have
+  // no idea what it should be.
   host_->OnSessionMessage(web_session_id.data(),
                           web_session_id.length(),
                           reinterpret_cast<const char*>(message.data()),
                           message.size(),
-                          destination_url.spec().data(),
-                          destination_url.spec().size());
+                          nullptr, 0);
 }
 
 void ClearKeyCdm::OnSessionKeysChange(const std::string& web_session_id,
-                                      bool has_additional_usable_key) {
+                                      bool has_additional_usable_key,
+                                      CdmKeysInfo keys_info) {
   // Ignore the message when we are waiting to update the loadable session.
   if (web_session_id == session_id_for_emulated_loadsession_)
     return;
 
+  // TODO(jrummell): Pass |keys_info| on.
   host_->OnSessionUsableKeysChange(web_session_id.data(),
                                    web_session_id.length(),
                                    has_additional_usable_key);

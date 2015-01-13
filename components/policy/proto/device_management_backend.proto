@@ -53,6 +53,37 @@ message DeviceRegisterRequest {
   // be used by the server to link the registration request to an existing
   // device record for re-enrollment.
   optional bytes server_backed_state_key = 7;
+
+  // Enumerates different flavors of registration.
+  enum Flavor {
+    // User manually enrolls a device for device management.
+    FLAVOR_ENROLLMENT_MANUAL = 0;
+    // User re-starts enrollment manually to recover from loss of policy.
+    FLAVOR_ENROLLMENT_MANUAL_RENEW = 1;
+    // Device enrollment forced by local device configuration, such as OEM
+    // partition flags to force enrollment.
+    FLAVOR_ENROLLMENT_LOCAL_FORCED = 2;
+    // Enrollment advertised by local device configuration, such as OEM
+    // partition flags indicating to prompt for enrollment, but allowing the
+    // user to skip.
+    FLAVOR_ENROLLMENT_LOCAL_ADVERTISED = 3;
+    // Device state downloaded from the server during OOBE indicates that
+    // (re-)enrollment is mandatory.
+    FLAVOR_ENROLLMENT_SERVER_FORCED = 4;
+    // Device state downloaded from the server during OOBE indicates that the
+    // device should prompt for (re-)enrollment, but the user is allowed to
+    // skip.
+    FLAVOR_ENROLLMENT_SERVER_ADVERTISED = 5;
+    // Device detected in steady state that it is supposed to be enrolled, but
+    // the policy is missing.
+    FLAVOR_ENROLLMENT_RECOVERY = 6;
+    // User policy registration for a logged-in user.
+    FLAVOR_USER_REGISTRATION = 7;
+  };
+
+  // Indicates the registration flavor. This is passed to the server FYI when
+  // registering for policy so the server can distinguish registration triggers.
+  optional Flavor flavor = 8;
 }
 
 // Response from server to device register request.
@@ -514,6 +545,12 @@ message NetworkState {
 
   // For wireless networks, the signal_strength in dBm.
   optional int32 signal_strength = 3;
+
+  // The IP address this interface is bound to, if any.
+  optional string ip_address = 4;
+
+  // The gateway IP for this interface, if any.
+  optional string gateway = 5;
 }
 
 // Details about a device user.
@@ -537,7 +574,7 @@ message DeviceUser {
 // Information about a single disk volume.
 message VolumeInfo {
   optional string volume_id = 1;
-  optional int64 storage_used = 2;
+  optional int64 storage_total = 2;
   optional int64 storage_free = 3;
 }
 

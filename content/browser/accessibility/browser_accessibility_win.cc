@@ -2864,8 +2864,9 @@ HRESULT WINAPI BrowserAccessibilityWin::InternalQueryInterface(
     const _ATL_INTMAP_ENTRY* entries,
     REFIID iid,
     void** object) {
-  int32 ia_role =
-      reinterpret_cast<BrowserAccessibilityWin*>(this_ptr)->ia_role_;
+  BrowserAccessibilityWin* accessibility =
+      reinterpret_cast<BrowserAccessibilityWin*>(this_ptr);
+  int32 ia_role = accessibility->ia_role_;
   if (iid == IID_IAccessibleImage) {
     if (ia_role != ROLE_SYSTEM_GRAPHIC) {
       *object = NULL;
@@ -2877,7 +2878,7 @@ HRESULT WINAPI BrowserAccessibilityWin::InternalQueryInterface(
       return E_NOINTERFACE;
     }
   } else if (iid == IID_IAccessibleTableCell) {
-    if (ia_role != ROLE_SYSTEM_CELL) {
+    if (!accessibility->IsCellOrTableHeaderRole()) {
       *object = NULL;
       return E_NOINTERFACE;
     }
@@ -2963,7 +2964,7 @@ void BrowserAccessibilityWin::OnDataChanged() {
   }
 
   // Expose table cell index.
-  if (ia_role_ == ROLE_SYSTEM_CELL) {
+  if (IsCellOrTableHeaderRole()) {
     BrowserAccessibility* table = GetParent();
     while (table && table->GetRole() != ui::AX_ROLE_TABLE)
       table = table->GetParent();
@@ -3435,6 +3436,10 @@ void BrowserAccessibilityWin::InitRoleAndState() {
         ia_role_ = ROLE_SYSTEM_GRAPHIC;
       }
       break;
+    case ui::AX_ROLE_CAPTION:
+      ia_role_ = ROLE_SYSTEM_TEXT;
+      ia2_role_ = IA2_ROLE_CAPTION;
+      break;
     case ui::AX_ROLE_CELL:
       ia_role_ = ROLE_SYSTEM_CELL;
       break;
@@ -3576,6 +3581,7 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_state_ |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_LABEL_TEXT:
+    case ui::AX_ROLE_LEGEND:
       ia_role_ = ROLE_SYSTEM_TEXT;
       ia2_role_ = IA2_ROLE_LABEL;
       break;
@@ -3737,7 +3743,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_STATUS:
       ia_role_ = ROLE_SYSTEM_STATUSBAR;
-      ia_state_ |= STATE_SYSTEM_READONLY;
       break;
     case ui::AX_ROLE_SPLITTER:
       ia_role_ = ROLE_SYSTEM_SEPARATOR;
@@ -3808,6 +3813,9 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_TREE_ITEM:
       ia_role_ = ROLE_SYSTEM_OUTLINEITEM;
+      break;
+    case ui::AX_ROLE_LINE_BREAK:
+      ia_role_ = ROLE_SYSTEM_WHITESPACE;
       break;
     case ui::AX_ROLE_WINDOW:
       ia_role_ = ROLE_SYSTEM_WINDOW;

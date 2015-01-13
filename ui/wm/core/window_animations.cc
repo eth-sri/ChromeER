@@ -30,19 +30,17 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/animation/animation.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/geometry/vector3d_f.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/screen.h"
-#include "ui/gfx/vector2d.h"
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/core/wm_core_switches.h"
 #include "ui/wm/public/animation_host.h"
 
-DECLARE_WINDOW_PROPERTY_TYPE(int)
 DECLARE_WINDOW_PROPERTY_TYPE(wm::WindowVisibilityAnimationType)
 DECLARE_WINDOW_PROPERTY_TYPE(wm::WindowVisibilityAnimationTransition)
 DECLARE_WINDOW_PROPERTY_TYPE(float)
-DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(WM_EXPORT, bool)
 
 namespace wm {
 namespace {
