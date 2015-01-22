@@ -69,7 +69,6 @@ void EventRacerLogHost::UpdateStringTable(size_t kind, const std::vector<std::st
   for (s = v.begin(); s != v.end(); ++s)
     n += s->size() + 1;
   std::vector<char> &strings = strings_[kind];
-  strings.reserve(strings.size() + n);
   for (s = v.begin(); s != v.end(); ++s) {
     strings.insert(strings.end(), s->begin(), s->end());
     strings.push_back('\0');
