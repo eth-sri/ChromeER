@@ -35,7 +35,7 @@ vars = {
   'llvm_url': 'http://src.chromium.org/llvm-project',
   'llvm_git': 'https://llvm.googlesource.com',
   'webkit_trunk': 'http://src.chromium.org/blink/trunk',
-  'webkit_revision': '51748eff9143bff36f465f27399cd3bc7a4372d1',
+  'webkit_revision': '2740199f5ceafc357f9bdcaea22aa7fab98bb414',
   'chromium_git': 'https://chromium.googlesource.com',
   'chromiumos_git': 'https://chromium.googlesource.com/chromiumos',
   'pdfium_git': 'https://pdfium.googlesource.com',
@@ -48,7 +48,7 @@ vars = {
   # the commit queue can handle CLs rolling Skia
   # and V8 without interference from each other.
   'v8_branch': 'trunk',
-  'v8_revision': '690a253dadf0302c7d766840f860b35fe9d17e60',
+  'v8_revision': 'b7864255b17cc4c6b5396f551f0916ee8f79f3c8',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling WebRTC
   # and V8 without interference from each other.
