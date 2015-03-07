@@ -36,6 +36,12 @@
     
     gclient sync
 
+1. Checkout the srl branch for V8 and BlinkER to get the latest changes
+
+    cd ~/chromium/src/v8; git checkout srl
+    
+    cd ~/chromium/src/third_party/WebKit; git checkout srl
+
 1. Build Chromium with:
     
     cd ~/chromium/src/out/Debug; ninja chrome
