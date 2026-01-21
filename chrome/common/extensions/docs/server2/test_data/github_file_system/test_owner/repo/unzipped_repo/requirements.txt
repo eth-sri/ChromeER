@@ -1,7 +1,7 @@
 CairoSVG==0.5
 Markdown==2.3.1
 Pyphen==0.7
-WeasyPrint==0.19.1
+WeasyPrint==68.0
 argparse==1.2.1
 cairocffi==0.4.2
 cffi==0.6
